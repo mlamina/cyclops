@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Cyclops</title>
+<style>
+  :root {
+    --bg: #0c0f14;
+    --panel: #141a22;
+    --dim: #3a434f;
+    --text: #e7edf4;
+    --muted: #8b97a6;
+    --accent: #46505c;   /* recoloured per state below */
+    --level: 0;
+  }
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none; touch-action: manipulation; }
+  body {
+    background:
+      radial-gradient(120% 90% at 50% 12%, rgba(255,255,255,.04), transparent 60%),
+      radial-gradient(140% 120% at 50% 120%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid;
+    grid-template-rows: auto 1fr auto auto;
+    height: 100vh;
+    cursor: none;
+    transition: --accent .5s;
+  }
+  /* header */
+  header { display: flex; align-items: center; gap: 10px; padding: 16px 22px; }
+  .brand { font-weight: 700; letter-spacing: .18em; font-size: 15px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 10px var(--accent); transition: background .5s, box-shadow .5s; }
+  .offline { margin-left: auto; font-size: 12px; color: #ff7a7a; opacity: 0; transition: opacity .3s; }
+  body.offline .offline { opacity: 1; }
+
+  /* eye */
+  main { display: grid; justify-items: center; align-content: center; gap: 18px; }
+  .eye-btn { border: 0; background: none; padding: 0; display: grid; place-items: center; }
+  .eye { width: 208px; height: 208px; position: relative; }
+  .eye svg { width: 100%; height: 100%; overflow: visible; display: block; }
+  .ring { fill: none; stroke: var(--accent); stroke-width: 2.5; opacity: .35;
+          transform-box: fill-box; transform-origin: center;
+          transform: scale(calc(1 + var(--level) * .42)); transition: transform .09s ease-out, stroke .5s; }
+  .sclera { fill: #0f1620; stroke: color-mix(in srgb, var(--accent) 55%, #263041); stroke-width: 3; }
+  .iris { fill: var(--accent); transition: fill .5s; filter: drop-shadow(0 0 12px color-mix(in srgb, var(--accent) 70%, transparent)); }
+  .irisEdge { fill: none; stroke: rgba(255,255,255,.18); stroke-width: 1.5; }
+  .pupil { fill: #05080c; }
+  .glint { fill: rgba(255,255,255,.85); }
+  .lid { fill: var(--bg); }
+  /* open vs closed cross-fade */
+  .open  { opacity: 1; transition: opacity .35s; }
+  .closed{ opacity: 0; transition: opacity .35s; stroke: var(--dim); stroke-width: 10; stroke-linecap: round; fill: none; }
+  body[data-state="idle"]  .open,
+  body[data-state="error"] .open  { opacity: .12; }
+  body[data-state="idle"]  .closed,
+  body[data-state="error"] .closed{ opacity: 1; }
+  /* gentle idle breathing of the closed lid */
+  body[data-state="idle"] .eye { animation: breathe 3.6s ease-in-out infinite; }
+  @keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(.985); } }
+  /* the pupil drifts a little while awake */
+  body[data-state="listening"] .pupilG,
+  body[data-state="speaking"]  .pupilG { animation: drift 6s ease-in-out infinite; }
+  @keyframes drift {
+    0%,100% { transform: translate(0,0); } 25% { transform: translate(6px,-3px); }
+    50% { transform: translate(-4px,4px); } 75% { transform: translate(4px,3px); }
+  }
+  body[data-state="connecting"] .ring { animation: ping 1.2s ease-out infinite; }
+  @keyframes ping { 0% { transform: scale(1); opacity: .5; } 100% { transform: scale(1.5); opacity: 0; } }
+
+  .status { font-size: 22px; font-weight: 600; letter-spacing: .01em; color: var(--text); min-height: 26px; }
+  .hint { font-size: 13px; color: var(--muted); margin-top: -8px; }
+
+  /* status icons */
+  footer { display: flex; justify-content: center; gap: 30px; padding: 14px 0 22px; }
+  .chip { display: grid; justify-items: center; gap: 7px; width: 74px; opacity: .4; transition: opacity .25s, color .25s; color: var(--muted); }
+  .chip.on { opacity: 1; color: var(--accent); }
+  .chip svg { width: 30px; height: 30px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .chip span { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .chip.on span { color: var(--text); }
+
+  /* volume */
+  .volume { display: flex; align-items: center; gap: 16px; width: 74%; max-width: 520px; margin: 0 auto; padding: 2px 0 6px; }
+  .volume svg { width: 22px; height: 22px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
+  input[type=range] { -webkit-appearance: none; appearance: none; flex: 1; height: 34px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 5px;
+    background: linear-gradient(to right, var(--accent) calc(var(--vol,100)*1%), #232c38 calc(var(--vol,100)*1%)); transition: background .05s; }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 32px; height: 32px; border-radius: 50%; background: #eef3f8; margin-top: -12px; box-shadow: 0 1px 5px rgba(0,0,0,.55); }
+  input[type=range]::-moz-range-track { height: 8px; border-radius: 5px; background: #232c38; }
+  input[type=range]::-moz-range-progress { height: 8px; border-radius: 5px; background: var(--accent); }
+  input[type=range]::-moz-range-thumb { width: 32px; height: 32px; border: 0; border-radius: 50%; background: #eef3f8; }
+
+  /* camera flash */
+  .flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  .flash.go { animation: flash .5s ease-out; }
+  @keyframes flash { 0% { opacity: .0; } 12% { opacity: .7; } 100% { opacity: 0; } }
+
+  /* per-state accent */
+  body[data-state="connecting"] { --accent: #5aa0ff; }
+  body[data-state="listening"]  { --accent: #37e0c4; }
+  body[data-state="speaking"]   { --accent: #8b9dff; }
+  body[data-state="looking"]    { --accent: #ffb84d; }
+  body[data-state="error"]      { --accent: #ff5d5d; }
+</style>
+</head>
+<body data-state="idle">
+  <header>
+    <span class="dot"></span>
+    <span class="brand">CYCLOPS</span>
+    <span class="offline">reconnecting…</span>
+  </header>
+
+  <main>
+    <button class="eye-btn" id="eye" aria-label="Start or stop">
+      <div class="eye">
+        <svg viewBox="-140 -140 280 280">
+          <circle class="ring" r="120"></circle>
+          <g class="open">
+            <ellipse class="sclera" rx="120" ry="86"></ellipse>
+            <g class="pupilG">
+              <circle class="iris" r="52"></circle>
+              <circle class="irisEdge" r="52"></circle>
+              <circle class="pupil" r="23"></circle>
+              <circle class="glint" cx="-16" cy="-18" r="7"></circle>
+            </g>
+            <path class="lid" d="M -125 -92 Q 0 -150 125 -92 L 125 -140 L -125 -140 Z"></path>
+            <path class="lid" d="M -125 92 Q 0 150 125 92 L 125 140 L -125 140 Z"></path>
+          </g>
+          <path class="closed" d="M -104 0 Q 0 40 104 0"></path>
+        </svg>
+      </div>
+    </button>
+    <div class="status" id="status">Tap to start</div>
+    <div class="hint" id="hint">tap the eye</div>
+  </main>
+
+  <div class="volume">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path></svg>
+    <input type="range" id="vol" min="0" max="100" value="100" aria-label="Volume">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path d="M16 8a5 5 0 0 1 0 8M19 5.5a9 9 0 0 1 0 13"></path></svg>
+  </div>
+
+  <footer>
+    <div class="chip" id="c-link">
+      <svg viewBox="0 0 24 24"><path d="M4 14a5 5 0 0 1 1-9 6 6 0 0 1 11 1 4 4 0 0 1 3 8H6"></path></svg>
+      <span>Link</span>
+    </div>
+    <div class="chip" id="c-mic">
+      <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0M12 18v3"></path></svg>
+      <span>Mic</span>
+    </div>
+    <div class="chip" id="c-spk">
+      <svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9H4z"></path><path d="M17 8a5 5 0 0 1 0 8"></path></svg>
+      <span>Speak</span>
+    </div>
+    <div class="chip" id="c-cam">
+      <svg viewBox="0 0 24 24"><path d="M3 8h3l2-2h8l2 2h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V10a2 2 0 0 1 2-2z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+      <span>Look</span>
+    </div>
+  </footer>
+
+  <div class="flash" id="flash"></div>
+
+<script>
+  const body = document.body;
+  const statusEl = document.getElementById('status');
+  const hintEl = document.getElementById('hint');
+  const flash = document.getElementById('flash');
+  const chips = {
+    link: document.getElementById('c-link'),
+    mic: document.getElementById('c-mic'),
+    spk: document.getElementById('c-spk'),
+    cam: document.getElementById('c-cam'),
+  };
+  const READY = new Set(['listening', 'speaking', 'looking']);
+  const volEl = document.getElementById('vol');
+  let prev = 'idle';
+  let busy = false;
+  let epoch = null;
+  let dragging = false;
+  let volTimer = null, volPending = null;
+
+  function sendVolume(frac) {
+    volPending = frac;
+    if (volTimer) return;
+    volTimer = setTimeout(async () => {
+      volTimer = null;
+      try { await fetch('/volume?v=' + volPending, { method: 'POST' }); } catch (e) {}
+    }, 90);
+  }
+
+  function apply(s) {
+    if (s.epoch) {                     // server restarted with a new build → reload the page
+      if (epoch === null) epoch = s.epoch;
+      else if (s.epoch !== epoch) { location.reload(); return; }
+    }
+    body.dataset.state = s.state;
+    document.documentElement.style.setProperty('--level', s.level || 0);
+    statusEl.textContent = s.detail;
+    hintEl.textContent = READY.has(s.state) || s.state === 'connecting' ? 'tap to end' : 'tap the eye';
+    chips.link.classList.toggle('on', READY.has(s.state));
+    chips.mic.classList.toggle('on', s.state === 'listening');
+    chips.spk.classList.toggle('on', s.state === 'speaking');
+    chips.cam.classList.toggle('on', s.state === 'looking');
+    if (s.state === 'looking' && prev !== 'looking') {
+      flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+    }
+    if (!dragging && s.volume != null) {
+      const vp = Math.round(s.volume * 100);
+      volEl.value = vp; volEl.style.setProperty('--vol', vp);
+    }
+    prev = s.state;
+  }
+
+  async function poll() {
+    try {
+      const r = await fetch('/status', { cache: 'no-store' });
+      apply(await r.json());
+      body.classList.remove('offline');
+    } catch (e) {
+      body.classList.add('offline');
+    }
+  }
+
+  async function toggle() {
+    if (busy) return;
+    busy = true;
+    const start = prev === 'idle' || prev === 'error';
+    try {
+      const r = await fetch(start ? '/start' : '/stop', { method: 'POST' });
+      apply(await r.json());
+    } catch (e) {
+      body.classList.add('offline');
+    } finally {
+      busy = false;
+    }
+  }
+
+  volEl.addEventListener('pointerdown', () => { dragging = true; });
+  volEl.addEventListener('input', () => {
+    dragging = true;
+    volEl.style.setProperty('--vol', volEl.value);
+    sendVolume((volEl.value / 100).toFixed(3));
+  });
+  const endDrag = () => { dragging = false; sendVolume((volEl.value / 100).toFixed(3)); };
+  volEl.addEventListener('change', endDrag);
+  volEl.addEventListener('pointerup', endDrag);
+  volEl.addEventListener('pointercancel', () => { dragging = false; });
+
+  document.getElementById('eye').addEventListener('click', toggle);
+  // kiosk hardening: no context menu, no pinch/double-tap zoom
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('dblclick', (e) => e.preventDefault());
+
+  poll();
+  setInterval(poll, 200);
+</script>
+</body>
+</html>
