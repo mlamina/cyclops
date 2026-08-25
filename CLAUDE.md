@@ -1,0 +1,1 @@
+This project is supposed to run on a raspberry pi, which you can access via ssh at 'dobby@raspberrypi'.

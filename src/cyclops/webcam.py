@@ -23,6 +23,18 @@ KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
 
 _camera_lock = threading.Lock()  # one capture at a time, even if a timed-out one is still running
 _last_good_index: int | None = None  # remembered across captures when probing automatically
+_live_source: object | None = None  # a cyclops.camera.CameraSource while the kiosk is running
+
+
+def set_live_source(source: object | None) -> None:
+    """Register an already-open camera (a :class:`~cyclops.camera.CameraSource`) to shoot from.
+
+    The kiosk holds the device open for its live preview, so the tool cannot open it again.
+    While a source is registered, captures borrow the sharpest of its recent frames - no open,
+    no warm-up. Passing ``None`` restores the standalone open-warm-shoot-release path.
+    """
+    global _live_source
+    _live_source = source
 
 
 class WebcamError(RuntimeError):
@@ -46,7 +58,7 @@ def _candidate_indices(preferred: int | None) -> list[int]:
     return order + [i for i in range(PROBE_INDICES) if i not in order]
 
 
-def _open_camera(preferred: int | None) -> tuple[cv2.VideoCapture, int]:
+def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture, int]:
     """Open the preferred camera, or probe for one that actually delivers frames.
 
     On macOS the index order follows AVFoundation's uniqueID sort, so an idle iPhone
@@ -99,7 +111,20 @@ def _save(save_dir: Path, jpeg: bytes) -> Path:
 def capture_image(
     camera_index: int | None, *, save_dir: Path, abort: threading.Event | None = None
 ) -> Capture:
-    """Blocking capture (~0.5-1.5 s on a MacBook): open, warm up, grab a frame, encode JPEG."""
+    """Grab a photo, either from the live preview's camera or by opening one just for this shot.
+
+    With a live source registered (the kiosk), this borrows the sharpest of its recent frames
+    and returns in milliseconds. Otherwise it is the standalone path: open, warm up, shoot,
+    release, which costs ~0.5-1.5 s on a MacBook.
+    """
+    source = _live_source
+    if source is not None:
+        frame = source.snapshot()
+        if frame is None:
+            raise WebcamError(
+                "The live preview's camera has no recent frame to photograph."
+            )  # never fall back to opening it - the preview still holds the device
+        return _encode_and_save(frame, save_dir, source.index)
     with _camera_lock:
         return _capture_locked(camera_index, save_dir, abort)
 
@@ -108,7 +133,7 @@ def _capture_locked(
     camera_index: int | None, save_dir: Path, abort: threading.Event | None
 ) -> Capture:
     global _last_good_index
-    cap, index = _open_camera(camera_index)
+    cap, index = open_camera(camera_index)
     try:
         deadline = time.monotonic() + WARMUP_SECONDS
         frames_read = 0
@@ -128,6 +153,11 @@ def _capture_locked(
         raise WebcamError(f"Camera index {index} opened but returned no frame.")
     _last_good_index = index
 
+    return _encode_and_save(frame, save_dir, index)
+
+
+def _encode_and_save(frame, save_dir: Path, index: int) -> Capture:
+    """Shrink, JPEG-encode and archive a frame, whoever grabbed it."""
     frame = _resize_to_max_edge(frame, MAX_EDGE)
     encoded, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
     if not encoded:
