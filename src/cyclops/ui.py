@@ -29,12 +29,13 @@ from .audio import (
 )
 from .config import ConfigError, Settings, load_settings
 
-IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, ERROR = (
+IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
     "idle",
     "connecting",
     "listening",
     "speaking",
     "looking",
+    "searching",
     "error",
 )
 LEVEL_FULL_SCALE = 3000.0  # int16 RMS that maps to a full meter
@@ -91,6 +92,7 @@ class SessionController:
             LISTENING: "Listening — talk to me",
             SPEAKING: "Speaking…",
             LOOKING: "Looking…",
+            SEARCHING: "Searching the web…",
             ERROR: self._error or "Something went wrong",
         }[state]
         return {
@@ -109,6 +111,8 @@ class SessionController:
             return CONNECTING, 0.0
         if agent.tool_active:
             return LOOKING, 0.0
+        if agent.search_active:
+            return SEARCHING, 0.0
         if speaker is not None and speaker.is_audible:
             return SPEAKING, min(1.0, speaker.output_level() / LEVEL_FULL_SCALE)
         level = min(1.0, mic.level / LEVEL_FULL_SCALE) if mic is not None else 0.0

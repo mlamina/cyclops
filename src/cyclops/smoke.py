@@ -2,7 +2,8 @@
 
 No microphone or speakers. Sends two typed turns through the very same session config the
 voice app uses, and checks that (1) audio + transcript come back and (2) the model calls the
-webcam tool and then talks about the picture.
+webcam tool and then talks about the picture, and (3) the model calls the web_search tool
+and answers from what it found.
 """
 
 from __future__ import annotations
@@ -108,6 +109,21 @@ async def _main() -> int:
         latest = settings.captures_dir / "latest.jpg"
         if not latest.exists():
             failures.append(f"{latest} was not written")
+        turn.reset()
+        await agent.send_text(
+            "Search the web for the torque spec of a Shimano Hollowtech II crank arm bolt, "
+            "then tell me the number in one short sentence."
+        )
+        await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
+        print(
+            f"· turn 3: tools={turn.tool_calls}, {turn.seconds_of_audio:.1f}s audio, "
+            f"transcript={turn.transcripts!r}"
+        )
+        if "web_search" not in turn.tool_calls:
+            failures.append("model did not call web_search")
+        if not turn.has_transcript:
+            failures.append("turn 3 returned no transcript")
+
         if agent.unacked_item_ids:
             failures.append(f"server never acknowledged items {sorted(agent.unacked_item_ids)}")
     finally:

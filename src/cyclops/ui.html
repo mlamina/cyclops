@@ -102,6 +102,7 @@
   body[data-state="listening"]  { --accent: #37e0c4; }
   body[data-state="speaking"]   { --accent: #8b9dff; }
   body[data-state="looking"]    { --accent: #ffb84d; }
+  body[data-state="searching"]  { --accent: #78d2ff; }
   body[data-state="error"]      { --accent: #ff5d5d; }
 </style>
 </head>
@@ -174,7 +175,7 @@
     spk: document.getElementById('c-spk'),
     cam: document.getElementById('c-cam'),
   };
-  const READY = new Set(['listening', 'speaking', 'looking']);
+  const READY = new Set(['listening', 'speaking', 'looking', 'searching']);
   const volEl = document.getElementById('vol');
   let prev = 'idle';
   let busy = false;

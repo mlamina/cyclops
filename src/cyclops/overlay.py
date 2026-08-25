@@ -17,12 +17,13 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 # Same state vocabulary and accent colours as ui.html, so both front-ends read alike.
-IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, ERROR = (
+IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
     "idle",
     "connecting",
     "listening",
     "speaking",
     "looking",
+    "searching",
     "error",
 )
 # Optimistic states the kiosk shows the instant you tap, before the session agrees. Tearing a
@@ -37,6 +38,7 @@ ACCENTS = {
     LISTENING: (55, 224, 196),
     SPEAKING: (139, 157, 255),
     LOOKING: (255, 184, 77),
+    SEARCHING: (120, 210, 255),
     ERROR: (255, 93, 93),
 }
 TEXT = (231, 237, 244)

@@ -1,4 +1,4 @@
-"""The realtime voice agent: OpenAI Realtime API over WebSocket, plus one webcam tool."""
+"""The realtime voice agent: OpenAI Realtime API over WebSocket, plus its webcam and web tools."""
 
 from __future__ import annotations
 
@@ -25,6 +25,7 @@ from openai.types.realtime import (
 
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker
 from .config import Settings
+from .search import SearchError, search_web
 from .webcam import WebcamError, capture_image_async
 
 CAPTURE_TIMEOUT_S = 12.0
@@ -33,6 +34,8 @@ TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_FOCUS_CHARS = 200
+MAX_QUERY_CHARS = 300
+SEARCH_TIMEOUT_S = 14.0  # above search.SEARCH_TIMEOUT_S, so its own message wins
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # keep \t and \n
 
 WEBCAM_TOOL: RealtimeFunctionToolParam = {
@@ -53,6 +56,29 @@ WEBCAM_TOOL: RealtimeFunctionToolParam = {
             }
         },
         "required": [],
+        "additionalProperties": False,
+    },
+}
+
+WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "web_search",
+    "description": (
+        "Search the web for current or factual information you do not reliably know: specs, "
+        "measurements, torque values, part compatibility, prices, instructions, news, or "
+        "anything that may have changed recently. Use it when the user asks a question about "
+        "the world that a photo alone cannot answer. Say a few words out loud first, because "
+        "the search takes a few seconds."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What to search for, as a specific question or phrase.",
+            }
+        },
+        "required": ["query"],
         "additionalProperties": False,
     },
 }
@@ -80,6 +106,12 @@ You are Cyclops, a friendly, quick-witted voice assistant with one eye: the user
   only give a short acknowledgment ("cool", "ok", "got it", "nice", "thanks", "mhm"), treat it
   as "I heard you, move on": reply with at most a few words, or simply keep listening. Never
   re-read or re-describe something you already said.
+- When the user asks something factual you are not sure about - a spec, a size, a torque
+  value, whether two parts fit together, what something costs, anything that may have changed
+  recently - call the web_search tool instead of guessing. Say a few words first ("let me look
+  that up") so they are not left in silence, because the search takes several seconds.
+- Combine the two tools when it helps: look at the thing, then search for what you saw. If a
+  search comes back empty or failed, say so plainly instead of inventing an answer.
 - Do not read out URLs, file paths, or JSON.
 """
 
@@ -119,6 +151,8 @@ class VoiceAgent:
         self.speaker = speaker
         self.guard = guard
         self.tool_active = False  # True while the webcam tool is capturing (UI 'looking')
+        self.search_active = False  # True while a web search is in flight (UI 'searching')
+        self._turn_serial = 0  # bumped when the user speaks; lets a late search spot staleness
         self._barge_in_timer: asyncio.TimerHandle | None = None
         self.ready = asyncio.Event()  # set once the server accepted our session config
         self.on_event: Callable[[RealtimeServerEvent], None] | None = None  # observer hook
@@ -172,7 +206,7 @@ class VoiceAgent:
                     "speed": 1.0,
                 },
             },
-            "tools": [WEBCAM_TOOL],
+            "tools": [WEBCAM_TOOL, WEB_SEARCH_TOOL],
             "tool_choice": "auto",
         }
         effort = self.settings.reasoning_effort  # explicit setting always goes through
@@ -232,6 +266,7 @@ class VoiceAgent:
                 self._on_error(event.error)
             case "input_audio_buffer.speech_started":
                 self._user_speaking = True
+                self._turn_serial += 1  # any search still running is now answering an old question
                 self._confirm_local_barge_in()
                 await self._on_user_speech_started()
             case "input_audio_buffer.speech_stopped":
@@ -374,9 +409,12 @@ class VoiceAgent:
         self._unacked_item_ids.add(item_id)
         await self.conn.conversation.item.create(item={"id": item_id, **item})  # type: ignore[misc]
 
-    # ---------------------------------------------------------------- the webcam tool
+    # ---------------------------------------------------------------- the tools
 
     async def _run_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
+        if call.name == "web_search":
+            await self._run_web_search(call)
+            return
         if call.name != "capture_webcam_image":
             await self._send_tool_output(call.call_id, {"ok": False, "error": "unknown tool"})
             await self._request_response()
@@ -434,6 +472,50 @@ class VoiceAgent:
             await self._send_item(image_item)
         await self._request_response()
 
+    async def _run_web_search(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Bridge the Realtime session to the Responses API's hosted web_search tool.
+
+        A search takes ten seconds or more, which is a long time in a conversation, so the user
+        may well have moved on before it lands. The Realtime API has no way to withdraw a tool
+        call once made - the model waits for its result - so a stale answer is reported as
+        stale rather than dropped, and the instructions tell the model not to deliver it out of
+        the blue. That is the lifecycle question OpenAI declined to answer for us.
+        """
+        query = _tool_query(call.arguments)
+        self._log(f"[tool] web_search {query!r}")
+        if not query:
+            await self._send_tool_output(call.call_id, {"ok": False, "error": "empty query"})
+            await self._request_response()
+            return
+
+        turn = self._turn_serial  # if this moves while we search, the answer arrived too late
+        self.search_active = True
+        try:
+            async with asyncio.timeout(SEARCH_TIMEOUT_S):
+                answer = await search_web(query, self.settings)
+        except TimeoutError:
+            output = {"ok": False, "error": f"the search timed out after {SEARCH_TIMEOUT_S:.0f}s"}
+        except SearchError as exc:
+            output = {"ok": False, "error": str(exc)}
+        except Exception as exc:  # never leave the model waiting for a tool result
+            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        else:
+            stale = self._turn_serial != turn
+            output = {"ok": True, "query": query, "result": answer, "stale": stale}
+            if stale:
+                output["note"] = (
+                    "The user has spoken since this search started, so it may no longer be what "
+                    "they want. Do not read it out unless it is still relevant to them."
+                )
+            self._log(f"[tool] search: {len(answer)} chars{' (stale)' if stale else ''}")
+        finally:
+            self.search_active = False
+
+        if not output["ok"]:
+            self._log(f"[tool] search failed: {output['error']}", stream=sys.stderr)
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
     async def _send_tool_output(self, call_id: str, output: dict[str, Any]) -> None:
         await self._send_item(
             {"type": "function_call_output", "call_id": call_id, "output": json.dumps(output)}
@@ -467,12 +549,22 @@ class VoiceAgent:
         print(f"· {_CONTROL_CHARS.sub('', message)}", file=stream or sys.stdout, flush=True)
 
 
-def _tool_focus(arguments: str | None) -> str:
-    """The model's optional 'focus' argument, defensively parsed and length-capped."""
+def _tool_string(arguments: str | None, key: str, limit: int) -> str:
+    """One of the model's string arguments, defensively parsed and length-capped."""
     try:
         args = json.loads(arguments or "{}")
     except json.JSONDecodeError:
         return ""
     if not isinstance(args, dict):
         return ""
-    return str(args.get("focus") or "")[:MAX_FOCUS_CHARS]
+    return str(args.get(key) or "")[:limit]
+
+
+def _tool_focus(arguments: str | None) -> str:
+    """The webcam tool's optional 'focus' argument."""
+    return _tool_string(arguments, "focus", MAX_FOCUS_CHARS)
+
+
+def _tool_query(arguments: str | None) -> str:
+    """The search tool's required 'query' argument."""
+    return _tool_string(arguments, "query", MAX_QUERY_CHARS)
