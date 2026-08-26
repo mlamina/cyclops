@@ -22,6 +22,7 @@ cyclops-smoke = "cyclops.smoke:main"
 cyclops-devices = "cyclops.app:devices"
 cyclops-ui = "cyclops.ui:main"
 cyclops-kiosk = "cyclops.kiosk:main"
+cyclops-sessions = "cyclops.session:main"
 cyclops-admin = "cyclops.admin.server:main"
 
 [build-system]

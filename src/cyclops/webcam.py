@@ -44,7 +44,7 @@ class WebcamError(RuntimeError):
 @dataclass(frozen=True)
 class Capture:
     data_url: str
-    path: Path
+    path: Path  # the timestamped file, never latest.jpg - the one still there tomorrow
     width: int
     height: int
     jpeg_bytes: int
@@ -96,26 +96,75 @@ def _write_private(path: Path, data: bytes) -> None:
         f.write(data)
 
 
-def _save(save_dir: Path, jpeg: bytes) -> Path:
+def _unique(path: Path) -> Path:
+    """Two photos in the same second must not become one file."""
+    if not path.exists():
+        return path
+    for n in range(2, 100):
+        candidate = path.with_name(f"{path.stem}-{n}{path.suffix}")
+        if not candidate.exists():
+            return candidate
+    return path  # a hundred shots inside one second is not a thing anyone does
+
+
+def _age(path: Path) -> float:
+    """Sort key for the prune. Deliberately mtime, not the name: the name format has changed
+    once already, and two generations of it do not sort against each other the way you would
+    guess (``2026-08-26_...`` sorts *before* ``20260826-...``, because ``-`` < ``0``). mtime
+    cannot lie about which photo is oldest."""
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _save(save_dir: Path, jpeg: bytes, keep_as: str) -> Path:
+    """Write the photo and return the path to the file that stays put.
+
+    Two shapes, one function. With a ``keep_as`` role this is a session's ``photos/``:
+    ``14-32-40_you.jpg``, kept forever, no ``latest.jpg`` - the folder *is* the archive, and
+    pruning it would throw away half of what the session log points at. Without one it is the
+    standalone ``captures/`` dir the smoke test and any session-less capture still use: a full
+    date-time name, a ``latest.jpg`` beside it, and everything past KEEP_CAPTURES swept up so an
+    unattended box cannot fill its card.
+
+    Either way it returns the *timestamped* file, never ``latest.jpg`` - what the caller wants
+    to log is the one that will still be there tomorrow. (It used to return ``latest.jpg``,
+    which made every logged photo path identical.)
+    """
     save_dir.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y%m%d-%H%M%S") + f"-{int(time.time() * 1000) % 1000:03d}"
-    _write_private(save_dir / f"{stamp}.jpg", jpeg)
+    if keep_as:
+        path = _unique(save_dir / f"{time.strftime('%H-%M-%S')}_{keep_as}.jpg")
+        _write_private(path, jpeg)
+        return path
+
+    path = _unique(save_dir / f"{time.strftime('%Y-%m-%d_%H-%M-%S')}.jpg")
+    _write_private(path, jpeg)
     latest = save_dir / "latest.jpg"
     _write_private(latest, jpeg)
-    archive = sorted(p for p in save_dir.glob("*.jpg") if p != latest)
-    for old in archive[:-KEEP_CAPTURES]:
-        old.unlink(missing_ok=True)
-    return latest
+    archive = sorted((p for p in save_dir.glob("*.jpg") if p != latest), key=_age)
+    for stale in archive[:-KEEP_CAPTURES]:
+        stale.unlink(missing_ok=True)
+    return path
 
 
 def capture_image(
-    camera_index: int | None, *, save_dir: Path, abort: threading.Event | None = None
+    camera_index: int | None,
+    *,
+    save_dir: Path,
+    abort: threading.Event | None = None,
+    keep_as: str = "",
 ) -> Capture:
     """Grab a photo, either from the live preview's camera or by opening one just for this shot.
 
     With a live source registered (the kiosk), this borrows the sharpest of its recent frames
     and returns in milliseconds. Otherwise it is the standalone path: open, warm up, shoot,
     release, which costs ~0.5-1.5 s on a MacBook.
+
+    ``keep_as`` is who took the photo ("cyclops"/"you") when it belongs to a session and is
+    being filed in that session's ``photos/``. Empty means the pruning ``captures/`` archive -
+    see :func:`_save`. Callers get it from :func:`cyclops.session.photo_target` rather than
+    deciding for themselves.
     """
     source = _live_source
     if source is not None:
@@ -124,13 +173,13 @@ def capture_image(
             raise WebcamError(
                 "The live preview's camera has no recent frame to photograph."
             )  # never fall back to opening it - the preview still holds the device
-        return _encode_and_save(frame, save_dir, source.index)
+        return _encode_and_save(frame, save_dir, source.index, keep_as)
     with _camera_lock:
-        return _capture_locked(camera_index, save_dir, abort)
+        return _capture_locked(camera_index, save_dir, abort, keep_as)
 
 
 def _capture_locked(
-    camera_index: int | None, save_dir: Path, abort: threading.Event | None
+    camera_index: int | None, save_dir: Path, abort: threading.Event | None, keep_as: str
 ) -> Capture:
     global _last_good_index
     cap, index = open_camera(camera_index)
@@ -153,23 +202,23 @@ def _capture_locked(
         raise WebcamError(f"Camera index {index} opened but returned no frame.")
     _last_good_index = index
 
-    return _encode_and_save(frame, save_dir, index)
+    return _encode_and_save(frame, save_dir, index, keep_as)
 
 
-def _encode_and_save(frame, save_dir: Path, index: int) -> Capture:
+def _encode_and_save(frame, save_dir: Path, index: int, keep_as: str) -> Capture:
     """Shrink, JPEG-encode and archive a frame, whoever grabbed it."""
     frame = _resize_to_max_edge(frame, MAX_EDGE)
     encoded, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
     if not encoded:
         raise WebcamError("JPEG encoding failed.")
     jpeg = buf.tobytes()
-    latest = _save(save_dir, jpeg)
+    saved = _save(save_dir, jpeg, keep_as)
 
     h, w = frame.shape[:2]
     data_url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
     return Capture(
         data_url=data_url,
-        path=latest,
+        path=saved,
         width=w,
         height=h,
         jpeg_bytes=len(jpeg),
@@ -177,7 +226,9 @@ def _encode_and_save(frame, save_dir: Path, index: int) -> Capture:
     )
 
 
-async def capture_image_async(camera_index: int | None, *, save_dir: Path) -> Capture:
+async def capture_image_async(
+    camera_index: int | None, *, save_dir: Path, keep_as: str = ""
+) -> Capture:
     """Run :func:`capture_image` on a daemon thread so the event loop keeps streaming audio.
 
     A daemon thread (rather than ``asyncio.to_thread``) means a camera stuck on a macOS
@@ -192,7 +243,9 @@ async def capture_image_async(camera_index: int | None, *, save_dir: Path) -> Ca
         if not result.set_running_or_notify_cancel():
             return
         try:
-            result.set_result(capture_image(camera_index, save_dir=save_dir, abort=abort))
+            result.set_result(
+                capture_image(camera_index, save_dir=save_dir, abort=abort, keep_as=keep_as)
+            )
         except BaseException as exc:  # noqa: BLE001 - forwarded to the awaiting task
             result.set_exception(exc)
 

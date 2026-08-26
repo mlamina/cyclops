@@ -20,6 +20,7 @@ from .audio import (
     resolve_device,
 )
 from .config import ConfigError, Settings, load_settings
+from .session import SessionLog
 
 
 def resolve_half_duplex(settings: Settings, output_name: str) -> tuple[bool, str]:
@@ -62,11 +63,14 @@ async def _run(settings: Settings) -> None:
 
     speaker.start()
     mic.start()
-    try:
-        await agent.run()
-    finally:
-        mic.stop()
-        speaker.stop()
+    # No camera is held open here, so no frames and no video.mp4 - the folder gets its transcript
+    # and its photos and nothing else. That is by construction, not by a check.
+    with SessionLog(settings, agent, entrypoint="cli", mic=mic, speaker=speaker):
+        try:
+            await agent.run()
+        finally:
+            mic.stop()
+            speaker.stop()
 
 
 def main() -> None:

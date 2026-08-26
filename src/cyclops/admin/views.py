@@ -106,7 +106,7 @@ def _payload(request: HttpRequest) -> dict:
         volume=mixer.requested(),
         # Absolute, so "0 sessions" is self-diagnosing: the count is relative to the CWD the
         # service was started in (see WorkingDirectory in deploy/cyclops-admin.service).
-        recordings_dir=str(_settings().recordings_dir.expanduser().resolve()),
+        sessions_dir=str(_settings().sessions_dir.expanduser().resolve()),
     )
     return data
 

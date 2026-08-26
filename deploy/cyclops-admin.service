@@ -15,7 +15,7 @@ StartLimitIntervalSec=0
 Type=exec
 User=dobby
 Group=dobby
-# MUST match the CWD the kiosk runs in. recordings_dir is CWD-relative and deliberately not
+# MUST match the CWD the kiosk runs in. sessions_dir is CWD-relative and deliberately not
 # resolved (see cyclops/config.py), and load_settings() finds .env by walking up from the CWD -
 # start this anywhere else and the page reports zero sessions with no error anywhere.
 WorkingDirectory=/home/dobby/cyclops
@@ -41,7 +41,7 @@ LockPersonality=yes
 SystemCallFilter=@system-service
 
 # --- deliberately NOT set; each of these silently breaks something ---
-# ProtectHome=          hides /home/dobby: no working directory, no venv, no recordings/
+# ProtectHome=          hides /home/dobby: no working directory, no venv, no sessions/
 # ProtectSystem=strict  read-only /home; would need ReadWritePaths=/home/dobby/.cache/cyclops
 # PrivateTmp=           a private /tmp. Harmless only because the kiosk's close flag lives in
 #                       ~/.cache; if it ever moves to /tmp this would make the kiosk blind to

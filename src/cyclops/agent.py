@@ -23,6 +23,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
+from . import session
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker
 from .config import Settings
 from .search import SearchError, search_web
@@ -170,6 +171,16 @@ class VoiceAgent:
     @property
     def unacked_item_ids(self) -> frozenset[str]:
         return frozenset(self._unacked_item_ids)
+
+    @property
+    def interrupted_item_ids(self) -> frozenset[str]:
+        """Assistant items a barge-in cut short.
+
+        Their transcript is the whole turn the model meant to say - more than was ever spoken -
+        so anything writing it down has to say so rather than quote it as heard. Covers both
+        paths: the server-VAD one and the local :class:`~cyclops.audio.EchoGuard` one.
+        """
+        return frozenset(self._dead_item_ids)
 
     @property
     def conn(self) -> AsyncRealtimeConnection:
@@ -425,11 +436,12 @@ class VoiceAgent:
         )
 
         image_item: ConversationItemParam | None = None
+        save_dir, keep_as = session.photo_target(self.settings, by="cyclops")
         self.tool_active = True
         try:
             async with asyncio.timeout(CAPTURE_TIMEOUT_S):
                 capture = await capture_image_async(
-                    self.settings.camera_index, save_dir=self.settings.captures_dir
+                    self.settings.camera_index, save_dir=save_dir, keep_as=keep_as
                 )
         except TimeoutError:
             output = {
@@ -459,6 +471,15 @@ class VoiceAgent:
                     {"type": "input_image", "image_url": capture.data_url, "detail": "auto"},
                 ],
             }
+            session.note(
+                "photo",
+                by="cyclops",
+                file=f"{session.PHOTOS}/{capture.path.name}",
+                width=capture.width,
+                height=capture.height,
+                bytes=capture.jpeg_bytes,
+                focus=focus or None,  # logged here because this is the only place `focus` exists
+            )
             self._log(
                 f"[tool] photo {capture.width}x{capture.height}, "
                 f"{capture.jpeg_bytes // 1024} KB → {capture.path}"
@@ -507,11 +528,13 @@ class VoiceAgent:
                     "The user has spoken since this search started, so it may no longer be what "
                     "they want. Do not read it out unless it is still relevant to them."
                 )
+            session.note("search", query=query, chars=len(answer), stale=stale)
             self._log(f"[tool] search: {len(answer)} chars{' (stale)' if stale else ''}")
         finally:
             self.search_active = False
 
         if not output["ok"]:
+            session.note("search", query=query, error=output["error"])
             self._log(f"[tool] search failed: {output['error']}", stream=sys.stderr)
         await self._send_tool_output(call.call_id, output)
         await self._request_response()

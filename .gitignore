@@ -14,6 +14,7 @@ build/
 .pytest_cache/
 
 # App output
+sessions/
 captures/
 recordings/
 

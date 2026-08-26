@@ -9,7 +9,8 @@ DEST=cyclops
 
 rsync -a --delete \
   --exclude '.env' --exclude '.venv' --exclude '.git' --exclude '__pycache__' \
-  --exclude 'captures' --exclude 'recordings' --exclude '.ruff_cache' --exclude 'Plans' \
+  --exclude 'captures' --exclude 'recordings' --exclude 'sessions' \
+  --exclude '.ruff_cache' --exclude 'Plans' \
   src pyproject.toml uv.lock README.md deploy "$TARGET:$DEST/"
 
 ssh "$TARGET" "cd $DEST && ~/.local/bin/uv sync --quiet"

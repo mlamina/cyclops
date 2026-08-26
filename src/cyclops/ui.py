@@ -28,7 +28,8 @@ from .audio import (
     resolve_device,
 )
 from .config import ConfigError, Settings, load_settings
-from .record import FrameSource, SessionRecorder
+from .record import FrameSource
+from .session import SessionLog
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
     "idle",
@@ -49,12 +50,20 @@ class SessionController:
 
     ``frames`` is an already-open camera to record the session from. Only the kiosk has one -
     it holds the device open for its preview - so ``cyclops-ui`` passes nothing and records
-    nothing.
+    nothing. Every session is logged either way; ``entrypoint`` is what goes in the log, and it
+    is passed rather than inferred from ``frames`` because that would only be right by accident.
     """
 
-    def __init__(self, settings: Settings, frames: FrameSource | None = None) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        frames: FrameSource | None = None,
+        *,
+        entrypoint: str = "ui",
+    ) -> None:
         self.settings = settings
         self._frames = frames
+        self._entrypoint = entrypoint
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -176,31 +185,18 @@ class SessionController:
             self._speaker, self._mic, self._agent = speaker, mic, agent
         speaker.start()
         mic.start()
-        recorder = self._start_recorder(mic, speaker)
-        try:
-            await agent.run()
-        finally:
-            mic.stop()  # no more audio callbacks, so the recorder can flush what it has
-            speaker.stop()
-            if recorder is not None:
-                if (recording := recorder.stop()) is not None:
-                    print(f"· recorded to {recording}", flush=True)
-
-    def _start_recorder(self, mic: Microphone, speaker: Speaker) -> SessionRecorder | None:
-        """Tap the mic and the speaker for this session's recording, if one is wanted."""
-        if self._frames is None or not self.settings.record:
-            return None
-        recorder = SessionRecorder(
-            self._frames,
-            self.settings.recordings_dir,
-            fps=self.settings.record_fps,
-            width=self.settings.record_width,
-        )
-        if not recorder.start():  # it has said why; a session is never blocked on recording
-            return None
-        mic.on_block = recorder.on_mic_block
-        speaker.on_block = recorder.on_speaker_block
-        return recorder
+        # The log is the one thing every entry point shares, so it does its own wiring: it hooks
+        # the agent's events, starts the recorder when there is a camera, and finishes the folder
+        # on the way out - including when the session dies rather than stops. The inner `finally`
+        # still runs first, so the recorder is stopped only once the audio callbacks have ceased.
+        with SessionLog(
+            s, agent, entrypoint=self._entrypoint, mic=mic, speaker=speaker, frames=self._frames
+        ):
+            try:
+                await agent.run()
+            finally:
+                mic.stop()  # no more audio callbacks, so the recorder can flush what it has
+                speaker.stop()
 
 
 class _Handler(BaseHTTPRequestHandler):

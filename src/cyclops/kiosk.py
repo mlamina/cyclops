@@ -31,7 +31,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import mixer, webcam  # noqa: E402
+from . import mixer, session, webcam  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
 from .config import BROWSER_CLOSE_FLAG, ConfigError, load_settings  # noqa: E402
@@ -91,7 +91,7 @@ PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
 SLEEP_AFTER_S = 60.0  # untouched for this long, the panel goes dark until it is tapped again
 SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
-SHUTDOWN_JOIN_S = 15.0  # on exit, a stopping session may still be muxing its recording
+SHUTDOWN_JOIN_S = 20.0  # on exit, a stopping session may still be muxing and naming itself
 BROWSERS = ("chromium-browser", "chromium")  # same probe order as cyclops-ui
 ADMIN_POLL_S = 0.2  # how often the watcher looks for the page asking to be closed
 ADMIN_FPS = 5  # render rate while the browser covers the panel - nobody can see us anyway
@@ -291,11 +291,25 @@ class Kiosk:
 
     def _capture(self) -> None:
         settings = self.controller.settings
+        # Where it lands depends on whether a session is running: into that session's photos/ if
+        # one is, and into the plain captures/ archive if not. The log is told either way -
+        # session.note is a no-op when there is nothing live to tell.
+        save_dir, keep_as = session.photo_target(settings, by="you")
         try:
-            shot = webcam.capture_image(settings.camera_index, save_dir=settings.captures_dir)
+            shot = webcam.capture_image(
+                settings.camera_index, save_dir=save_dir, keep_as=keep_as
+            )
         except WebcamError as exc:
             print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
         else:
+            session.note(
+                "photo",
+                by="you",
+                file=f"{session.PHOTOS}/{shot.path.name}",
+                width=shot.width,
+                height=shot.height,
+                bytes=shot.jpeg_bytes,
+            )
             print(f"· snapped {shot.path}", flush=True)
 
     # ---- admin page ----
@@ -575,7 +589,8 @@ def main() -> None:
         sys.exit(2)
 
     camera = CameraSource(settings.camera_index)
-    controller = SessionController(settings, frames=camera)  # sessions record from this camera
+    # sessions record from this camera, and say so in their log
+    controller = SessionController(settings, frames=camera, entrypoint="kiosk")
     try:
         camera.start()
         camera.wait_for_frame()

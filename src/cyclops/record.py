@@ -1,6 +1,6 @@
 """Recording a whole kiosk session: the raw camera, plus the two sides of the conversation.
 
-A session leaves one ``recordings/<timestamp>.mp4`` behind - H.264 video of what the camera saw,
+A session leaves one ``video.mp4`` in its own folder behind - H.264 video of what the camera saw,
 with a stereo audio track carrying the user on the left channel and Cyclops on the right. Keeping
 the two voices apart means neither is mixed into the other (listen to one side alone, or mix them
 down later), and it sidesteps the double-counting you would get from recording an open microphone
@@ -52,6 +52,29 @@ DRAIN_INTERVAL_S = 0.25
 FIRST_FRAME_TIMEOUT_S = 1.0
 JOIN_TIMEOUT_S = 5.0
 MUX_TIMEOUT_S = 120.0
+# The encoder's intermediate. Not "video.mp4": that is the finished file one level up, and a
+# folder holding two of them would be a puzzle for whoever pulls the card.
+RAW_VIDEO = "video-raw.mp4"
+
+
+def mux_command(work_dir: Path, out_path: Path) -> list[str]:
+    """The ffmpeg call that joins a session's parts into its mp4.
+
+    Lifted out of :meth:`SessionRecorder._mux` so ``cyclops-sessions --fix`` can finish an
+    interrupted session with exactly the command the recorder would have run, rather than a
+    second copy of it that quietly rots out of step.
+    """
+    return [
+        "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+        "-i", str(work_dir / RAW_VIDEO),
+        "-i", str(work_dir / "user.wav"),
+        "-i", str(work_dir / "agent.wav"),
+        "-filter_complex", "[1:a][2:a]join=inputs=2:channel_layout=stereo[a]",
+        "-map", "0:v", "-map", "[a]",
+        "-c:v", "copy", "-c:a", "aac", "-b:a", "96k",
+        "-shortest", "-movflags", "+faststart",
+        str(out_path),
+    ]
 
 
 class FrameSource(Protocol):
@@ -100,15 +123,16 @@ class SessionRecorder:
     def __init__(
         self,
         frames: FrameSource,
-        recordings_dir: Path,
+        session_dir: Path,
         *,
         fps: int = DEFAULT_FPS,
         width: int = DEFAULT_WIDTH,
     ) -> None:
-        stamp = time.strftime("%Y%m%d-%H%M%S")
-        self.out_path = recordings_dir / f"{stamp}.mp4"
-        # A dotted work directory: an interrupted session is obvious, and its parts survive.
-        self.work_dir = recordings_dir / f".{stamp}"
+        self.out_path = session_dir / "video.mp4"
+        # The parts sit inside the session's own folder rather than beside it: an interrupted
+        # session is simply the folder that still has a parts/ in it, and nothing has to be
+        # matched up by timestamp with anything else.
+        self.work_dir = session_dir / "parts"
         self.failed = ""  # non-empty once recording has given up; the session carries on
         self._frames = frames
         self._fps = max(1, fps)
@@ -275,7 +299,7 @@ class SessionRecorder:
                 "-an",
                 "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
                 "-crf", CRF, "-pix_fmt", "yuv420p",
-                str(self.work_dir / "video.mp4"),
+                str(self.work_dir / RAW_VIDEO),
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.DEVNULL,
@@ -328,17 +352,7 @@ class SessionRecorder:
     def _mux(self) -> Path | None:
         """Join the parts: copy the video, encode user|agent into one stereo track."""
         self.out_path.parent.mkdir(parents=True, exist_ok=True)
-        command = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-i", str(self.work_dir / "video.mp4"),
-            "-i", str(self.work_dir / "user.wav"),
-            "-i", str(self.work_dir / "agent.wav"),
-            "-filter_complex", "[1:a][2:a]join=inputs=2:channel_layout=stereo[a]",
-            "-map", "0:v", "-map", "[a]",
-            "-c:v", "copy", "-c:a", "aac", "-b:a", "96k",
-            "-shortest", "-movflags", "+faststart",
-            str(self.out_path),
-        ]
+        command = mux_command(self.work_dir, self.out_path)
         try:
             done = subprocess.run(command, capture_output=True, timeout=MUX_TIMEOUT_S, check=False)
         except (OSError, subprocess.SubprocessError) as exc:

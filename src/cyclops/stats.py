@@ -35,8 +35,8 @@ class SystemStats:
     disk_used: int | None
     disk_total: int | None
     disk_free: int | None
-    sessions: int  # finished recordings
-    sessions_in_progress: int  # work dirs a session is still filling, or died holding
+    sessions: int  # session folders that finished and wrote their page
+    sessions_in_progress: int  # folders a session is still filling, or died holding
     uptime_s: float | None
     load1: float | None
 
@@ -105,9 +105,9 @@ def memory() -> tuple[int, int] | None:
 def disk(path: Path) -> tuple[int, int, int] | None:
     """``(used, total, free)`` bytes of the filesystem holding *path*, or its nearest parent.
 
-    The recordings directory is what we care about - that is the thing that grows - but
-    ``record.py`` only creates it when the first session is muxed, so walk up until something
-    exists rather than reporting an unrelated ``/``.
+    The sessions directory is what we care about - that is the thing that grows - but nothing
+    creates it until the first session runs, so walk up until something exists rather than
+    reporting an unrelated ``/``.
 
     Note ``used + free < total``: free is the unprivileged figure and root's reserve is in
     neither, which is why the percentage is taken over ``used + free``. That is how ``df``
@@ -126,17 +126,36 @@ def disk(path: Path) -> tuple[int, int, int] | None:
     return usage.used, usage.total, usage.free
 
 
-def session_counts(recordings_dir: Path) -> tuple[int, int]:
-    """``(finished, in progress)`` - the mp4s, and the dotted work dirs beside them.
+# Named here rather than imported from cyclops.session: this module is what the admin service
+# reads, and session.py pulls in record.py and with it OpenCV - a heavyweight import for a
+# status page that only wants to count folders.
+PAGE_NAME = "session.md"
+LOG_NAME = "session.jsonl"
 
-    ``glob`` does not descend, so a running session's ``.<stamp>/video.mp4`` is correctly left
-    out of the finished count and shows up in the second number instead.
+
+def session_counts(sessions_dir: Path) -> tuple[int, int]:
+    """``(finished, in progress)`` - session folders, by the file that marks one done.
+
+    ``session.md`` is written last, after the mux and just before the folder is renamed, so its
+    presence is exactly "this one finished". A folder with a log and no page is either running
+    right now or was interrupted, which mean the same thing to someone reading the tile. It is
+    also the only rule that works for all three entry points: only the kiosk ever produces an
+    mp4, so counting those would under-report by two thirds.
+
+    ``iterdir`` does not descend, so a session's own ``photos/`` and ``parts/`` are never
+    mistaken for sessions themselves.
     """
-    directory = recordings_dir.expanduser()
+    directory = sessions_dir.expanduser()
     if not directory.is_dir():
         return 0, 0
-    finished = sum(1 for _ in directory.glob("*.mp4"))
-    in_progress = sum(1 for entry in directory.glob(".*") if entry.is_dir())
+    finished = in_progress = 0
+    for entry in directory.iterdir():
+        if not entry.is_dir():
+            continue
+        if (entry / PAGE_NAME).is_file():
+            finished += 1
+        elif (entry / LOG_NAME).is_file():
+            in_progress += 1
     return finished, in_progress
 
 
@@ -160,8 +179,8 @@ def collect(settings: Settings) -> SystemStats:
     """One sample of everything, for a page render or an API poll."""
     temp = cpu_temp_c()
     mem_used, mem_total = memory() or (None, None)
-    disk_used, disk_total, disk_free = disk(settings.recordings_dir) or (None, None, None)
-    finished, running = session_counts(settings.recordings_dir)
+    disk_used, disk_total, disk_free = disk(settings.sessions_dir) or (None, None, None)
+    finished, running = session_counts(settings.sessions_dir)
     return SystemStats(
         temp_c=None if temp is None else round(temp, 1),
         temp_band=temp_band(temp),

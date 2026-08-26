@@ -68,11 +68,11 @@ def main() -> None:
         sys.exit(2)
 
     host, port = _parse_args(sys.argv[1:], settings.admin_host, settings.admin_port)
-    # The resolved recordings path is printed because "0 sessions" is otherwise indistinguishable
+    # The resolved sessions path is printed because "0 sessions" is otherwise indistinguishable
     # from "started in the wrong directory" - see WorkingDirectory in deploy/cyclops-admin.service.
     print(
         f"· cyclops admin on http://{host}:{port}/  (Ctrl+C to quit)\n"
-        f"  recordings: {settings.recordings_dir.expanduser().resolve()}",
+        f"  sessions: {settings.sessions_dir.expanduser().resolve()}",
         flush=True,
     )
     _application(f"{host}:{port}").run()

@@ -37,9 +37,10 @@ class Settings:
     transcribe_lang: str | None = "en"  # ISO-639-1 hint for the input transcriber; None = auto
     input_device: str | None = None  # sounddevice mic: index or name substring; None = default
     output_device: str | None = None  # sounddevice speaker: index or name substring; None = default
-    captures_dir: Path = Path("captures")
-    record: bool = True  # record each session to recordings_dir (cyclops-kiosk only)
-    recordings_dir: Path = Path("recordings")
+    sessions_dir: Path = Path("sessions")  # one folder per session; everything it produced
+    captures_dir: Path = Path("captures")  # where a photo goes when no session is running
+    slug: bool = True  # name each finished session from its transcript (cyclops.slug)
+    record: bool = True  # record the camera to the session folder (needs an open camera)
     record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 640x480
     record_width: int = 640  # recorded video is fit to this width, never upscaled
     admin_host: str = "0.0.0.0"  # the admin page is meant to be read from the LAN, not just here
@@ -132,11 +133,10 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         transcribe_lang=_lang("CYCLOPS_LANG"),
         input_device=_env("CYCLOPS_INPUT_DEVICE"),
         output_device=_env("CYCLOPS_OUTPUT_DEVICE"),
+        sessions_dir=Path(_env("CYCLOPS_SESSIONS_DIR") or Settings.sessions_dir).expanduser(),
         captures_dir=Path(_env("CYCLOPS_CAPTURES_DIR") or Settings.captures_dir).expanduser(),
+        slug=_flag("CYCLOPS_SLUG", Settings.slug),
         record=_flag("CYCLOPS_RECORD", Settings.record),
-        recordings_dir=Path(
-            _env("CYCLOPS_RECORDINGS_DIR") or Settings.recordings_dir
-        ).expanduser(),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,
         record_width=_int("CYCLOPS_RECORD_WIDTH") or Settings.record_width,
         admin_host=_env("CYCLOPS_ADMIN_HOST") or Settings.admin_host,

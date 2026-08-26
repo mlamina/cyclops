@@ -20,8 +20,7 @@ webcam ──▶ JPEG (≤1024px) ──▶ function_call_output + input_image i
   audio item is truncated to what you actually heard, so the model doesn't think you heard the rest.
 * The webcam tool runs in a worker thread, discards warm-up frames, shrinks the frame to 1024 px,
   and injects it as an `input_image` so the model's next reply is about what it sees.
-  Every capture is also written to `captures/` (relative to where you run it): a timestamped
-  JPEG plus `latest.jpg`.
+  Every capture is also written into the session's own folder (see **Sessions** below).
 
 ## Setup
 
@@ -49,24 +48,60 @@ Headless smoke test (no mic/speakers; sends text turns and exercises the webcam 
 uv run cyclops-smoke
 ```
 
-## Session recordings
+## Sessions
 
-`cyclops-kiosk` records every session automatically. Each one lands as a single
-`recordings/<timestamp>.mp4`: H.264 video of what the camera saw (raw frames — no mirror, no UI
-chrome) with a **stereo** audio track, **you on the left channel and Cyclops on the right**. The
-two voices are never mixed together, so you can listen to either side alone.
+Every session — from `cyclops`, `cyclops-ui` or `cyclops-kiosk` — gets **one folder of its own**,
+holding everything it produced. Pull the SD card into a laptop and it reads like a GoPro's:
 
-Needs `ffmpeg` on `PATH` (`brew install ffmpeg`, or `apt install ffmpeg` on the Pi). Without it the
-session runs exactly as before and says once that it isn't recording — recording never blocks a
-conversation.
+```
+sessions/
+  2026-08-26_14-32-05_lego-falcon/
+    session.md        the conversation, with the photos in it, for you
+    session.jsonl     the same events, one JSON object per line, for a program
+    video.mp4         the recording (kiosk only)
+    photos/
+      14-32-40_cyclops.jpg
+      14-33-12_you.jpg
+```
+
+`session.md` opens in any markdown viewer with both images inline and every line stamped as an
+offset from the start, so you can scrub straight to it in `video.mp4`. `session.jsonl` has the
+same thing for machines: who said what and when, which photos were taken and by whom, what was
+searched, and which of Cyclops's turns you interrupted. The session's UUID lives inside both
+files — never in a name, because nobody can read a UUID.
+
+**The name.** The folder is created as `2026-08-26_14-32-05` and renamed when the session ends:
+`gpt-5.4-nano` reads the transcript and picks two to four words for what it was about. With no
+network, no key, or `CYCLOPS_SLUG=0`, the folder simply keeps its date-time name — the naming
+call is capped at six seconds and never blocks a shutdown.
+
+**The video.** H.264 of what the camera saw (raw frames — no mirror, no UI chrome) with a
+**stereo** audio track, **you on the left channel and Cyclops on the right**. The two voices are
+never mixed, so you can listen to either side alone. Only the kiosk records: `cyclops` and
+`cyclops-ui` open the camera per photo instead of holding it open, so there is no continuous
+video for them to record.
+
+Needs `ffmpeg` on `PATH` (`brew install ffmpeg`, or `apt install ffmpeg` on the Pi). Without it
+the session runs exactly as before and says once that it isn't recording — nothing here ever
+blocks a conversation, recording and logging included.
 
 At the defaults (640 wide, 15 fps) a recording costs roughly 3 MB per minute and about 4% of one
-Pi 5 core (measured on a Pi 5 with a C920). Nothing is ever pruned; delete what you don't want. While a session is in progress its
-parts live in `recordings/.<timestamp>/` and are joined into the final mp4 when it ends, so an
-interrupted session leaves a playable `video.mp4` and two WAVs behind rather than nothing.
+Pi 5 core (measured on a Pi 5 with a C920). Nothing is ever pruned; delete what you don't want.
 
-Only the kiosk records: `cyclops` and `cyclops-ui` open the camera per photo instead of holding it
-open, so there is no continuous video for them to record.
+**If a session is cut off** — power loss, a killed process — its folder keeps a `parts/` with a
+playable `video-raw.mp4` and the two WAVs, and a `session.jsonl` that ends wherever the power
+did. `cyclops-sessions` lists it as `UNFINISHED`; `cyclops-sessions --fix` muxes the video,
+removes `parts/`, and writes the missing `session.md`. It works entirely offline;
+`cyclops-sessions --name` is the separate step that names anything still unnamed.
+
+```bash
+uv run cyclops-sessions              # what's on the card
+uv run cyclops-sessions --fix        # finish anything left half-done (no network needed)
+uv run cyclops-sessions --fix --name # ...and name what the naming call missed
+```
+
+Photos taken with no session running (the smoke test, mostly) still land in `captures/`, which
+keeps only the last 20 alongside `latest.jpg`. A session's own photos are never pruned.
 
 ## Admin page
 
@@ -74,6 +109,8 @@ open, so there is no continuous video for them to record.
 network you can open `http://raspberrypi.local/` and see how the box is doing: **CPU
 temperature**, **memory**, **disk**, and **how many sessions have been recorded**. It is
 read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
+A session counts as finished once it has written its `session.md`; anything else shows as in
+progress.
 
 The temperature tile is colour-coded on the Pi 5's own limits: green below 70 °C, orange from
 70, red from **80 °C**, where the firmware starts capping the clock. A permanently red tile is
@@ -97,7 +134,7 @@ systemctl status cyclops-admin
 ```
 
 The unit runs as your own user and binds port 80 with `CAP_NET_BIND_SERVICE` rather than root.
-Its `WorkingDirectory` must match the one the kiosk runs in — `recordings/` is relative to the
+Its `WorkingDirectory` must match the one the kiosk runs in — `sessions/` is relative to the
 working directory, so starting it elsewhere reports zero sessions with no error anywhere. Edits
 to `.env` need `systemctl restart cyclops-admin` to be picked up.
 
@@ -119,9 +156,10 @@ service. It never copies your local `.env`.
 | `CYCLOPS_LANG`         | `en`           | Language hint (ISO-639-1) for transcribing what you say; `auto` to let it detect. Set this to your spoken language for accurate transcripts. |
 | `CYCLOPS_INPUT_DEVICE` | default        | Microphone: a device index or name substring (from `uv run cyclops-devices`). Needed when there's no default mic (e.g. a Raspberry Pi). |
 | `CYCLOPS_OUTPUT_DEVICE`| default        | Speaker: a device index or name substring. |
-| `CYCLOPS_CAPTURES_DIR` | `captures`     | Where snapshots are written (relative to the CWD; `~` ok). |
-| `CYCLOPS_RECORD`       | `1`            | Record every kiosk session to disk; `0` disables. |
-| `CYCLOPS_RECORDINGS_DIR` | `recordings` | Where session recordings are written (relative to the CWD; `~` ok). |
+| `CYCLOPS_SESSIONS_DIR` | `sessions`     | Where session folders are written (relative to the CWD; `~` ok). |
+| `CYCLOPS_CAPTURES_DIR` | `captures`     | Where a photo goes when no session is running (relative to the CWD; `~` ok). |
+| `CYCLOPS_SLUG`         | `1`            | Name each finished session from its transcript; `0` leaves it date-stamped. |
+| `CYCLOPS_RECORD`       | `1`            | Record the camera into the session folder; `0` disables. |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
 | `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
 | `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |
