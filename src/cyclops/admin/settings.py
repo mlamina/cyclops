@@ -22,7 +22,7 @@ ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS: list[str] = []
 DATABASES: dict[str, dict] = {}
 
-# CommonMiddleware only. No CSRF: the single mutating endpoint refuses anything that is not
+# CommonMiddleware only. No CSRF: every mutating endpoint refuses anything that is not
 # loopback, which is a stronger guarantee than a token on a page that has no login to steal.
 MIDDLEWARE = ["django.middleware.common.CommonMiddleware"]
 

@@ -31,7 +31,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import webcam  # noqa: E402
+from . import mixer, webcam  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
 from .config import BROWSER_CLOSE_FLAG, ConfigError, load_settings  # noqa: E402
@@ -97,6 +97,7 @@ ADMIN_POLL_S = 0.2  # how often the watcher looks for the page asking to be clos
 ADMIN_FPS = 5  # render rate while the browser covers the panel - nobody can see us anyway
 ADMIN_MAX_S = 15 * 60  # a window nobody closed comes down rather than stranding the panel
 ADMIN_PROBE_S = 1.0  # how long the admin service gets to answer before we refuse the tap
+VOLUME_POLL_S = 0.4  # how often we look for a volume the admin page left for us
 BROWSER_GRACE_S = 5.0  # how long Chromium gets to go quietly before it is killed
 # Its own profile, distinct from the one cyclops-ui's kiosk uses, and under ~/.cache rather than
 # /tmp so the second open is a warm start instead of a first-run.
@@ -190,6 +191,8 @@ class Kiosk:
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
+        self._volume: int | None = None  # the level we last put on the sink
+        self._volume_at = 0.0  # when we last looked for a new one
         self._browser: subprocess.Popen | None = None  # the admin page, when it is open
         self._admin_busy = threading.Event()  # set from the tap until the browser is gone
         self._refocus = threading.Event()  # asks the render loop to re-assert fullscreen
@@ -396,6 +399,41 @@ class Kiosk:
             return raw
         return STOPPING if self._pending == "stop" else STARTING
 
+    # ---- volume ----
+
+    def adopt_volume(self) -> None:
+        """Make the speaker and the page agree at startup.
+
+        The note is the desired state, not a record of what happened: a level chosen from the
+        page while the kiosk was down still lands when it comes back. If there is no note yet,
+        seed it from the sink so the page's slider opens where the speaker actually is.
+        """
+        wanted = mixer.requested()
+        if wanted is None:
+            self._volume = mixer.level()
+            if self._volume is not None:
+                mixer.request(self._volume)
+        elif mixer.set_level(wanted):
+            self._volume = wanted
+
+    @property
+    def volume(self) -> int | None:
+        """The level currently on the sink, as far as we know."""
+        return self._volume
+
+    def _sync_volume(self) -> None:
+        """Follow the level the page left for us. A few bytes, a couple of times a second."""
+        now = time.monotonic()
+        if now - self._volume_at < VOLUME_POLL_S:
+            return
+        self._volume_at = now
+        wanted = mixer.requested()
+        if wanted is None or wanted == self._volume:
+            return
+        if mixer.set_level(wanted):
+            self._volume = wanted
+            print(f"· volume {wanted}%", flush=True)
+
     # ---- sleep ----
 
     def _sleeping(self, state: str) -> bool:
@@ -457,6 +495,7 @@ class Kiosk:
                 # highgui is main-thread only, so the browser watcher cannot do this itself.
                 self._refocus.clear()
                 self._apply_fullscreen()
+            self._sync_volume()
 
             status = self.controller.status()
             state = self._effective(str(status["state"]))
@@ -548,15 +587,17 @@ def main() -> None:
     webcam.set_live_source(camera)  # the agent's tool now shoots from this same camera
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
+    kiosk.adopt_volume()
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     print(
         f"· cyclops kiosk on camera {camera.index} · font: {platform_font_note()}\n"
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
-        f" · backlight: {kiosk.backlight.note}\n"
+        f" · backlight: {kiosk.backlight.note}"
+        f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
         "  tap the shutter (bottom left) to snap · the eye (bottom right) to start/stop\n"
-        "  the gear (top left) opens the admin page\n"
+        "  the gear (top left) opens the admin page, which is where the volume lives\n"
         f"  after {SLEEP_AFTER_S:g}s untouched the light goes off and the camera is released\n"
         "  any tap wakes it\n"
         "  q or ESC to quit · f toggles fullscreen",

@@ -1,4 +1,4 @@
-"""The page, the JSON behind it, and the kiosk's way back to the camera.
+"""The page, the JSON behind it, and the two things the panel can actually change.
 
 Both the first render and every poll go through :func:`_payload`, so the template and the
 JavaScript are looking at exactly the same fields and the formatting lives in one place.
@@ -9,11 +9,17 @@ from __future__ import annotations
 import math
 from dataclasses import asdict
 
-from django.http import HttpRequest, HttpResponse, HttpResponseForbidden, JsonResponse
+from django.http import (
+    HttpRequest,
+    HttpResponse,
+    HttpResponseBadRequest,
+    HttpResponseForbidden,
+    JsonResponse,
+)
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import stats
+from .. import mixer, stats
 from ..config import BROWSER_CLOSE_FLAG, ConfigError, Settings, load_settings
 
 LOOPBACK = {"127.0.0.1", "::1"}
@@ -97,6 +103,7 @@ def _payload(request: HttpRequest) -> dict:
             else _duration(sample.uptime_s)
         ),
         local=_is_local(request),
+        volume=mixer.requested(),
         # Absolute, so "0 sessions" is self-diagnosing: the count is relative to the CWD the
         # service was started in (see WorkingDirectory in deploy/cyclops-admin.service).
         recordings_dir=str(_settings().recordings_dir.expanduser().resolve()),
@@ -105,7 +112,7 @@ def _payload(request: HttpRequest) -> dict:
 
 
 def dashboard(request: HttpRequest) -> HttpResponse:
-    """The whole interface: four tiles and, on the kiosk only, a close bar."""
+    """The whole interface: four tiles and, on the kiosk only, a volume bar and a close bar."""
     return render(request, "cyclops/dashboard.html", _payload(request))
 
 
@@ -126,3 +133,24 @@ def close_browser(request: HttpRequest) -> HttpResponse:
     BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
     BROWSER_CLOSE_FLAG.touch()
     return HttpResponse(status=204)
+
+
+@require_POST
+def set_volume(request: HttpRequest) -> HttpResponse:
+    """Ask the kiosk to set the speaker's volume - see :mod:`cyclops.mixer`.
+
+    This service cannot set it itself: PrivateDevices=yes leaves it with no /dev/snd, and it
+    starts at boot with no user session to reach PipeWire through. So it writes the level down
+    and the kiosk applies it, exactly as with the close button.
+
+    Loopback only, like /close, and for a second reason beyond the usual one: the panel is
+    meant to be the *only* place the volume is set, and an endpoint the LAN could POST to
+    would quietly make it the second.
+    """
+    if not _is_local(request):
+        return HttpResponseForbidden("the volume is set from the panel")
+    try:
+        wanted = int(request.POST.get("level", ""))
+    except ValueError:
+        return HttpResponseBadRequest("level must be a whole percent")
+    return JsonResponse({"volume": mixer.request(wanted)})  # clamped; echo what actually landed

@@ -1,7 +1,8 @@
 {% comment %}
 The whole admin interface: one self-contained file, no external assets, laid out for the Pi's
-800x480 panel first. The close bar exists only for the kiosk's own browser - a laptop on the LAN
-has nothing to close, and a button that closed a browser the clicker cannot see is a foot-gun.
+800x480 panel first. The volume bar and the close bar exist only for the kiosk's own browser: a
+laptop on the LAN has nothing to close, and the panel is meant to be the one place the volume is
+set - a slider on every device on the network is exactly the sprawl this replaced.
 {% endcomment %}<!doctype html>
 <html lang="en">
 <head>
@@ -38,7 +39,7 @@ has nothing to close, and a button that closed a browser the clicker cannot see 
     color: var(--text);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;   /* tiles take everything the close bar doesn't */
+    grid-template-rows: minmax(0, 1fr) auto auto;   /* tiles take what the two bars don't */
     gap: 2px;
     transition: opacity .3s;
   }
@@ -92,6 +93,58 @@ has nothing to close, and a button that closed a browser the clicker cannot see 
   .tile[data-band="hot"] .value { color: var(--tint); }
   .tile[data-band="hot"] .label { color: var(--tint); }
 
+  /* The one control on the page. Label and readout are fixed-width so the track never jumps
+     as the number goes 5 -> 100, and the thumb is 52 u - about 10 mm, a thumb with a glove on. */
+  .volume {
+    background: var(--panel);
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: calc(18 * var(--u));
+    padding: calc(6 * var(--u)) calc(20 * var(--u));
+  }
+  .volume .label { margin-top: 0; }
+  .vvalue {
+    font-size: calc(30 * var(--u));
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    min-width: calc(78 * var(--u));
+    text-align: right;
+  }
+  .vslider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: calc(66 * var(--u));
+    background: transparent;
+    touch-action: none;   /* the drag belongs to the slider, never to the page behind it */
+  }
+  .vslider::-webkit-slider-runnable-track {
+    height: calc(12 * var(--u));
+    border-radius: 999px;
+    background: #26313f;
+  }
+  .vslider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: calc(52 * var(--u));
+    height: calc(52 * var(--u));
+    margin-top: calc(-20 * var(--u));   /* centre the thumb on a 12 u track */
+    border: 0;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  .vslider::-moz-range-track { height: calc(12 * var(--u)); border-radius: 999px; background: #26313f; }
+  .vslider::-moz-range-thumb {
+    width: calc(52 * var(--u));
+    height: calc(52 * var(--u));
+    border: 0;
+    border-radius: 50%;
+    background: var(--ok);
+  }
+  .vslider:active::-webkit-slider-thumb { background: var(--text); }
+  .vslider:active::-moz-range-thumb { background: var(--text); }
+
   /* The biggest target on the screen: full width, 86 of the panel's 480 px, about 16.6 mm. */
   .close {
     border: 0;
@@ -138,7 +191,15 @@ has nothing to close, and a button that closed a browser the clicker cannot see 
       <div class="detail" data-field="sessions_detail">{{ sessions_detail }}</div>
     </section>
   </main>
-  {% if local %}<button class="close" id="close" type="button">&#10005; &nbsp;Close</button>{% endif %}
+  {% if local %}
+  <section class="volume">
+    <span class="label">Volume</span>
+    <input class="vslider" id="vol" type="range" min="0" max="100" step="5" value="{{ volume|default:80 }}"
+           aria-label="Speaker volume">
+    <output class="vvalue" id="volval">{{ volume|default:80 }}%</output>
+  </section>
+  <button class="close" id="close" type="button">&#10005; &nbsp;Close</button>
+  {% endif %}
 
 <script>
   const fields = document.querySelectorAll('[data-field]');
@@ -163,6 +224,27 @@ has nothing to close, and a button that closed a browser the clicker cannot see 
     setTimeout(poll, document.visibilityState === 'hidden' ? SLOW : EVERY);
   }
   setTimeout(poll, EVERY);   // the server already rendered the first set of numbers
+
+  // The page cannot set the volume any more than it can close its own window: it leaves the
+  // level for the kiosk, which is the process that lives inside the audio session.
+  const vol = document.getElementById('vol');
+  if (vol) {
+    const out = document.getElementById('volval');
+    const send = (v) => fetch('/volume', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'level=' + v,
+    }).catch(() => {});
+    let sent = 0;
+    vol.addEventListener('input', () => {
+      out.textContent = vol.value + '%';
+      // Throttled while the finger is down, so a session in progress gets louder as you drag
+      // without one request per pixel of travel.
+      const now = Date.now();
+      if (now - sent > 200) { sent = now; send(vol.value); }
+    });
+    vol.addEventListener('change', () => send(vol.value));   // the level on release always lands
+  }
 
   const close = document.getElementById('close');
   if (close) close.addEventListener('click', async () => {

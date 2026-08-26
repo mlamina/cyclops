@@ -14,6 +14,11 @@ from dotenv import find_dotenv, load_dotenv
 # ``PrivateTmp=`` on the service would silently give the two sides different views of it.
 BROWSER_CLOSE_FLAG = Path.home() / ".cache" / "cyclops" / "browser-close"
 
+# And where it leaves the output volume it wants. Same reason it cannot just set it itself:
+# the service runs with PrivateDevices=yes and has no /dev/snd, and at boot there is no user
+# session to reach PipeWire through. The kiosk, which has both, reads this and applies it.
+VOLUME_FILE = Path.home() / ".cache" / "cyclops" / "volume"
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
