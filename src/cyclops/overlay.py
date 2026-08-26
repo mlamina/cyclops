@@ -2,13 +2,18 @@
 
 OpenCV can only draw Hershey stroke fonts, which look like a 1980s oscilloscope. Everything
 here is rendered into one RGBA layer with PIL instead - real TrueType text, anti-aliased
-circles, rounded rectangles, translucent scrims - and handed to :mod:`cyclops.kiosk` as a
-numpy array to alpha-blend onto the frame. Geometry doubles as the hit-test map: every
-interactive element returns its rectangle, so a tap can be resolved without a second layout.
+circles, a numpy-built edge halo - and handed to :mod:`cyclops.kiosk` as a numpy array to
+alpha-blend onto the frame. Geometry doubles as the hit-test map: every interactive element
+returns its rectangle, so a tap can be resolved without a second layout.
+
+The layout is deliberately tiny: the picture runs full-bleed to all four edges, a rim of light
+around those edges carries the session state, and there are exactly two controls, one in each
+bottom corner - shutter on the left, session on the right - both sized for a thumb in a glove.
 """
 
 from __future__ import annotations
 
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -41,9 +46,30 @@ ACCENTS = {
     SEARCHING: (120, 210, 255),
     ERROR: (255, 93, 93),
 }
+# The halo answers one question only - is the agent up? - so the seven states collapse onto
+# three colours, plus red for a session that fell over. Anything finer stays on the eye button,
+# which keeps its own per-state accent above.
+OFF, CONNECTING_HALO, ON = ACCENTS[IDLE], ACCENTS[CONNECTING], ACCENTS[LISTENING]
+HALOS = {
+    IDLE: OFF,
+    STARTING: CONNECTING_HALO,
+    STOPPING: CONNECTING_HALO,  # disconnecting is the same transition, run backwards
+    CONNECTING: CONNECTING_HALO,
+    LISTENING: ON,
+    SPEAKING: ON,
+    LOOKING: ON,
+    SEARCHING: ON,
+    ERROR: ACCENTS[ERROR],
+}
 TEXT = (231, 237, 244)
-MUTED = (139, 151, 166)
-SCRIM = (12, 15, 20)
+PLATE = (18, 24, 32, 175)  # smoked glass behind both buttons
+RECORD_DOT = (255, 93, 93)
+
+HALO_CORE = 0.008  # fraction of the height held at full brightness, hard against the edge
+HALO_FALLOFF = 0.038  # and how far the light reaches inwards before it is gone
+HALO_PEAK = 0.85  # alpha at the very edge; the picture keeps the other 95% of itself
+BUTTON = 0.30  # button diameter as a fraction of the screen height
+MARGIN = 0.046  # and how far they sit off the corner
 
 _FONT_CANDIDATES = (
     # macOS
@@ -90,8 +116,23 @@ class Rect:
 class Hitboxes:
     """Where the interactive elements ended up, for the mouse callback to test against."""
 
+    shutter: Rect
     eye: Rect
-    quit: Rect
+
+
+def halo_alpha(width: int, height: int) -> np.ndarray:
+    """A 0..1 mask that is bright along every edge and gone a little way inside it.
+
+    Built once per window size: the distance to the nearest edge, run through a squared ramp so
+    the light drops off fast enough to stay a rim rather than a fog over the picture.
+    """
+    core = max(2, round(HALO_CORE * height))
+    fall = max(6, round(HALO_FALLOFF * height))
+    xs = np.minimum(np.arange(width), width - 1 - np.arange(width))
+    ys = np.minimum(np.arange(height), height - 1 - np.arange(height))
+    dist = np.minimum(ys[:, None], xs[None, :]).astype(np.float32)
+    ramp = np.clip((core + fall - dist) / fall, 0.0, 1.0)
+    return ramp * ramp * HALO_PEAK
 
 
 class Overlay:
@@ -101,70 +142,94 @@ class Overlay:
         self.width = width
         self.height = height
         scale = height / 480.0  # the official 7" panel is the reference layout
-        self._eye_r = int(52 * scale)
-        self.font_status = _load_font(int(26 * scale))
-        self.font_hint = _load_font(int(14 * scale))
-        self.font_chip = _load_font(int(12 * scale))
-        self.hitboxes = self._layout(scale)
+        self.scale = scale
+        self._button_d = int(BUTTON * height)
+        self.font_timer = _load_font(int(34 * scale))
+        self._alpha = halo_alpha(width, height)
+        self._halos: dict[tuple[int, int, int], Image.Image] = {}
+        self.hitboxes = self._layout()
 
-    def _layout(self, scale: float) -> Hitboxes:
-        """Stack the controls in a rail down the right edge, leaving the picture clear."""
-        w, h = self.width, self.height
-        self.rail_w = int(132 * scale)
-        self.rail_x = w - self.rail_w
-        eye_d = self._eye_r * 2
-        eye = Rect(
-            self.rail_x + (self.rail_w - eye_d) // 2, int(h * 0.30) - eye_d // 2, eye_d, eye_d
+    def _layout(self) -> Hitboxes:
+        """Two thumb-sized discs, one per bottom corner. Everything else is picture."""
+        side = self._button_d
+        margin = int(MARGIN * self.height)
+        y = self.height - side - margin
+        return Hitboxes(
+            shutter=Rect(margin, y, side, side),
+            eye=Rect(self.width - side - margin, y, side, side),
         )
-        quit_side = int(46 * scale)
-        quit = Rect(
-            self.rail_x + (self.rail_w - quit_side) // 2,
-            h - quit_side - int(20 * scale),
-            quit_side,
-            quit_side,
-        )
-        return Hitboxes(eye=eye, quit=quit)
+
+    def _halo(self, colour: tuple[int, int, int]) -> Image.Image:
+        """The edge light in one colour, built once and copied per frame.
+
+        Rebuilding the ramp every frame costs a few milliseconds of a Pi's render budget for a
+        picture that only changes when the session does, so each colour is kept.
+        """
+        cached = self._halos.get(colour)
+        if cached is None:
+            rgba = np.zeros((self.height, self.width, 4), dtype=np.uint8)
+            rgba[:, :, 0], rgba[:, :, 1], rgba[:, :, 2] = colour
+            rgba[:, :, 3] = (self._alpha * 255.0).astype(np.uint8)
+            cached = self._halos[colour] = Image.fromarray(rgba, "RGBA")
+        return cached
 
     def render(
         self,
         state: str,
-        detail: str,
         level: float,
+        elapsed: float | None = None,
+        recording: bool = False,
         flash: float = 0.0,
-        pressed: bool = False,
+        pressed: str | None = None,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array."""
-        layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        layer = self._halo(HALOS.get(state, OFF)).copy()  # the halo is the backmost chrome
         d = ImageDraw.Draw(layer)
         accent = ACCENTS.get(state, ACCENTS[IDLE])
-        scale = self.height / 480.0
 
-        self._draw_rail(d, scale)
-        self._draw_eye(d, state, accent, level, scale, pressed)
-        self._draw_status(d, detail, accent, scale)
-        self._draw_quit(d, scale)
+        self._draw_shutter(d, pressed == "shutter")
+        self._draw_eye(d, state, accent, level, pressed == "eye")
+        if elapsed is not None:
+            self._draw_timer(d, elapsed, recording)
         if flash > 0.0:
             d.rectangle([0, 0, self.width, self.height], fill=(255, 255, 255, int(190 * flash)))
         return np.asarray(layer)
 
     # ---- pieces ----
 
-    def _draw_rail(self, d: ImageDraw.ImageDraw, scale: float) -> None:
-        """A soft vertical scrim behind the control rail, so only the edge is dimmed."""
-        feather = int(46 * scale)
-        for i in range(feather):  # fade in from the picture towards the rail
-            x = self.rail_x - feather + i
-            d.line([(x, 0), (x, self.height)], fill=(*SCRIM, int(150 * (i / feather))))
-        d.rectangle(
-            [self.rail_x, 0, self.width, self.height], fill=(*SCRIM, 150)
+    def _plate(
+        self, d: ImageDraw.ImageDraw, box: Rect, accent: tuple, pressed: bool
+    ) -> None:
+        """The glass disc both controls sit on, lit up while your thumb is still on it."""
+        d.ellipse(
+            [box.x, box.y, box.x + box.w, box.y + box.h],
+            fill=(*accent, 150) if pressed else PLATE,
+            outline=(*accent, 255 if pressed else 130),
+            width=max(2, int(3 * self.scale)) if pressed else max(1, int(2 * self.scale)),
         )
-        d.text(
-            (self.rail_x + self.rail_w // 2, int(24 * scale)),
-            "CYCLOPS",
-            font=self.font_chip,
-            fill=(*MUTED, 230),
-            anchor="mm",
-        )
+
+    def _draw_shutter(self, d: ImageDraw.ImageDraw, pressed: bool) -> None:
+        """Bottom left: take a photo now. A six-bladed aperture, swept the one way round."""
+        box = self.hitboxes.shutter
+        cx, cy = box.center
+        self._plate(d, box, TEXT, pressed)
+
+        ring = int(box.w * 0.28)
+        stroke = max(2, int(4 * self.scale))
+        d.ellipse([cx - ring, cy - ring, cx + ring, cy + ring], outline=(*TEXT, 235), width=stroke)
+        for blade in range(6):
+            outer = math.radians(blade * 60)
+            inner = outer + math.radians(60)  # the sweep is what makes it read as an iris
+            d.line(
+                [
+                    cx + ring * math.cos(outer),
+                    cy + ring * math.sin(outer),
+                    cx + ring * 0.34 * math.cos(inner),
+                    cy + ring * 0.34 * math.sin(inner),
+                ],
+                fill=(*TEXT, 235),
+                width=stroke,
+            )
 
     def _draw_eye(
         self,
@@ -172,20 +237,13 @@ class Overlay:
         state: str,
         accent: tuple,
         level: float,
-        scale: float,
-        pressed: bool = False,
+        pressed: bool,
     ) -> None:
+        """Bottom right: start or stop the agent. Closed while it is down, open while it is up."""
         box = self.hitboxes.eye
         cx, cy = box.center
-        r = self._eye_r
-
-        pad = int(9 * scale)  # button plate, so it reads as something you press
-        d.ellipse(
-            [box.x - pad, box.y - pad, box.x + box.w + pad, box.y + box.h + pad],
-            fill=(*accent, 150) if pressed else (18, 24, 32, 175),
-            outline=(*accent, 255 if pressed else 110),
-            width=3 if pressed else 1,
-        )
+        self._plate(d, box, accent, pressed)
+        r = box.w // 2 - int(11 * self.scale)
 
         # audio-reactive ring, the same idea as ui.html's --level scaling
         ring = int(r * (1.0 + 0.34 * max(0.0, min(1.0, level))))
@@ -197,7 +255,7 @@ class Overlay:
                 start=15,
                 end=165,
                 fill=(*accent, 210),
-                width=max(3, int(6 * scale)),
+                width=max(3, int(6 * self.scale)),
             )
             return
 
@@ -213,50 +271,19 @@ class Overlay:
         gx, gy = cx - int(r * 0.14), cy - int(r * 0.16)
         d.ellipse([gx - gr, gy - gr, gx + gr, gy + gr], fill=(255, 255, 255, 220))
 
-    def _draw_status(
-        self, d: ImageDraw.ImageDraw, detail: str, accent: tuple, scale: float
-    ) -> None:
-        """The state line, wrapped to the rail so it never spills over the picture."""
-        cx = self.rail_x + self.rail_w // 2
-        y = self.hitboxes.eye.y + self.hitboxes.eye.h + int(16 * scale)
-        for line in self._wrap(detail, self.font_hint, self.rail_w - int(16 * scale)):
-            d.text((cx, y), line, font=self.font_hint, fill=(*TEXT, 245), anchor="ma")
-            y += int(self.font_hint.size * 1.35)
-        dot = max(3, int(5 * scale))
-        dy = int(24 * scale)
-        d.ellipse(
-            [cx + int(38 * scale) - dot, dy - dot, cx + int(38 * scale) + dot, dy + dot],
-            fill=(*accent, 255),
-        )
-
-    def _wrap(self, text: str, font: ImageFont.FreeTypeFont, max_w: int) -> list[str]:
-        """Greedy word wrap - PIL has no layout engine, and the rail is narrow."""
-        lines: list[str] = []
-        current = ""
-        for word in text.split():
-            trial = f"{current} {word}".strip()
-            if current and font.getlength(trial) > max_w:
-                lines.append(current)
-                current = word
-            else:
-                current = trial
-        if current:
-            lines.append(current)
-        return lines
-
-    def _draw_quit(self, d: ImageDraw.ImageDraw, scale: float) -> None:
-        box = self.hitboxes.quit
-        cx, cy = box.center
-        arm = int(box.w * 0.22)
-        d.ellipse(
-            [box.x, box.y, box.x + box.w, box.y + box.h], fill=(20, 26, 34, 140)
-        )
-        for dx, dy in (((-arm, -arm), (arm, arm)), ((-arm, arm), (arm, -arm))):
-            d.line(
-                [cx + dx[0], cy + dx[1], cx + dy[0], cy + dy[1]],
-                fill=(*MUTED, 220),
-                width=max(2, int(2.5 * scale)),
-            )
+    def _draw_timer(self, d: ImageDraw.ImageDraw, elapsed: float, recording: bool) -> None:
+        """How long this session has been up, top right - and whether it is being recorded."""
+        whole = int(elapsed)
+        text = f"{whole // 60:02d}:{whole % 60:02d}"
+        margin = int(MARGIN * self.height)
+        x, y = self.width - margin, margin
+        d.text((x, y), text, font=self.font_timer, fill=(*TEXT, 245), anchor="ra")
+        if not recording:
+            return
+        dot = max(3, int(6 * self.scale))
+        dx = x - int(self.font_timer.getlength(text)) - int(16 * self.scale)
+        dy = y + int(self.font_timer.size * 0.52)
+        d.ellipse([dx - dot, dy - dot, dx + dot, dy + dot], fill=(*RECORD_DOT, 255))
 
 
 def composite(frame_bgr: np.ndarray, rgba: np.ndarray) -> np.ndarray:

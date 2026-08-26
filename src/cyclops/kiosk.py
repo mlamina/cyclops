@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -102,6 +103,7 @@ class Kiosk:
         self.running = True
         self._flash_until = 0.0
         self._press_until = 0.0
+        self._pressed: str | None = None  # which button is still showing its tap
         self._pending: str | None = None  # "start"/"stop" until the session catches up
         self._pending_at = 0.0
         self._prev_state = IDLE
@@ -158,12 +160,38 @@ class Kiosk:
         if event != cv2.EVENT_LBUTTONDOWN:
             return
         boxes = self.overlay.hitboxes
-        if boxes.quit.contains(x, y):
-            self._press_until = time.monotonic() + PRESS_SECONDS
-            self.running = False
+        if boxes.shutter.contains(x, y):
+            self._press("shutter")
+            self._snap()
         elif boxes.eye.contains(x, y):
-            self._press_until = time.monotonic() + PRESS_SECONDS
+            self._press("eye")
             self._toggle_session()
+
+    def _press(self, button: str) -> None:
+        self._pressed = button
+        self._press_until = time.monotonic() + PRESS_SECONDS
+
+    def _pressed_now(self) -> str | None:
+        return self._pressed if time.monotonic() < self._press_until else None
+
+    def _snap(self) -> None:
+        """Take a photo straight away, off-thread, and flash the screen as the shutter.
+
+        The capture borrows a frame from the camera we are already previewing (see
+        :func:`cyclops.webcam.set_live_source`), so it costs milliseconds - but it still writes
+        a file, and the render loop must not stall behind a disk that is busy.
+        """
+        self._flash_until = time.monotonic() + FLASH_SECONDS
+        threading.Thread(target=self._capture, name="kiosk-snap", daemon=True).start()
+
+    def _capture(self) -> None:
+        settings = self.controller.settings
+        try:
+            shot = webcam.capture_image(settings.camera_index, save_dir=settings.captures_dir)
+        except WebcamError as exc:
+            print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
+        else:
+            print(f"· snapped {shot.path}", flush=True)
 
     def _toggle_session(self) -> None:
         """Act on the tap and record what we asked for, so the UI can show it at once."""
@@ -176,26 +204,24 @@ class Kiosk:
         else:
             self.controller.stop()
 
-    def _effective(self, raw: str, detail: str) -> tuple[str, str]:
+    def _effective(self, raw: str) -> str:
         """Overlay the tap's intent on the session's own state until the two agree.
 
         Starting is honest on its own - the controller reports ``connecting`` within a
         millisecond. Stopping is not: the session keeps reporting ``listening`` for the ~2.3 s
-        it takes to cancel the task, close the socket and stop the audio streams, so the button
+        it takes to cancel the task, close the socket and stop the audio streams, so the halo
         would look ignored. Until it settles we show what was asked for, not what still is.
         """
         if self._pending is None:
-            return raw, detail
+            return raw
         if self._pending == "stop":
             done = raw in (IDLE, ERROR)  # both mean the session is no longer up
         else:
             done = raw != IDLE  # anything else is an outcome, ERROR included - show it
         if done or time.monotonic() - self._pending_at > PENDING_TIMEOUT_S:
             self._pending = None
-            return raw, detail
-        if self._pending == "stop":
-            return STOPPING, "Stopping…"
-        return STARTING, "Starting…"
+            return raw
+        return STOPPING if self._pending == "stop" else STARTING
 
     # ---- loop ----
 
@@ -217,19 +243,21 @@ class Kiosk:
                 self._size = (width, height)
 
             status = self.controller.status()
-            state, detail = self._effective(str(status["state"]), str(status["detail"]))
+            state = self._effective(str(status["state"]))
             if state == LOOKING and self._prev_state != LOOKING:
                 self._flash_until = time.monotonic() + FLASH_SECONDS
             self._prev_state = state
 
             canvas = fit_to_window(mirror(frame), width, height)
             flash = max(0.0, (self._flash_until - time.monotonic()) / FLASH_SECONDS)
+            elapsed = status["elapsed"]
             chrome = self.overlay.render(
                 state=state,
-                detail=detail,
                 level=float(status["level"]),
+                elapsed=None if elapsed is None else float(elapsed),
+                recording=self.controller.settings.record,
                 flash=flash,
-                pressed=time.monotonic() < self._press_until,
+                pressed=self._pressed_now(),
             )
             cv2.imshow(WINDOW, composite(canvas, chrome))
 
@@ -269,7 +297,8 @@ def main() -> None:
     print(
         f"· cyclops kiosk on camera {camera.index} · font: {platform_font_note()}\n"
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}\n"
-        "  tap the eye to start/stop · q or ESC to quit · f toggles fullscreen",
+        "  tap the shutter (left) to snap · the eye (right) to start/stop\n"
+        "  q or ESC to quit · f toggles fullscreen",
         flush=True,
     )
     kiosk = Kiosk(controller, camera, fullscreen, screen)

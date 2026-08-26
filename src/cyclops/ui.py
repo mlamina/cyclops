@@ -64,6 +64,7 @@ class SessionController:
         self._mic: Microphone | None = None
         self._volume = settings.volume
         self._error = ""
+        self._started_at: float | None = None  # monotonic, for the kiosk's session timer
 
     def set_volume(self, value: float) -> None:
         value = max(0.0, min(1.0, value))
@@ -82,6 +83,7 @@ class SessionController:
             if self._running:
                 return
             self._error = ""
+            self._started_at = time.monotonic()  # the clock starts on the tap, not on connect
             self._thread = threading.Thread(target=self._run, name="cyclops-session", daemon=True)
             self._thread.start()
 
@@ -108,11 +110,13 @@ class SessionController:
             SEARCHING: "Searching the web…",
             ERROR: self._error or "Something went wrong",
         }[state]
+        started = self._started_at
         return {
             "state": state,
             "level": round(level, 3),
             "detail": detail,
             "volume": round(self._volume, 3),
+            "elapsed": None if started is None else round(time.monotonic() - started, 1),
             "epoch": EPOCH,
         }
 
@@ -152,6 +156,7 @@ class SessionController:
             loop.close()
             with self._lock:
                 self._loop = self._task = self._agent = self._speaker = self._mic = None
+                self._started_at = None  # the timer disappears with the session
 
     async def _session(self, loop: asyncio.AbstractEventLoop) -> None:
         s = self.settings
