@@ -40,6 +40,7 @@ import threading
 import time
 import uuid as uuid_module
 from collections import deque
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -56,13 +57,21 @@ if TYPE_CHECKING:  # importing these for real would be a cycle - agent.py import
 
 LOG_NAME = "session.jsonl"
 PAGE_NAME = "session.md"
+SUMMARY_NAME = "summary.md"
 PHOTOS = "photos"
 PARTS = "parts"
 VIDEO = "video.mp4"
 STAMP = "%Y-%m-%d_%H-%M-%S"
 STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobody has named yet
-SLUG_JOIN_S = 8.0  # a hair over slug.SLUG_TIMEOUT_S; it runs alongside the mux, not after it
-MAX_TRANSCRIPT_CHARS = 3000
+SLUG_JOIN_S = 12.0  # a hair over slug.DESCRIBE_TIMEOUT_S; it runs beside the mux, not after
+
+# What a new session is told about the ones before it. One paragraph of the last one, and a
+# sentence each for the last few - enough to pick up a thread, small enough that it cannot
+# crowd out the standing rules it is appended to.
+RECAP_SESSIONS = 5
+RECAP_PARAGRAPH_CHARS = 1400  # slug.MAX_SUMMARY_CHARS; a summary is never trimmed in practice
+RECAP_TITLE_CHARS = 120
+RECAP_MAX_CHARS = 2400  # a backstop on the block as a whole, not a budget anything plans for
 
 # The one session being logged in this process. Set by ``__enter__`` and cleared first thing in
 # ``__exit__``, exactly as ``webcam.set_live_source`` does - and for the same reason: there is
@@ -124,6 +133,7 @@ class SessionLog:
         self.started = datetime.now().astimezone()
         self.dir = settings.sessions_dir / self.started.strftime(STAMP)
         self.slug = ""  # empty until __exit__ has named it
+        self.summary = ""  # the text of summary.md, likewise; empty means none was had
         self.failed = ""  # non-empty once logging gave up; the session carries on regardless
         self._agent = agent
         self._mic = mic
@@ -193,6 +203,7 @@ class SessionLog:
             fields["error"] = f"{type(exc).__name__}: {exc}"
         self.event("end", **fields)
         self._close_handle()
+        self._write_summary()  # before the page, so the page stays the "finished" marker
         self._write_page()  # written last, which is what makes its presence mean "finished"
         self._rename()
         self._report()
@@ -227,24 +238,30 @@ class SessionLog:
             self.event("video", error=recorder.failed)
 
     def _start_naming(self) -> threading.Thread | None:
-        """Ask a small model what this was about, off-thread so the mux hides the wait."""
+        """Ask a small model what this was, off-thread so the mux hides the wait.
+
+        One call answers both questions - what to call the folder, and what happened in it - so
+        the name and the summary inside can never disagree about the same conversation.
+        """
         if self.failed or not self.settings.slug:
             return None
         text = transcript_text(self._records)
         if not text:
             return None
         thread = threading.Thread(
-            target=self._name, name="session-slug", args=(text,), daemon=True
+            target=self._describe, name="session-slug", args=(text,), daemon=True
         )
         thread.start()
         return thread
 
-    def _name(self, text: str) -> None:
+    def _describe(self, text: str) -> None:
         # Imported here rather than at module scope so this module - and, more to the point,
         # `cyclops-sessions --fix` - keeps working on a box with no key and no network.
-        from .slug import name_session
+        from .slug import describe_session
 
-        self.slug = name_session(text, self.settings)
+        described = describe_session(text, self.settings)
+        self.slug = described.slug
+        self.summary = described.page
 
     def _rename(self) -> None:
         """Append the slug. Atomic within a filesystem, so nothing sees a half-named folder."""
@@ -258,6 +275,21 @@ class SessionLog:
         except OSError:
             return  # the end record already says what it should have been called
         self.dir = target
+
+    def _write_summary(self) -> None:
+        """The sentence and the paragraph a small model made of this session.
+
+        Written before :meth:`_write_page`, deliberately: ``session.md`` being present is what
+        tells ``cyclops-sessions --fix`` a session finished, and a summary that landed after it
+        would put a folder in a state that marker does not describe. Missing is a normal
+        outcome - no key, no network, nothing worth summarising.
+        """
+        if self.failed or not self.summary:
+            return
+        try:
+            (self.dir / SUMMARY_NAME).write_text(self.summary, encoding="utf-8")
+        except OSError as exc:
+            self._give_up(f"{type(exc).__name__}: {exc}")
 
     def _write_page(self) -> None:
         if self.failed:
@@ -421,8 +453,15 @@ def read_log(path: Path) -> tuple[list[dict], int]:
     return records, dropped
 
 
-def transcript_text(records: list[dict], limit: int = MAX_TRANSCRIPT_CHARS) -> str:
-    """Just the dialogue, in order, capped from the front - for naming the session."""
+def transcript_text(records: list[dict], limit: int | None = None) -> str:
+    """Just the dialogue, in order - the whole of it, which is what describing one needs.
+
+    Uncapped by default. It used to be trimmed to its first few thousand characters, which was
+    right when all that came of it was a folder name: a conversation says what it is about in
+    its opening minute. A summary is mostly about the other end - what was settled last, what
+    was left open - so the trimming now happens in :func:`cyclops.slug.describe_session`, which
+    takes it out of the middle and keeps both.
+    """
     lines = []
     for record in records:
         kind = record.get("type")
@@ -430,7 +469,128 @@ def transcript_text(records: list[dict], limit: int = MAX_TRANSCRIPT_CHARS) -> s
             lines.append(f"User: {record.get('text', '')}")
         elif kind == "cyclops":
             lines.append(f"Cyclops: {record.get('text', '')}")
-    return "\n".join(lines)[:limit].strip()
+    text = "\n".join(lines).strip()
+    return text if limit is None else text[:limit].strip()
+
+
+# ------------------------------------------------------------------ what came before
+
+
+@dataclass(frozen=True)
+class Recap:
+    """What a new session is handed about the ones before it."""
+
+    text: str = ""  # appended to the model's instructions; "" means the section is left out
+    note: str = ""  # one line for the console, so what was handed over is never a mystery
+
+    def __bool__(self) -> bool:
+        return bool(self.text)
+
+
+def read_summary(folder: Path) -> tuple[str, str]:
+    """``(title, paragraph)`` out of a folder's ``summary.md``, or two empty strings.
+
+    A folder without one is a session that is unfinished, was never described, or - the case
+    that matters most here - is the session running *right now*: its directory exists from the
+    moment it starts and its summary only when it ends. So this doubles as the filter that
+    keeps a session out of its own recap, with no clock or path comparison to get wrong.
+    """
+    try:
+        text = (folder / SUMMARY_NAME).read_text(encoding="utf-8")
+    except OSError:
+        return "", ""
+    title, body = "", []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not title:
+            if stripped.startswith("#"):
+                title = " ".join(stripped.lstrip("#").split())
+            continue
+        body.append(stripped)
+    return title, " ".join(" ".join(body).split())
+
+
+def _trim(text: str, limit: int) -> str:
+    """One line, collapsed and cut at a word boundary."""
+    text = " ".join(text.split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rsplit(" ", 1)[0] + "…"
+
+
+def _started(folder: Path) -> datetime | None:
+    """When a session began, read off the timestamp its folder name still starts with."""
+    try:
+        return datetime.strptime(folder.name[: len("0000-00-00_00-00-00")], STAMP)
+    except ValueError:
+        return None
+
+
+def _ago(when: datetime | None, now: datetime) -> str:
+    """How long ago, in the words someone would actually say out loud."""
+    if when is None:
+        return "at some point"
+    days = (now.date() - when.date()).days
+    if days <= 0:
+        return "earlier today"
+    if days == 1:
+        return "yesterday"
+    if days < 7:
+        return f"{days} days ago"
+    weeks = days // 7
+    return "a week ago" if weeks == 1 else f"{weeks} weeks ago"
+
+
+def _ran_for(folder: Path) -> str:
+    """How long a finished session lasted, or ``""`` if its log will not say."""
+    records, _ = read_log(folder / LOG_NAME)
+    tail = next((r for r in reversed(records) if r.get("type") == "end"), {})
+    span = _span(tail.get("seconds"))
+    return "" if span == "—" else span
+
+
+def recent_context(settings: Settings) -> Recap:
+    """The last session in a paragraph, and the last few in a sentence each.
+
+    Read off the card at the start of every session, so a conversation begins knowing where the
+    previous one got to. Only folders that have a ``summary.md`` count, which is what makes this
+    cheap: a handful of small reads, and only the newest session's log is opened at all.
+    """
+    picked: list[tuple[Path, str, str]] = []
+    for folder in reversed(_folders(settings.sessions_dir)):
+        title, paragraph = read_summary(folder)
+        if not title:
+            continue
+        picked.append((folder, title, paragraph))
+        if len(picked) >= RECAP_SESSIONS:
+            break
+    if not picked:
+        return Recap(note="nothing yet - this is the first session")
+
+    now = datetime.now()
+    folder, title, paragraph = picked[0]
+    when = _started(folder)
+    ran = _ran_for(folder)
+    said = [_ago(when, now)]
+    if when is not None:
+        said.append(f"{when:%A %-d %B}")
+    if ran:
+        said.append(ran)
+    # The title stands in when a summary somehow has no paragraph under it - a sentence about
+    # last time is still worth more to the next conversation than silence about it.
+    lines = [f"Last session ({', '.join(said)}):", _trim(paragraph or title, RECAP_PARAGRAPH_CHARS)]
+
+    if len(picked) > 1:
+        lines += ["", f"The last {len(picked)} sessions, oldest first:"]
+        for earlier, headline, _ in reversed(picked):
+            began = _started(earlier)
+            date = f"{began:%a %-d %b}: " if began is not None else ""
+            lines.append(f"- {date}{_trim(headline, RECAP_TITLE_CHARS)}")
+
+    note = f"last session {said[0]}" + (f" ({ran})" if ran else "")
+    if (others := len(picked) - 1) > 0:
+        note += f" + {others} earlier headline{'' if others == 1 else 's'}"
+    return Recap(text="\n".join(lines).strip()[:RECAP_MAX_CHARS], note=note)
 
 
 def _clock(seconds: object) -> str:
@@ -635,20 +795,41 @@ def _fix(folder: Path) -> list[str]:
     return did
 
 
-def _name(folder: Path, settings: Settings) -> str:
-    from .slug import name_session
+def _describe(folder: Path, settings: Settings) -> tuple[Path, list[str]]:
+    """Give a finished session whatever it is missing: a name, a summary, or both.
 
-    if not STAMPED.match(folder.name):
-        return ""
+    Where the folder ends up comes back with what was done to it, because naming moves it. A
+    folder that already has both costs nothing - it is never sent to the model at all, so this
+    can be run over a whole card repeatedly without paying for it twice.
+    """
+    from .slug import describe_session
+
+    needs_name = bool(STAMPED.match(folder.name))
+    needs_summary = not (folder / SUMMARY_NAME).is_file()
+    if not needs_name and not needs_summary:
+        return folder, []
     records, _ = read_log(folder / LOG_NAME)
-    slug = name_session(transcript_text(records), settings)
-    if not slug:
-        return ""
-    target = folder.with_name(f"{folder.name}_{slug}")
-    if target.exists():
-        return ""
-    folder.rename(target)
-    return target.name
+    described = describe_session(transcript_text(records), settings)
+    did = []
+    # Summary first, then the rename: the folder moves with its contents either way, and this
+    # ordering means a rename that fails still leaves the summary where it belongs.
+    if needs_summary and described.page:
+        try:
+            (folder / SUMMARY_NAME).write_text(described.page, encoding="utf-8")
+            did.append(f"wrote {SUMMARY_NAME}")
+        except OSError as exc:
+            did.append(f"could not write {SUMMARY_NAME} ({exc})")
+    if needs_name and described.slug:
+        target = folder.with_name(f"{folder.name}_{described.slug}")
+        if not target.exists():
+            try:
+                folder.rename(target)
+            except OSError as exc:
+                did.append(f"could not rename ({exc})")
+            else:
+                did.append(f"named {target.name}")
+                folder = target
+    return folder, did
 
 
 def main() -> None:
@@ -671,9 +852,10 @@ def main() -> None:
         if fix:
             for did in _fix(folder):
                 print(f"· {folder.name}: {did}", flush=True)
-        if rename and (named := _name(folder, settings)):
-            print(f"· {folder.name}: named {named}", flush=True)
-            folder = folder.with_name(named)
+        if rename:
+            folder, did = _describe(folder, settings)
+            for one in did:
+                print(f"· {folder.name}: {one}", flush=True)
         print(_summarise(folder))
 
 

@@ -58,6 +58,7 @@ sessions/
   2026-08-26_14-32-05_lego-falcon/
     session.md        the conversation, with the photos in it, for you
     session.jsonl     the same events, one JSON object per line, for a program
+    summary.md        one sentence and one paragraph: what this session was
     video.mp4         the recording (kiosk only)
     photos/
       14-32-40_cyclops.jpg
@@ -70,10 +71,31 @@ same thing for machines: who said what and when, which photos were taken and by 
 searched, and which of Cyclops's turns you interrupted. The session's UUID lives inside both
 files — never in a name, because nobody can read a UUID.
 
-**The name.** The folder is created as `2026-08-26_14-32-05` and renamed when the session ends:
-`gpt-5.4-nano` reads the transcript and picks two to four words for what it was about. With no
-network, no key, or `CYCLOPS_SLUG=0`, the folder simply keeps its date-time name — the naming
-call is capped at six seconds and never blocks a shutdown.
+**The name and the summary.** When a session ends, `gpt-5.4-nano` reads the whole transcript
+once and answers three things at a stroke: two to four words to rename the folder with
+(`2026-08-26_14-32-05` becomes `2026-08-26_14-32-05_lego-falcon`), one sentence saying what the
+session was, and one paragraph of what actually happened — what was decided, what was measured,
+and what was left open. The sentence and the paragraph become `summary.md`. One call for all
+three, so the name and the summary can never disagree about the same conversation.
+
+With no network, no key, or `CYCLOPS_SLUG=0`, the folder keeps its date-time name and gets no
+summary. The call is capped at ten seconds, runs alongside the video mux, and never blocks a
+shutdown; the three answers are read out of the reply independently, so a mangled one costs you
+one of them rather than all three.
+
+**Continuity.** Every new session starts knowing where the last one got to. Cyclops's
+instructions gain a short *Where you left off* section built from the cards already written:
+**the previous session's paragraph in full, plus the one-sentence titles of the last five
+sessions**, oldest first. It is told not to recite it back at you and not to assume today is a
+continuation — you say what today is. It is also told that this is *all* it remembers, so it
+says so plainly rather than inventing something when you ask about a month ago.
+
+Only folders that already have a `summary.md` count, which is what keeps a session out of its
+own recap. The line printed when a session connects says what was handed over:
+
+```
+· continuity: last session yesterday (22m 14s) + 4 earlier headlines
+```
 
 **The video.** H.264 of what the camera saw (raw frames — no mirror, no UI chrome) with a
 **stereo** audio track, **you on the left channel and Cyclops on the right**. The two voices are
@@ -92,12 +114,14 @@ Pi 5 core (measured on a Pi 5 with a C920). Nothing is ever pruned; delete what 
 playable `video-raw.mp4` and the two WAVs, and a `session.jsonl` that ends wherever the power
 did. `cyclops-sessions` lists it as `UNFINISHED`; `cyclops-sessions --fix` muxes the video,
 removes `parts/`, and writes the missing `session.md`. It works entirely offline;
-`cyclops-sessions --name` is the separate step that names anything still unnamed.
+`cyclops-sessions --name` is the separate step that names anything still unnamed and writes any
+`summary.md` that is missing — the one part that does need a key and a network. A folder that
+already has both is never sent to the model, so it is safe to run over a whole card repeatedly.
 
 ```bash
 uv run cyclops-sessions              # what's on the card
 uv run cyclops-sessions --fix        # finish anything left half-done (no network needed)
-uv run cyclops-sessions --fix --name # ...and name what the naming call missed
+uv run cyclops-sessions --fix --name # ...and name/summarise what the live call missed
 ```
 
 Photos taken with no session running (the smoke test, mostly) still land in `captures/`, which
@@ -158,7 +182,7 @@ service. It never copies your local `.env`.
 | `CYCLOPS_OUTPUT_DEVICE`| default        | Speaker: a device index or name substring. |
 | `CYCLOPS_SESSIONS_DIR` | `sessions`     | Where session folders are written (relative to the CWD; `~` ok). |
 | `CYCLOPS_CAPTURES_DIR` | `captures`     | Where a photo goes when no session is running (relative to the CWD; `~` ok). |
-| `CYCLOPS_SLUG`         | `1`            | Name each finished session from its transcript; `0` leaves it date-stamped. |
+| `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_RECORD`       | `1`            | Record the camera into the session folder; `0` disables. |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
 | `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
