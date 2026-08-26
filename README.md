@@ -162,8 +162,22 @@ Its `WorkingDirectory` must match the one the kiosk runs in — `sessions/` is r
 working directory, so starting it elsewhere reports zero sessions with no error anywhere. Edits
 to `.env` need `systemctl restart cyclops-admin` to be picked up.
 
-`deploy/push.sh [user@host]` rsyncs the working tree to the Pi, runs `uv sync` and restarts the
-service. It never copies your local `.env`.
+`deploy/push.sh [user@host]` rsyncs the working tree to the Pi, runs `uv sync`, restarts
+`cyclops-admin`, and then restarts the kiosk via `deploy/start-kiosk.sh`. It never copies your
+local `.env`.
+
+That last step is not a convenience. The kiosk is the only long-lived process here — it runs
+whatever code it loaded at startup — so a deploy that does not restart it leaves the panel on the
+old build while `cyclops-smoke`, the CLI and every other check happily report the new one. The
+restart is verified: `start-kiosk.sh` waits for the process to reappear and exits non-zero if it
+does not, which aborts the push rather than printing a success line over a dead panel. Pass
+`SKIP_KIOSK=1` to opt out — a docs-only push, or when someone is mid-conversation with it.
+
+```bash
+deploy/push.sh                       # deploy, restart both, verify the kiosk came back
+SKIP_KIOSK=1 deploy/push.sh          # leave the running kiosk alone
+ssh dobby@raspberrypi.local cyclops/deploy/start-kiosk.sh   # just restart it
+```
 
 ## Configuration (`.env`)
 

@@ -15,4 +15,16 @@ rsync -a --delete \
 
 ssh "$TARGET" "cd $DEST && ~/.local/bin/uv sync --quiet"
 ssh "$TARGET" "sudo systemctl restart cyclops-admin || true"
-echo "· pushed to $TARGET:$DEST — run ~/start_kiosk.sh there to pick up kiosk changes"
+
+# Restart the kiosk too, and do not merely suggest it. Everything else here either re-reads the
+# code on every invocation (the CLI, the smoke test) or is a service systemd restarts for us; the
+# kiosk is the one long-lived process, so it is the one that silently keeps running the old build
+# while every check you can think to run reports the new one. Deploying without this is how you
+# ship a feature, verify it, and then watch the panel behave as though you had done neither.
+# SKIP_KIOSK=1 opts out - for a docs-only push, or when someone is mid-conversation with it.
+if [ "${SKIP_KIOSK:-0}" = "1" ]; then
+  echo "· pushed to $TARGET:$DEST — kiosk NOT restarted (SKIP_KIOSK=1); the panel has the old code"
+else
+  ssh "$TARGET" "$DEST/deploy/start-kiosk.sh"
+  echo "· pushed to $TARGET:$DEST — admin and kiosk both restarted"
+fi
