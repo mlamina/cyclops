@@ -12,6 +12,7 @@ highgui must own the main thread, so the render loop lives here and everything e
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 import threading
@@ -28,8 +29,10 @@ from typing import BinaryIO
 os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
+import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
 from . import webcam  # noqa: E402
+from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
 from .config import BROWSER_CLOSE_FLAG, ConfigError, load_settings  # noqa: E402
 from .overlay import (  # noqa: E402
@@ -86,6 +89,8 @@ TARGET_FPS = 25
 FLASH_SECONDS = 0.45
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
+SLEEP_AFTER_S = 60.0  # untouched for this long, the panel goes dark until it is tapped again
+SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
 SHUTDOWN_JOIN_S = 15.0  # on exit, a stopping session may still be muxing its recording
 BROWSERS = ("chromium-browser", "chromium")  # same probe order as cyclops-ui
 ADMIN_POLL_S = 0.2  # how often the watcher looks for the page asking to be closed
@@ -109,6 +114,11 @@ CHROME_FLAGS = (
     "--password-store=basic",  # never block waiting on a keyring
     "--force-device-scale-factor=1",  # 1 CSS px == 1 panel px, so the page's layout maths holds
 )
+
+
+def _black(width: int, height: int) -> np.ndarray:
+    """A blank frame - for the dark panel, and for the moment the camera is still coming back."""
+    return np.zeros((height, width, 3), dtype=np.uint8)
 
 
 def _admin_reachable(url: str) -> bool:
@@ -169,6 +179,7 @@ class Kiosk:
         self.camera = camera
         self.fullscreen = fullscreen
         self.overlay: Overlay | None = None
+        self.backlight = Backlight()  # the panel's light, off while it sleeps
         self.running = True
         self._flash_until = 0.0
         self._press_until = 0.0
@@ -176,6 +187,9 @@ class Kiosk:
         self._pending: str | None = None  # "start"/"stop" until the session catches up
         self._pending_at = 0.0
         self._prev_state = IDLE
+        self._touched_at = time.monotonic()  # last tap, for the idle blank
+        self._asleep = False  # dark panel: the camera is released until it is touched
+        self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._browser: subprocess.Popen | None = None  # the admin page, when it is open
         self._admin_busy = threading.Event()  # set from the tap until the browser is gone
         self._refocus = threading.Event()  # asks the render loop to re-assert fullscreen
@@ -230,6 +244,12 @@ class Kiosk:
         if self.overlay is None:
             return
         if event != cv2.EVENT_LBUTTONDOWN:
+            return
+        self._touched_at = time.monotonic()
+        if self._asleep:
+            # The tap that wakes the panel is spent waking it. With the preview dark you cannot
+            # see what you are aiming at, so it must not also fire whatever sits underneath.
+            self._wake()
             return
         boxes = self.overlay.hitboxes
         if boxes.shutter.contains(x, y):
@@ -376,6 +396,53 @@ class Kiosk:
             return raw
         return STOPPING if self._pending == "stop" else STARTING
 
+    # ---- sleep ----
+
+    def _sleeping(self, state: str) -> bool:
+        """Should the panel be dark? True once nothing has touched it for a while.
+
+        A live session counts as company even when nobody is touching the glass - the halo and
+        the timer are a conversation's only feedback, and blanking them mid-sentence would read
+        as a crash - and so does an open admin page, which is covering the panel itself. Only an
+        idle kiosk goes dark, and only a tap brings it back (see :meth:`_on_mouse`).
+        """
+        now = time.monotonic()
+        if state not in (IDLE, ERROR) or self._admin_busy.is_set():
+            self._touched_at = now
+        elif not self._asleep and now - self._touched_at > SLEEP_AFTER_S:
+            self._sleep()
+        return self._asleep
+
+    def _sleep(self) -> None:
+        """Put the light out and hand the camera back.
+
+        Between them they are most of what an idle kiosk costs: the panel's backlight, and a
+        camera streaming 25 fps at a room nobody is in. Both cost a reopen on the way back.
+        Only ever called with the session down, so nothing is mid-recording and the agent's
+        tool has no shot to take.
+        """
+        self._asleep = True
+        self.backlight.off()  # the light first: on a battery it is the expensive half
+        self.camera.stop()
+        print("· idle: light off, camera released - tap to wake", flush=True)
+
+    def _wake(self) -> None:
+        """Light the panel, reopen the camera, and start drawing again.
+
+        highgui dispatches mouse callbacks from inside ``waitKey``, so this runs on the render
+        thread and the reopen simply stalls one frame that was black anyway. If the device does
+        not come back we stay dark rather than half-woken, and the next tap tries again.
+        """
+        self.backlight.on()  # light first, so the panel answers the tap before the camera can
+        try:
+            self.camera.start()
+        except WebcamError as exc:
+            print(f"· camera did not come back: {exc}", file=sys.stderr, flush=True)
+            self.backlight.off()  # lit with nothing to show is worse than dark; stay asleep
+            return
+        self._camera_on_at = time.monotonic()
+        self._asleep = False
+
     # ---- loop ----
 
     def run(self) -> None:
@@ -390,38 +457,63 @@ class Kiosk:
                 # highgui is main-thread only, so the browser watcher cannot do this itself.
                 self._refocus.clear()
                 self._apply_fullscreen()
-            frame = self.camera.frame()
-            if frame is None:
-                break
 
-            width, height = self._window_size((frame.shape[1], frame.shape[0]))
+            status = self.controller.status()
+            state = self._effective(str(status["state"]))
+            asleep = self._sleeping(state)
+
+            frame = None  # nothing to draw: the camera is either off or still coming back
+            if not asleep:
+                got = self.camera.latest()
+                if got is None:
+                    break  # it has never delivered a frame; there is nothing to wait for
+                if got[1] >= self._camera_on_at:
+                    # A reopened device keeps handing back the frame it stopped on, and that
+                    # is last minute's room. Anything older than the reopen is not shown.
+                    frame = got[0]
+
+            fallback = self._size if frame is None else (frame.shape[1], frame.shape[0])
+            width, height = self._window_size(fallback)
             if (width, height) != self._size or self.overlay is None:
                 self.overlay = Overlay(width, height)
                 self._size = (width, height)
 
-            status = self.controller.status()
-            state = self._effective(str(status["state"]))
             if state == LOOKING and self._prev_state != LOOKING:
                 self._flash_until = time.monotonic() + FLASH_SECONDS
             self._prev_state = state
 
-            canvas = fit_to_window(mirror(frame), width, height)
-            flash = max(0.0, (self._flash_until - time.monotonic()) / FLASH_SECONDS)
-            elapsed = status["elapsed"]
-            chrome = self.overlay.render(
-                state=state,
-                level=float(status["level"]),
-                elapsed=None if elapsed is None else float(elapsed),
-                recording=self.controller.settings.record,
-                flash=flash,
-                pressed=self._pressed_now(),
-            )
-            cv2.imshow(WINDOW, composite(canvas, chrome))
+            if asleep:
+                cv2.imshow(WINDOW, _black(width, height))  # no picture, and no chrome either
+            else:
+                # The chrome is drawn through the wake-up: the buttons must answer the tap even
+                # while the camera is still opening behind them.
+                canvas = (
+                    _black(width, height)
+                    if frame is None
+                    else fit_to_window(mirror(frame), width, height)
+                )
+                flash = max(0.0, (self._flash_until - time.monotonic()) / FLASH_SECONDS)
+                elapsed = status["elapsed"]
+                chrome = self.overlay.render(
+                    state=state,
+                    level=float(status["level"]),
+                    elapsed=None if elapsed is None else float(elapsed),
+                    recording=self.controller.settings.record,
+                    flash=flash,
+                    pressed=self._pressed_now(),
+                )
+                cv2.imshow(WINDOW, composite(canvas, chrome))
 
             spent = time.monotonic() - started
             # While the browser covers the panel we are compositing frames nobody can see,
-            # against the very cold start we are waiting on. Give the core back.
-            budget = 1.0 / ADMIN_FPS if self._admin_busy.is_set() else frame_budget
+            # against the very cold start we are waiting on. Give the core back. A dark panel
+            # is cheaper still - one black frame, redrawn only to keep taps and keys answered.
+            if self._asleep:
+                budget = 1.0 / SLEEP_FPS
+            elif self._admin_busy.is_set():
+                budget = 1.0 / ADMIN_FPS
+            else:
+                budget = frame_budget
             wait_ms = max(1, int((budget - spent) * 1000))
             key = cv2.waitKey(wait_ms) & 0xFF
             if key in (27, ord("q")):  # ESC or q
@@ -454,21 +546,29 @@ def main() -> None:
         sys.exit(1)
 
     webcam.set_live_source(camera)  # the agent's tool now shoots from this same camera
+    kiosk = Kiosk(controller, camera, fullscreen, screen)
+    kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
+    # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
+    # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     print(
         f"· cyclops kiosk on camera {camera.index} · font: {platform_font_note()}\n"
-        f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}\n"
+        f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
+        f" · backlight: {kiosk.backlight.note}\n"
         "  tap the shutter (bottom left) to snap · the eye (bottom right) to start/stop\n"
         "  the gear (top left) opens the admin page\n"
+        f"  after {SLEEP_AFTER_S:g}s untouched the light goes off and the camera is released\n"
+        "  any tap wakes it\n"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,
     )
-    kiosk = Kiosk(controller, camera, fullscreen, screen)
     try:
         kiosk.run()
     except KeyboardInterrupt:
         print("\n· bye", flush=True)
     finally:
         kiosk.close_browser()
+        kiosk.backlight.on()  # never leave the panel dark behind us
         webcam.set_live_source(None)
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away
