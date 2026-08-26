@@ -9,6 +9,8 @@ returns its rectangle, so a tap can be resolved without a second layout.
 The layout is deliberately tiny: the picture runs full-bleed to all four edges, a rim of light
 around those edges carries the session state, and there are exactly two controls, one in each
 bottom corner - shutter on the left, session on the right - both sized for a thumb in a glove.
+A third, smaller disc sits in the free top-left corner and opens the admin page; it is drawn
+half the size of the others so it reads as secondary and never competes for the thumb.
 """
 
 from __future__ import annotations
@@ -69,6 +71,7 @@ HALO_CORE = 0.008  # fraction of the height held at full brightness, hard agains
 HALO_FALLOFF = 0.038  # and how far the light reaches inwards before it is gone
 HALO_PEAK = 0.85  # alpha at the very edge; the picture keeps the other 95% of itself
 BUTTON = 0.30  # button diameter as a fraction of the screen height
+ADMIN_BUTTON = 0.18  # the admin disc is smaller: still a comfortable tap, clearly secondary
 MARGIN = 0.046  # and how far they sit off the corner
 
 _FONT_CANDIDATES = (
@@ -118,6 +121,7 @@ class Hitboxes:
 
     shutter: Rect
     eye: Rect
+    admin: Rect
 
 
 def halo_alpha(width: int, height: int) -> np.ndarray:
@@ -144,19 +148,25 @@ class Overlay:
         scale = height / 480.0  # the official 7" panel is the reference layout
         self.scale = scale
         self._button_d = int(BUTTON * height)
+        self._admin_d = int(ADMIN_BUTTON * height)
         self.font_timer = _load_font(int(34 * scale))
         self._alpha = halo_alpha(width, height)
         self._halos: dict[tuple[int, int, int], Image.Image] = {}
         self.hitboxes = self._layout()
 
     def _layout(self) -> Hitboxes:
-        """Two thumb-sized discs, one per bottom corner. Everything else is picture."""
+        """Two thumb discs along the bottom, a small one top left. The rest is picture.
+
+        Top *right* is not free - the session timer lives there - so the admin disc takes the
+        opposite corner, where nothing else has ever been drawn.
+        """
         side = self._button_d
         margin = int(MARGIN * self.height)
         y = self.height - side - margin
         return Hitboxes(
             shutter=Rect(margin, y, side, side),
             eye=Rect(self.width - side - margin, y, side, side),
+            admin=Rect(margin, margin, self._admin_d, self._admin_d),
         )
 
     def _halo(self, colour: tuple[int, int, int]) -> Image.Image:
@@ -187,6 +197,7 @@ class Overlay:
         d = ImageDraw.Draw(layer)
         accent = ACCENTS.get(state, ACCENTS[IDLE])
 
+        self._draw_admin(d, pressed == "admin")
         self._draw_shutter(d, pressed == "shutter")
         self._draw_eye(d, state, accent, level, pressed == "eye")
         if elapsed is not None:
@@ -226,6 +237,31 @@ class Overlay:
                     cy + ring * math.sin(outer),
                     cx + ring * 0.34 * math.cos(inner),
                     cy + ring * 0.34 * math.sin(inner),
+                ],
+                fill=(*TEXT, 235),
+                width=stroke,
+            )
+
+    def _draw_admin(self, d: ImageDraw.ImageDraw, pressed: bool) -> None:
+        """Top left: open the admin page. A gear, on the same glass disc as the others."""
+        box = self.hitboxes.admin
+        cx, cy = box.center
+        self._plate(d, box, TEXT, pressed)
+
+        ring = int(box.w * 0.24)
+        stroke = max(2, int(3 * self.scale))
+        d.ellipse([cx - ring, cy - ring, cx + ring, cy + ring], outline=(*TEXT, 235), width=stroke)
+        hub = max(2, int(ring * 0.34))
+        d.ellipse([cx - hub, cy - hub, cx + hub, cy + hub], fill=(*TEXT, 235))
+        tooth = ring * 0.42
+        for index in range(8):  # eight teeth read as a gear even at 86 px
+            angle = math.radians(index * 45)
+            d.line(
+                [
+                    cx + ring * math.cos(angle),
+                    cy + ring * math.sin(angle),
+                    cx + (ring + tooth) * math.cos(angle),
+                    cy + (ring + tooth) * math.sin(angle),
                 ],
                 fill=(*TEXT, 235),
                 width=stroke,

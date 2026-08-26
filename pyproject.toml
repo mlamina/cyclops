@@ -5,6 +5,8 @@ description = "Low-latency speech-to-speech agent on the OpenAI Realtime API tha
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "django>=6.1,<7",
+    "gunicorn>=23",
     "numpy>=2.5.2",
     "openai[realtime]>=3.3.1",
     "pillow>=12.3.0",
@@ -20,6 +22,7 @@ cyclops-smoke = "cyclops.smoke:main"
 cyclops-devices = "cyclops.app:devices"
 cyclops-ui = "cyclops.ui:main"
 cyclops-kiosk = "cyclops.kiosk:main"
+cyclops-admin = "cyclops.admin.server:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -68,6 +68,42 @@ interrupted session leaves a playable `video.mp4` and two WAVs behind rather tha
 Only the kiosk records: `cyclops` and `cyclops-ui` open the camera per photo instead of holding it
 open, so there is no continuous video for them to record.
 
+## Admin page
+
+`cyclops-admin` serves a small Django status page on **port 80**, so from anywhere on your
+network you can open `http://raspberrypi.local/` and see how the box is doing: **CPU
+temperature**, **memory**, **disk**, and **how many sessions have been recorded**. It is
+read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
+
+The temperature tile is colour-coded on the Pi 5's own limits: green below 70 °C, orange from
+70, red from **80 °C**, where the firmware starts capping the clock. A permanently red tile is
+not a bug in the page; it means the board wants better cooling.
+
+On the kiosk, the **gear in the top-left corner** opens the same page fullscreen in Chromium on
+the panel, and the page grows a full-width **Close** bar to get you back to the camera. That bar
+only appears for the Pi's own browser — from a laptop there is nothing to close. If the panel
+ever gets stuck showing the browser, `touch ~/.cache/cyclops/browser-close` over ssh takes it
+down; so does quitting the kiosk.
+
+```bash
+uv run cyclops-admin --port=8080      # try it anywhere; port 80 needs a capability (below)
+```
+
+Install it as an always-on service on the Pi:
+
+```bash
+sudo deploy/install-admin.sh          # unit file, enable, start
+systemctl status cyclops-admin
+```
+
+The unit runs as your own user and binds port 80 with `CAP_NET_BIND_SERVICE` rather than root.
+Its `WorkingDirectory` must match the one the kiosk runs in — `recordings/` is relative to the
+working directory, so starting it elsewhere reports zero sessions with no error anywhere. Edits
+to `.env` need `systemctl restart cyclops-admin` to be picked up.
+
+`deploy/push.sh [user@host]` rsyncs the working tree to the Pi, runs `uv sync` and restarts the
+service. It never copies your local `.env`.
+
 ## Configuration (`.env`)
 
 | Variable               | Default        | Meaning                                                    |
@@ -88,6 +124,8 @@ open, so there is no continuous video for them to record.
 | `CYCLOPS_RECORDINGS_DIR` | `recordings` | Where session recordings are written (relative to the CWD; `~` ok). |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
 | `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
+| `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |
+| `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. The kiosk's gear button opens the same port. |
 
 Variables already exported in your shell take precedence over `.env`. List audio devices with `uv run cyclops-devices`.
 

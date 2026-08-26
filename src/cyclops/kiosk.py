@@ -12,10 +12,13 @@ highgui must own the main thread, so the render loop lives here and everything e
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import threading
 import time
+import urllib.request
 from pathlib import Path
+from typing import BinaryIO
 
 # The opencv-python wheel bundles Qt but no fonts, so Qt prints a five-line QFontDatabase
 # complaint on every window. Only the blanket rule silences it - the narrower
@@ -28,7 +31,7 @@ import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 
 from . import webcam  # noqa: E402
 from .camera import CameraSource  # noqa: E402
-from .config import ConfigError, load_settings  # noqa: E402
+from .config import BROWSER_CLOSE_FLAG, ConfigError, load_settings  # noqa: E402
 from .overlay import (  # noqa: E402
     IDLE,
     LOOKING,
@@ -84,6 +87,72 @@ FLASH_SECONDS = 0.45
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
 SHUTDOWN_JOIN_S = 15.0  # on exit, a stopping session may still be muxing its recording
+BROWSERS = ("chromium-browser", "chromium")  # same probe order as cyclops-ui
+ADMIN_POLL_S = 0.2  # how often the watcher looks for the page asking to be closed
+ADMIN_FPS = 5  # render rate while the browser covers the panel - nobody can see us anyway
+ADMIN_MAX_S = 15 * 60  # a window nobody closed comes down rather than stranding the panel
+ADMIN_PROBE_S = 1.0  # how long the admin service gets to answer before we refuse the tap
+BROWSER_GRACE_S = 5.0  # how long Chromium gets to go quietly before it is killed
+# Its own profile, distinct from the one cyclops-ui's kiosk uses, and under ~/.cache rather than
+# /tmp so the second open is a warm start instead of a first-run.
+CHROME_PROFILE = Path.home() / ".cache" / "cyclops" / "admin-profile"
+CHROME_LOG = Path.home() / ".cache" / "cyclops" / "chromium.log"
+CHROME_FLAGS = (
+    "--kiosk",  # fullscreen, no omnibox, no tab strip - the page carries its own way out
+    "--noerrdialogs",
+    "--disable-infobars",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-session-crashed-bubble",  # a terminated browser must not nag on the next open
+    "--disable-features=Translate",
+    "--disable-component-update",
+    "--password-store=basic",  # never block waiting on a keyring
+    "--force-device-scale-factor=1",  # 1 CSS px == 1 panel px, so the page's layout maths holds
+)
+
+
+def _admin_reachable(url: str) -> bool:
+    """Is the admin service actually answering?
+
+    A kiosk-mode browser has no address bar and no back button, so a fullscreen "this site can't
+    be reached" would leave the panel with nothing to tap. If the service is down, do nothing.
+    """
+    try:
+        with urllib.request.urlopen(url, timeout=ADMIN_PROBE_S):
+            return True
+    except (OSError, ValueError):
+        return False
+
+
+def _spawn_browser(url: str, log: BinaryIO) -> subprocess.Popen | None:
+    """Chromium, fullscreen and chrome-less, over the kiosk window. None if none is installed.
+
+    Its output goes to a file rather than /dev/null: the two usual reasons the button appears to
+    do nothing - no Wayland socket because the kiosk was started over ssh, or a corrupt profile -
+    both announce themselves there and nowhere else.
+    """
+    flags = list(CHROME_FLAGS)
+    if os.environ.get("WAYLAND_DISPLAY"):  # the Pi's labwc session; omitted elsewhere
+        flags.insert(0, "--ozone-platform=wayland")
+    flags.append(f"--user-data-dir={CHROME_PROFILE}")
+    for browser in BROWSERS:
+        try:
+            return subprocess.Popen([browser, *flags, url], stdout=log, stderr=log)
+        except FileNotFoundError:
+            continue
+    print(f"· no chromium found; the admin page is at {url}", file=sys.stderr, flush=True)
+    return None
+
+
+def _stop_browser(proc: subprocess.Popen) -> None:
+    """Ask Chromium to go, then insist."""
+    try:
+        proc.terminate()
+        proc.wait(BROWSER_GRACE_S)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+    except OSError:
+        pass
 
 
 class Kiosk:
@@ -107,6 +176,9 @@ class Kiosk:
         self._pending: str | None = None  # "start"/"stop" until the session catches up
         self._pending_at = 0.0
         self._prev_state = IDLE
+        self._browser: subprocess.Popen | None = None  # the admin page, when it is open
+        self._admin_busy = threading.Event()  # set from the tap until the browser is gone
+        self._refocus = threading.Event()  # asks the render loop to re-assert fullscreen
         self._size = (0, 0)
         self.screen = screen
 
@@ -166,12 +238,22 @@ class Kiosk:
         elif boxes.eye.contains(x, y):
             self._press("eye")
             self._toggle_session()
+        elif boxes.admin.contains(x, y):
+            self._press("admin")
+            self._open_admin()
 
     def _press(self, button: str) -> None:
         self._pressed = button
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
+        """Which button to draw as held. The admin disc stays lit while its browser is up.
+
+        Chromium takes two to four seconds to appear on a Pi. Without this the disc goes dark
+        180 ms after the tap and the panel looks like it ignored you.
+        """
+        if self._admin_busy.is_set():
+            return "admin"
         return self._pressed if time.monotonic() < self._press_until else None
 
     def _snap(self) -> None:
@@ -192,6 +274,77 @@ class Kiosk:
             print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
         else:
             print(f"· snapped {shot.path}", flush=True)
+
+    # ---- admin page ----
+
+    def _open_admin(self) -> None:
+        """Hand the panel to Chromium, off-thread - highgui owns the main one.
+
+        Same shape as :meth:`_snap`. The busy flag means a second tap during the cold start is
+        ignored rather than starting a second browser: sharing a profile directory, the second
+        invocation would hand its URL to the first and exit at once, leaving us holding a dead
+        pid and a fullscreen window nothing can close.
+        """
+        if self._admin_busy.is_set():
+            return
+        self._admin_busy.set()
+        threading.Thread(target=self._admin_session, name="kiosk-admin", daemon=True).start()
+
+    def _admin_session(self) -> None:
+        """The whole life of the admin window: probe, launch, wait, take it back down."""
+        url = f"http://127.0.0.1:{self.controller.settings.admin_port}/"
+        try:
+            if not _admin_reachable(url):
+                print(
+                    f"· admin page not answering on {url} (systemctl status cyclops-admin)",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return
+            BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            BROWSER_CLOSE_FLAG.unlink(missing_ok=True)  # a stale note must not close this one
+            CHROME_LOG.parent.mkdir(parents=True, exist_ok=True)
+            launched_at = time.time()
+            with CHROME_LOG.open("wb") as log:
+                proc = _spawn_browser(url, log)
+                if proc is None:
+                    return
+                self._browser = proc
+                print(f"· admin page open ({url})", flush=True)
+                self._watch_browser(proc, launched_at)
+        finally:
+            self._browser = None
+            BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
+            self._admin_busy.clear()
+            self._refocus.set()
+            print("· admin page closed", flush=True)
+
+    def _watch_browser(self, proc: subprocess.Popen, launched_at: float) -> None:
+        """Wait for the page to ask to close, for the browser to die, or for the hard cap.
+
+        The page cannot close a window it did not open, so its Close button drops
+        :data:`~cyclops.config.BROWSER_CLOSE_FLAG` and the decision is taken here, where the
+        process handle lives. The note counts only if it was written after we launched, so one
+        left behind by an earlier round can never shut this window the moment it opens.
+        """
+        deadline = time.monotonic() + ADMIN_MAX_S
+        while proc.poll() is None:
+            try:
+                asked = BROWSER_CLOSE_FLAG.stat().st_mtime >= launched_at
+            except OSError:
+                asked = False
+            if asked or time.monotonic() > deadline:
+                break
+            time.sleep(ADMIN_POLL_S)
+        _stop_browser(proc)
+
+    def close_browser(self) -> None:
+        """Take the admin page down with the kiosk, so nothing is left covering the panel."""
+        proc = self._browser
+        if proc is not None and proc.poll() is None:
+            _stop_browser(proc)
+
+    # ---- session ----
 
     def _toggle_session(self) -> None:
         """Act on the tap and record what we asked for, so the UI can show it at once."""
@@ -233,6 +386,10 @@ class Kiosk:
 
         while self.running:
             started = time.monotonic()
+            if self._refocus.is_set():
+                # highgui is main-thread only, so the browser watcher cannot do this itself.
+                self._refocus.clear()
+                self._apply_fullscreen()
             frame = self.camera.frame()
             if frame is None:
                 break
@@ -262,7 +419,10 @@ class Kiosk:
             cv2.imshow(WINDOW, composite(canvas, chrome))
 
             spent = time.monotonic() - started
-            wait_ms = max(1, int((frame_budget - spent) * 1000))
+            # While the browser covers the panel we are compositing frames nobody can see,
+            # against the very cold start we are waiting on. Give the core back.
+            budget = 1.0 / ADMIN_FPS if self._admin_busy.is_set() else frame_budget
+            wait_ms = max(1, int((budget - spent) * 1000))
             key = cv2.waitKey(wait_ms) & 0xFF
             if key in (27, ord("q")):  # ESC or q
                 self.running = False
@@ -297,7 +457,8 @@ def main() -> None:
     print(
         f"· cyclops kiosk on camera {camera.index} · font: {platform_font_note()}\n"
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}\n"
-        "  tap the shutter (left) to snap · the eye (right) to start/stop\n"
+        "  tap the shutter (bottom left) to snap · the eye (bottom right) to start/stop\n"
+        "  the gear (top left) opens the admin page\n"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,
     )
@@ -307,6 +468,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\n· bye", flush=True)
     finally:
+        kiosk.close_browser()
         webcam.set_live_source(None)
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away

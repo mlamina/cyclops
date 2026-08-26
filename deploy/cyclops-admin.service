@@ -1,0 +1,60 @@
+# The cyclops status page, on port 80, from boot - before anyone logs in, so the kiosk's very
+# first tap works. Install with deploy/install-admin.sh.
+#
+# Host-specific lines: User=, Group=, WorkingDirectory=, ExecStart=.
+
+[Unit]
+Description=Cyclops status page (port 80)
+# network.target, not network-online.target: binding 0.0.0.0:80 does not need a routable
+# address, and waiting for one costs 10-30 s of boot on a Pi for no benefit.
+After=network.target
+# Never give up. If something transiently holds :80 (docker, a stray python), keep retrying.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=dobby
+Group=dobby
+# MUST match the CWD the kiosk runs in. recordings_dir is CWD-relative and deliberately not
+# resolved (see cyclops/config.py), and load_settings() finds .env by walking up from the CWD -
+# start this anywhere else and the page reports zero sessions with no error anywhere.
+WorkingDirectory=/home/dobby/cyclops
+ExecStart=/home/dobby/cyclops/.venv/bin/cyclops-admin
+Environment=PYTHONUNBUFFERED=1
+Environment=DJANGO_SETTINGS_MODULE=cyclops.admin.settings
+
+# --- port 80 without running as root ---
+# Ambient capabilities survive execve and are compatible with NoNewPrivileges: that blocks
+# *gaining* privilege via setuid, while these are handed over by systemd before the exec.
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=yes
+
+# --- hardening that does not break anything here ---
+ProtectSystem=full
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+
+# --- deliberately NOT set; each of these silently breaks something ---
+# ProtectHome=          hides /home/dobby: no working directory, no venv, no recordings/
+# ProtectSystem=strict  read-only /home; would need ReadWritePaths=/home/dobby/.cache/cyclops
+# PrivateTmp=           a private /tmp. Harmless only because the kiosk's close flag lives in
+#                       ~/.cache; if it ever moves to /tmp this would make the kiosk blind to
+#                       the file this service writes, with no error on either side.
+
+# --- never compete with the x264 encoder or the realtime audio thread ---
+Nice=10
+CPUWeight=20
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

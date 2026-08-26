@@ -8,6 +8,12 @@ from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 
+# Where the kiosk's admin browser is told to close. The admin service drops this file and
+# the kiosk - which owns the Chromium process - sees it and tears the window down, so the
+# process that spawned the browser is the one that kills it. Deliberately not under /tmp: a
+# ``PrivateTmp=`` on the service would silently give the two sides different views of it.
+BROWSER_CLOSE_FLAG = Path.home() / ".cache" / "cyclops" / "browser-close"
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -31,6 +37,8 @@ class Settings:
     recordings_dir: Path = Path("recordings")
     record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 640x480
     record_width: int = 640  # recorded video is fit to this width, never upscaled
+    admin_host: str = "0.0.0.0"  # the admin page is meant to be read from the LAN, not just here
+    admin_port: int = 80  # so it opens with a bare hostname
 
 
 def _env(name: str) -> str | None:
@@ -92,19 +100,23 @@ def _lang(name: str) -> str | None:
     return None if raw.lower() == "auto" else raw.lower()
 
 
-def load_settings() -> Settings:
-    """Load the nearest ``.env`` (searching upward from the CWD) and build Settings."""
+def load_settings(*, require_api_key: bool = True) -> Settings:
+    """Load the nearest ``.env`` (searching upward from the CWD) and build Settings.
+
+    ``require_api_key=False`` is for ``cyclops-admin``, which never talks to OpenAI and has no
+    business holding a key - it only wants the paths and the port.
+    """
     if dotenv_path := find_dotenv(usecwd=True):
         load_dotenv(dotenv_path)
 
     api_key = _env("OPENAI_API_KEY")
-    if not api_key:
+    if not api_key and require_api_key:
         raise ConfigError(
             "OPENAI_API_KEY is not set. Put it in a .env file next to pyproject.toml "
             "(see .env.example) or export it in your shell."
         )
     return Settings(
-        api_key=api_key,
+        api_key=api_key or "",
         model=_env("CYCLOPS_MODEL") or Settings.model,
         voice=_env("CYCLOPS_VOICE") or Settings.voice,
         volume=_volume("CYCLOPS_VOLUME"),
@@ -122,4 +134,6 @@ def load_settings() -> Settings:
         ).expanduser(),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,
         record_width=_int("CYCLOPS_RECORD_WIDTH") or Settings.record_width,
+        admin_host=_env("CYCLOPS_ADMIN_HOST") or Settings.admin_host,
+        admin_port=_int("CYCLOPS_ADMIN_PORT") or Settings.admin_port,
     )

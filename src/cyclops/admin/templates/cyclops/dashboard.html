@@ -1,0 +1,182 @@
+{% comment %}
+The whole admin interface: one self-contained file, no external assets, laid out for the Pi's
+800x480 panel first. The close bar exists only for the kiosk's own browser - a laptop on the LAN
+has nothing to close, and a button that closed a browser the clicker cannot see is a foot-gun.
+{% endcomment %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Cyclops · status</title>
+<style>
+  :root {
+    --bg: #0c0f14;
+    --panel: #141a22;
+    --text: #e7edf4;
+    --muted: #8b97a6;
+    --ok: #37e0c4;      /* the same teal the kiosk overlay uses for "listening" */
+    --warn: #ffb84d;    /* ...amber for "looking" */
+    --hot: #ff5d5d;     /* ...red for "error" */
+    /* 1u == 1px at 800x480, growing with whichever dimension is tighter - so a short, wide
+       window never overflows its rows the way a bare vw would. Same trick as the kiosk chrome,
+       which pins its own layout to a 480 px reference height. */
+    --u: clamp(0.7px, min(0.125vw, 0.2083vh), 2px);
+  }
+  * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  ::-webkit-scrollbar { width: 0; height: 0; }
+  html, body {
+    margin: 0;
+    height: 100vh;
+    height: 100dvh;   /* the pair, not dvh alone: an older engine drops what it cannot parse */
+    overflow: hidden;
+    overscroll-behavior: none;
+    touch-action: manipulation;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;   /* tiles take everything the close bar doesn't */
+    gap: 2px;
+    transition: opacity .3s;
+  }
+  body.kiosk { cursor: none; }
+  body.offline { opacity: .45; }    /* the server went away; what is on screen is stale */
+
+  /* Full-bleed 2x2. The 2 px gaps are the only rules on the page - every other pixel is tile. */
+  .tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    gap: 2px;
+    min-height: 0;    /* grid children default to min-height:auto and refuse to shrink */
+  }
+  .tile {
+    background: var(--panel);
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    padding: 0 calc(10 * var(--u));
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .value {
+    font-size: calc(88 * var(--u));
+    font-weight: 700;
+    line-height: .92;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .label {
+    font-size: calc(16 * var(--u));
+    letter-spacing: .2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: calc(8 * var(--u));
+  }
+  .detail { font-size: calc(13 * var(--u)); color: var(--muted); opacity: .68; margin-top: calc(3 * var(--u)); }
+
+  /* Temperature is the one number that earns colour: a Pi 5 starts capping its clock at 80 C. */
+  .tile[data-band="ok"]   { --tint: var(--ok); }
+  .tile[data-band="warn"] { --tint: var(--warn); }
+  .tile[data-band="hot"]  { --tint: var(--hot); }
+  .tile[data-band="ok"], .tile[data-band="warn"], .tile[data-band="hot"] {
+    background: color-mix(in srgb, var(--tint) 13%, var(--panel));
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tint) 40%, transparent);
+  }
+  .tile[data-band="ok"] .value,
+  .tile[data-band="warn"] .value,
+  .tile[data-band="hot"] .value { color: var(--tint); }
+  .tile[data-band="hot"] .label { color: var(--tint); }
+
+  /* The biggest target on the screen: full width, 86 of the panel's 480 px, about 16.6 mm. */
+  .close {
+    border: 0;
+    width: 100%;
+    height: calc(86 * var(--u));
+    background: #1a222c;
+    color: var(--text);
+    font-family: inherit;
+    font-size: calc(26 * var(--u));
+    font-weight: 700;
+    letter-spacing: .28em;
+    text-transform: uppercase;
+  }
+  .close:active, .close:disabled { background: var(--ok); color: #06090d; }
+
+  /* Portrait only - a phone held upright. 2x2 stays the strongest full-bleed shape in every
+     landscape aspect; four columns on a laptop would just be a lot of vertical nothing. */
+  @media (max-aspect-ratio: 3/4) {
+    :root { --u: clamp(0.7px, min(0.28vw, 0.115vh), 2px); }
+    .tiles { grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); }
+  }
+</style>
+</head>
+<body{% if local %} class="kiosk"{% endif %}>
+  <main class="tiles">
+    <section class="tile" id="temp" data-band="{{ temp_band }}">
+      <div class="value" data-field="temp_text">{{ temp_text }}</div>
+      <div class="label">Temperature</div>
+      <div class="detail" data-field="temp_detail">{{ temp_detail }}</div>
+    </section>
+    <section class="tile">
+      <div class="value" data-field="mem_text">{{ mem_text }}</div>
+      <div class="label">Memory</div>
+      <div class="detail" data-field="mem_detail">{{ mem_detail }}</div>
+    </section>
+    <section class="tile">
+      <div class="value" data-field="disk_text">{{ disk_text }}</div>
+      <div class="label">Disk</div>
+      <div class="detail" data-field="disk_detail">{{ disk_detail }}</div>
+    </section>
+    <section class="tile">
+      <div class="value" data-field="sessions_text">{{ sessions_text }}</div>
+      <div class="label">Sessions</div>
+      <div class="detail" data-field="sessions_detail">{{ sessions_detail }}</div>
+    </section>
+  </main>
+  {% if local %}<button class="close" id="close" type="button">&#10005; &nbsp;Close</button>{% endif %}
+
+<script>
+  const fields = document.querySelectorAll('[data-field]');
+  const temp = document.getElementById('temp');
+  const body = document.body;
+  const EVERY = 5000, SLOW = 15000;   // nothing here moves fast; hidden tabs move slower still
+
+  async function poll() {
+    try {
+      const r = await fetch('/api/status', { cache: 'no-store' });
+      const s = await r.json();
+      for (const el of fields) {
+        const v = s[el.dataset.field];
+        if (v != null) el.textContent = v;
+      }
+      temp.dataset.band = s.temp_band;
+      body.classList.remove('offline');
+    } catch (e) {
+      body.classList.add('offline');
+    }
+    // Self-scheduling rather than setInterval, so a slow Pi never stacks requests on itself.
+    setTimeout(poll, document.visibilityState === 'hidden' ? SLOW : EVERY);
+  }
+  setTimeout(poll, EVERY);   // the server already rendered the first set of numbers
+
+  const close = document.getElementById('close');
+  if (close) close.addEventListener('click', async () => {
+    close.disabled = true;
+    close.textContent = 'Closing…';
+    // The kiosk owns the browser process; this only leaves it a note asking it to take it down.
+    try { await fetch('/close', { method: 'POST' }); }
+    catch (e) { close.disabled = false; close.textContent = 'Close'; }
+  });
+
+  // kiosk hardening: no context menu, no pinch/double-tap zoom
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('dblclick', (e) => e.preventDefault());
+</script>
+</body>
+</html>
