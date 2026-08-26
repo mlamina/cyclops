@@ -86,6 +86,9 @@ class Microphone:
         self._status = ""  # last PortAudio status flags, written on the audio thread
         self._warned = False
         self.level = 0.0  # smoothed RMS of the latest mic block (for the UI meter)
+        # Optional tap, called on the audio thread with (raw block, how many the guard admitted).
+        # Must not do I/O. Set by the recorder; see cyclops.record.
+        self.on_block: Callable[[bytes, int], None] | None = None
         self._stream = sd.RawInputStream(
             samplerate=SAMPLE_RATE,
             blocksize=BLOCK_FRAMES,
@@ -102,6 +105,8 @@ class Microphone:
         block = bytes(indata)  # copy: PortAudio reuses the buffer
         self.level = 0.6 * self.level + 0.4 * _rms(block)
         blocks = self._guard.admit(block) if self._guard is not None else [block]
+        if self.on_block is not None:
+            self.on_block(block, len(blocks))
         for admitted in blocks:
             self._loop.call_soon_threadsafe(self._enqueue, admitted)
 
@@ -151,6 +156,9 @@ class Speaker:
         self._output_levels: deque[tuple[float, float]] = deque(maxlen=int(OUTPUT_HISTORY_S * 50))
         self.item_serial = 0  # incremented by begin_item(); lets the EchoGuard notice new speech
         self.volume = 1.0  # output gain 0.0-1.0, applied as we buffer audio
+        # Optional tap, called on the audio thread with each block handed to PortAudio - already
+        # zero-filled, so it is a continuous record of the output. Must not do I/O.
+        self.on_block: Callable[[bytes], None] | None = None
         self._status = ""
         self._warned = False
         self._stream = sd.RawOutputStream(
@@ -178,6 +186,8 @@ class Speaker:
         if len(chunk) < needed:
             chunk += b"\x00" * (needed - len(chunk))
         outdata[:] = chunk
+        if self.on_block is not None:
+            self.on_block(chunk)
 
     def begin_item(self) -> None:
         """Mark the start of a new assistant audio item: it begins after everything buffered."""

@@ -27,6 +27,10 @@ class Settings:
     input_device: str | None = None  # sounddevice mic: index or name substring; None = default
     output_device: str | None = None  # sounddevice speaker: index or name substring; None = default
     captures_dir: Path = Path("captures")
+    record: bool = True  # record each session to recordings_dir (cyclops-kiosk only)
+    recordings_dir: Path = Path("recordings")
+    record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 640x480
+    record_width: int = 640  # recorded video is fit to this width, never upscaled
 
 
 def _env(name: str) -> str | None:
@@ -40,6 +44,12 @@ def _tristate(value: str | None) -> bool | None:
     if normalized in {"", "auto"}:
         return None
     return normalized in {"1", "true", "yes", "on"}
+
+
+def _flag(name: str, default: bool) -> bool:
+    """Like :func:`_tristate`, but an unset variable means the given default rather than None."""
+    value = _tristate(_env(name))
+    return default if value is None else value
 
 
 def _int(name: str) -> int | None:
@@ -106,4 +116,10 @@ def load_settings() -> Settings:
         input_device=_env("CYCLOPS_INPUT_DEVICE"),
         output_device=_env("CYCLOPS_OUTPUT_DEVICE"),
         captures_dir=Path(_env("CYCLOPS_CAPTURES_DIR") or Settings.captures_dir).expanduser(),
+        record=_flag("CYCLOPS_RECORD", Settings.record),
+        recordings_dir=Path(
+            _env("CYCLOPS_RECORDINGS_DIR") or Settings.recordings_dir
+        ).expanduser(),
+        record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,
+        record_width=_int("CYCLOPS_RECORD_WIDTH") or Settings.record_width,
     )

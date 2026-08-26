@@ -49,6 +49,25 @@ Headless smoke test (no mic/speakers; sends text turns and exercises the webcam 
 uv run cyclops-smoke
 ```
 
+## Session recordings
+
+`cyclops-kiosk` records every session automatically. Each one lands as a single
+`recordings/<timestamp>.mp4`: H.264 video of what the camera saw (raw frames — no mirror, no UI
+chrome) with a **stereo** audio track, **you on the left channel and Cyclops on the right**. The
+two voices are never mixed together, so you can listen to either side alone.
+
+Needs `ffmpeg` on `PATH` (`brew install ffmpeg`, or `apt install ffmpeg` on the Pi). Without it the
+session runs exactly as before and says once that it isn't recording — recording never blocks a
+conversation.
+
+At the defaults (640 wide, 15 fps) a recording costs roughly 3 MB per minute and about 4% of one
+Pi 5 core (measured on a Pi 5 with a C920). Nothing is ever pruned; delete what you don't want. While a session is in progress its
+parts live in `recordings/.<timestamp>/` and are joined into the final mp4 when it ends, so an
+interrupted session leaves a playable `video.mp4` and two WAVs behind rather than nothing.
+
+Only the kiosk records: `cyclops` and `cyclops-ui` open the camera per photo instead of holding it
+open, so there is no continuous video for them to record.
+
 ## Configuration (`.env`)
 
 | Variable               | Default        | Meaning                                                    |
@@ -65,6 +84,10 @@ uv run cyclops-smoke
 | `CYCLOPS_INPUT_DEVICE` | default        | Microphone: a device index or name substring (from `uv run cyclops-devices`). Needed when there's no default mic (e.g. a Raspberry Pi). |
 | `CYCLOPS_OUTPUT_DEVICE`| default        | Speaker: a device index or name substring. |
 | `CYCLOPS_CAPTURES_DIR` | `captures`     | Where snapshots are written (relative to the CWD; `~` ok). |
+| `CYCLOPS_RECORD`       | `1`            | Record every kiosk session to disk; `0` disables. |
+| `CYCLOPS_RECORDINGS_DIR` | `recordings` | Where session recordings are written (relative to the CWD; `~` ok). |
+| `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
+| `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
 
 Variables already exported in your shell take precedence over `.env`. List audio devices with `uv run cyclops-devices`.
 

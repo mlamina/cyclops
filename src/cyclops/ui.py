@@ -28,6 +28,7 @@ from .audio import (
     resolve_device,
 )
 from .config import ConfigError, Settings, load_settings
+from .record import FrameSource, SessionRecorder
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
     "idle",
@@ -44,10 +45,16 @@ EPOCH = str(int(time.time()))  # changes each server start; the page reloads its
 
 
 class SessionController:
-    """Starts/stops a VoiceAgent on its own thread and reports a thread-safe status snapshot."""
+    """Starts/stops a VoiceAgent on its own thread and reports a thread-safe status snapshot.
 
-    def __init__(self, settings: Settings) -> None:
+    ``frames`` is an already-open camera to record the session from. Only the kiosk has one -
+    it holds the device open for its preview - so ``cyclops-ui`` passes nothing and records
+    nothing.
+    """
+
+    def __init__(self, settings: Settings, frames: FrameSource | None = None) -> None:
         self.settings = settings
+        self._frames = frames
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -83,6 +90,12 @@ class SessionController:
             loop, task = self._loop, self._task
         if loop is not None and task is not None:
             loop.call_soon_threadsafe(task.cancel)
+
+    def join(self, timeout: float) -> None:
+        """Wait for a stopping session to finish - it may still be muxing its recording."""
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout)
 
     def status(self) -> dict[str, object]:
         state, level = self._state_and_level()
@@ -158,11 +171,31 @@ class SessionController:
             self._speaker, self._mic, self._agent = speaker, mic, agent
         speaker.start()
         mic.start()
+        recorder = self._start_recorder(mic, speaker)
         try:
             await agent.run()
         finally:
-            mic.stop()
+            mic.stop()  # no more audio callbacks, so the recorder can flush what it has
             speaker.stop()
+            if recorder is not None:
+                if (recording := recorder.stop()) is not None:
+                    print(f"· recorded to {recording}", flush=True)
+
+    def _start_recorder(self, mic: Microphone, speaker: Speaker) -> SessionRecorder | None:
+        """Tap the mic and the speaker for this session's recording, if one is wanted."""
+        if self._frames is None or not self.settings.record:
+            return None
+        recorder = SessionRecorder(
+            self._frames,
+            self.settings.recordings_dir,
+            fps=self.settings.record_fps,
+            width=self.settings.record_width,
+        )
+        if not recorder.start():  # it has said why; a session is never blocked on recording
+            return None
+        mic.on_block = recorder.on_mic_block
+        speaker.on_block = recorder.on_speaker_block
+        return recorder
 
 
 class _Handler(BaseHTTPRequestHandler):

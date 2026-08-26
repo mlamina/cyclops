@@ -82,6 +82,7 @@ TARGET_FPS = 25
 FLASH_SECONDS = 0.45
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
+SHUTDOWN_JOIN_S = 15.0  # on exit, a stopping session may still be muxing its recording
 
 
 class Kiosk:
@@ -255,7 +256,7 @@ def main() -> None:
         sys.exit(2)
 
     camera = CameraSource(settings.camera_index)
-    controller = SessionController(settings)
+    controller = SessionController(settings, frames=camera)  # sessions record from this camera
     try:
         camera.start()
         camera.wait_for_frame()
@@ -279,6 +280,7 @@ def main() -> None:
     finally:
         webcam.set_live_source(None)
         controller.stop()
+        controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away
         camera.stop()
         cv2.destroyAllWindows()
         cv2.waitKey(1)  # let highgui actually tear the window down
