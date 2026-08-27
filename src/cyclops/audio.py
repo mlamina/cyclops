@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import os
 import sys
 import threading
 import time
@@ -19,6 +20,8 @@ from collections.abc import AsyncIterator, Callable
 
 import numpy as np
 import sounddevice as sd
+
+from .mixer import pactl
 
 SAMPLE_RATE = 24_000
 CHANNELS = 1
@@ -65,13 +68,78 @@ def output_is_speaker(name: str | None = None) -> bool:
     return any(h in low for h in _LOUDSPEAKER_HINTS)
 
 
+# ---- which microphone ----
+#
+# Two mics are plugged into the Pi: the camera's own, behind the housing and pointed at the room,
+# and a lavalier a hand's width from the mouth. PortAudio cannot choose between them - through
+# PipeWire it sees one "pulse" device and listens to whatever the default source happens to be,
+# which is decided by enumeration order and changes when things are replugged. So we choose, by
+# naming a source before the stream is opened. The lav is there because someone clipped it on.
+
+# Sources that belong to a camera. Anything else is a mic that was plugged in on purpose.
+_WEBCAM_MIC_HINTS = ("webcam", "camera", "_cam", "c920")
+
+# Input settings that mean "go through PipeWire", and can therefore be steered by source name.
+# Anything else is a specific ALSA device that someone pinned by hand; leave it alone.
+_THROUGH_PIPEWIRE = (None, "pulse", "default")
+
+# A choice made before we started - PULSE_SOURCE in .env or in the shell - outranks ours, and is
+# how to force the camera's mic. Read at import so that our own pinning never looks like one.
+_PINNED_BY_HAND = os.environ.get("PULSE_SOURCE") or None
+
+
+def capture_sources() -> list[str]:
+    """PipeWire's capture sources, in the order it lists them; empty where there is no PipeWire.
+
+    Monitors are dropped - those are loopbacks of an output, not microphones.
+    """
+    listing = pactl("list", "short", "sources")
+    if listing is None:
+        return []
+    names = [line.split("\t")[1] for line in listing.splitlines() if "\t" in line]
+    return [name for name in names if not name.endswith(".monitor")]
+
+
+def preferred_source(sources: list[str]) -> str | None:
+    """The mic to listen through: one someone plugged in beats the camera's own.
+
+    ``None`` means "leave PipeWire's default alone" - either there is no PipeWire to ask, or the
+    camera's mic is the only mic there is. Where two plugged-in mics are present, the first
+    PipeWire lists wins.
+    """
+    for name in sources:
+        if not any(hint in name.lower() for hint in _WEBCAM_MIC_HINTS):
+            return name
+    return None
+
+
+def pin_input_source(device: int | str | None = None) -> str | None:
+    """Point this process's capture at that mic. Returns the source it will now listen through.
+
+    The ALSA-pulse plugin reads ``PULSE_SOURCE`` at the moment PortAudio opens the device, so
+    this has to run before the stream is created - and may be run again afterwards, which is what
+    lets a mic plugged in between two sessions be picked up without restarting anything. Naming a
+    source that has since been unplugged is not an error: libpulse falls back to the default.
+    """
+    if _PINNED_BY_HAND is not None:
+        return _PINNED_BY_HAND
+    if device not in _THROUGH_PIPEWIRE:
+        return None
+    chosen = preferred_source(capture_sources())
+    if chosen is None:
+        os.environ.pop("PULSE_SOURCE", None)  # the mic we pinned last time is gone
+    else:
+        os.environ["PULSE_SOURCE"] = chosen
+    return chosen
+
+
 def list_devices() -> str:
     """Human-readable table of audio devices, for `cyclops-devices`."""
     return str(sd.query_devices())
 
 
 class Microphone:
-    """Streams raw PCM16 chunks from the default input device into an asyncio queue."""
+    """Streams raw PCM16 chunks from the chosen input device into an asyncio queue."""
 
     def __init__(
         self,
@@ -89,6 +157,10 @@ class Microphone:
         # Optional tap, called on the audio thread with (raw block, how many the guard admitted).
         # Must not do I/O. Set by the recorder; see cyclops.record.
         self.on_block: Callable[[bytes, int], None] | None = None
+        # Which physical mic this is, decided here rather than once at startup: the kiosk process
+        # outlives any number of sessions, so a lav clipped on between two of them is picked up by
+        # the next one. Must precede the stream: that is when PULSE_SOURCE is read.
+        self.source = pin_input_source(device)
         self._stream = sd.RawInputStream(
             samplerate=SAMPLE_RATE,
             blocksize=BLOCK_FRAMES,

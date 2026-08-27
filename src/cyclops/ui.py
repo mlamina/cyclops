@@ -178,6 +178,7 @@ class SessionController:
         speaker.volume = self._volume
         guard = EchoGuard(loop, speaker, margin_db=s.barge_in_db) if half else None
         mic = Microphone(loop, guard=guard, device=in_dev)
+        print(f"· mic: {mic.source or 'whatever PipeWire calls the default'}", flush=True)
         agent = VoiceAgent(replace(s, half_duplex=half), mic=mic, speaker=speaker, guard=guard)
         if guard is not None:
             guard.on_barge_in = agent.local_barge_in

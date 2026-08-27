@@ -14,9 +14,11 @@ from .audio import (
     EchoGuard,
     Microphone,
     Speaker,
+    capture_sources,
     default_output_name,
     list_devices,
     output_is_speaker,
+    preferred_source,
     resolve_device,
 )
 from .config import ConfigError, Settings, load_settings
@@ -57,6 +59,7 @@ async def _run(settings: Settings) -> None:
     else:
         print(f"· full duplex with barge-in — {why}", flush=True)
     mic = Microphone(loop, guard=guard, device=in_dev)
+    print(f"· mic: {mic.source or 'whatever PipeWire calls the default'}", flush=True)
     agent = VoiceAgent(settings, mic=mic, speaker=speaker, guard=guard)
     if guard is not None:
         guard.on_barge_in = agent.local_barge_in
@@ -94,6 +97,16 @@ def main() -> None:
 def devices() -> None:
     """`cyclops-devices`: list audio input/output devices so you can pick one for the Pi."""
     print(list_devices())
+    # PortAudio shows PipeWire as the single "pulse" device, which hides the fact that there is
+    # more than one microphone behind it. This is the part you actually want when the wrong one
+    # is listening, so it is printed alongside, with the one cyclops will choose marked.
+    sources = capture_sources()
+    if sources:
+        chosen = preferred_source(sources)
+        print("\nMicrophones behind the 'pulse' device — cyclops takes the marked one:")
+        for name in sources:
+            print(f"  {'→' if name == chosen else ' '} {name}")
+        print("Set PULSE_SOURCE to one of these to override (e.g. to force the camera's mic).")
     print(
         "\nSet CYCLOPS_INPUT_DEVICE / CYCLOPS_OUTPUT_DEVICE to an index above or a name "
         "substring.\nOn a Raspberry Pi also set CYCLOPS_HALF_DUPLEX=1 if the output is a "

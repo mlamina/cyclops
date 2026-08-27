@@ -37,7 +37,7 @@ def clamp(percent: int) -> int:
 
 def level() -> int | None:
     """The sink's volume as a whole percent, or None where there is no PipeWire to ask."""
-    out = _pactl("get-sink-volume", SINK)
+    out = pactl("get-sink-volume", SINK)
     if out is None:
         return None
     found = re.search(r"(\d+)%", out)  # "front-left: 52607 /  80% / -5.73 dB"
@@ -46,11 +46,15 @@ def level() -> int | None:
 
 def set_level(percent: int) -> bool:
     """Set the sink's volume. False if there is nothing here that can be set."""
-    return _pactl("set-sink-volume", SINK, f"{clamp(percent)}%") is not None
+    return pactl("set-sink-volume", SINK, f"{clamp(percent)}%") is not None
 
 
-def _pactl(*args: str) -> str | None:
-    """Run pactl, or return None on any machine or moment where that is not possible."""
+def pactl(*args: str) -> str | None:
+    """Run pactl, or return None on any machine or moment where that is not possible.
+
+    Public because it is the one careful way this project talks to PipeWire, and the volume is
+    not the only thing worth asking about - :mod:`cyclops.audio` uses it to list capture sources.
+    """
     try:
         done = subprocess.run([PACTL, *args], capture_output=True, text=True, timeout=TIMEOUT_S)
     except (OSError, subprocess.SubprocessError):
