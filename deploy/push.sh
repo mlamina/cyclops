@@ -7,9 +7,14 @@ set -eu
 TARGET=${1:-dobby@raspberrypi.local}
 DEST=cyclops
 
+# The leading slash on /projects is load-bearing: an rsync pattern without one matches at
+# every level, and src/cyclops/projects/ is a real package. Anchored, it means the output
+# directory beside sessions/ and nothing else. The three above have the same shape and are
+# only safe because nothing under src/ is named that yet.
 rsync -a --delete \
   --exclude '.env' --exclude '.venv' --exclude '.git' --exclude '__pycache__' \
   --exclude 'captures' --exclude 'recordings' --exclude 'sessions' \
+  --exclude '/projects' \
   --exclude '.ruff_cache' --exclude 'Plans' \
   src pyproject.toml uv.lock README.md deploy "$TARGET:$DEST/"
 

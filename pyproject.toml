@@ -10,6 +10,7 @@ dependencies = [
     "numpy>=2.5.2",
     "openai[realtime]>=3.3.1",
     "pillow>=12.3.0",
+    "pydantic-ai-slim[openai]>=2.35.3,<3",
     "opencv-python>=5.0.0.93",
     "python-dotenv>=1.2.3",
     "sounddevice>=0.5.6",
@@ -24,6 +25,7 @@ cyclops-ui = "cyclops.ui:main"
 cyclops-kiosk = "cyclops.kiosk:main"
 cyclops-sessions = "cyclops.session:main"
 cyclops-admin = "cyclops.admin.server:main"
+cyclops-projects = "cyclops.projects:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -39,7 +39,10 @@ class Settings:
     output_device: str | None = None  # sounddevice speaker: index or name substring; None = default
     sessions_dir: Path = Path("sessions")  # one folder per session; everything it produced
     captures_dir: Path = Path("captures")  # where a photo goes when no session is running
+    projects_dir: Path = Path("projects")  # one folder per project; README, Log, Photos
     slug: bool = True  # name each finished session from its transcript (cyclops.slug)
+    projects: bool = True  # keep projects/ up to date, and offer the two project tools
+    project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the camera to the session folder (needs an open camera)
     record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 640x480
     record_width: int = 640  # recorded video is fit to this width, never upscaled
@@ -74,6 +77,22 @@ def _int(name: str) -> int | None:
         return int(raw)
     except ValueError as exc:
         raise ConfigError(f"{name} must be an integer or 'auto', got {raw!r}") from exc
+
+
+def _count(name: str, default: int) -> int:
+    """A non-negative count, where 0 is a real answer and not "unset".
+
+    ``_int(name) or default`` reads well and is wrong for any setting whose zero means "off":
+    it silently hands back the default. That is survivable for a frame rate, which is why
+    ``record_fps`` and ``record_width`` still do it, but ``CYCLOPS_PROJECT_PHOTOS=0`` has to
+    mean no photos rather than three.
+    """
+    value = _int(name)
+    if value is None:
+        return default
+    if value < 0:
+        raise ConfigError(f"{name} must be zero or more, got {value}")
+    return value
 
 
 def _barge_in_db(name: str) -> float | None:
@@ -135,7 +154,10 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         output_device=_env("CYCLOPS_OUTPUT_DEVICE"),
         sessions_dir=Path(_env("CYCLOPS_SESSIONS_DIR") or Settings.sessions_dir).expanduser(),
         captures_dir=Path(_env("CYCLOPS_CAPTURES_DIR") or Settings.captures_dir).expanduser(),
+        projects_dir=Path(_env("CYCLOPS_PROJECTS_DIR") or Settings.projects_dir).expanduser(),
         slug=_flag("CYCLOPS_SLUG", Settings.slug),
+        projects=_flag("CYCLOPS_PROJECTS", Settings.projects),
+        project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,
         record_width=_int("CYCLOPS_RECORD_WIDTH") or Settings.record_width,

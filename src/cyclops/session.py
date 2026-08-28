@@ -207,6 +207,7 @@ class SessionLog:
         self._write_page()  # written last, which is what makes its presence mean "finished"
         self._rename()
         self._report()
+        self._file()  # last of all, and it does not wait
 
     def _start_recorder(self) -> None:
         """Tap the mic and the speaker for this session's video, if there is a camera for one."""
@@ -298,6 +299,30 @@ class SessionLog:
             (self.dir / PAGE_NAME).write_text(render_markdown(self._records), encoding="utf-8")
         except OSError as exc:
             self._give_up(f"{type(exc).__name__}: {exc}")
+
+    def _file(self) -> None:
+        """Hand the card to ``cyclops-projects`` and let go of it.
+
+        Spawned here rather than anywhere earlier for three reasons, each of which is a bug
+        avoided: after :meth:`_write_page`, because ``session.md`` being present is what tells a
+        sweep a session is finished and this is now the fourth place that invariant is relied on;
+        after :meth:`_rename`, because the child is handed a tree whose folders must already be
+        at their final names; and after :meth:`_report`, because that is this log's last word
+        about itself and should not be pushed behind a fork.
+
+        Nothing is waited on and nothing can raise. The folder is already complete and correct
+        without this, and a filing that never started is not a failed session - it just leaves no
+        ``project.md``, which is exactly how the next sweep knows to pick this session up. The
+        absence of the receipt is the retry queue.
+        """
+        if self.failed or not self.settings.projects or not self.settings.api_key:
+            return
+        try:
+            from . import projects  # imported here, like slug, so a keyless box still runs
+
+            projects.spawn(self.dir, self.settings)
+        except Exception:  # noqa: BLE001 - a filing that did not start never reaches teardown
+            pass
 
     def _close_handle(self) -> None:
         with self._lock:
@@ -703,6 +728,11 @@ def _render_record(record: dict) -> str:
         stale = " (you had moved on by the time it landed)" if record.get("stale") else ""
         chars = record.get("chars", 0)
         return f'*Searched the web* ({at}) — "{query}" → {chars} characters back{stale}'
+    if kind == "project":
+        name = record.get("name", "")
+        if record.get("action") == "tracked":
+            return f"*Started keeping notes on* ({at}) — **{name}**"
+        return f"*Looked up its notes on* ({at}) — **{name}**"
     if kind == "transcript_failed":
         return f"*You said something that could not be transcribed* ({at})"
     if kind == "error":
@@ -747,8 +777,11 @@ def _summarise(folder: Path) -> str:
         flags.append("parts/")
     if not (folder / PAGE_NAME).is_file():
         flags.append("UNFINISHED")
-    elif STAMPED.match(folder.name):
-        flags.append("unnamed")
+    else:
+        if STAMPED.match(folder.name):
+            flags.append("unnamed")
+        if not (folder / "project.md").is_file():
+            flags.append("unfiled")
     if dropped:
         flags.append(f"{dropped} bad line(s)")
     return (

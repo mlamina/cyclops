@@ -36,6 +36,9 @@ DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_FOCUS_CHARS = 200
 MAX_QUERY_CHARS = 300
+MAX_PROJECT_NAME_CHARS = 80
+MAX_PROJECT_TAGLINE_CHARS = 300  # a little under store.MAX_TAGLINE_CHARS
+MAX_PROJECT_NOTES_CHARS = 4000  # a project page, not a card's worth of them
 SEARCH_TIMEOUT_S = 14.0  # above search.SEARCH_TIMEOUT_S, so its own message wins
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # keep \t and \n
 
@@ -80,6 +83,66 @@ WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
             }
         },
         "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+OPEN_PROJECT_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "open_project",
+    "description": (
+        "Read your notes on one of the projects you are keeping. You are told the project names "
+        "at the start of every session but not what is in them, so call this whenever the user "
+        "returns to one and you need the detail: what was decided, what the measurements were, "
+        "and what was left unresolved last time."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "The project, as the user calls it. Close is good enough.",
+            }
+        },
+        "required": ["name"],
+        "additionalProperties": False,
+    },
+}
+
+TRACK_PROJECT_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "track_project",
+    "description": (
+        "Start keeping notes on something new. Creates a folder for it, and from then on every "
+        "session about it is written into that folder automatically. ONLY call this after the "
+        "user has agreed to it out loud - never on your own initiative, and never to correct or "
+        "rename a project that already exists."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": (
+                    "Two to five plain words, what the user would write on the folder tab: "
+                    "'Lego Millennium Falcon', 'Kitchen Tap', 'Shed Roof'. No dates, no "
+                    "punctuation, no the word 'project'."
+                ),
+            },
+            "description": {
+                "type": "string",
+                "description": (
+                    "One dense sentence saying what this project IS, naming the specifics that "
+                    "tell it apart from anything else being tracked: what the thing is, what it "
+                    "is built from or on, and what it is for. This is what a later session reads "
+                    "when deciding whether new work belongs here, so be concrete. Good: "
+                    "'A Raspberry Pi voice assistant with a camera that helps with workshop "
+                    "projects and writes up each session.' Useless: 'A Pi project', 'the build'. "
+                    "Never just restate the name."
+                ),
+            },
+        },
+        "required": ["name", "description"],
         "additionalProperties": False,
     },
 }
@@ -131,6 +194,27 @@ LOOKING THINGS UP
 - Combine the two tools when it helps: look at the thing, then search for what you saw. If a
   search comes back empty or failed, say so plainly instead of inventing an answer.
 
+THE PROJECTS YOU KEEP
+- You keep notes on the things they are building. Whichever ones exist are listed further down;
+  you are told their names but not what is in them.
+- When they come back to one, call open_project to read what was decided, what the measurements
+  were, and what was left unresolved. Do that before answering from memory about it.
+- When they are plainly working on something that is NOT one of them, and it looks like a thing
+  they will come back to, ask - once, in one short sentence - whether you should keep notes on
+  it. "Want me to keep track of this one?" is the whole question.
+- Only call track_project after they have clearly said yes. Never call it on your own, never to
+  rename something, and never for a passing question or a one-off job.
+- When you do call it, the description matters more than the name. Say what the thing actually
+  is, concretely - what it is, what it is built on, what it is for - because that sentence is
+  how you will recognise this same project in three weeks. If you do not know enough to write
+  one, you do not know enough to start tracking it yet: ask them what it is first.
+- Ask at most once a session, and never in the first moments or while they are mid-cut,
+  mid-measurement or otherwise busy. If they say no, say nothing about it again - that is the
+  same rule as offering once, and it applies here hardest.
+- Everything else is automatic: every session about a tracked project is written into its folder
+  on your memory card when you switch off. Do not offer to write things down, and do not read
+  file paths out.
+
 WHEN THEY CUT IN
 - If they say "stop", "wait", "hold on", "never mind", "that's enough", or anything like that,
   stop immediately: do not take a photo, do not keep talking, just briefly acknowledge
@@ -156,6 +240,44 @@ recall nothing beyond these notes; if they ask about something older, say so pla
 """
 
 
+# Introduces the list below it. Names only - what is in each project is a tool call away, which
+# is the whole point: a card with twenty projects on it would otherwise spend the model's opening
+# context on nineteen it is not being asked about.
+PROJECTS_HEADER = """\
+PROJECTS YOU ARE KEEPING NOTES ON
+Call open_project with one of these names to read what is in it.
+"""
+PROJECTS_LISTED = 20
+PROJECT_LINE_CHARS = 380
+
+
+def _projects_block(settings: Settings) -> str:
+    """The names of what is being tracked, or nothing at all.
+
+    Read at connect time off the card, like the recap above it, and for the same reason: a project
+    started in the last session has to be there in this one.
+    """
+    if not settings.projects:
+        return ""
+    from . import projects  # local, so a box with no key and no card still builds instructions
+
+    try:
+        tracked = projects.catalog(settings)
+    except OSError:
+        return ""
+    if not tracked:
+        print("· projects: none being tracked yet", flush=True)
+        return ""
+    lines = []
+    for project in tracked[:PROJECTS_LISTED]:
+        line = f"- {project.name}"
+        if project.tagline:
+            line += f" — {project.tagline}"
+        lines.append(line[:PROJECT_LINE_CHARS])
+    print(f"· projects: {', '.join(p.name for p in tracked[:PROJECTS_LISTED])}", flush=True)
+    return f"{PROJECTS_HEADER}\n" + "\n".join(lines) + "\n"
+
+
 def build_instructions(settings: Settings) -> str:
     """The full system prompt for one session: the standing rules, plus what came before.
 
@@ -168,9 +290,12 @@ def build_instructions(settings: Settings) -> str:
     """
     recap = session.recent_context(settings)
     print(f"· continuity: {recap.note}", flush=True)
-    if not recap:
-        return BASE_INSTRUCTIONS
-    return f"{BASE_INSTRUCTIONS}\n{RECAP_HEADER}\n{recap.text}\n"
+    blocks = [BASE_INSTRUCTIONS]
+    if recap:
+        blocks.append(f"{RECAP_HEADER}\n{recap.text}\n")
+    if projects_block := _projects_block(settings):
+        blocks.append(projects_block)
+    return "\n".join(blocks)
 
 
 class SessionError(RuntimeError):
@@ -273,7 +398,7 @@ class VoiceAgent:
                     "speed": 1.0,
                 },
             },
-            "tools": [WEBCAM_TOOL, WEB_SEARCH_TOOL],
+            "tools": [WEBCAM_TOOL, WEB_SEARCH_TOOL, *_project_tools(self.settings)],
             "tool_choice": "auto",
         }
         effort = self.settings.reasoning_effort  # explicit setting always goes through
@@ -482,6 +607,9 @@ class VoiceAgent:
         if call.name == "web_search":
             await self._run_web_search(call)
             return
+        if call.name in {"open_project", "track_project"}:
+            await self._run_project_tool(call)
+            return
         if call.name != "capture_webcam_image":
             await self._send_tool_output(call.call_id, {"ok": False, "error": "unknown tool"})
             await self._request_response()
@@ -595,6 +723,67 @@ class VoiceAgent:
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
+    async def _run_project_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Open a project's notes, or start keeping some. Both are reads and writes of the card.
+
+        Unlike the web search there is no staleness to manage: this is a few kilobytes off local
+        disk, back in milliseconds, so nobody has moved on by the time it lands. It still goes
+        through a thread, because the card is an SD card and the event loop here is also carrying
+        the audio.
+        """
+        name = _tool_name(call.arguments)
+        description = _tool_description(call.arguments)
+        self._log(f"[tool] {call.name} {name!r}")
+        if not name:
+            output: dict[str, Any] = {"ok": False, "error": "no project name given"}
+        else:
+            output = await asyncio.to_thread(self._project_call, call.name, name, description)
+        if not output["ok"]:
+            self._log(f"[tool] {call.name} failed: {output['error']}", stream=sys.stderr)
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    def _project_call(self, kind: str, name: str, description: str = "") -> dict[str, Any]:
+        """The blocking half of the two project tools. Returns an answer, never raises."""
+        from . import projects
+
+        try:
+            tracked = projects.catalog(self.settings)
+            if kind == "open_project":
+                project = projects.store.find(tracked, name)
+                if project is None:
+                    return {
+                        "ok": False,
+                        "error": f"nothing is being tracked called {name!r}",
+                        "tracked": [p.name for p in tracked],
+                    }
+                session.note("project", action="opened", key=project.key, name=project.name)
+                notes = projects.store.read_body(project)[:MAX_PROJECT_NOTES_CHARS]
+                return {"ok": True, "project": project.name, "notes": notes}
+
+            project = projects.create(self.settings, name, tagline=description)
+            session.note("project", action="tracked", key=project.key, name=project.name)
+            return {
+                "ok": True,
+                "project": project.name,
+                "note": (
+                    "Tracking it from now on. This session and every one after it about this "
+                    "gets written into its folder automatically - tell them so, briefly, once."
+                ),
+            }
+        except projects.Exists as exc:
+            return {
+                "ok": False,
+                "error": f"that is already being tracked as {exc.project.name!r}",
+                "note": "Say so and carry on. Do not create anything.",
+            }
+        except projects.Unfilable as exc:
+            return {"ok": False, "error": str(exc)}
+        except OSError as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        except Exception as exc:  # noqa: BLE001 - never leave the model waiting for a result
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
     async def _send_tool_output(self, call_id: str, output: dict[str, Any]) -> None:
         await self._send_item(
             {"type": "function_call_output", "call_id": call_id, "output": json.dumps(output)}
@@ -642,6 +831,25 @@ def _tool_string(arguments: str | None, key: str, limit: int) -> str:
 def _tool_focus(arguments: str | None) -> str:
     """The webcam tool's optional 'focus' argument."""
     return _tool_string(arguments, "focus", MAX_FOCUS_CHARS)
+
+
+def _project_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The two project tools, or neither. ``CYCLOPS_PROJECTS=0`` leaves them out entirely.
+
+    Left out rather than offered and refused: a tool the model can see is a tool it will try, and
+    being told "that is switched off" mid-conversation is worse than never being offered it.
+    """
+    return [OPEN_PROJECT_TOOL, TRACK_PROJECT_TOOL] if settings.projects else []
+
+
+def _tool_name(arguments: str | None) -> str:
+    """The project tools' required 'name' argument."""
+    return _tool_string(arguments, "name", MAX_PROJECT_NAME_CHARS)
+
+
+def _tool_description(arguments: str | None) -> str:
+    """track_project's 'description' argument - the sentence that makes the project findable."""
+    return _tool_string(arguments, "description", MAX_PROJECT_TAGLINE_CHARS)
 
 
 def _tool_query(arguments: str | None) -> str:

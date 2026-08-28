@@ -59,6 +59,7 @@ sessions/
     session.md        the conversation, with the photos in it, for you
     session.jsonl     the same events, one JSON object per line, for a program
     summary.md        one sentence and one paragraph: what this session was
+    project.md        which project this got filed under, or why it didn't
     video.mp4         the recording (kiosk only)
     photos/
       14-32-40_cyclops.jpg
@@ -126,6 +127,62 @@ uv run cyclops-sessions --fix --name # ...and name/summarise what the live call 
 
 Photos taken with no session running (the smoke test, mostly) still land in `captures/`, which
 keeps only the last 20 alongside `latest.jpg`. A session's own photos are never pruned.
+
+## Projects
+
+A session is one conversation. A **project** is the thing you keep coming back to, and it gets a
+folder of its own that a person can read without knowing anything about any of this:
+
+```
+projects/
+  Pelican Display Mount/
+    README.md    what it is, where it stands, what's still open, what was decided
+    Log.md       one dated entry per session, oldest first, never rewritten
+    Photos/
+      2026-08-26_16-48-48_cyclops.jpg
+```
+
+**A project starts because you said so.** Cyclops is told the names of the projects it is keeping
+at the start of every session. When you're plainly working on something that isn't one of them,
+and it looks like a thing you'll come back to, it asks — once, in one sentence — whether to keep
+notes on it. Say yes and the folder appears there and then. Nothing else can create one, which is
+what stops the card filling up with "Pelican Case", "Pelican Display" and "Pelican Mount" as a
+model changes its mind about what today was.
+
+It's told the names and nothing else. When you come back to something it calls `open_project` to
+read what was decided last time — so twenty projects cost twenty lines of its attention, not
+twenty pages.
+
+**The filing happens afterwards, on its own.** When a session ends, a detached `cyclops-projects
+--sweep` starts and the kiosk forgets about it: an orchestrator on
+[Pydantic AI](https://ai.pydantic.dev) reads the session and delegates to four smaller agents —
+one reads the transcript, one decides which project it advanced, one writes the log entry and the
+new page, one picks a few photos worth keeping. It never invents a project: it either files under
+one that exists or writes down that it filed nothing.
+
+`Log.md` is the truth and `README.md` is a picture built from it, so you can delete a README and
+the next sweep makes it again. Nothing on the card is a database; the machine-readable part is
+the YAML block at the top of each README, and one invisible HTML comment per log entry holding
+the session's UUID — which is what stops an entry being written twice.
+
+Nothing is filed twice, and nothing is lost. `project.md` in the session folder is the receipt: if
+it's there the session has been read, and if it isn't, the next sweep reads it. So a power cut
+costs a re-read and nothing else, and it's safe to run over a whole card as often as you like.
+
+```bash
+uv run cyclops-projects              # what's on the card, and how many sessions are waiting
+uv run cyclops-projects --check      # offline: pages that drifted from their log, torn entries
+uv run cyclops-projects --sweep      # file everything unfiled, oldest first (needs a key)
+uv run cyclops-projects --sweep --dry-run   # say what it would write, write nothing
+uv run cyclops-projects --again      # re-read everything; the log ledger still prevents duplicates
+```
+
+Oldest first is not cosmetic: a project's page is rewritten against what the session before it
+left behind. `cyclops-sessions` flags anything still `unfiled`.
+
+Every session end costs one model call even when nothing gets filed, because deciding that *is*
+the call. At these model sizes it rounds to nothing, but `CYCLOPS_PROJECTS=0` turns the whole
+feature off — no sweep, and the two project tools aren't offered to the voice agent at all.
 
 ## Admin page
 
@@ -196,6 +253,9 @@ ssh dobby@raspberrypi.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_OUTPUT_DEVICE`| default        | Speaker: a device index or name substring. |
 | `CYCLOPS_SESSIONS_DIR` | `sessions`     | Where session folders are written (relative to the CWD; `~` ok). |
 | `CYCLOPS_CAPTURES_DIR` | `captures`     | Where a photo goes when no session is running (relative to the CWD; `~` ok). |
+| `CYCLOPS_PROJECTS_DIR` | `projects`     | Where project folders are written (relative to the CWD; `~` ok). |
+| `CYCLOPS_PROJECTS`     | `1`            | Keep `projects/` up to date, and offer Cyclops the `open_project` / `track_project` tools; `0` turns the whole feature off. |
+| `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_RECORD`       | `1`            | Record the camera into the session folder; `0` disables. |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |

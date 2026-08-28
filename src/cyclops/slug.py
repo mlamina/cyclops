@@ -115,7 +115,7 @@ def describe_session(transcript: str, settings: Settings) -> Description:
     An empty :class:`Description` is a first-class outcome, not a failure, and this never
     raises: the caller is a teardown path that must finish either way.
     """
-    transcript = _fit(transcript.strip())
+    transcript = fit(transcript.strip())
     if not transcript or not settings.slug or not settings.api_key:
         return Description()  # nothing to describe, or describing is off - don't call at all
 
@@ -141,17 +141,23 @@ def describe_session(transcript: str, settings: Settings) -> Description:
     return parse(answer)
 
 
-def _fit(transcript: str) -> str:
+def fit(text: str, limit: int = MAX_TRANSCRIPT_CHARS) -> str:
     """The conversation, trimmed to fit - from the middle, so both ends survive.
 
     Trimming from the front would drop how it ended, which is the half a summary is mostly
     about: what was left open, what was decided last. Trimming from the back would drop what it
     was, which is what the slug needs. So the middle goes.
+
+    Public, and takes its limit, because :mod:`cyclops.projects` reads the same transcripts for
+    the same reason and must trim them identically - two post-session calls that disagreed about
+    which half of a conversation to keep would be a bug nobody would ever think to look for.
     """
-    if len(transcript) <= MAX_TRANSCRIPT_CHARS:
-        return transcript
-    keep = (MAX_TRANSCRIPT_CHARS - len(ELISION)) // 2
-    return transcript[:keep] + ELISION + transcript[-keep:]
+    if len(text) <= limit:
+        return text
+    keep = (limit - len(ELISION)) // 2
+    if keep <= 0:  # a budget too small to say anything was left out; just take the front
+        return text[:limit]
+    return text[:keep] + ELISION + text[-keep:]
 
 
 def parse(answer: str) -> Description:
@@ -206,9 +212,11 @@ def _clean(text: str, limit: int) -> str:
 def slugify(text: str) -> str:
     """A model's answer, reduced to something safe to put in a filename.
 
-    Applied unconditionally and never skipped: this is the one place a filename is built out of
-    text a model chose, and a model that decides to answer with a path, a quote or an emoji must
-    not be able to reach the filesystem with it.
+    Applied unconditionally and never skipped: this is one of the two places a filename is built
+    out of text a model chose - :func:`safe_folder_name` below is the other - and a model that
+    decides to answer with a path, a quote or an emoji must not be able to reach the filesystem
+    with it. The two live side by side deliberately: two such guards in two modules is how one of
+    them quietly drifts from the other.
     """
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
     text = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
@@ -216,3 +224,81 @@ def slugify(text: str) -> str:
         return ""
     text = "-".join(text.split("-")[:MAX_WORDS])[:MAX_CHARS].strip("-")
     return "" if text in {"", "chat"} else text
+
+
+# ------------------------------------------------------------------ naming a project folder
+
+# The names Windows refuses to open whatever you put after them, and the card is meant to be
+# pulled out and read on something else - the same reason session.py refuses a colon in a
+# timestamp. The superscripts are not a joke: COM¹ is reserved too.
+RESERVED = {
+    "CON", "PRN", "AUX", "NUL", "CLOCK$",
+    *(f"COM{n}" for n in "123456789¹²³"),
+    *(f"LPT{n}" for n in "123456789¹²³"),
+}
+# The punctuation a project name may keep. Everything else that is not a letter, mark or digit
+# becomes a space - which is also how every separator, quote and wildcard leaves.
+KEEP = set(" '()&,.-_")
+MAX_FOLDER_CHARS = 64  # a generous name; short enough to leave room under Windows' 260-char path
+MAX_FOLDER_BYTES = 255  # ext4 counts bytes, not characters, and CJK reaches this first
+
+
+def fold(name: str) -> str:
+    """The identity behind a name: what two spellings of the same project have in common.
+
+    macOS and exFAT are case-insensitive, so "Lego Falcon" and "lego falcon" cannot be two folders
+    and must not be two projects. Punctuation goes for a softer reason: a model writes "Lego
+    Millennium-Falcon" one week and "Lego Millennium Falcon" the next, and those are one thing.
+
+    ``casefold`` rather than ``lower`` so "STRASSE" and "Straße" agree, and so a Turkish "İ"
+    folds the way a Turkish speaker expects.
+    """
+    text = unicodedata.normalize("NFC", name).casefold()
+    return " ".join(re.sub(r"[^\w]+", " ", text).split())
+
+
+def safe_folder_name(text: str) -> str:
+    """A model's project name, reduced to something safe to be a directory on any card.
+
+    The human-readable analogue of :func:`slugify`, applied with exactly the same discipline and
+    for exactly the same reason. Unlike the slug it keeps spaces, capitals and letters outside
+    ASCII, because the whole point of ``projects/`` is that it reads like a shelf of labelled
+    folders rather than a source tree.
+
+    NFC, not slugify's NFKD-to-ASCII, and the difference matters twice: macOS hands out decomposed
+    filenames where Linux does not, so a card carried between them would otherwise grow two
+    folders for one project; and NFKD would fold "Ø" to "O", which the slug can afford and a name
+    someone reads cannot.
+
+    Returns "" when nothing survives, and "" is a real answer - the caller declines rather than
+    inventing a folder called "Untitled".
+    """
+    kept = []
+    for char in unicodedata.normalize("NFC", text):
+        if char in KEEP or unicodedata.category(char)[0] in "LMN":  # letters, marks, numbers
+            kept.append(char)
+        else:
+            # A space, never nothing: "bike/brake" is two words, not "bikebrake". This is also
+            # where / \ : * ? " < > | leave, along with every emoji and every control character -
+            # and where "../.." becomes ".. ..", which the strip below then eats entirely. No
+            # separator can survive this loop, so no name that comes out of it can traverse.
+            kept.append(" ")
+    name = " ".join("".join(kept).split())
+
+    # Windows silently drops trailing dots and spaces when it opens a file, so "Falcon." is a
+    # folder you cannot reliably address from the machine the card gets read on. Leading dots go
+    # for a different reason: a folder starting with one is hidden on macOS and Linux, and a
+    # project you cannot see is worse than one with a plainer name.
+    name = name.strip(" .")
+    if not name:
+        return ""
+
+    if len(name) > MAX_FOLDER_CHARS:  # cut at a word boundary, as _clean does
+        cut = name[:MAX_FOLDER_CHARS].rsplit(" ", 1)[0].strip(" .")
+        name = cut or name[:MAX_FOLDER_CHARS].strip(" .")
+    while len(name.encode("utf-8")) > MAX_FOLDER_BYTES:
+        name = name[:-1].strip(" .")
+
+    if name.split(".")[0].upper() in RESERVED:
+        name = f"{name} project"  # "CON" -> "CON project": still readable, no longer reserved
+    return name
