@@ -364,3 +364,23 @@ def platform_font_note() -> str:
         if Path(path).exists():
             return path
     return f"PIL default bitmap font (no TrueType found on {sys.platform})"
+
+
+def message(width: int, height: int, text: str) -> np.ndarray:
+    """A black frame with one line centred on it, as BGR - the panel with nothing to show.
+
+    Drawn here rather than in :mod:`cyclops.kiosk` because this is where the fonts already live.
+    Grey rather than white: it is a caption explaining a black rectangle, not a thing to read
+    across the room, and white on black at this size glares on the panel at night.
+    """
+    image = Image.new("RGB", (width, height), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+    font = _load_font(max(16, height // 22))
+    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
+    draw.text(
+        ((width - (right - left)) // 2 - left, (height - (bottom - top)) // 2 - top),
+        text,
+        font=font,
+        fill=(150, 150, 150),
+    )
+    return np.array(image)[:, :, ::-1].copy()  # RGB -> BGR, as everything downstream expects

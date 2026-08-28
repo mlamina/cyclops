@@ -43,6 +43,7 @@ from .overlay import (  # noqa: E402
     Overlay,
     composite,
     fit_to_window,
+    message,
     mirror,
     platform_font_note,
 )
@@ -86,6 +87,11 @@ def _parse_size(argv: list[str]) -> tuple[int, int] | None:
 
 WINDOW = "cyclops"
 TARGET_FPS = 25
+# What the picture area says when there is no camera, and how big the window comes up without
+# one to take a size from. The panel is 800x480; this fits it and looks deliberate on anything
+# larger, which is the point - a black window with no explanation reads as a crashed Pi.
+NO_CAMERA = "No camera found"
+NO_CAMERA_SIZE = (800, 480)
 FLASH_SECONDS = 0.45
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
@@ -175,9 +181,12 @@ class Kiosk:
         camera: CameraSource,
         fullscreen: bool,
         screen: tuple[int, int] | None = None,
+        *,
+        have_camera: bool = True,
     ):
         self.controller = controller
         self.camera = camera
+        self.have_camera = have_camera
         self.fullscreen = fullscreen
         self.overlay: Overlay | None = None
         self.backlight = Backlight()  # the panel's light, off while it sleeps
@@ -486,6 +495,9 @@ class Kiosk:
         not come back we stay dark rather than half-woken, and the next tap tries again.
         """
         self.backlight.on()  # light first, so the panel answers the tap before the camera can
+        if not self.have_camera:
+            self._asleep = False  # nothing to reopen; the panel is the message and the buttons
+            return
         try:
             self.camera.start()
         except WebcamError as exc:
@@ -499,8 +511,12 @@ class Kiosk:
 
     def run(self) -> None:
         frame_budget = 1.0 / TARGET_FPS
-        first = self.camera.frame()
-        h, w = first.shape[:2]
+        if self.have_camera:
+            first = self.camera.frame()
+            h, w = first.shape[:2]
+        else:
+            first = message(*NO_CAMERA_SIZE, NO_CAMERA)
+            h, w = NO_CAMERA_SIZE[1], NO_CAMERA_SIZE[0]
         self.open_window(first, min(w, 1280), min(h, 720))
 
         while self.running:
@@ -516,7 +532,7 @@ class Kiosk:
             asleep = self._sleeping(state)
 
             frame = None  # nothing to draw: the camera is either off or still coming back
-            if not asleep:
+            if not asleep and self.have_camera:
                 got = self.camera.latest()
                 if got is None:
                     break  # it has never delivered a frame; there is nothing to wait for
@@ -540,11 +556,12 @@ class Kiosk:
             else:
                 # The chrome is drawn through the wake-up: the buttons must answer the tap even
                 # while the camera is still opening behind them.
-                canvas = (
-                    _black(width, height)
-                    if frame is None
-                    else fit_to_window(mirror(frame), width, height)
-                )
+                if frame is not None:
+                    canvas = fit_to_window(mirror(frame), width, height)
+                elif self.have_camera:
+                    canvas = _black(width, height)  # still opening; it will be along shortly
+                else:
+                    canvas = message(width, height, NO_CAMERA)
                 flash = max(0.0, (self._flash_until - time.monotonic()) / FLASH_SECONDS)
                 elapsed = status["elapsed"]
                 chrome = self.overlay.render(
@@ -589,25 +606,35 @@ def main() -> None:
         sys.exit(2)
 
     camera = CameraSource(settings.camera_index)
-    # sessions record from this camera, and say so in their log
-    controller = SessionController(settings, frames=camera, entrypoint="kiosk")
+    have_camera = True
     try:
         camera.start()
         camera.wait_for_frame()
     except WebcamError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        # A missing camera is a degraded panel, not a dead one. Everything else still works -
+        # the eye starts a session, the gear opens the admin page, the light and the volume
+        # behave - and a Pi showing nothing at all reads as broken hardware, which sends
+        # someone looking for a keyboard. Say so on the screen and carry on.
+        print(f"· no camera: {exc}", file=sys.stderr, flush=True)
         camera.stop()
-        sys.exit(1)
+        have_camera = False
 
-    webcam.set_live_source(camera)  # the agent's tool now shoots from this same camera
-    kiosk = Kiosk(controller, camera, fullscreen, screen)
+    if have_camera:
+        webcam.set_live_source(camera)  # the agent's tool now shoots from this same camera
+    # Built after the camera, because a session records from it only if there is one: handing
+    # the recorder a dead source would make every session try, fail and say so in its log.
+    controller = SessionController(
+        settings, frames=camera if have_camera else None, entrypoint="kiosk"
+    )
+    kiosk = Kiosk(controller, camera, fullscreen, screen, have_camera=have_camera)
     kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
     kiosk.adopt_volume()
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     print(
-        f"· cyclops kiosk on camera {camera.index} · font: {platform_font_note()}\n"
+        f"· cyclops kiosk {f'on camera {camera.index}' if have_camera else 'with no camera'}"
+        f" · font: {platform_font_note()}\n"
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
