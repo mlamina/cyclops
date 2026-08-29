@@ -46,6 +46,7 @@ class Settings:
     record: bool = True  # record the camera to the session folder (needs an open camera)
     record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 640x480
     record_width: int = 640  # recorded video is fit to this width, never upscaled
+    sleep_after_s: int = 60  # untouched for this long the panel goes dark; 0 keeps it awake
     admin_host: str = "0.0.0.0"  # the admin page is meant to be read from the LAN, not just here
     admin_port: int = 80  # so it opens with a bare hostname
 
@@ -161,6 +162,8 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,
         record_width=_int("CYCLOPS_RECORD_WIDTH") or Settings.record_width,
+        # _count, not `or`: 0 means "never blank", which `or` would read as unset. See _count.
+        sleep_after_s=_count("CYCLOPS_SLEEP_AFTER_S", Settings.sleep_after_s),
         admin_host=_env("CYCLOPS_ADMIN_HOST") or Settings.admin_host,
         admin_port=_int("CYCLOPS_ADMIN_PORT") or Settings.admin_port,
     )

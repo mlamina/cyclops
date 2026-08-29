@@ -95,7 +95,6 @@ NO_CAMERA_SIZE = (800, 480)
 FLASH_SECONDS = 0.45
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
-SLEEP_AFTER_S = 60.0  # untouched for this long, the panel goes dark until it is tapped again
 SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
 SHUTDOWN_JOIN_S = 20.0  # on exit, a stopping session may still be muxing and naming itself
 BROWSERS = ("chromium-browser", "chromium")  # same probe order as cyclops-ui
@@ -181,12 +180,9 @@ class Kiosk:
         camera: CameraSource,
         fullscreen: bool,
         screen: tuple[int, int] | None = None,
-        *,
-        have_camera: bool = True,
     ):
         self.controller = controller
         self.camera = camera
-        self.have_camera = have_camera
         self.fullscreen = fullscreen
         self.overlay: Overlay | None = None
         self.backlight = Backlight()  # the panel's light, off while it sleeps
@@ -466,11 +462,16 @@ class Kiosk:
         the timer are a conversation's only feedback, and blanking them mid-sentence would read
         as a crash - and so does an open admin page, which is covering the panel itself. Only an
         idle kiosk goes dark, and only a tap brings it back (see :meth:`_on_mouse`).
+
+        ``CYCLOPS_SLEEP_AFTER_S=0`` turns the blanking off altogether and the panel simply stays
+        lit. Watching the camera come and go is the obvious case: the thing you are trying to
+        observe is also the thing a dark panel has just released.
         """
         now = time.monotonic()
+        after = self.controller.settings.sleep_after_s
         if state not in (IDLE, ERROR) or self._admin_busy.is_set():
             self._touched_at = now
-        elif not self._asleep and now - self._touched_at > SLEEP_AFTER_S:
+        elif after and not self._asleep and now - self._touched_at > after:
             self._sleep()
         return self._asleep
 
@@ -491,19 +492,12 @@ class Kiosk:
         """Light the panel, reopen the camera, and start drawing again.
 
         highgui dispatches mouse callbacks from inside ``waitKey``, so this runs on the render
-        thread and the reopen simply stalls one frame that was black anyway. If the device does
-        not come back we stay dark rather than half-woken, and the next tap tries again.
+        thread, and starting the source no longer blocks on the device: it hands the reopen to
+        the supervisor and returns. A camera that is gone means a panel that says so, not a
+        panel that refuses to wake.
         """
         self.backlight.on()  # light first, so the panel answers the tap before the camera can
-        if not self.have_camera:
-            self._asleep = False  # nothing to reopen; the panel is the message and the buttons
-            return
-        try:
-            self.camera.start()
-        except WebcamError as exc:
-            print(f"· camera did not come back: {exc}", file=sys.stderr, flush=True)
-            self.backlight.off()  # lit with nothing to show is worse than dark; stay asleep
-            return
+        self.camera.start()  # never raises; if the device is absent it keeps looking for it
         self._camera_on_at = time.monotonic()
         self._asleep = False
 
@@ -511,12 +505,10 @@ class Kiosk:
 
     def run(self) -> None:
         frame_budget = 1.0 / TARGET_FPS
-        if self.have_camera:
-            first = self.camera.frame()
-            h, w = first.shape[:2]
-        else:
+        first = self.camera.frame()
+        if first is None:  # nothing plugged in yet; the window still opens, and says why
             first = message(*NO_CAMERA_SIZE, NO_CAMERA)
-            h, w = NO_CAMERA_SIZE[1], NO_CAMERA_SIZE[0]
+        h, w = first.shape[:2]
         self.open_window(first, min(w, 1280), min(h, 720))
 
         while self.running:
@@ -531,14 +523,12 @@ class Kiosk:
             state = self._effective(str(status["state"]))
             asleep = self._sleeping(state)
 
-            frame = None  # nothing to draw: the camera is either off or still coming back
-            if not asleep and self.have_camera:
+            frame = None  # nothing to draw: the camera is off, absent, or still coming back
+            if not asleep:
                 got = self.camera.latest()
-                if got is None:
-                    break  # it has never delivered a frame; there is nothing to wait for
-                if got[1] >= self._camera_on_at:
-                    # A reopened device keeps handing back the frame it stopped on, and that
-                    # is last minute's room. Anything older than the reopen is not shown.
+                # A reopened device keeps handing back the frame it stopped on, and that is
+                # last minute's room. Anything older than the reopen is not shown.
+                if got is not None and got[1] >= self._camera_on_at:
                     frame = got[0]
 
             fallback = self._size if frame is None else (frame.shape[1], frame.shape[0])
@@ -558,8 +548,8 @@ class Kiosk:
                 # while the camera is still opening behind them.
                 if frame is not None:
                     canvas = fit_to_window(mirror(frame), width, height)
-                elif self.have_camera:
-                    canvas = _black(width, height)  # still opening; it will be along shortly
+                elif self.camera.connected:
+                    canvas = _black(width, height)  # open; the first frame is along shortly
                 else:
                     canvas = message(width, height, NO_CAMERA)
                 flash = max(0.0, (self._flash_until - time.monotonic()) / FLASH_SECONDS)
@@ -606,42 +596,43 @@ def main() -> None:
         sys.exit(2)
 
     camera = CameraSource(settings.camera_index)
-    have_camera = True
+    camera.start()  # returns at once; the device may only be plugged in a minute from now
     try:
-        camera.start()
         camera.wait_for_frame()
     except WebcamError as exc:
         # A missing camera is a degraded panel, not a dead one. Everything else still works -
         # the eye starts a session, the gear opens the admin page, the light and the volume
         # behave - and a Pi showing nothing at all reads as broken hardware, which sends
-        # someone looking for a keyboard. Say so on the screen and carry on.
-        print(f"· no camera: {exc}", file=sys.stderr, flush=True)
-        camera.stop()
-        have_camera = False
+        # someone looking for a keyboard. Say so on the screen and carry on looking.
+        print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
 
-    if have_camera:
-        webcam.set_live_source(camera)  # the agent's tool now shoots from this same camera
-    # Built after the camera, because a session records from it only if there is one: handing
-    # the recorder a dead source would make every session try, fail and say so in its log.
-    controller = SessionController(
-        settings, frames=camera if have_camera else None, entrypoint="kiosk"
-    )
-    kiosk = Kiosk(controller, camera, fullscreen, screen, have_camera=have_camera)
+    webcam.set_live_source(camera)  # the agent's tool shoots from this same camera
+    # The recorder gets the source even when nothing is plugged in: it waits its own moment for
+    # a first frame and says so in the session log if none comes, and a camera present by the
+    # time the next session starts is then recorded without anything being rewired.
+    controller = SessionController(settings, frames=camera, entrypoint="kiosk")
+    kiosk = Kiosk(controller, camera, fullscreen, screen)
     kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
     kiosk.adopt_volume()
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+    found = f"on camera {camera.index}" if camera.connected else "still looking for a camera"
+    idle_note = (
+        f"  after {settings.sleep_after_s:g}s untouched the light goes off and the camera is"
+        " released\n  any tap wakes it\n"
+        if settings.sleep_after_s
+        else "  idle blanking is OFF (CYCLOPS_SLEEP_AFTER_S=0) - the panel stays lit\n"
+    )
     print(
-        f"· cyclops kiosk {f'on camera {camera.index}' if have_camera else 'with no camera'}"
+        f"· cyclops kiosk {found}"
         f" · font: {platform_font_note()}\n"
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
         "  tap the shutter (bottom left) to snap · the eye (bottom right) to start/stop\n"
         "  the gear (top left) opens the admin page, which is where the volume lives\n"
-        f"  after {SLEEP_AFTER_S:g}s untouched the light goes off and the camera is released\n"
-        "  any tap wakes it\n"
+        f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,
     )

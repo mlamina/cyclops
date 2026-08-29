@@ -12,6 +12,12 @@ was too blurry to read" - it just answers worse. So the reader scores every fram
 :meth:`CameraSource.snapshot` hands out the sharpest of the last fraction of a second rather
 than whatever happened to arrive most recently. The preview still draws the newest frame, so
 what you see stays live.
+
+The device is also allowed to come and go. A USB camera can be unplugged mid-run and plugged
+back in, so opening it is a supervisor thread's standing job rather than something ``start()``
+does once: it retries until something delivers frames, and returns to retrying the moment the
+device stops. Nothing above here has to restart anything - :attr:`CameraSource.connected` says
+whether there is a camera right now, and the frames simply resume.
 """
 
 from __future__ import annotations
@@ -25,7 +31,8 @@ import cv2
 from .webcam import WebcamError, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
-READ_ERROR_GRACE = 30  # consecutive failed reads tolerated before giving up
+READ_ERROR_GRACE = 30  # consecutive failed reads tolerated before calling the device gone
+RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
 HISTORY = 12  # frames kept for the sharpest-of-recent pick (~0.5 s at 25 fps)
 SHARP_WINDOW_S = 0.7  # only frames this fresh compete; older ones may show a different scene
 FOCUS_WIDTH, FOCUS_HEIGHT = 320, 180  # score on a downscale: same ranking, ~1.5 ms on a Pi 5
@@ -58,6 +65,7 @@ class CameraSource:
         self._cap: cv2.VideoCapture | None = None
         self._index: int | None = None
         self._error = ""
+        self._generation = 0  # bumped by start(); a supervisor with a stale one retires itself
 
     @property
     def index(self) -> int | None:
@@ -66,16 +74,41 @@ class CameraSource:
 
     @property
     def error(self) -> str:
-        """Why the reader stopped, or '' while it is healthy."""
+        """Why there is no camera at the moment, or '' while one is delivering frames."""
         return self._error
 
+    @property
+    def connected(self) -> bool:
+        """Whether a device is open right now. False between unplugging and the next one."""
+        with self._lock:
+            return self._cap is not None
+
+    @property
+    def live(self) -> bool:
+        """Whether a fresh frame is available - open *and* actually delivering."""
+        got = self.latest()
+        return got is not None and time.monotonic() - got[1] <= STALE_AFTER_S
+
     def start(self) -> None:
-        """Open the device and begin reading. Raises WebcamError if nothing delivers a frame."""
-        if self._thread is not None:
-            return
-        self._cap, self._index = open_camera(self._preferred)
+        """Begin looking for a camera, and keep looking. Never raises.
+
+        The device may be absent now and plugged in a minute from now, so this only starts the
+        supervisor; it is that thread which opens, reads, and reopens. Callers that need a frame
+        before they can continue follow this with :meth:`wait_for_frame`.
+
+        Each supervisor carries the generation it was started under. :meth:`stop` cannot promise
+        the old one has exited - it may be several seconds inside a blocking open of a device
+        that is warming up - and clearing the stop event for a new run would otherwise revive it,
+        leaving two threads reading one camera. A supervisor whose generation is no longer the
+        current one stands down instead, whatever the stop event says.
+        """
+        if self._thread is not None and self._thread.is_alive() and not self._stop.is_set():
+            return  # already supervising
+        self._generation += 1
         self._stop.clear()
-        self._thread = threading.Thread(target=self._read_loop, name="camera-source", daemon=True)
+        self._thread = threading.Thread(
+            target=self._supervise, args=(self._generation,), name="camera-source", daemon=True
+        )
         self._thread.start()
 
     def latest(self) -> tuple[object, float] | None:
@@ -123,6 +156,7 @@ class CameraSource:
         if self._cap is not None:
             self._cap.release()
             self._cap = None
+        self._forget()
 
     def __enter__(self) -> CameraSource:
         self.start()
@@ -131,16 +165,54 @@ class CameraSource:
     def __exit__(self, *exc: object) -> None:
         self.stop()
 
-    def _read_loop(self) -> None:
-        cap = self._cap
-        assert cap is not None
+    def _supervise(self, token: int) -> None:
+        """Hold a camera open for as long as the source is running, through unplugs.
+
+        Every attempt probes again rather than reusing the index it left on: a camera plugged
+        back in can land on a different ``/dev/video*`` than the one it came up as, so the
+        index has to be rediscovered along with the device. Failing to find one is not an error
+        to stop on - it is a state to sit in, and to leave again when a camera turns up.
+        """
+        while not self._stop.is_set() and self._generation == token:
+            try:
+                cap, index = open_camera(self._preferred)
+            except WebcamError as exc:
+                self._error = str(exc)
+                self._forget()  # whatever it was showing is now last minute's room
+                self._stop.wait(RECONNECT_EVERY_S)
+                continue
+            if self._stop.is_set() or self._generation != token:
+                cap.release()  # retired while that open was blocking; never adopt the device
+                return
+            if self._error:  # we had been looking, so this is news; a first open is not
+                print(f"· camera {index} found", flush=True)
+            with self._lock:
+                self._cap, self._index, self._error = cap, index, ""
+            try:
+                self._read_loop(cap, token)
+            finally:
+                with self._lock:
+                    self._cap = None
+                cap.release()
+                self._forget()
+
+    def _forget(self) -> None:
+        """Drop the frames from before the device went away, so none is drawn or photographed."""
+        with self._lock:
+            self._frame = None
+            self._stamp = 0.0
+            self._recent.clear()
+        self.last_pick = None
+
+    def _read_loop(self, cap, token: int) -> None:
         failures = 0
-        while not self._stop.is_set():
+        while not self._stop.is_set() and self._generation == token:
             ok, frame = cap.read()
             if not ok or frame is None or frame.size == 0:
                 failures += 1
                 if failures > READ_ERROR_GRACE:
                     self._error = f"camera {self._index} stopped delivering frames"
+                    print(f"· camera {self._index} unplugged - looking for it again", flush=True)
                     return
                 time.sleep(0.02)
                 continue

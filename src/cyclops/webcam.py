@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import concurrent.futures
+import contextlib
 import os
 import sys
 import threading
@@ -58,6 +59,28 @@ def _candidate_indices(preferred: int | None) -> list[int]:
     return order + [i for i in range(PROBE_INDICES) if i not in order]
 
 
+@contextlib.contextmanager
+def _quiet_probe():
+    """Silence OpenCV's own chatter while we try indices that may well be empty.
+
+    Looking for a camera that is not plugged in is a normal, repeating state - the live source
+    retries every couple of seconds - and each failed open prints three lines from the C++ layer
+    about a device it was asked to try. Left alone that buries the kiosk log in identical
+    warnings and hides anything that actually matters. The level is restored afterwards, so a
+    real failure somewhere else still says so.
+    """
+    api = getattr(cv2.utils, "logging", None)
+    if api is None:  # older wheels have no logging control; the noise is the lesser problem
+        yield
+        return
+    previous = api.getLogLevel()
+    api.setLogLevel(api.LOG_LEVEL_SILENT)
+    try:
+        yield
+    finally:
+        api.setLogLevel(previous)
+
+
 def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture, int]:
     """Open the preferred camera, or probe for one that actually delivers frames.
 
@@ -67,13 +90,14 @@ def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture, int]:
     backend = cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
     params = [cv2.CAP_PROP_FRAME_WIDTH, 1280, cv2.CAP_PROP_FRAME_HEIGHT, 720]
     candidates = _candidate_indices(preferred)
-    for index in candidates:
-        cap = cv2.VideoCapture(index, backend, params)
-        if cap.isOpened():
-            ok, _ = cap.read()
-            if ok:
-                return cap, index
-        cap.release()
+    with _quiet_probe():
+        for index in candidates:
+            cap = cv2.VideoCapture(index, backend, params)
+            if cap.isOpened():
+                ok, _ = cap.read()
+                if ok:
+                    return cap, index
+            cap.release()
     raise WebcamError(
         f"No camera delivered a frame (tried indices {candidates}). Check System Settings → "
         "Privacy & Security → Camera for your terminal app, or set CYCLOPS_CAMERA_INDEX."
