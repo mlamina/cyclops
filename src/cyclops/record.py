@@ -65,6 +65,12 @@ def mux_command(work_dir: Path, out_path: Path) -> list[str]:
     Lifted out of :meth:`SessionRecorder._mux` so ``cyclops-sessions --fix`` can finish an
     interrupted session with exactly the command the recorder would have run, rather than a
     second copy of it that quietly rots out of step.
+
+    ``-f mp4`` is not decoration. ffmpeg picks its muxer from the output's extension, and
+    :func:`mux` deliberately writes to a scratch name ending ``.tmp`` - which ffmpeg cannot
+    guess a container from, so it refuses the job before reading a single frame ("Unable to
+    find a suitable output format"). The scratch name is what makes ``video.mp4`` existing mean
+    *a mux returned zero*, so it is the extension that has to give way, not the safety.
     """
     return [
         "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
@@ -75,6 +81,7 @@ def mux_command(work_dir: Path, out_path: Path) -> list[str]:
         "-map", "0:v", "-map", "[a]",
         "-c:v", "copy", "-c:a", "aac", "-b:a", "96k",
         "-shortest", "-movflags", "+faststart",
+        "-f", "mp4",  # the output is a scratch name; ffmpeg cannot infer the container from it
         str(out_path),
     ]
 

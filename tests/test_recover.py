@@ -9,6 +9,7 @@ stubbed out.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -225,6 +226,23 @@ def test_a_failed_mux_asks_systemd_to_come_back(card_root, monkeypatch):
 
     assert code == 1
     assert (folder / card.PARTS).is_dir(), "a failed mux keeps the parts for the next attempt"
+
+
+def test_the_mux_names_its_own_container():
+    """ffmpeg reads the muxer off the output extension, and mux() writes to a scratch ``.tmp``.
+
+    Every other test here stubs :func:`~cyclops.record.mux` out, so nothing exercised the argv
+    it builds - which is how a command that ffmpeg rejects before reading a frame ("Unable to
+    find a suitable output format for ...video.mp4.tmp") shipped and quietly cost every session
+    its video. The scratch name is load-bearing, so the container has to be said out loud.
+    """
+    from cyclops.record import mux_command
+
+    out = card.tmp_for(Path("sessions/x/video.mp4"))
+    cmd = mux_command(Path("sessions/x/parts"), out)
+
+    assert cmd[-1].endswith(".tmp"), "otherwise this test is guarding nothing"
+    assert "-f" in cmd and cmd[cmd.index("-f") + 1] == "mp4"
 
 
 def test_no_key_is_not_a_failure(card_root):
