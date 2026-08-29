@@ -23,6 +23,7 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
+from .. import card
 from ..config import ConfigError, Settings, load_settings
 from ..session import PAGE_NAME
 from . import store
@@ -83,7 +84,9 @@ def _folders(settings: Settings) -> list[Path]:
     root = settings.sessions_dir.expanduser()
     if not root.is_dir():
         return []
-    return sorted(p for p in root.iterdir() if p.is_dir() and (p / PAGE_NAME).is_file())
+    # written(), not is_file(): a zero-byte session.md is a power cut, not a finished
+    # session, and filing one costs a model request to read an empty page.
+    return sorted(p for p in root.iterdir() if p.is_dir() and card.written(p / PAGE_NAME))
 
 
 def unfiled(settings: Settings, *, again: bool = False) -> list[Path]:
@@ -150,10 +153,13 @@ async def file_session(
 def _apply(folder: Path, session, project: Project, deps, settings: Settings) -> str:
     """Everything that touches the card, in the one order that survives a power cut.
 
-    Photos, then the log, then the receipt, then the page. Each step is safe to repeat, and the
-    receipt goes before the page deliberately: the page is derived and free to rebuild, while a
-    receipt written after it would leave a window where the log has an entry, the page shows it,
-    and the next sweep files it all over again.
+    Photos, then the log, then the page, then the receipt. Each step is safe to repeat, and the
+    receipt goes *last* deliberately: it is the one file whose presence stops this session ever
+    being read again, so it must not exist until everything it claims happened has. A crash
+    before it leaves the log entry in place and the session looking unfiled - and the next sweep
+    re-reads it, finds the uuid via ``filed_uuids`` and appends nothing, which is the whole
+    retry story. (This paragraph used to say "receipt, then the page", which is the order that
+    would leave a stale README with nothing left to rebuild it.)
     """
     scribed = deps.scribed
     picks = [(p.file, p.caption) for p in (deps.picks.picks if deps.picks else [])]
@@ -316,6 +322,9 @@ def main() -> None:
     import os
 
     args = sys.argv[1:]
+    if "--help" in args or "-h" in args:
+        print(_usage())
+        return
     flags = {"--check", "--sweep", "--again", "--dry-run"}
     known = flags | {"--limit", "--session"}
     limit, session_arg = 0, ""
@@ -339,7 +348,12 @@ def main() -> None:
         print("· CYCLOPS_PROJECTS=0 - projects are turned off")
         return
 
-    sweeping = "--sweep" in args or bool(session_arg)
+    # --again on its own used to fall through to check() and return, silently doing nothing -
+    # which is exactly what the README documented it as doing something. A flag that only means
+    # anything alongside --sweep either implies it or says so; these three imply it.
+    sweeping = "--sweep" in args or bool(session_arg) or "--again" in args
+    if ("--dry-run" in args or limit) and not sweeping:
+        raise SystemExit(f"error: --dry-run and --limit need --sweep\n{_usage()}")
     if not sweeping or "--check" in args:
         check(settings)
         if not sweeping:
@@ -359,7 +373,7 @@ def main() -> None:
 
     if session_arg:
         folder = Path(session_arg).expanduser()
-        if not (folder / PAGE_NAME).is_file():
+        if not card.written(folder / PAGE_NAME):
             raise SystemExit(f"error: {folder} has no {PAGE_NAME} - it is not a finished session")
         asyncio.run(_one(folder, settings, dry_run="--dry-run" in args))
         return

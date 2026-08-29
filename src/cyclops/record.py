@@ -35,11 +35,13 @@ import threading
 import time
 import wave
 from collections import deque
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import cv2
 
+from . import card
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE, EchoGuard
 
 DEFAULT_FPS = 15
@@ -75,6 +77,53 @@ def mux_command(work_dir: Path, out_path: Path) -> list[str]:
         "-shortest", "-movflags", "+faststart",
         str(out_path),
     ]
+
+
+@dataclass(frozen=True)
+class Mux:
+    """What one mux attempt came to. ``why`` is ffmpeg's last line, and empty when it worked."""
+
+    ok: bool
+    why: str = ""
+
+
+def mux(work_dir: Path, out_path: Path) -> Mux:
+    """Join a session's parts into its mp4, landing the file only if ffmpeg said it worked.
+
+    ffmpeg used to be pointed straight at ``video.mp4``, and a power cut mid-encode left a
+    truncated file sitting on the name. That was worse than losing it: ``cyclops-sessions --fix``
+    asked ``not video.is_file()`` before retrying, so the wreckage of the interrupted mux
+    permanently blocked its own repair. Now the encode happens under a scratch name and is
+    renamed into place afterwards, which makes ``video.mp4`` existing mean *a mux returned zero* -
+    the only reading under which the retry can be trusted.
+
+    The parts are removed only on success, which is what makes ``parts/`` surviving the honest
+    signal that this never finished. Both callers - the live teardown and the repair path - come
+    through here rather than through :func:`mux_command` alone, so there is one implementation of
+    "finish a recording" and not two that drift.
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = card.tmp_for(out_path)
+    try:
+        done = subprocess.run(  # noqa: S603 - the command is ours, from mux_command
+            mux_command(work_dir, tmp), capture_output=True, timeout=MUX_TIMEOUT_S, check=False
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        # Notably FileNotFoundError: systemd's PATH is not a login shell's, and the recovery
+        # unit would otherwise die on the first folder rather than repair the other twelve.
+        tmp.unlink(missing_ok=True)
+        return Mux(False, f"{type(exc).__name__}: {exc}")
+    if done.returncode != 0:
+        tmp.unlink(missing_ok=True)
+        detail = done.stderr.decode(errors="replace").strip().splitlines()
+        return Mux(False, detail[-1] if detail else f"exit {done.returncode}")
+    try:
+        card.land(tmp, out_path)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        return Mux(False, f"{type(exc).__name__}: {exc}")
+    shutil.rmtree(work_dir, ignore_errors=True)
+    return Mux(True)
 
 
 class FrameSource(Protocol):
@@ -351,21 +400,11 @@ class SessionRecorder:
 
     def _mux(self) -> Path | None:
         """Join the parts: copy the video, encode user|agent into one stereo track."""
-        self.out_path.parent.mkdir(parents=True, exist_ok=True)
-        command = mux_command(self.work_dir, self.out_path)
-        try:
-            done = subprocess.run(command, capture_output=True, timeout=MUX_TIMEOUT_S, check=False)
-        except (OSError, subprocess.SubprocessError) as exc:
-            self._give_up(f"mux failed ({exc}); the parts are in {self.work_dir}")
+        done = mux(self.work_dir, self.out_path)
+        if not done.ok:
+            self._give_up(f"mux failed ({done.why}); the parts are in {self.work_dir}")
             self._report()
             return None
-        if done.returncode != 0:
-            detail = done.stderr.decode(errors="replace").strip().splitlines()
-            tail = detail[-1] if detail else f"exit {done.returncode}"
-            self._give_up(f"mux failed ({tail}); the parts are in {self.work_dir}")
-            self._report()
-            return None
-        shutil.rmtree(self.work_dir, ignore_errors=True)
         return self.out_path
 
     def _give_up(self, message: str) -> None:

@@ -43,5 +43,13 @@ select = ["E", "F", "I", "UP", "B", "ASYNC"]
 
 [dependency-groups]
 dev = [
+    "pytest>=8",
     "ruff>=0.16.4",
 ]
+
+# Only the pure logic is tested here: what a session folder amounts to, how a file lands on the
+# card, and what a page renders to. Anything needing a camera, a microphone or a key belongs in
+# `cyclops-smoke` or in the on-the-Pi checks, not here - these must run anywhere, in a second.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

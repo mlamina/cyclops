@@ -19,11 +19,20 @@ Two rules shape everything here:
   anything that goes wrong sets :attr:`SessionLog.failed`, says so once, and every method after
   it is a no-op. A full card, a read-only mount or a bad record costs you the log, never the
   session. This is why ``__init__`` only assigns and ``__enter__`` does everything fallible.
-* **Records are flushed, never fsynced.** An fsync per line would grind an SD card for a
-  guarantee we do not need. The one corruption this can suffer is a half-written last line
-  after a power cut, and that is exactly why the format is JSON Lines rather than JSON: no
-  shared state between lines, so :func:`read_log` drops the bad one and everything before it is
-  still a session.
+* **Records are flushed as they land, and fsynced once, at the end.** An fsync per line would
+  grind an SD card for a guarantee we do not need, and an fsync on a timer would do it from the
+  session's own event loop - the one thread that must never block, because on ext4 ``data=ordered``
+  a small fsync waits on the whole transaction's ordered buffers, which on a kiosk means whatever
+  x264 has in flight. Do not add one. The single place worth paying is :meth:`SessionLog._sync_log`
+  at the close, because that is the moment ``session.md`` and ``summary.md`` are written *from
+  these same records*, and a page that outlived its own log is the one inconsistency this format
+  cannot repair. Everything before that is still best-effort, which is exactly why the format is
+  JSON Lines rather than JSON: no shared state between lines, so :func:`read_log` drops a
+  half-written last line and everything before it is still a session.
+* **Everything else lands whole or not at all.** Every file this module writes goes through
+  :mod:`cyclops.card`, which writes to a scratch name, fsyncs it and renames it into place. A
+  power cut used to leave a zero-byte ``session.md`` wearing the name that means "this session
+  finished"; now it leaves the previous state, or nothing, and recovery can tell.
 
 Writes arrive from three threads - the session's event loop (:meth:`SessionLog.observe`), the
 kiosk's shutter thread (via :func:`note`), and the teardown - so the handle is lock-guarded.
@@ -32,9 +41,8 @@ kiosk's shutter thread (via :func:`note`), and the teardown - so the handle is l
 from __future__ import annotations
 
 import json
+import os
 import re
-import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -45,8 +53,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import card
 from .config import ConfigError, Settings, load_settings
-from .record import MUX_TIMEOUT_S, SessionRecorder, mux_command
+from .record import SessionRecorder, mux
 
 if TYPE_CHECKING:  # importing these for real would be a cycle - agent.py imports this module
     from openai.types.realtime import RealtimeServerEvent
@@ -55,15 +64,25 @@ if TYPE_CHECKING:  # importing these for real would be a cycle - agent.py import
     from .audio import Microphone, Speaker
     from .record import FrameSource
 
-LOG_NAME = "session.jsonl"
-PAGE_NAME = "session.md"
-SUMMARY_NAME = "summary.md"
-PHOTOS = "photos"
-PARTS = "parts"
-VIDEO = "video.mp4"
-STAMP = "%Y-%m-%d_%H-%M-%S"
-STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobody has named yet
+# Re-exported rather than redefined: cyclops.card owns what a session folder is called, so that
+# stats.py - which must not import this module, because it would drag OpenCV into a status page -
+# can ask the same questions of the same names. Everything that imported these from here still
+# works.
+LOG_NAME = card.LOG_NAME
+PAGE_NAME = card.PAGE_NAME
+SUMMARY_NAME = card.SUMMARY_NAME
+RECEIPT_NAME = card.RECEIPT_NAME
+PHOTOS = card.PHOTOS
+PARTS = card.PARTS
+VIDEO = card.VIDEO
+STAMP = card.STAMP
+STAMPED = card.STAMPED
+read_log = card.read_log  # moved there so triage() can use it; the name still lives here
 SLUG_JOIN_S = 12.0  # a hair over slug.DESCRIBE_TIMEOUT_S; it runs beside the mux, not after
+# How many sessions one boot-time recovery hands to the projects sweep. A backlog after a
+# long outage drains a few at a time rather than in one unattended burst - and it drains
+# anyway, because every session end spawns a full sweep of its own.
+RECOVER_FILE_LIMIT = 10
 
 # What a new session is told about the ones before it. One paragraph of the last one, and a
 # sentence each for the last few - enough to pick up a thread, small enough that it cannot
@@ -161,6 +180,10 @@ class SessionLog:
         try:
             self.dir.mkdir(parents=True, exist_ok=True)
             self._handle = (self.dir / LOG_NAME).open("a", encoding="utf-8")
+            # This folder's claim on itself, held for the whole session and dropped by the
+            # kernel if we die. It is what stops `cyclops-sessions --recover` renaming a folder
+            # out from under a running conversation - see cyclops.card.claim.
+            card.claim(self._handle)
             self.event(
                 "session",
                 uuid=self.uuid,
@@ -202,12 +225,18 @@ class SessionLog:
         if reason == "error" and exc is not None:
             fields["error"] = f"{type(exc).__name__}: {exc}"
         self.event("end", **fields)
-        self._close_handle()
+        self._sync_log()  # the records are on the card before anything is derived from them
         self._write_summary()  # before the page, so the page stays the "finished" marker
         self._write_page()  # written last, which is what makes its presence mean "finished"
         self._rename()
         self._report()
-        self._file()  # last of all, and it does not wait
+        self._file()  # does not wait
+        # Closing drops this folder's flock, so it goes last of all: everything above renames
+        # files and the folder itself, and a recovery sweep that started mid-teardown would
+        # otherwise be free to do the same thing at the same time. Nothing writes after the end
+        # record - `_live` was cleared at the top, so note() is already a no-op - which is what
+        # makes it safe to keep the handle open this long.
+        self._close_handle()
 
     def _start_recorder(self) -> None:
         """Tap the mic and the speaker for this session's video, if there is a camera for one."""
@@ -275,6 +304,7 @@ class SessionLog:
             self.dir.rename(target)
         except OSError:
             return  # the end record already says what it should have been called
+        card.sync_dir(target.parent)  # a rename is a change to the directory; sync it too
         self.dir = target
 
     def _write_summary(self) -> None:
@@ -288,7 +318,7 @@ class SessionLog:
         if self.failed or not self.summary:
             return
         try:
-            (self.dir / SUMMARY_NAME).write_text(self.summary, encoding="utf-8")
+            card.write_text(self.dir / SUMMARY_NAME, self.summary)
         except OSError as exc:
             self._give_up(f"{type(exc).__name__}: {exc}")
 
@@ -296,7 +326,7 @@ class SessionLog:
         if self.failed:
             return
         try:
-            (self.dir / PAGE_NAME).write_text(render_markdown(self._records), encoding="utf-8")
+            card.write_text(self.dir / PAGE_NAME, render_markdown(self._records))
         except OSError as exc:
             self._give_up(f"{type(exc).__name__}: {exc}")
 
@@ -324,12 +354,30 @@ class SessionLog:
         except Exception:  # noqa: BLE001 - a filing that did not start never reaches teardown
             pass
 
+    def _sync_log(self) -> None:
+        """Put the records on the card. Once, at the end - see the module docstring.
+
+        This is the one fsync a session pays, and it is here because the next three lines
+        derive ``summary.md`` and ``session.md`` from these very records. Those are written
+        atomically and durably; a page that outlived its own log would be the one inconsistency
+        this format cannot repair.
+        """
+        with self._lock:
+            handle = self._handle
+            if handle is None or handle.closed:
+                return
+            try:
+                handle.flush()
+                os.fsync(handle.fileno())
+            except (OSError, ValueError):
+                pass  # the log is what it is by now; never fail a teardown over it
+
     def _close_handle(self) -> None:
         with self._lock:
             handle, self._handle = self._handle, None
         if handle is not None:
             try:
-                handle.close()
+                handle.close()  # and with it, the flock this folder held on itself
             except OSError:
                 pass  # nothing useful to do about it while tearing down
 
@@ -447,35 +495,6 @@ def _reason(exc_type: type[BaseException] | None) -> str:
 
 
 # ------------------------------------------------------------------ reading it back
-
-
-def read_log(path: Path) -> tuple[list[dict], int]:
-    """Every record in a ``session.jsonl``, and how many lines were not one.
-
-    Lines are flushed but never fsynced (see the module docstring), so a power cut can leave the
-    last one half-written. That is the only corruption this format can suffer, and nothing is
-    swallowed silently: the count comes back and :func:`render_markdown` says so on the page.
-    """
-    try:
-        text = path.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return [], 0
-    records: list[dict] = []
-    dropped = 0
-    for line in text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            record = json.loads(line)
-        except ValueError:  # JSONDecodeError is a subclass
-            dropped += 1
-            continue
-        if isinstance(record, dict):
-            records.append(record)
-        else:
-            dropped += 1
-    return records, dropped
 
 
 def transcript_text(records: list[dict], limit: int | None = None) -> str:
@@ -766,27 +785,31 @@ def _folders(sessions_dir: Path) -> list[Path]:
     return sorted(p for p in sessions_dir.iterdir() if p.is_dir())
 
 
-def _summarise(folder: Path) -> str:
-    records, dropped = read_log(folder / LOG_NAME)
+def _summarise(folder: Path, state: card.State | None = None) -> str:
+    state = state or card.triage(folder)
+    records, _ = read_log(folder / LOG_NAME)
     tail = next((r for r in reversed(records) if r.get("type") == "end"), {})
-    photos = len(list((folder / PHOTOS).glob("*.jpg"))) if (folder / PHOTOS).is_dir() else 0
     flags = []
-    if (folder / VIDEO).is_file():
+    if state.verdict == "live":
+        flags.append("LIVE")
+    if state.video:
         flags.append("video")
-    if (folder / PARTS).is_dir():
+    if state.parts:
         flags.append("parts/")
-    if not (folder / PAGE_NAME).is_file():
+    if state.verdict == "empty":
+        flags.append("EMPTY")
+    elif not state.page:
         flags.append("UNFINISHED")
     else:
-        if STAMPED.match(folder.name):
+        if not state.named:
             flags.append("unnamed")
-        if not (folder / "project.md").is_file():
+        if not state.filed:
             flags.append("unfiled")
-    if dropped:
-        flags.append(f"{dropped} bad line(s)")
+    if state.dropped:
+        flags.append(f"{state.dropped} bad line(s)")
     return (
         f"{folder.name:<44}{_span(tail.get('seconds')):>8}"
-        f"{photos:>4} photo{'' if photos == 1 else 's'}   {'  '.join(flags)}"
+        f"{state.photos:>4} photo{'' if state.photos == 1 else 's'}   {'  '.join(flags)}"
     ).rstrip()
 
 
@@ -797,38 +820,54 @@ def _append(log: Path, record: dict) -> None:
     try:
         with log.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps({"t": at, **record}, ensure_ascii=False) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())  # once per repair, not per line - see the module docstring
     except OSError:
         pass  # the repair is still worth reporting even if we cannot write it down
 
 
-def _fix(folder: Path) -> list[str]:
-    """Finish a session the power cut off. Offline, idempotent, never overwrites."""
+def _fix(folder: Path, state: card.State | None = None) -> list[str]:
+    """Finish a session the power cut off. Offline, idempotent, never destroys anything.
+
+    Both gates here used to be existence checks, and both were wrong in the same way: a
+    truncated ``video.mp4`` and a zero-byte ``session.md`` each satisfied ``is_file()``, so the
+    wreckage of an interrupted teardown was what stopped the repair from running. They now ask
+    what is actually in the folder - see :func:`cyclops.card.triage`.
+    """
     did = []
+    state = state or card.triage(folder)
     log = folder / LOG_NAME
     parts, video = folder / PARTS, folder / VIDEO
-    if parts.is_dir() and not video.is_file():
-        done = subprocess.run(  # noqa: S603 - the command is ours, from record.mux_command
-            mux_command(parts, video), capture_output=True, timeout=MUX_TIMEOUT_S, check=False
-        )
-        if done.returncode == 0:
-            shutil.rmtree(parts, ignore_errors=True)
+    if state.parts:
+        # No "and the video is missing" here any more. `parts/` is removed only when a mux
+        # returns zero (record.mux), so its survival *is* the statement that one did not - and
+        # re-muxing is idempotent, so this repairs an absent video and a truncated one alike.
+        done = mux(parts, video)
+        if done.ok:
             # Record it, so the page that gets written below links the video the same way a
             # session that finished normally would. The mux really did happen; the log should
             # say so rather than leave the one artifact it cannot see for itself unmentioned.
             _append(log, {"type": "video", "file": video.name, "repaired": True})
             did.append(f"muxed {video.name}")
         else:
-            tail = done.stderr.decode(errors="replace").strip().splitlines()
-            did.append(f"could not mux ({tail[-1] if tail else done.returncode})")
-    page = folder / PAGE_NAME
-    if log.is_file() and not page.is_file():
+            _append(log, {"type": "video", "error": done.why})
+            did.append(f"could not mux ({done.why})")
+    if state.records and not state.page:
+        # `state.records`, not `log.is_file()`: a zero-byte log used to earn a fabricated
+        # session.md, which then read as a finished session forever after.
         records, dropped = read_log(log)
-        page.write_text(render_markdown(records, dropped=dropped), encoding="utf-8")
-        did.append(f"wrote {PAGE_NAME}")
+        try:
+            card.write_text(folder / PAGE_NAME, render_markdown(records, dropped=dropped))
+        except OSError as exc:
+            did.append(f"could not write {PAGE_NAME} ({exc})")  # never abort the rest of the card
+        else:
+            did.append(f"wrote {PAGE_NAME}")
     return did
 
 
-def _describe(folder: Path, settings: Settings) -> tuple[Path, list[str]]:
+def _describe(
+    folder: Path, settings: Settings, state: card.State | None = None
+) -> tuple[Path, list[str]]:
     """Give a finished session whatever it is missing: a name, a summary, or both.
 
     Where the folder ends up comes back with what was done to it, because naming moves it. A
@@ -837,18 +876,32 @@ def _describe(folder: Path, settings: Settings) -> tuple[Path, list[str]]:
     """
     from .slug import describe_session
 
-    needs_name = bool(STAMPED.match(folder.name))
-    needs_summary = not (folder / SUMMARY_NAME).is_file()
+    state = state or card.triage(folder)
+    needs_name = not state.named
+    needs_summary = not state.summary  # written(), so a zero-byte summary.md asks again
     if not needs_name and not needs_summary:
         return folder, []
+    if not needs_summary:
+        # It has a summary but no name, which is not a job half done - it is the finished job.
+        # Both halves come out of one call, so a summary is proof the model saw this session,
+        # and an empty slug is its answer: `slugify` turns the "chat" it is told to reply with
+        # for a conversation about nothing into "", meaning leave the folder dated. Asking
+        # again buys the same answer at the same price, on every boot, forever.
+        return folder, []
     records, _ = read_log(folder / LOG_NAME)
-    described = describe_session(transcript_text(records), settings)
+    text = transcript_text(records)
+    if not text:
+        # The same check `_start_naming` makes before spending a round trip. It was missing
+        # here, so `--name` sent every silent session on the card to the model to be told
+        # there was nothing in it.
+        return folder, []
+    described = describe_session(text, settings)
     did = []
     # Summary first, then the rename: the folder moves with its contents either way, and this
     # ordering means a rename that fails still leaves the summary where it belongs.
     if needs_summary and described.page:
         try:
-            (folder / SUMMARY_NAME).write_text(described.page, encoding="utf-8")
+            card.write_text(folder / SUMMARY_NAME, described.page)
             did.append(f"wrote {SUMMARY_NAME}")
         except OSError as exc:
             did.append(f"could not write {SUMMARY_NAME} ({exc})")
@@ -860,22 +913,232 @@ def _describe(folder: Path, settings: Settings) -> tuple[Path, list[str]]:
             except OSError as exc:
                 did.append(f"could not rename ({exc})")
             else:
+                card.sync_dir(target.parent)
                 did.append(f"named {target.name}")
                 folder = target
     return folder, did
 
 
+def _remove(folder: Path, *, dry_run: bool = False) -> str:
+    """Delete a folder nothing survived in. The one destructive thing in the program.
+
+    So it asks twice, from two directions. :func:`cyclops.card.triage` has already said there is
+    nothing of value here; :func:`cyclops.card.surprises` says whether there is anything here we
+    did not put here, and a folder holding someone's note keeps the note and therefore keeps
+    itself. Then the files go one at a time and the folder goes with ``rmdir``, not ``rmtree``:
+    ``rmdir`` fails on anything unexpected still being there, which is a safety property worth
+    more than the convenience.
+    """
+    odd = card.surprises(folder)
+    if odd:
+        return f"nothing survived, but {', '.join(odd)} is not ours - left alone"
+    if dry_run:
+        return "nothing survived - would remove"
+    try:
+        for name in (LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO):
+            (folder / name).unlink(missing_ok=True)
+        for sub in (PHOTOS, PARTS):
+            if (folder / sub).is_dir():
+                (folder / sub).rmdir()  # empty by definition; refuses if triage was wrong
+        folder.rmdir()
+    except OSError as exc:
+        return f"nothing survived, but could not remove it ({exc})"
+    card.sync_dir(folder.parent)
+    return "nothing survived - removed"
+
+
+def _recover(settings: Settings, *, offline: bool = False, dry_run: bool = False) -> int:
+    """Bring every session on the card to a finished state, or say why it could not be.
+
+    What ``--fix`` and ``--name`` do, over the whole card, plus the two things nobody should get
+    by accident: deleting what nothing survived in, and handing the results to the projects
+    sweep. This is what runs at boot, and the order is the whole design:
+
+    1. **A live session is never touched.** It holds a flock on its own log, so this can tell.
+       Getting that wrong renames a folder out from under a running conversation.
+    2. **Scratch files first**, so what is printed next is the truth rather than a half-write.
+    3. **Delete the husks before repairing anything** - no ffmpeg run and no model request is
+       ever spent on a folder that is about to go.
+    4. **Repair offline, then describe.** A box with no network still leaves every folder as
+       finished as it can be made without one.
+    5. **File last**, because ``summary.md`` is what the filing agents are handed as the brief;
+       filing a session before it has one files it worse.
+
+    Returns the process exit code: non-zero when something is still unfinished, so
+    ``Restart=on-failure`` means what it says and a boot that raced DHCP tries again.
+    """
+    folders = _folders(settings.sessions_dir)
+    if not folders:
+        print(f"· no sessions in {settings.sessions_dir.expanduser().resolve()}")
+        return 0
+
+    repaired = removed = named = skipped = 0
+    for folder in folders:
+        state = card.triage(folder)
+        if state.verdict == "live":
+            print(f"· {folder.name}: a session is writing here; left alone", flush=True)
+            skipped += 1
+            continue
+        for stray in card.strays(folder):
+            if not dry_run:
+                stray.unlink(missing_ok=True)
+            print(f"· {folder.name}: swept {stray.name}", flush=True)
+        if state.verdict == "empty":
+            said = _remove(folder, dry_run=dry_run)
+            print(f"· {folder.name}: {said}", flush=True)
+            removed += said.endswith("removed") or said.endswith("would remove")
+            continue
+        if dry_run:
+            for did in _would_fix(folder, state, offline=offline or not settings.api_key):
+                print(f"· {folder.name}: would {did}", flush=True)
+            print(_summarise(folder, state))
+            continue
+        for did in _fix(folder, state):
+            print(f"· {folder.name}: {did}", flush=True)
+            repaired += 1
+        if not offline and settings.api_key:
+            folder, did = _describe(folder, settings)
+            for one in did:
+                print(f"· {folder.name}: {one}", flush=True)
+                named += one.startswith("named")
+        print(_summarise(folder))
+
+    print(
+        f"· {repaired} repaired, {removed} removed, {named} named, "
+        f"{len(folders) - skipped} session(s) looked at",
+        flush=True,
+    )
+
+    if offline or dry_run:
+        print("· not filing: " + ("--offline" if offline else "--dry-run"), flush=True)
+    elif not settings.api_key:
+        print("· no OPENAI_API_KEY, so nothing could be named or filed", flush=True)
+    elif settings.projects:
+        _file_the_card(settings)
+
+    # What is still wrong, if anything. This is the exit code, so say it out loud rather than
+    # leaving whoever reads the journal to work out why systemd is coming back.
+    #
+    # Only ever non-zero when we had what it takes to finish and did not: a box with no key, or
+    # one told to stay offline, is not failing at something it could retry - it is doing what it
+    # was asked. `Restart=on-failure` would otherwise spin on every boot of a keyless box.
+    if dry_run or offline or not settings.api_key:
+        return 0
+    unfinished = [f.name for f in _folders(settings.sessions_dir) if _wanting(f)]
+    if unfinished:
+        print(f"· still unfinished: {', '.join(unfinished)}", file=sys.stderr, flush=True)
+        return 1
+    return 0
+
+
+def _wanting(folder: Path) -> bool:
+    """Is there anything left a later run could finish? What the exit code is built from.
+
+    The distinction that matters here is between work that did not happen and work that
+    happened and came back with nothing to do - because this drives ``Restart=on-failure``, and
+    a folder that reports itself unfinished forever is a unit that retries, and spends, on every
+    boot forever.
+
+    A session is "described" once it has a name **or** a summary: both come out of the single
+    call in :func:`cyclops.slug.describe_session`, so either one means the model saw it. A
+    session with a summary and no name is the normal, correct outcome for a mic check or a
+    conversation that never got going - :func:`cyclops.slug.slugify` maps the model's ``chat``
+    answer to an empty slug, which *means* "leave this one dated". That is a decision, not a
+    failure, and asking again next boot would only buy the same answer at the same price.
+    """
+    state = card.triage(folder)
+    if state.verdict in {"live", "empty"}:
+        return False  # one is not ours to finish, the other is not there any more
+    if not state.page or state.parts:
+        return True  # these are free to fix and there is no reason they should still be so
+    records, _ = read_log(folder / LOG_NAME)
+    if not transcript_text(records):
+        return False  # nothing was said, so it will never earn a name or a summary
+    return not state.named and not state.summary
+
+
+def _would_fix(folder: Path, state: card.State, *, offline: bool = False) -> list[str]:
+    """What :func:`_fix` and :func:`_describe` would do, for ``--dry-run``. Touches nothing.
+
+    Has to make exactly the decisions those two make, including the one that is easy to forget:
+    a session nobody spoke in is never sent to the model, so predicting a name for one would be
+    a dry run that promises work the real run will not do.
+    """
+    would = []
+    if state.parts:
+        would.append(f"mux {VIDEO}")
+    if state.records and not state.page:
+        would.append(f"write {PAGE_NAME}")
+    if offline:
+        return would
+    records, _ = read_log(folder / LOG_NAME)
+    if not transcript_text(records):
+        return would  # the guard `_describe` makes: nothing was said, so nothing to describe
+    if not state.summary:
+        would.append(f"write {SUMMARY_NAME}")
+    if not state.named:
+        would.append("name it")
+    return would
+
+
+def _file_the_card(settings: Settings) -> None:
+    """Hand what we repaired to the projects sweep, and wait for it.
+
+    In-process rather than :func:`cyclops.projects.spawn`, which is what a session end uses. A
+    detached child would outlive a ``Type=oneshot`` unit, take its output to
+    ``~/.cache/cyclops/projects.log`` instead of the journal, and put its own failure outside
+    systemd's reach. Imported here, as ``_file`` does, so a box with no key still runs.
+    """
+    import asyncio
+
+    from . import projects
+
+    try:
+        asyncio.run(projects.sweep(settings, limit=RECOVER_FILE_LIMIT))
+    except Exception as exc:  # noqa: BLE001 - the repairs above stand whatever filing did
+        print(f"· could not file: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+
+
+USAGE = """\
+usage: cyclops-sessions [--fix] [--name]
+       cyclops-sessions --recover [--offline] [--dry-run]
+
+  (no flags)  list what is on the card
+  --fix       finish anything left half-done: mux an interrupted recording, rebuild a
+              missing session.md. Offline; needs no key and no network.
+  --name      name anything still unnamed and write any missing summary.md. Needs a key.
+  --recover   --fix and --name over the whole card, and then two things you should not get
+              by accident: folders nothing survived in are deleted, and what was repaired is
+              handed to the projects sweep. This is what runs at boot.
+  --offline   with --recover: stop after the free half. No key, no network, no spend.
+  --dry-run   with --recover: say what it would do and touch nothing. Never calls a model."""
+
+
 def main() -> None:
     """``cyclops-sessions`` - list what is on the card, and finish anything left half-done."""
     args = sys.argv[1:]
-    fix, rename = "--fix" in args, "--name" in args
-    if unknown := [a for a in args if a not in {"--fix", "--name"}]:
-        raise SystemExit(f"error: unknown argument {unknown[0]!r} (use --fix and/or --name)")
+    known = {"--fix", "--name", "--recover", "--offline", "--dry-run", "--help", "-h"}
+    if unknown := [a for a in args if a not in known]:
+        raise SystemExit(f"error: unknown argument {unknown[0]!r}\n{USAGE}")
+    if "--help" in args or "-h" in args:
+        print(USAGE)
+        return
+    fix, rename, recover = "--fix" in args, "--name" in args, "--recover" in args
+    offline, dry_run = "--offline" in args, "--dry-run" in args
+    if (offline or dry_run) and not recover:
+        # Silently doing nothing is how `cyclops-projects --again` came to be documented as
+        # something it does not do. Say so instead.
+        raise SystemExit(
+            f"error: --offline and --dry-run only mean something with --recover\n{USAGE}"
+        )
     try:
         settings = load_settings(require_api_key=False)
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         raise SystemExit(2) from None
+
+    if recover:
+        raise SystemExit(_recover(settings, offline=offline, dry_run=dry_run))
 
     folders = _folders(settings.sessions_dir)
     if not folders:

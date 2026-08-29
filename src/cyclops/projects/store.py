@@ -4,7 +4,8 @@ This is the only module in the package that writes. Everything else - the orches
 subagents, the CLI - decides things and hands them here. The rule is meant to be checkable rather
 than merely intended::
 
-    rg -n 'write_text|mkdir|os\\.replace|shutil\\.(copy|move)' src/cyclops/projects/ -g '!store.py'
+    rg -n 'write_text|write_bytes|mkdir|card\\.land|os\\.replace|shutil\\.(copy|move)' \\
+       src/cyclops/projects/ -g '!store.py'
 
 and it should come back empty.
 
@@ -48,6 +49,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from .. import card
 from ..config import Settings
 from ..slug import fold, safe_folder_name
 
@@ -589,14 +591,17 @@ def _front_for(project: Project) -> str:
     return render_front(fields)
 
 
-def _write(path: Path, text: str, *, sync: bool = False) -> None:
-    """One file, written whole. ``sync`` only for the things nothing else can reconstruct."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write(text)
-        handle.flush()
-        if sync:
-            os.fsync(handle.fileno())
+def _write(path: Path, text: str) -> None:
+    """One file, written whole - :func:`cyclops.card.write_text`, under the name used here.
+
+    This used to open the target with ``"w"``, which truncates before it writes, and to fsync
+    only when a ``sync=`` argument said so. Both halves were wrong for the same reason and in
+    the same place: the receipt was the only caller that ever passed ``sync=True``, and it is
+    also the file whose mere presence stops a session ever being read again - so a power cut
+    mid-write could leave a truncated ``project.md`` that gated its own retry permanently. The
+    flag is gone rather than defaulted; the cost is one fsync on files measured in kilobytes.
+    """
+    card.write_text(path, text)
 
 
 # ------------------------------------------------------------------ writing a session in
@@ -627,7 +632,12 @@ def copy_photos(
         try:
             if not target.is_file() or target.stat().st_size != source.stat().st_size:
                 project.photos_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, target)
+                # Through a scratch name, so a kill mid-copy cannot leave a truncated jpg on the
+                # final one. The size check above already made the next sweep repair it, but in
+                # between, photo_count() counted an orphan no Log.md entry pointed at.
+                tmp = card.tmp_for(target)
+                shutil.copy2(source, tmp)
+                card.land(tmp, target)
         except OSError:
             continue  # a photo is never worth failing a filing over
         written.append((f"{PHOTOS}/{target.name}", caption))
@@ -713,10 +723,14 @@ def _spoken(date: str) -> str:
 
 
 def rewrite_readme(project: Project, text: str) -> None:
-    """Replace the README atomically. Derived, so it is never fsynced - losing it costs a rerun."""
-    tmp = project.path / f".{README_NAME}.tmp"
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, project.readme)
+    """Replace the README, whole or not at all.
+
+    This already did the tmp-and-rename half - the atomicity was always the point. What it did
+    not do was fsync, which on ext4 is what makes the atomicity mean anything across a power
+    cut, and it hand-rolled the temp file, so a process killed between the write and the replace
+    stranded a ``.README.md.tmp`` that nothing ever cleaned up. Both are card.write_text's job.
+    """
+    card.write_text(project.readme, text)
 
 
 # ------------------------------------------------------------------ the receipt
@@ -733,7 +747,11 @@ def is_filed(session_dir: Path) -> bool:
     in Log.md is not the only check: consulting that would mean reading every project's log on
     every sweep, instead of one stat per folder.
     """
-    return receipt(session_dir).is_file()
+    # written(), not is_file(): the receipt is the only thing standing between a session
+    # and a re-read, so a truncated one must not be able to gate it forever. Tightening
+    # this is safe by construction - a re-file is caught by filed_uuids() and reported as
+    # "already in the log" rather than written twice.
+    return card.written(receipt(session_dir))
 
 
 def write_receipt(session_dir: Path, project: Project | None, why: str = "") -> None:
@@ -771,4 +789,4 @@ def write_receipt(session_dir: Path, project: Project | None, why: str = "") -> 
             "This file is a receipt: its presence is what stops the next sweep reading this\n"
             "session again. Delete it, and the entry it points at, to have it filed elsewhere.\n"
         )
-    _write(receipt(session_dir), f"{render_front(front)}\n\n{body}", sync=True)
+    _write(receipt(session_dir), f"{render_front(front)}\n\n{body}")

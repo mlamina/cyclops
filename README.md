@@ -111,18 +111,48 @@ blocks a conversation, recording and logging included.
 At the defaults (640 wide, 15 fps) a recording costs roughly 3 MB per minute and about 4% of one
 Pi 5 core (measured on a Pi 5 with a C920). Nothing is ever pruned; delete what you don't want.
 
-**If a session is cut off** — power loss, a killed process — its folder keeps a `parts/` with a
-playable `video-raw.mp4` and the two WAVs, and a `session.jsonl` that ends wherever the power
-did. `cyclops-sessions` lists it as `UNFINISHED`; `cyclops-sessions --fix` muxes the video,
-removes `parts/`, and writes the missing `session.md`. It works entirely offline;
-`cyclops-sessions --name` is the separate step that names anything still unnamed and writes any
-`summary.md` that is missing — the one part that does need a key and a network. A folder that
-already has both is never sent to the model, so it is safe to run over a whole card repeatedly.
+**If a session is cut off** — power loss, a killed process — nothing is lost and nothing has to
+be done by hand. The Pi finishes it on the next boot, and the two rules that make that work are
+worth knowing.
+
+*Every file lands whole or not at all.* Everything written into a session folder goes through
+`cyclops.card`: to a scratch name, fsynced, then renamed into place. A power cut leaves the
+previous state or nothing — never a half-written file. This was not always true, and the failure
+was nasty: `Path.write_text` creates the inode immediately and lets ext4 write the data back at
+its leisure, so a cut ten seconds after teardown left a **zero-byte `session.md`** wearing the
+name that means "this session finished". Every check in the codebase asked `is_file()`, so the
+damage made itself invisible to the repair path that existed to fix it.
+
+*Presence is not existence.* "Finished" now means `session.md` **has bytes in it**. So a
+zero-byte page is something to repair rather than something to skip.
+
+An interrupted session keeps a `parts/` with a playable `video-raw.mp4` and the two WAVs, and a
+`session.jsonl` that ends wherever the power did — `read_log` drops the half-written last line
+and the page says so. `cyclops-sessions` lists it as `UNFINISHED`, or `EMPTY` if nothing at all
+survived.
 
 ```bash
-uv run cyclops-sessions              # what's on the card
-uv run cyclops-sessions --fix        # finish anything left half-done (no network needed)
-uv run cyclops-sessions --fix --name # ...and name/summarise what the live call missed
+uv run cyclops-sessions                  # what's on the card
+uv run cyclops-sessions --fix            # finish anything half-done (offline, no key)
+uv run cyclops-sessions --fix --name     # ...and name/summarise what the live call missed
+uv run cyclops-sessions --recover        # all of the above over the whole card, then file it
+uv run cyclops-sessions --recover --dry-run   # ...say what that would do, touch nothing
+```
+
+`--recover` is what `cyclops-recover.service` runs at boot, and it is the two verbs above plus
+the two things nobody should get by accident: a folder **nothing** survived in (no records, no
+video, no photos, no `parts/`) is deleted, and what was repaired is handed to the projects sweep.
+Anything with any salvage at all is repaired as far as it goes and kept. A folder holding a file
+cyclops did not write is never deleted, whatever else is true of it. A folder a session is
+writing into right now is skipped entirely — a live session holds a `flock` on its own log, which
+is how a boot sweep can tell, and renaming one out from under a conversation is the one mistake
+here that would actually cost you something.
+
+Install it once, on the Pi:
+
+```bash
+sudo deploy/install-recover.sh
+journalctl -u cyclops-recover -b     # what it found and what it did
 ```
 
 Photos taken with no session running (the smoke test, mostly) still land in `captures/`, which
@@ -174,7 +204,7 @@ uv run cyclops-projects              # what's on the card, and how many sessions
 uv run cyclops-projects --check      # offline: pages that drifted from their log, torn entries
 uv run cyclops-projects --sweep      # file everything unfiled, oldest first (needs a key)
 uv run cyclops-projects --sweep --dry-run   # say what it would write, write nothing
-uv run cyclops-projects --again      # re-read everything; the log ledger still prevents duplicates
+uv run cyclops-projects --sweep --again  # re-read everything; the log ledger prevents duplicates
 ```
 
 Oldest first is not cosmetic: a project's page is rewritten against what the session before it

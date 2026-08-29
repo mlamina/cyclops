@@ -19,6 +19,13 @@ rsync -a --delete \
   src pyproject.toml uv.lock README.md deploy "$TARGET:$DEST/"
 
 ssh "$TARGET" "cd $DEST && ~/.local/bin/uv sync --quiet"
+
+# Unit files are data that do nothing until they are in /etc. Refreshing them here means an
+# edited .service actually reaches the Pi on a push, instead of sitting in deploy/ looking
+# deployed. Installation proper - enable, and prove it runs - stays with install-*.sh.
+ssh "$TARGET" "sudo install -m 644 $DEST/deploy/cyclops-*.service /etc/systemd/system/ \
+  && sudo systemctl daemon-reload" || true
+
 ssh "$TARGET" "sudo systemctl restart cyclops-admin || true"
 
 # Restart the kiosk too, and do not merely suggest it. Everything else here either re-reads the
@@ -33,3 +40,10 @@ else
   ssh "$TARGET" "$DEST/deploy/start-kiosk.sh"
   echo "· pushed to $TARGET:$DEST — admin and kiosk both restarted"
 fi
+
+# The kiosk we just pkill'd may have been mid-session: SIGTERM is handled, but the session thread
+# is a daemon joined for 20 s against a mux capped at 120, so a deploy during a long recording can
+# kill a teardown halfway through and manufacture exactly the damage this repairs. --fix is free,
+# offline and destroys nothing, so it runs on every push. Recovery proper - which deletes husks
+# and spends on naming - stays on the boot unit, where nobody gets it by surprise.
+ssh "$TARGET" "cd $DEST && .venv/bin/cyclops-sessions --fix" || true

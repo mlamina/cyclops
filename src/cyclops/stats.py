@@ -12,6 +12,7 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from .card import LOG_NAME, PAGE_NAME, written
 from .config import Settings
 
 THERMAL = Path("/sys/class/thermal")
@@ -126,21 +127,22 @@ def disk(path: Path) -> tuple[int, int, int] | None:
     return usage.used, usage.total, usage.free
 
 
-# Named here rather than imported from cyclops.session: this module is what the admin service
-# reads, and session.py pulls in record.py and with it OpenCV - a heavyweight import for a
-# status page that only wants to count folders.
-PAGE_NAME = "session.md"
-LOG_NAME = "session.jsonl"
+# From cyclops.card, not cyclops.session: session.py pulls in record.py and with it OpenCV, a
+# heavyweight import for a status page that only wants to count folders. These used to be typed
+# out again here for exactly that reason, which is how two modules quietly stop agreeing about
+# what a finished session looks like. card.py exists to be the copy they can share.
 
 
 def session_counts(sessions_dir: Path) -> tuple[int, int]:
     """``(finished, in progress)`` - session folders, by the file that marks one done.
 
-    ``session.md`` is written last, after the mux and just before the folder is renamed, so its
-    presence is exactly "this one finished". A folder with a log and no page is either running
-    right now or was interrupted, which mean the same thing to someone reading the tile. It is
-    also the only rule that works for all three entry points: only the kiosk ever produces an
-    mp4, so counting those would under-report by two thirds.
+    ``session.md`` is written last, after the mux and just before the folder is renamed, so a
+    page *with bytes in it* is exactly "this one finished" - :func:`cyclops.card.written`, not
+    ``is_file()``, because a power cut used to leave a zero-byte one and this tile counted it as
+    a finished session. A folder with a log and no page is either running right now or was
+    interrupted, which mean the same thing to someone reading the tile. It is also the only rule
+    that works for all three entry points: only the kiosk ever produces an mp4, so counting
+    those would under-report by two thirds.
 
     ``iterdir`` does not descend, so a session's own ``photos/`` and ``parts/`` are never
     mistaken for sessions themselves.
@@ -152,7 +154,7 @@ def session_counts(sessions_dir: Path) -> tuple[int, int]:
     for entry in directory.iterdir():
         if not entry.is_dir():
             continue
-        if (entry / PAGE_NAME).is_file():
+        if written(entry / PAGE_NAME):
             finished += 1
         elif (entry / LOG_NAME).is_file():
             in_progress += 1

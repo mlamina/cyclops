@@ -1,0 +1,85 @@
+# Finish whatever the power cut off, once, at boot. Install with deploy/install-recover.sh.
+#
+# The Pi gets unplugged. That is not a fault to be designed around, it is how it is used - so a
+# session interrupted mid-teardown has to be finished by something, and until this unit existed
+# nothing ever did: a folder with no session.md is invisible to the projects sweep (which only
+# looks at finished sessions) and to every other automatic path, so it stayed broken until
+# somebody happened to ssh in and run `cyclops-sessions --fix` by hand.
+#
+# Host-specific lines: User=, Group=, WorkingDirectory=, ExecStart=.
+
+[Unit]
+Description=Cyclops session recovery (finish what the power cut off)
+# network-online.target, unlike cyclops-admin.service which deliberately refuses it. That unit
+# only binds 0.0.0.0:80 and needs no routable address; this one names and summarises the sessions
+# it rescues over HTTPS, and a boot that raced DHCP would leave every one of them unnamed until
+# something else happened to sweep. The 10-30 s costs nothing here - the kiosk starts from the
+# desktop autostart and is not ordered against this at all.
+Wants=network-online.target
+After=network-online.target
+# The status page first, so someone watching the panel sees a box that is up while this works.
+After=cyclops-admin.service
+# If sessions/ ever becomes a real removable mount rather than a directory on the root fs, this
+# is the line that stops us "recovering" an empty tree.
+RequiresMountsFor=/home/dobby/cyclops
+# Bounded, unlike cyclops-admin.service's StartLimitIntervalSec=0. That page must never give up.
+# This must: a card that cannot be repaired in five tries will not be repaired by a sixth, and
+# it will wait for the next boot - which is the same retry queue everything else here runs on.
+StartLimitIntervalSec=1h
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+User=dobby
+Group=dobby
+# MUST match the CWD the kiosk runs in - the same argument cyclops-admin.service makes, and the
+# same way to get it silently wrong. sessions_dir and projects_dir are CWD-relative and
+# deliberately unresolved (cyclops/config.py), and load_settings() finds .env by walking up from
+# here. Start this anywhere else and it repairs an empty tree, reports success, touches nothing.
+WorkingDirectory=/home/dobby/cyclops
+ExecStart=/home/dobby/cyclops/.venv/bin/cyclops-sessions --recover
+Environment=PYTHONUNBUFFERED=1
+# One mux is capped at 120 s and the projects sweep budgets itself 900 s; this is the backstop
+# over a whole card, not a budget anything plans against.
+TimeoutStartSec=1800
+
+# --- hardening that does not break anything here ---
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=full
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+
+# --- deliberately NOT set; each of these silently breaks something ---
+# ProtectHome=          hides /home/dobby: no venv, no sessions/, nothing to repair - and it
+#                       would still exit 0, because an absent tree reads as "no sessions".
+# ProtectSystem=strict  read-only /home; writing there is the entire point of this unit.
+# PrivateTmp=           ffmpeg and the OpenAI SDK both use /tmp.
+# EnvironmentFile=      pointing this at .env is tempting and wrong: systemd's parser and
+#                       python-dotenv's disagree about quoting and about `export`, so the key
+#                       would have two sources of truth that differ only in the awkward cases.
+#                       WorkingDirectory is how .env is read, exactly as for the admin page.
+
+# --- never compete with a live session ---
+# Lower than cyclops-admin.service's Nice=10. That serves a page someone is looking at; this
+# runs ffmpeg over a whole card, possibly while a conversation is already feeding x264 on the
+# same four cores. A recovery that made the panel stutter would be a worse bug than the one it
+# fixes. (idle I/O is honoured by some schedulers and ignored by mq-deadline, which is what a Pi
+# actually uses - it costs nothing to ask.)
+Nice=15
+CPUWeight=10
+IOSchedulingClass=idle
+
+# Non-zero means "there is something here a later run could still finish" - a boot that came up
+# before the network, most likely. Never non-zero for a keyless box or an --offline run, so this
+# cannot spin on a Pi that was never going to name anything.
+Restart=on-failure
+RestartSec=120
+
+[Install]
+WantedBy=multi-user.target
