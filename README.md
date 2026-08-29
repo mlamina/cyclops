@@ -50,7 +50,7 @@ uv run cyclops-smoke
 
 ## Sessions
 
-Every session — from `cyclops`, `cyclops-ui` or `cyclops-kiosk` — gets **one folder of its own**,
+Every session — from `cyclops` or `cyclops-kiosk` — gets **one folder of its own**,
 holding everything it produced. Pull the SD card into a laptop and it reads like a GoPro's:
 
 ```
@@ -100,9 +100,8 @@ own recap. The line printed when a session connects says what was handed over:
 
 **The video.** H.264 of what the camera saw (raw frames — no mirror, no UI chrome) with a
 **stereo** audio track, **you on the left channel and Cyclops on the right**. The two voices are
-never mixed, so you can listen to either side alone. Only the kiosk records: `cyclops` and
-`cyclops-ui` open the camera per photo instead of holding it open, so there is no continuous
-video for them to record.
+never mixed, so you can listen to either side alone. Only the kiosk records: `cyclops` opens the
+camera per photo instead of holding it open, so there is no continuous video for it to record.
 
 Needs `ffmpeg` on `PATH` (`brew install ffmpeg`, or `apt install ffmpeg` on the Pi). Without it
 the session runs exactly as before and says once that it isn't recording — nothing here ever
@@ -227,11 +226,12 @@ The temperature tile is colour-coded on the Pi 5's own limits: green below 70 °
 70, red from **80 °C**, where the firmware starts capping the clock. A permanently red tile is
 not a bug in the page; it means the board wants better cooling.
 
-On the kiosk, the **gear in the top-left corner** opens the same page fullscreen in Chromium on
-the panel, and the page grows a full-width **Close** bar to get you back to the camera. That bar
-only appears for the Pi's own browser — from a laptop there is nothing to close. If the panel
-ever gets stuck showing the browser, `touch ~/.cache/cyclops/browser-close` over ssh takes it
-down; so does quitting the kiosk.
+On the kiosk, the **SYSTEM tab** opens the same page fullscreen in Chromium on the panel — same
+green terminal chrome, so it reads as the next screen of the same device — and the page grows a
+full-width **Close** bar to get you back to the camera. That bar only appears for the Pi's own
+browser — from a laptop there is nothing to close. If the panel ever gets stuck showing the
+browser, `touch ~/.cache/cyclops/browser-close` over ssh takes it down; so does quitting the
+kiosk.
 
 ```bash
 uv run cyclops-admin --port=8080      # try it anywhere; port 80 needs a capability (below)
@@ -291,7 +291,7 @@ ssh dobby@raspberrypi.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
 | `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
 | `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |
-| `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. The kiosk's gear button opens the same port. |
+| `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. The kiosk's SYSTEM tab opens the same port. |
 
 Variables already exported in your shell take precedence over `.env`. List audio devices with `uv run cyclops-devices`.
 
@@ -347,27 +347,36 @@ CYCLOPS_HALF_DUPLEX=1
 (Direct-hardware devices like `hw:4,0` are often locked to 48 kHz and reject cyclops's 24 kHz —
 `pulse` avoids that.) Then `uv run cyclops` works from the terminal.
 
-**Touchscreen UI.** `cyclops-ui` serves a full-screen page from a local web server, shown in
-Chromium kiosk mode: a big eye you **tap to start/stop** a session (its iris recolours and pulses
-with the audio — connecting / listening / speaking / looking), a row of **status icons**
-(link / mic / speaker / camera), and a **volume slider**. Set an initial level with
-`CYCLOPS_VOLUME` (percent). The page reloads itself whenever the server restarts, so UI updates
-apply without touching Chromium.
+**The panel.** `cyclops-kiosk` is the whole front-end and needs no browser: it opens the camera,
+draws the live picture fullscreen, and lays a green terminal bezel over it — a readout strip
+along the top (mode, signal meter, `REC`, session clock), the picture through the middle, and a
+row of three tabs along the bottom sized for a thumb in a glove:
 
-Run **both the server and the kiosk from your desktop session** — the server needs the session's
-PipeWire/PulseAudio (it opens `pulse`), so a system-wide systemd service won't work (it has no
-`XDG_RUNTIME_DIR` and can't see your audio; you'd get *"No output device matching 'pulse'"*).
-On the Wayland (labwc) desktop, put this in `~/.config/labwc/autostart`:
+| Tab | What it does |
+| --- | --- |
+| **SNAP** | takes a photo now — into the running session's `photos/`, or into `captures/` if none |
+| **SYSTEM** | opens the [admin page](#admin-page) fullscreen on the panel |
+| **SESSION** | starts and stops the conversation; the tab stays lit while one is up |
+
+The border runs along the panel's own edge, carries the state in its colour and glows inwards
+from it — dim green idle, amber connecting, bright green live, red on a fault — so the state
+reads from across the room. The line under the picture spells it out for anyone close enough to
+read it, including what an error actually said. The picture keeps
+its own colours; only the chrome is green, because the point of the panel is still to see the
+room.
+
+It must run **in your desktop session** — it needs PipeWire for audio and a Wayland socket for
+the window, neither of which a bare systemd unit has. On the Wayland (labwc) desktop, put this
+in `~/.config/labwc/autostart`:
 
 ```sh
 #!/bin/sh
-# start the UI server in-session (has audio), then open the kiosk once it's up
-cd /home/<you>/cyclops && /home/<you>/.local/bin/uv run cyclops-ui --port=8730 >/tmp/cyc_ui.log 2>&1 &
-for i in $(seq 1 30); do curl -sf http://localhost:8730/status >/dev/null 2>&1 && break; sleep 1; done
-chromium-browser --ozone-platform=wayland --kiosk --noerrdialogs --disable-infobars \
-  --user-data-dir=/tmp/cyclops-chrome http://localhost:8730/ &
+cd /home/<you>/cyclops && .venv/bin/cyclops-kiosk >/tmp/kiosk_live.log 2>&1 &
 ```
 
-The page is one self-contained file (`src/cyclops/ui.html`, no external assets) and only talks to
-the local server on `127.0.0.1`, so nothing leaves the Pi except the audio/vision the agent sends
-to OpenAI.
+Set an initial speaker level with `CYCLOPS_VOLUME` (percent); after that the volume lives on the
+admin page, behind the SYSTEM tab. Nothing leaves the Pi except the audio and vision the agent
+sends to OpenAI.
+
+`q` or `ESC` quits, `f` toggles fullscreen, and `--windowed` / `--size=WxH` are there for
+developing against a laptop.

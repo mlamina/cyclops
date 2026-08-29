@@ -17,7 +17,7 @@ TIMEOUT_S = 30  # a worker stuck on a kernel read gets recycled rather than stay
 
 
 def _parse_args(argv: list[str], host: str, port: int) -> tuple[str, int]:
-    """``--host=`` / ``--port=`` overrides, in the same argv style as ``cyclops-ui``."""
+    """``--host=`` / ``--port=`` overrides, in the same argv style as the other entry points."""
     for arg in argv:
         if arg.startswith("--host="):
             host = arg.split("=", 1)[1]

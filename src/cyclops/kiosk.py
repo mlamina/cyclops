@@ -1,10 +1,10 @@
 """Fullscreen OpenCV kiosk: the live camera *is* the UI, with tappable controls drawn on it.
 
-``cyclops-kiosk`` is an alternative to ``cyclops-ui`` that needs no browser. It owns the camera
+``cyclops-kiosk`` is the whole front-end and needs no browser of its own. It owns the camera
 (via :class:`~cyclops.camera.CameraSource`), draws each frame into a fullscreen OpenCV window
 with a PIL-rendered overlay on top, and turns taps into session control. The agent itself runs
-on a background thread inside the same :class:`~cyclops.ui.SessionController` the web UI uses,
-and its webcam tool borrows frames from the very camera you are watching.
+on a background thread inside a :class:`~cyclops.ui.SessionController`, and its webcam tool
+borrows frames from the very camera you are watching.
 
 highgui must own the main thread, so the render loop lives here and everything else is off-thread.
 """
@@ -102,7 +102,7 @@ PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
 SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
 SHUTDOWN_JOIN_S = 20.0  # on exit, a stopping session may still be muxing and naming itself
-BROWSERS = ("chromium-browser", "chromium")  # same probe order as cyclops-ui
+BROWSERS = ("chromium-browser", "chromium")  # whichever of the two names this Pi installed
 ADMIN_POLL_S = 0.2  # how often the watcher looks for the page asking to be closed
 ADMIN_FPS = 5  # render rate while the browser covers the panel - nobody can see us anyway
 ADMIN_MAX_S = 15 * 60  # a page nobody closed gives the panel back rather than stranding it
@@ -122,8 +122,8 @@ PAGE_WAIT_S = 30.0  # how long the browser gets to fetch the page; a cold start 
 PANEL_RETAKE_S = (0.6, 2.4)
 VOLUME_POLL_S = 0.4  # how often we look for a volume the admin page left for us
 BROWSER_GRACE_S = 5.0  # how long Chromium gets to go quietly before it is killed
-# Its own profile, distinct from the one cyclops-ui's kiosk uses, and under ~/.cache rather than
-# /tmp so the second open is a warm start instead of a first-run.
+# Its own profile, under ~/.cache rather than /tmp so the second open is a warm start rather
+# than a first-run.
 CHROME_PROFILE = Path.home() / ".cache" / "cyclops" / "admin-profile"
 CHROME_LOG = Path.home() / ".cache" / "cyclops" / "chromium.log"
 CHROME_FLAGS = (
@@ -335,11 +335,11 @@ class Kiosk:
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
-        """Which button to draw as held. The admin disc stays lit while its page is up.
+        """Which tab to draw as held. The SYSTEM tab stays lit while its page is up.
 
         Uncovering a warm browser is immediate, so this is normally seen for a frame or two.
         It still earns its place on the one tap that has to start a browser: without it the
-        disc goes dark 180 ms in and a panel that is busy looks like a panel that ignored you.
+        tab goes dark 180 ms in and a panel that is busy looks like a panel that ignored you.
         """
         if self._admin_busy.is_set():
             return "admin"
@@ -715,6 +715,10 @@ class Kiosk:
                     recording=self.controller.settings.record,
                     flash=flash,
                     pressed=self._pressed_now(),
+                    # The controller's own sentence, which is the only place a session that
+                    # fell over says what went wrong. The strip beneath the picture is now
+                    # somewhere to put it; the old chrome could only render it as a red rim.
+                    detail=str(status["detail"]),
                 )
                 self._paint(composite(canvas, chrome), width, height)
 
@@ -758,7 +762,7 @@ def main() -> None:
         camera.wait_for_frame()
     except WebcamError as exc:
         # A missing camera is a degraded panel, not a dead one. Everything else still works -
-        # the eye starts a session, the gear opens the admin page, the light and the volume
+        # SESSION starts a session, SYSTEM opens the admin page, the light and the volume
         # behave - and a Pi showing nothing at all reads as broken hardware, which sends
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
@@ -791,8 +795,8 @@ def main() -> None:
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
-        "  tap the shutter (bottom left) to snap · the eye (bottom right) to start/stop\n"
-        "  the gear (top left) opens the admin page, which is where the volume lives\n"
+        "  the tab row along the bottom: SNAP takes a photo · SESSION starts and stops\n"
+        "  SYSTEM opens the admin page, which is where the volume lives\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,

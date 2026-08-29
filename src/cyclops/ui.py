@@ -1,22 +1,21 @@
-"""Touchscreen web UI: a tiny local server + a self-contained HTML page.
+"""The session controller: runs a :class:`~cyclops.agent.VoiceAgent` on a thread of its own.
 
-`cyclops-ui` serves a full-screen page (tap the eye to start/stop a session) plus status
-icons, and drives a :class:`~cyclops.agent.VoiceAgent` on a background thread. It uses only
-the standard library - the page is shown in a browser (Chromium kiosk on the Pi touchscreen).
+The kiosk owns the screen, the camera and the main thread. Everything about a *session* -
+opening the audio devices, running the agent, logging what happened, and tearing it all down
+again - happens here instead, off that thread, and is reported back as one thread-safe status
+snapshot per rendered frame.
+
+This used to sit under a small web server that served a page to a browser in kiosk mode
+(``cyclops-ui``). The OpenCV kiosk replaced it outright, so the server and its page are gone
+and only the controller they were built around is left.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
-import subprocess
-import sys
 import threading
 import time
 from dataclasses import replace
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
-from urllib.parse import parse_qs, urlparse
 
 from .agent import VoiceAgent
 from .audio import (
@@ -27,7 +26,7 @@ from .audio import (
     output_is_speaker,
     resolve_device,
 )
-from .config import ConfigError, Settings, load_settings
+from .config import Settings
 from .record import FrameSource
 from .session import SessionLog
 
@@ -41,25 +40,23 @@ IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
     "error",
 )
 LEVEL_FULL_SCALE = 3000.0  # int16 RMS that maps to a full meter
-UI_HTML = Path(__file__).with_name("ui.html")
-EPOCH = str(int(time.time()))  # changes each server start; the page reloads itself when it does
 
 
 class SessionController:
     """Starts/stops a VoiceAgent on its own thread and reports a thread-safe status snapshot.
 
-    ``frames`` is an already-open camera to record the session from. Only the kiosk has one -
-    it holds the device open for its preview - so ``cyclops-ui`` passes nothing and records
-    nothing. Every session is logged either way; ``entrypoint`` is what goes in the log, and it
-    is passed rather than inferred from ``frames`` because that would only be right by accident.
+    ``frames`` is an already-open camera to record the session from - the kiosk's own, which it
+    holds open for the preview. Every session is logged either way; ``entrypoint`` is what goes
+    in the log, and it is passed rather than inferred from ``frames`` because that would only
+    be right by accident.
     """
 
     def __init__(
         self,
         settings: Settings,
-        frames: FrameSource | None = None,
         *,
-        entrypoint: str = "ui",
+        frames: FrameSource | None,
+        entrypoint: str,
     ) -> None:
         self.settings = settings
         self._frames = frames
@@ -71,17 +68,8 @@ class SessionController:
         self._agent: VoiceAgent | None = None
         self._speaker: Speaker | None = None
         self._mic: Microphone | None = None
-        self._volume = settings.volume
         self._error = ""
         self._started_at: float | None = None  # monotonic, for the kiosk's session timer
-
-    def set_volume(self, value: float) -> None:
-        value = max(0.0, min(1.0, value))
-        with self._lock:
-            self._volume = value
-            speaker = self._speaker
-        if speaker is not None:
-            speaker.volume = value
 
     @property
     def _running(self) -> bool:
@@ -124,9 +112,7 @@ class SessionController:
             "state": state,
             "level": round(level, 3),
             "detail": detail,
-            "volume": round(self._volume, 3),
             "elapsed": None if started is None else round(time.monotonic() - started, 1),
-            "epoch": EPOCH,
         }
 
     def _state_and_level(self) -> tuple[str, float]:
@@ -156,7 +142,7 @@ class SessionController:
             loop.run_until_complete(task)
         except asyncio.CancelledError:
             pass  # a normal stop
-        except Exception as exc:  # noqa: BLE001 - surface it to the UI, don't crash the server
+        except Exception as exc:  # noqa: BLE001 - surface it to the panel, don't crash the kiosk
             message = str(exc)
             if "invalid_api_key" in message:
                 message = "OpenAI rejected the API key"
@@ -175,7 +161,7 @@ class SessionController:
         if half is None:
             half = output_is_speaker(default_output_name(out_dev))
         speaker = Speaker(device=out_dev)
-        speaker.volume = self._volume
+        speaker.volume = s.volume
         guard = EchoGuard(loop, speaker, margin_db=s.barge_in_db) if half else None
         mic = Microphone(loop, guard=guard, device=in_dev)
         print(f"· mic: {mic.source or 'whatever PipeWire calls the default'}", flush=True)
@@ -198,94 +184,3 @@ class SessionController:
             finally:
                 mic.stop()  # no more audio callbacks, so the recorder can flush what it has
                 speaker.stop()
-
-
-class _Handler(BaseHTTPRequestHandler):
-    controller: SessionController  # set on the class before serving
-
-    def log_message(self, *args: object) -> None:  # silence per-request stderr logging
-        pass
-
-    def _send(self, code: int, body: bytes, content_type: str) -> None:
-        self.send_response(code)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_GET(self) -> None:
-        if self.path in ("/", "/index.html"):
-            self._send(200, UI_HTML.read_bytes(), "text/html; charset=utf-8")
-        elif self.path == "/status":
-            body = json.dumps(self.controller.status()).encode()
-            self._send(200, body, "application/json")
-        else:
-            self._send(404, b"not found", "text/plain")
-
-    def do_POST(self) -> None:
-        parsed = urlparse(self.path)
-        if parsed.path == "/start":
-            self.controller.start()
-        elif parsed.path == "/stop":
-            self.controller.stop()
-        elif parsed.path == "/volume":
-            values = parse_qs(parsed.query).get("v")
-            if values:
-                try:
-                    self.controller.set_volume(float(values[0]))
-                except ValueError:
-                    pass
-        else:
-            self._send(404, b"not found", "text/plain")
-            return
-        body = json.dumps(self.controller.status()).encode()
-        self._send(200, body, "application/json")
-
-
-def _launch_kiosk(url: str) -> None:
-    for browser in ("chromium-browser", "chromium"):
-        try:
-            subprocess.Popen(
-                [browser, "--kiosk", "--noerrdialogs", "--disable-infobars", url],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            print(f"· launched {browser} in kiosk mode", flush=True)
-            return
-        except FileNotFoundError:
-            continue
-    print("· no chromium found; open the URL above in a browser", file=sys.stderr, flush=True)
-
-
-def main() -> None:
-    port = 8730
-    kiosk = False
-    for arg in sys.argv[1:]:
-        if arg == "--kiosk":
-            kiosk = True
-        elif arg.startswith("--port="):
-            port = int(arg.split("=", 1)[1])
-    try:
-        settings = load_settings()
-    except ConfigError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(2)
-
-    _Handler.controller = SessionController(settings)
-    server = ThreadingHTTPServer(("127.0.0.1", port), _Handler)
-    url = f"http://localhost:{port}/"
-    print(f"· cyclops UI on {url}  (Ctrl+C to quit)", flush=True)
-    if kiosk:
-        _launch_kiosk(url)
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\n· bye", flush=True)
-    finally:
-        _Handler.controller.stop()
-        server.shutdown()
-
-
-if __name__ == "__main__":
-    main()

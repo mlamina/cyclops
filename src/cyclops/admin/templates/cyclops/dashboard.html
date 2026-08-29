@@ -1,8 +1,12 @@
 {% comment %}
 The whole admin interface: one self-contained file, no external assets, laid out for the Pi's
-800x480 panel first. The volume bar and the close bar exist only for the kiosk's own browser: a
-laptop on the LAN has nothing to close, and the panel is meant to be the one place the volume is
-set - a slider on every device on the network is exactly the sprawl this replaced.
+800x480 panel first. It wears the same green terminal chrome as the kiosk overlay it opens from
+- same phosphor palette, same bezel, same monospaced readouts - because on the panel it is not
+a different application, it is the next screen of the same one.
+
+The volume bar and the close bar exist only for the kiosk's own browser: a laptop on the LAN
+has nothing to close, and the panel is meant to be the one place the volume is set - a slider
+on every device on the network is exactly the sprawl this replaced.
 {% endcomment %}<!doctype html>
 <html lang="en">
 <head>
@@ -12,13 +16,16 @@ set - a slider on every device on the network is exactly the sprawl this replace
 <title>Cyclops · status</title>
 <style>
   :root {
-    --bg: #0c0f14;
-    --panel: #141a22;
-    --text: #e7edf4;
-    --muted: #8b97a6;
-    --ok: #37e0c4;      /* the same teal the kiosk overlay uses for "listening" */
-    --warn: #ffb84d;    /* ...amber for "looking" */
-    --hot: #ff5d5d;     /* ...red for "error" */
+    /* The kiosk overlay's palette, to the byte - see cyclops/overlay.py. Two screens of one
+       device that disagree about what green is read as two devices. */
+    --green: #56ff8c;   /* phosphor at full brightness */
+    --mid: #2eb064;     /* rules, labels */
+    --dim: #207646;     /* the faintest thing still legible on the panel */
+    --amber: #ffb83c;
+    --red: #ff5646;
+    --screen: #050f0a;  /* the green-black everything is drawn on */
+    --ink: #030b07;     /* text on a filled control */
+    --tint: var(--green);
     /* 1u == 1px at 800x480, growing with whichever dimension is tighter - so a short, wide
        window never overflows its rows the way a bare vw would. Same trick as the kiosk chrome,
        which pins its own layout to a 480 px reference height. */
@@ -35,133 +42,204 @@ set - a slider on every device on the network is exactly the sprawl this replace
     touch-action: manipulation;
   }
   body {
-    background: var(--bg);
-    color: var(--text);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #000;
+    color: var(--green);
+    font-family: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", Menlo, monospace;
+    font-size: calc(14 * var(--u));
+    /* Cleared of the border below, and of the glow that falls inwards from it - the kiosk's
+       own measurement, so tapping SYSTEM changes what the screen says and not what kind of
+       thing it is. */
+    padding: calc(17 * var(--u));
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto auto;   /* tiles take what the two bars don't */
-    gap: 2px;
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    gap: calc(6 * var(--u));
     transition: opacity .3s;
   }
   body.kiosk { cursor: none; }
-  body.offline { opacity: .45; }    /* the server went away; what is on screen is stale */
 
-  /* Full-bleed 2x2. The 2 px gaps are the only rules on the page - every other pixel is tile. */
+  /* The border and its glow. A ::before rather than a border on the body, so the rows above lay
+     out against the padding box and nothing has to subtract a border width from a percentage.
+
+     Hard against the panel's edge with the light falling inwards, exactly as the kiosk draws
+     it: a glow outside a border reads as light leaking off the device, not as a lit screen. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    border: calc(2 * var(--u)) solid var(--mid);
+    border-radius: calc(16 * var(--u));
+    box-shadow: inset 0 0 calc(26 * var(--u)) rgba(86, 255, 140, .22);
+    pointer-events: none;
+  }
+  /* Scanlines, over everything including the controls - the tube is in front of the screen,
+     not behind it. Every third row, which is a CRT at arm's length and not a zebra. */
+  body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      to bottom, transparent 0 calc(2 * var(--u)), rgba(0, 0, 0, .17) calc(2 * var(--u)) calc(3 * var(--u)));
+    pointer-events: none;
+    z-index: 9;
+  }
+  /* The server went away; what is on screen is stale, and says so up in the header. */
+  body.offline { opacity: .5; }
+
+  /* ---- header ---- */
+  header {
+    display: flex;
+    align-items: center;
+    gap: calc(12 * var(--u));
+    padding: calc(4 * var(--u)) calc(16 * var(--u)) calc(10 * var(--u));
+    border-bottom: calc(2 * var(--u)) solid var(--mid);
+  }
+  .brand { color: var(--dim); font-size: calc(14 * var(--u)); letter-spacing: .3em; }
+  .bar { width: calc(2 * var(--u)); height: calc(18 * var(--u)); background: var(--dim); }
+  .page { font-size: calc(27 * var(--u)); letter-spacing: .12em; }
+  .link { margin-left: auto; font-size: calc(14 * var(--u)); letter-spacing: .24em; color: var(--mid); }
+  .link::after { content: "LINK OK"; }
+  body.offline .link { color: var(--amber); }
+  body.offline .link::after { content: "NO LINK"; }
+
+  /* ---- the four readouts ---- */
   .tiles {
     display: grid;
     grid-template-columns: 1fr 1fr;
     grid-template-rows: 1fr 1fr;
-    gap: 2px;
+    gap: calc(12 * var(--u));
+    padding: calc(8 * var(--u)) calc(4 * var(--u)) 0;
     min-height: 0;    /* grid children default to min-height:auto and refuse to shrink */
   }
+  /* Each one is a labelled box in the terminal manner: the caption sits on the top rule with
+     the background punched out behind it, so the frame reads as drawn around the number. */
   .tile {
-    background: var(--panel);
+    position: relative;
+    background: var(--screen);
+    border: calc(1 * var(--u)) solid var(--dim);
     display: grid;
     align-content: center;
     justify-items: center;
-    padding: 0 calc(10 * var(--u));
+    padding: calc(6 * var(--u)) calc(10 * var(--u));
     min-width: 0;
     min-height: 0;
-    overflow: hidden;
-  }
-  .value {
-    font-size: calc(88 * var(--u));
-    font-weight: 700;
-    line-height: .92;
-    letter-spacing: -.02em;
-    font-variant-numeric: tabular-nums;
   }
   .label {
-    font-size: calc(16 * var(--u));
-    letter-spacing: .2em;
+    position: absolute;
+    top: calc(-8 * var(--u));
+    left: calc(14 * var(--u));
+    padding: 0 calc(7 * var(--u));
+    background: #000;
+    font-size: calc(13 * var(--u));
+    letter-spacing: .22em;
     text-transform: uppercase;
-    color: var(--muted);
-    margin-top: calc(8 * var(--u));
+    color: var(--mid);
   }
-  .detail { font-size: calc(13 * var(--u)); color: var(--muted); opacity: .68; margin-top: calc(3 * var(--u)); }
+  .value {
+    font-size: calc(58 * var(--u));
+    line-height: 1;
+    letter-spacing: -.01em;
+    font-variant-numeric: tabular-nums;
+    color: var(--green);
+  }
+  .detail { font-size: calc(13 * var(--u)); color: var(--dim); margin-top: calc(7 * var(--u)); }
+  /* The tile can no longer clip (the legend hangs outside it), so the text inside does. */
+  .value, .detail { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 
-  /* Temperature is the one number that earns colour: a Pi 5 starts capping its clock at 80 C. */
-  .tile[data-band="ok"]   { --tint: var(--ok); }
-  .tile[data-band="warn"] { --tint: var(--warn); }
-  .tile[data-band="hot"]  { --tint: var(--hot); }
+  /* Temperature is the one number that earns a colour of its own: a Pi 5 starts capping its
+     clock at 80 C. Green, amber, red - the three a phosphor tube is allowed. */
+  .tile[data-band="ok"]   { --tint: var(--green); }
+  .tile[data-band="warn"] { --tint: var(--amber); }
+  .tile[data-band="hot"]  { --tint: var(--red); }
   .tile[data-band="ok"], .tile[data-band="warn"], .tile[data-band="hot"] {
-    background: color-mix(in srgb, var(--tint) 13%, var(--panel));
-    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--tint) 40%, transparent);
+    border-color: var(--tint);
+  }
+  /* The inner glow takes the band's own colour, so a throttling board reads red throughout
+     rather than red-bordered with an amber wash inside it. */
+  .tile[data-band="warn"], .tile[data-band="hot"] {
+    box-shadow: inset 0 0 calc(30 * var(--u)) color-mix(in srgb, var(--tint) 12%, transparent);
   }
   .tile[data-band="ok"] .value,
   .tile[data-band="warn"] .value,
   .tile[data-band="hot"] .value { color: var(--tint); }
+  .tile[data-band="warn"] .label,
   .tile[data-band="hot"] .label { color: var(--tint); }
 
+  /* ---- volume ---- */
   /* The one control on the page. Label and readout are fixed-width so the track never jumps
-     as the number goes 5 -> 100, and the thumb is 52 u - about 10 mm, a thumb with a glove on. */
+     as the number goes 5 -> 100, and the thumb is 46 u - about 9 mm, a thumb with a glove on. */
   .volume {
-    background: var(--panel);
     display: grid;
     grid-template-columns: auto minmax(0, 1fr) auto;
     align-items: center;
-    gap: calc(18 * var(--u));
-    padding: calc(6 * var(--u)) calc(20 * var(--u));
+    gap: calc(16 * var(--u));
+    padding: 0 calc(16 * var(--u));
+    height: calc(52 * var(--u));
   }
-  .volume .label { margin-top: 0; }
+  .volume .vlabel {
+    font-size: calc(13 * var(--u));
+    letter-spacing: .22em;
+    color: var(--mid);
+  }
   .vvalue {
-    font-size: calc(30 * var(--u));
-    font-weight: 700;
+    font-size: calc(24 * var(--u));
     font-variant-numeric: tabular-nums;
-    min-width: calc(78 * var(--u));
+    min-width: calc(74 * var(--u));
     text-align: right;
+    color: var(--green);
   }
   .vslider {
     -webkit-appearance: none;
     appearance: none;
     width: 100%;
-    height: calc(66 * var(--u));
+    height: calc(46 * var(--u));
     background: transparent;
     touch-action: none;   /* the drag belongs to the slider, never to the page behind it */
   }
+  /* The filled half is drawn from --v, which the script keeps in step with the value. A track
+     that does not fill is just a groove, and a groove says nothing about how loud it is. */
   .vslider::-webkit-slider-runnable-track {
-    height: calc(12 * var(--u));
-    border-radius: 999px;
-    background: #26313f;
+    height: calc(16 * var(--u));
+    background:
+      linear-gradient(to right, var(--green) calc(var(--v, 80) * 1%), #0d2418 calc(var(--v, 80) * 1%));
+    border: calc(1 * var(--u)) solid var(--dim);
   }
   .vslider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: calc(52 * var(--u));
-    height: calc(52 * var(--u));
-    margin-top: calc(-20 * var(--u));   /* centre the thumb on a 12 u track */
+    width: calc(20 * var(--u));
+    height: calc(46 * var(--u));
+    margin-top: calc(-16 * var(--u));   /* centre the thumb on a 16 u track */
     border: 0;
-    border-radius: 50%;
-    background: var(--ok);
+    background: var(--green);
   }
-  .vslider::-moz-range-track { height: calc(12 * var(--u)); border-radius: 999px; background: #26313f; }
-  .vslider::-moz-range-thumb {
-    width: calc(52 * var(--u));
-    height: calc(52 * var(--u));
-    border: 0;
-    border-radius: 50%;
-    background: var(--ok);
+  .vslider::-moz-range-track {
+    height: calc(16 * var(--u));
+    background: #0d2418;
+    border: calc(1 * var(--u)) solid var(--dim);
   }
-  .vslider:active::-webkit-slider-thumb { background: var(--text); }
-  .vslider:active::-moz-range-thumb { background: var(--text); }
+  .vslider::-moz-range-progress { height: calc(16 * var(--u)); background: var(--green); }
+  .vslider::-moz-range-thumb { width: calc(20 * var(--u)); height: calc(46 * var(--u)); border: 0; background: var(--green); }
+  .vslider:active::-webkit-slider-thumb,
+  .vslider:active::-moz-range-thumb { background: #fff; }
 
-  /* The biggest target on the screen: full width, 86 of the panel's 480 px, about 16.6 mm. */
+  /* ---- the way out ---- */
+  /* The biggest target on the screen, and shaped like the kiosk's tab row so it is obvious it
+     goes back there: full width, 70 of the panel's 480 px, about 13.5 mm. */
   .close {
-    border: 0;
+    border: calc(1 * var(--u)) solid var(--mid);
     width: 100%;
-    height: calc(86 * var(--u));
-    background: #1a222c;
-    color: var(--text);
+    height: calc(70 * var(--u));
+    background: var(--screen);
+    color: var(--green);
     font-family: inherit;
-    font-size: calc(26 * var(--u));
-    font-weight: 700;
-    letter-spacing: .28em;
+    font-size: calc(20 * var(--u));
+    letter-spacing: .34em;
     text-transform: uppercase;
   }
-  .close:active, .close:disabled { background: var(--ok); color: #06090d; }
+  .close:active, .close:disabled { background: var(--green); color: var(--ink); border-color: var(--green); }
 
-  /* Portrait only - a phone held upright. 2x2 stays the strongest full-bleed shape in every
-     landscape aspect; four columns on a laptop would just be a lot of vertical nothing. */
+  /* Portrait only - a phone held upright. 2x2 stays the strongest shape in every landscape
+     aspect; four columns on a laptop would just be a lot of vertical nothing. */
   @media (max-aspect-ratio: 3/4) {
     :root { --u: clamp(0.7px, min(0.28vw, 0.115vh), 2px); }
     .tiles { grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); }
@@ -169,31 +247,39 @@ set - a slider on every device on the network is exactly the sprawl this replace
 </style>
 </head>
 <body{% if local %} class="kiosk"{% endif %}>
+  <header>
+    <span class="brand">CYCLOPS</span>
+    <span class="bar"></span>
+    <span class="page">SYSTEM</span>
+    <span class="link"></span>
+  </header>
+
   <main class="tiles">
     <section class="tile" id="temp" data-band="{{ temp_band }}">
-      <div class="value" data-field="temp_text">{{ temp_text }}</div>
       <div class="label">Temperature</div>
+      <div class="value" data-field="temp_text">{{ temp_text }}</div>
       <div class="detail" data-field="temp_detail">{{ temp_detail }}</div>
     </section>
     <section class="tile">
-      <div class="value" data-field="mem_text">{{ mem_text }}</div>
       <div class="label">Memory</div>
+      <div class="value" data-field="mem_text">{{ mem_text }}</div>
       <div class="detail" data-field="mem_detail">{{ mem_detail }}</div>
     </section>
     <section class="tile">
-      <div class="value" data-field="disk_text">{{ disk_text }}</div>
       <div class="label">Disk</div>
+      <div class="value" data-field="disk_text">{{ disk_text }}</div>
       <div class="detail" data-field="disk_detail">{{ disk_detail }}</div>
     </section>
     <section class="tile">
-      <div class="value" data-field="sessions_text">{{ sessions_text }}</div>
       <div class="label">Sessions</div>
+      <div class="value" data-field="sessions_text">{{ sessions_text }}</div>
       <div class="detail" data-field="sessions_detail">{{ sessions_detail }}</div>
     </section>
   </main>
+
   {% if local %}
   <section class="volume">
-    <span class="label">Volume</span>
+    <span class="vlabel">VOL</span>
     <input class="vslider" id="vol" type="range" min="0" max="100" step="5" value="{{ volume|default:80 }}"
            aria-label="Speaker volume">
     <output class="vvalue" id="volval">{{ volume|default:80 }}%</output>
@@ -230,6 +316,10 @@ set - a slider on every device on the network is exactly the sprawl this replace
   const vol = document.getElementById('vol');
   if (vol) {
     const out = document.getElementById('volval');
+    // WebKit cannot fill a range track on its own, so the track's gradient reads --v and this
+    // keeps it in step. Set once up front, or the bar opens empty over a speaker that is not.
+    const paint = () => vol.style.setProperty('--v', vol.value);
+    paint();
     const send = (v) => fetch('/volume', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -238,6 +328,7 @@ set - a slider on every device on the network is exactly the sprawl this replace
     let sent = 0;
     vol.addEventListener('input', () => {
       out.textContent = vol.value + '%';
+      paint();
       // Throttled while the finger is down, so a session in progress gets louder as you drag
       // without one request per pixel of travel.
       const now = Date.now();
