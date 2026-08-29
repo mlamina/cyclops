@@ -26,6 +26,13 @@ ssh "$TARGET" "cd $DEST && ~/.local/bin/uv sync --quiet"
 ssh "$TARGET" "sudo install -m 644 $DEST/deploy/cyclops-*.service /etc/systemd/system/ \
   && sudo systemctl daemon-reload" || true
 
+# Same argument for the udev rule, which is likewise inert until it is in /etc. Without it the
+# endoscope's raw USB node is root-only and the kiosk finds no camera at all - so it is refreshed
+# on every push rather than being a step someone has to remember once per Pi. The trigger applies
+# it to a device already plugged in; a reload alone only affects the next hotplug.
+ssh "$TARGET" "sudo install -m 644 $DEST/deploy/99-useeplus-camera.rules /etc/udev/rules.d/ \
+  && sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb" || true
+
 ssh "$TARGET" "sudo systemctl restart cyclops-admin || true"
 
 # Restart the kiosk too, and do not merely suggest it. Everything else here either re-reads the

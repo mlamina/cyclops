@@ -63,13 +63,13 @@ class CameraSource:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._cap: cv2.VideoCapture | None = None
-        self._index: int | None = None
+        self._index: int | str | None = None
         self._error = ""
         self._generation = 0  # bumped by start(); a supervisor with a stale one retires itself
 
     @property
-    def index(self) -> int | None:
-        """The camera index that actually delivered frames, or None before start()."""
+    def index(self) -> int | str | None:
+        """What delivered frames: a ``/dev/video`` number, ``webcam.USEEPLUS``, or None."""
         return self._index
 
     @property

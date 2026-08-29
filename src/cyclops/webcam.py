@@ -10,6 +10,7 @@ import os
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,8 @@ WARMUP_SECONDS = 0.4
 MAX_EDGE = 1024
 JPEG_QUALITY = 85
 PROBE_INDICES = 3
+USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
+USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
 
 _camera_lock = threading.Lock()  # one capture at a time, even if a timed-out one is still running
@@ -49,7 +52,7 @@ class Capture:
     width: int
     height: int
     jpeg_bytes: int
-    camera_index: int
+    camera_index: int | str  # a /dev/video number, or USEEPLUS
 
 
 def _candidate_indices(preferred: int | None) -> list[int]:
@@ -81,11 +84,70 @@ def _quiet_probe():
         api.setLogLevel(previous)
 
 
-def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture, int]:
+class _UseeplusCapture:
+    """A useeplus endoscope wearing :class:`cv2.VideoCapture`'s clothes.
+
+    The cheap endoscopes sold as "supercamera" are not UVC devices. Both their USB interfaces
+    are vendor-specific, so no kernel driver binds them and no ``/dev/video*`` node is ever
+    created - the device sits on the bus repeating a heartbeat at a host that never answers.
+    They stream perfectly well once something speaks their protocol, which the ``supercamera``
+    package does over libusb. All this class adds is the shape the rest of the module already
+    expects - ``read()`` returning ``(ok, frame)``, and ``release()`` - so neither
+    :class:`~cyclops.camera.CameraSource` nor the capture path has to know which kind of camera
+    it was handed.
+
+    The one thing worth doing here is failing *fast*. The underlying read retries internally
+    until its own timeout before admitting defeat, and on an unplugged device that retry is a
+    tight loop over an error that can never clear: a pegged core for a second, then again for
+    every read the supervisor's grace count allows. So a failed read asks whether the device is
+    still on the bus at all, and once it isn't, every later read says so immediately - which
+    spends the remaining grace in microseconds and gets us back to looking for the camera.
+    """
+
+    def __init__(self, camera: object, still_present: Callable[[], bool]) -> None:
+        self._camera = camera
+        self._still_present = still_present
+        self._gone = False
+
+    def read(self) -> tuple[bool, object]:
+        if self._gone:
+            return False, None
+        ok, frame = self._camera.read()
+        if not ok and not self._still_present():
+            self._gone = True  # unplugged: stop paying the retry timeout on every later read
+        return ok, frame
+
+    def release(self) -> None:
+        self._camera.release()
+
+
+def _open_useeplus() -> tuple[_UseeplusCapture, str]:
+    """Open the first endoscope on the bus, or raise :class:`WebcamError` if there is none.
+
+    Every failure here is the ordinary "no camera of this kind" answer, including an import
+    that fails because the driver was never installed: this is one of two places a camera might
+    be found, and neither is allowed to take the kiosk down by being absent.
+    """
+    try:
+        from supercamera import Camera, list_devices
+    except ImportError as exc:  # a venv without the driver simply has no endoscope to offer
+        raise WebcamError(f"no useeplus driver installed ({exc})") from exc
+    try:
+        camera = Camera(timeout=USEEPLUS_READ_TIMEOUT_S)
+    except Exception as exc:  # noqa: BLE001 - RuntimeError when absent, USBError when unusable
+        raise WebcamError(f"no useeplus endoscope ({exc})") from exc
+    return _UseeplusCapture(camera, lambda: bool(list_devices())), USEEPLUS
+
+
+def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture | _UseeplusCapture, int | str]:
     """Open the preferred camera, or probe for one that actually delivers frames.
 
     On macOS the index order follows AVFoundation's uniqueID sort, so an idle iPhone
     (Continuity Camera) can sit at index 0 and "open" without ever returning a frame.
+
+    A useeplus endoscope is looked for only once no ``/dev/video*`` has answered, because it
+    cannot be probed the same way - it has no node to probe - and because a real webcam, when
+    one is plugged in, should stay the camera you get.
     """
     backend = cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
     params = [cv2.CAP_PROP_FRAME_WIDTH, 1280, cv2.CAP_PROP_FRAME_HEIGHT, 720]
@@ -98,9 +160,17 @@ def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture, int]:
                 if ok:
                     return cap, index
             cap.release()
+    with contextlib.suppress(WebcamError):
+        return _open_useeplus()
+    hint = (
+        "Check System Settings → Privacy & Security → Camera for your terminal app, or set "
+        "CYCLOPS_CAMERA_INDEX."
+        if sys.platform == "darwin"
+        else "Check that it shows up in `lsusb`, and is a UVC camera or a useeplus endoscope."
+    )
     raise WebcamError(
-        f"No camera delivered a frame (tried indices {candidates}). Check System Settings → "
-        "Privacy & Security → Camera for your terminal app, or set CYCLOPS_CAMERA_INDEX."
+        f"No camera delivered a frame (tried indices {candidates}, and the USB bus for a "
+        f"useeplus endoscope). {hint}"
     )
 
 
@@ -223,13 +293,14 @@ def _capture_locked(
     if abort is not None and abort.is_set():
         raise WebcamError("capture abandoned (caller timed out)")
     if not ok or frame is None or frame.size == 0:
-        raise WebcamError(f"Camera index {index} opened but returned no frame.")
-    _last_good_index = index
+        raise WebcamError(f"Camera {index} opened but returned no frame.")
+    if isinstance(index, int):  # USEEPLUS is not a number to hand cv2.VideoCapture next time
+        _last_good_index = index
 
     return _encode_and_save(frame, save_dir, index, keep_as)
 
 
-def _encode_and_save(frame, save_dir: Path, index: int, keep_as: str) -> Capture:
+def _encode_and_save(frame, save_dir: Path, index: int | str, keep_as: str) -> Capture:
     """Shrink, JPEG-encode and archive a frame, whoever grabbed it."""
     frame = _resize_to_max_edge(frame, MAX_EDGE)
     encoded, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])

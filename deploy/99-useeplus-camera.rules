@@ -1,0 +1,13 @@
+# Raw USB access to useeplus endoscopes, for the kiosk user.
+#
+# These cameras ("supercamera" by Geek szitman, and the Oasis/Depstech rebadges) are not UVC
+# devices: both their USB interfaces are vendor-specific, so no kernel driver binds them and
+# no /dev/video node is ever created. cyclops drives them over libusb instead - see
+# cyclops.webcam._UseeplusCapture - which needs write access to the raw bus device that
+# would otherwise be root-only.
+#
+# Group `video` rather than a new one: it is what the kiosk user is already in for the
+# /dev/video* nodes a normal UVC webcam gets, so the two kinds of camera need the same
+# membership and nothing else has to change.
+SUBSYSTEM=="usb", ATTR{idVendor}=="2ce3", ATTR{idProduct}=="3828", MODE="0660", GROUP="video"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0329", ATTR{idProduct}=="2022", MODE="0660", GROUP="video"

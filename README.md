@@ -275,7 +275,7 @@ ssh dobby@raspberrypi.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_REASONING_EFFORT` | `low`      | `minimal` for lowest latency, up to `xhigh` (2.x models).  |
 | `CYCLOPS_VOICE`        | `marin`        | Output voice.                                              |
 | `CYCLOPS_VOLUME`       | `100`          | Output volume percent (0–100); also a slider in the touchscreen UI. |
-| `CYCLOPS_CAMERA_INDEX` | `auto`         | `auto` probes cameras and remembers the one that delivers frames; a number pins it. |
+| `CYCLOPS_CAMERA_INDEX` | `auto`         | `auto` probes cameras, remembers the one that delivers frames, and falls back to a useeplus endoscope if no `/dev/video*` answers; a number pins a specific `/dev/video*`. |
 | `CYCLOPS_HALF_DUPLEX`  | `auto`         | `auto`: speaker mode on when the output device is a speaker. `1`/`0` force it. |
 | `CYCLOPS_BARGE_IN_DB`  | `8`            | In speaker mode, how many dB over the echo your voice must be to interrupt. Lower = easier to interrupt, but risks the assistant cutting itself off; `off` disables barge-in. |
 | `CYCLOPS_LANG`         | `en`           | Language hint (ISO-639-1) for transcribing what you say; `auto` to let it detect. Set this to your spoken language for accurate transcripts. |
@@ -327,6 +327,36 @@ cd ~/cyclops && cp .env.example .env         # paste your OPENAI_API_KEY
 uv sync                                       # fetches Python 3.12 + aarch64 wheels
 uv run cyclops-smoke                          # camera + API check, no audio needed
 ```
+
+**Cameras that aren't webcams.** Most USB cameras are UVC devices: the kernel binds them, a
+`/dev/video*` node appears, and `CYCLOPS_CAMERA_INDEX=auto` finds them. Some aren't. The cheap
+endoscopes sold as *supercamera* (Geek szitman, and the Oasis/Depstech rebadges) expose two
+vendor-specific USB interfaces and speak a proprietary protocol to a phone app, so no kernel
+driver binds them and **no `/dev/video*` node is ever created** — they sit on the bus repeating a
+heartbeat at a host that never answers. `lsusb` shows them, `v4l2-ctl --list-devices` does not,
+and every camera probe comes up empty.
+
+cyclops drives them anyway, from userspace over libusb. Once the `/dev/video*` probe finds
+nothing, `open_camera()` looks for a useeplus endoscope and wraps it in the same
+`read()`/`release()` shape the rest of the code already expects, so nothing above it knows the
+difference — preview, SNAP and session recording all behave as usual, at 640×480. A real webcam
+still wins if one is plugged in. The startup line says which you got:
+
+```
+· cyclops kiosk on camera useeplus     # the endoscope, over libusb
+· cyclops kiosk on camera 0            # an ordinary UVC webcam at /dev/video0
+```
+
+The raw USB device is root-only by default, so access has to be granted: `deploy/push.sh`
+installs `deploy/99-useeplus-camera.rules`, handing the device to group `video` — the one the
+kiosk user is already in for `/dev/video*`. Without that rule the kiosk finds no camera at all.
+A few `Corrupt JPEG data` lines at startup are the connect handshake and are expected; a steady
+stream of them is not.
+
+There is also an out-of-tree V4L2 kernel module for these cameras, which would produce a real
+`/dev/video0` and need no cyclops code whatsoever. It is deliberately not used here: it ships
+without DKMS, so it stops loading the next time the kernel updates. On a box whose whole point is
+being left alone, a camera that dies on `apt upgrade` is worse than sixty lines of Python.
 
 **Pick audio devices.** A Pi has several and often no default mic, so set them explicitly:
 

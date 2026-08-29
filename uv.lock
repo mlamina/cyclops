@@ -281,6 +281,7 @@ dependencies = [
     { name = "pydantic-ai-slim", extra = ["openai"] },
     { name = "python-dotenv" },
     { name = "sounddevice" },
+    { name = "supercamera" },
     { name = "websockets" },
 ]
 
@@ -301,6 +302,7 @@ requires-dist = [
     { name = "pydantic-ai-slim", extras = ["openai"], specifier = ">=2.35.3,<3" },
     { name = "python-dotenv", specifier = ">=1.2.3" },
     { name = "sounddevice", specifier = ">=0.5.6" },
+    { name = "supercamera", specifier = ">=0.1" },
     { name = "websockets", specifier = ">=13,<16" },
 ]
 
@@ -887,6 +889,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyusb"
+version = "1.3.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/00/6b/ce3727395e52b7b76dfcf0c665e37d223b680b9becc60710d4bc08b7b7cb/pyusb-1.3.1.tar.gz", hash = "sha256:3af070b607467c1c164f49d5b0caabe8ac78dbed9298d703a8dbf9df4052d17e", size = 77281, upload-time = "2025-01-08T23:45:01.866Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/28/b8/27e6312e86408a44fe16bd28ee12dd98608b39f7e7e57884a24e8f29b573/pyusb-1.3.1-py3-none-any.whl", hash = "sha256:bf9b754557af4717fe80c2b07cc2b923a9151f5c08d17bdb5345dac09d6a0430", size = 58465, upload-time = "2025-01-08T23:45:00.029Z" },
+]
+
+[[package]]
 name = "regex"
 version = "2026.7.19"
 source = { registry = "https://pypi.org/simple" }
@@ -1046,6 +1057,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/5f/d3/3f06a1006f2261d1342aefb3c71eed02f5d4ca5bdbecd86ebc12ad38306e/sqlparse-0.6.0.tar.gz", hash = "sha256:113c35c75365ab9cc9c7231d68c6428fb11c085fc8e9eb1ad659b7ddbf6cd2b9", size = 178477, upload-time = "2026-08-13T19:16:06.396Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d9/50/f00935da0ec7cbf325f8dc4f772ae46fbc7b672dd62876e73f0a94adda57/sqlparse-0.6.0-py3-none-any.whl", hash = "sha256:b861c0288ce2fa56209a9a6412d2e066ac664b3873b89c26c9d8415e8e32996f", size = 50070, upload-time = "2026-08-13T19:16:04.062Z" },
+]
+
+[[package]]
+name = "supercamera"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyusb" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/62/70/45de538bf8458629843c82a6e9831137b133cf3be946dfa2ea4ef50a88b6/supercamera-0.1.0.tar.gz", hash = "sha256:e916a78d0bc29737084a7703aa8bb545353e4f2512c08b584a17647604c18f4d", size = 9659, upload-time = "2026-03-06T05:36:24.221Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6c/d9/4cd86d3f52d1645717ebd478c88c8f472ac14f24f8c8c7f46eaccab235a2/supercamera-0.1.0-py3-none-any.whl", hash = "sha256:21156ede0db786f01f7bbf681732b36b74421a91e659641eee5219f8396cf4a0", size = 8384, upload-time = "2026-03-06T05:36:23.246Z" },
 ]
 
 [[package]]
