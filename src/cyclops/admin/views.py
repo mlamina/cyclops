@@ -20,7 +20,13 @@ from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
 from .. import mixer, stats
-from ..config import BROWSER_CLOSE_FLAG, ConfigError, Settings, load_settings
+from ..config import (
+    BROWSER_CLOSE_FLAG,
+    PAGE_SERVED_FLAG,
+    ConfigError,
+    Settings,
+    load_settings,
+)
 
 LOOPBACK = {"127.0.0.1", "::1"}
 GIB = 1024**3  # what df -h means by "G", so the page and the shell agree
@@ -113,7 +119,24 @@ def _payload(request: HttpRequest) -> dict:
 
 def dashboard(request: HttpRequest) -> HttpResponse:
     """The whole interface: four tiles and, on the kiosk only, a volume bar and a close bar."""
-    return render(request, "cyclops/dashboard.html", _payload(request))
+    page = render(request, "cyclops/dashboard.html", _payload(request))
+    if _is_local(request):
+        _note_served()
+    return page
+
+
+def _note_served() -> None:
+    """Leave word that a browser on this box has just been given the page - see PAGE_SERVED_FLAG.
+
+    The kiosk starts its admin browser at boot and keeps it behind its own window, and this is
+    how it learns that the browser has the page and can be uncovered. Loopback renders only: a
+    laptop opening the page over the LAN must never answer for the kiosk's own browser.
+    """
+    try:
+        PAGE_SERVED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        PAGE_SERVED_FLAG.touch()
+    except OSError as exc:  # a page that renders matters more than a note the kiosk can wait out
+        print(f"· could not leave the page-served note ({exc})", flush=True)
 
 
 def status(request: HttpRequest) -> JsonResponse:
@@ -123,9 +146,9 @@ def status(request: HttpRequest) -> JsonResponse:
 
 @require_POST
 def close_browser(request: HttpRequest) -> HttpResponse:
-    """Ask the kiosk to close the browser it opened - see ``BROWSER_CLOSE_FLAG``.
+    """Ask the kiosk to take its panel back from this page - see ``BROWSER_CLOSE_FLAG``.
 
-    Only the kiosk's own browser has anything to close, so anything off-box is refused rather
+    Only the kiosk's own browser is covering anything, so anything off-box is refused rather
     than left as a way for a stranger on the LAN to poke at the panel.
     """
     if not _is_local(request):

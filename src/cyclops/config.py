@@ -8,11 +8,18 @@ from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 
-# Where the kiosk's admin browser is told to close. The admin service drops this file and
-# the kiosk - which owns the Chromium process - sees it and tears the window down, so the
-# process that spawned the browser is the one that kills it. Deliberately not under /tmp: a
-# ``PrivateTmp=`` on the service would silently give the two sides different views of it.
+# Where the kiosk's admin browser is told to close. The admin service drops this file and the
+# kiosk - which owns the Chromium process and the panel it covers - sees it and takes the panel
+# back, so the process that put the page on screen is the one that takes it off. Deliberately
+# not under /tmp: a ``PrivateTmp=`` on the service would silently give the two sides different
+# views of it.
 BROWSER_CLOSE_FLAG = Path.home() / ".cache" / "cyclops" / "browser-close"
+
+# And where the service says it has just handed the dashboard to a browser on this box. The
+# kiosk keeps a Chromium warmed up behind its own window so that tapping the gear only has to
+# uncover it, and this note is the only way it can tell when that browser is ready: Chromium
+# announces nothing, and nothing can be asked what is currently on the panel.
+PAGE_SERVED_FLAG = Path.home() / ".cache" / "cyclops" / "page-served"
 
 # And where it leaves the output volume it wants. Same reason it cannot just set it itself:
 # the service runs with PrivateDevices=yes and has no /dev/snd, and at boot there is no user

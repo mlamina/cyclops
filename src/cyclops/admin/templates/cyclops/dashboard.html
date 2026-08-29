@@ -250,9 +250,13 @@ set - a slider on every device on the network is exactly the sprawl this replace
   if (close) close.addEventListener('click', async () => {
     close.disabled = true;
     close.textContent = 'Closing…';
-    // The kiosk owns the browser process; this only leaves it a note asking it to take it down.
+    // The kiosk owns the browser process; this only leaves it a note asking it to take its
+    // panel back. It does not take this page down with it - the browser stays running behind
+    // the panel so the next tap of the gear is instant - so the button has to put itself back.
+    // Without that, the second opening finds it disabled and reading "Closing…" for ever.
     try { await fetch('/close', { method: 'POST' }); }
-    catch (e) { close.disabled = false; close.textContent = 'Close'; }
+    catch (e) { /* the service is gone; the kiosk cannot be told, but the button still resets */ }
+    finally { close.disabled = false; close.textContent = 'Close'; }
   });
 
   // kiosk hardening: no context menu, no pinch/double-tap zoom

@@ -34,7 +34,12 @@ import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 from . import mixer, session, webcam  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
-from .config import BROWSER_CLOSE_FLAG, ConfigError, load_settings  # noqa: E402
+from .config import (  # noqa: E402
+    BROWSER_CLOSE_FLAG,
+    PAGE_SERVED_FLAG,
+    ConfigError,
+    load_settings,
+)
 from .overlay import (  # noqa: E402
     IDLE,
     LOOKING,
@@ -100,8 +105,21 @@ SHUTDOWN_JOIN_S = 20.0  # on exit, a stopping session may still be muxing and na
 BROWSERS = ("chromium-browser", "chromium")  # same probe order as cyclops-ui
 ADMIN_POLL_S = 0.2  # how often the watcher looks for the page asking to be closed
 ADMIN_FPS = 5  # render rate while the browser covers the panel - nobody can see us anyway
-ADMIN_MAX_S = 15 * 60  # a window nobody closed comes down rather than stranding the panel
+ADMIN_MAX_S = 15 * 60  # a page nobody closed gives the panel back rather than stranding it
 ADMIN_PROBE_S = 1.0  # how long the admin service gets to answer before we refuse the tap
+# The browser is started once, at boot, and afterwards only uncovered, because starting one is
+# not something a button press can wait for: measured on this Pi, spawn to first pixels is 1.4 s
+# with Chromium's 254 MB of binary warm in the page cache and 8.8 s with it cold, against 2 ms
+# for the page itself. Below is what the warm-up needs to get there and stay out of the way.
+PREWARM_TRIES = 30  # the admin service is a systemd unit and may still be coming up at boot
+PREWARM_RETRY_S = 2.0  # gap between those tries - a minute of patience, then the slow path
+PAGE_WAIT_S = 30.0  # how long the browser gets to fetch the page; a cold start eats 9 s of it
+# When to take the panel back after the warm-up's window maps on top of ours. Twice, because
+# the stacking order cannot be read back: labwc raises whatever mapped last and no always-on-top
+# hint survives that (measured), so the first retake covers the usual case and the second, later
+# one covers a map slow enough to have landed after it - the failure it prevents is a panel left
+# showing the dashboard with nobody having asked for it.
+PANEL_RETAKE_S = (0.6, 2.4)
 VOLUME_POLL_S = 0.4  # how often we look for a volume the admin page left for us
 BROWSER_GRACE_S = 5.0  # how long Chromium gets to go quietly before it is killed
 # Its own profile, distinct from the one cyclops-ui's kiosk uses, and under ~/.cache rather than
@@ -141,12 +159,7 @@ def _admin_reachable(url: str) -> bool:
 
 
 def _spawn_browser(url: str, log: BinaryIO) -> subprocess.Popen | None:
-    """Chromium, fullscreen and chrome-less, over the kiosk window. None if none is installed.
-
-    Its output goes to a file rather than /dev/null: the two usual reasons the button appears to
-    do nothing - no Wayland socket because the kiosk was started over ssh, or a corrupt profile -
-    both announce themselves there and nowhere else.
-    """
+    """Chromium, fullscreen and chrome-less, over the kiosk window. None if none is installed."""
     flags = list(CHROME_FLAGS)
     if os.environ.get("WAYLAND_DISPLAY"):  # the Pi's labwc session; omitted elsewhere
         flags.insert(0, "--ozone-platform=wayland")
@@ -158,6 +171,27 @@ def _spawn_browser(url: str, log: BinaryIO) -> subprocess.Popen | None:
             continue
     print(f"· no chromium found; the admin page is at {url}", file=sys.stderr, flush=True)
     return None
+
+
+def _wait_for_page(proc: subprocess.Popen, since: float, timeout: float) -> bool:
+    """Wait for the admin service to say it has handed the page to a browser here.
+
+    Chromium announces nothing when it is ready, and nothing can be asked what the panel is
+    showing, so the service leaves a note instead (:data:`~cyclops.config.PAGE_SERVED_FLAG`).
+    The note has to be newer than the launch, or the one left by our own reachability probe a
+    moment earlier would answer for a browser that is still faulting itself in off the card.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            return False
+        try:
+            if PAGE_SERVED_FLAG.stat().st_mtime >= since:
+                return True
+        except OSError:
+            pass
+        time.sleep(ADMIN_POLL_S)
+    return False
 
 
 def _stop_browser(proc: subprocess.Popen) -> None:
@@ -198,9 +232,12 @@ class Kiosk:
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._volume: int | None = None  # the level we last put on the sink
         self._volume_at = 0.0  # when we last looked for a new one
-        self._browser: subprocess.Popen | None = None  # the admin page, when it is open
-        self._admin_busy = threading.Event()  # set from the tap until the browser is gone
-        self._refocus = threading.Event()  # asks the render loop to re-assert fullscreen
+        self._browser: subprocess.Popen | None = None  # the admin browser, kept warm from boot
+        self._admin_busy = threading.Event()  # set from the tap until the page is done with
+        self._reveal = threading.Event()  # asks the render loop to uncover the admin page
+        self._retake = threading.Event()  # ... and to take the panel back off it
+        self._hidden = False  # the admin page has the panel; nothing we draw can be seen
+        self._window_up = False  # whether highgui currently has a window for us
         self._size = (0, 0)
         self.screen = screen
 
@@ -212,13 +249,36 @@ class Kiosk:
         highgui has no drawable until the first ``imshow``, and a fullscreen request made
         before that is quietly dropped under XWayland - the window comes up as a band in the
         middle of the panel instead of filling it. Show a frame first, then set the property.
+
+        Called again for every retake of the panel, which is why it takes the frame to come up
+        with: a window built around the picture it is about to show never flashes black.
         """
         cv2.namedWindow(WINDOW, cv2.WINDOW_NORMAL)
         cv2.resizeWindow(WINDOW, width, height)
         cv2.imshow(WINDOW, first_frame)
         cv2.waitKey(1)
+        self._window_up = True
         self._apply_fullscreen()
         cv2.setMouseCallback(WINDOW, self._on_mouse)
+
+    def _drop_window(self) -> None:
+        """Take our window down, putting whatever is behind it - the admin page - on the panel."""
+        if not self._window_up:
+            return
+        self._window_up = False
+        cv2.destroyWindow(WINDOW)
+        cv2.waitKey(1)  # let highgui actually unmap it before anything else is drawn
+
+    def _paint(self, image, width: int, height: int) -> None:
+        """Put a frame on the panel, building the window first if we have just taken it back.
+
+        Rebuilding is the only way back on top of the browser: a window that is merely redrawn
+        keeps the place in the stack it already had, which is underneath.
+        """
+        if self._window_up:
+            cv2.imshow(WINDOW, image)
+        else:
+            self.open_window(image, width, height)
 
     def _apply_fullscreen(self) -> None:
         cv2.setWindowProperty(
@@ -275,10 +335,11 @@ class Kiosk:
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
-        """Which button to draw as held. The admin disc stays lit while its browser is up.
+        """Which button to draw as held. The admin disc stays lit while its page is up.
 
-        Chromium takes two to four seconds to appear on a Pi. Without this the disc goes dark
-        180 ms after the tap and the panel looks like it ignored you.
+        Uncovering a warm browser is immediate, so this is normally seen for a frame or two.
+        It still earns its place on the one tap that has to start a browser: without it the
+        disc goes dark 180 ms in and a panel that is busy looks like a panel that ignored you.
         """
         if self._admin_busy.is_set():
             return "admin"
@@ -319,10 +380,92 @@ class Kiosk:
 
     # ---- admin page ----
 
-    def _open_admin(self) -> None:
-        """Hand the panel to Chromium, off-thread - highgui owns the main one.
+    def _admin_url(self) -> str:
+        return f"http://127.0.0.1:{self.controller.settings.admin_port}/"
 
-        Same shape as :meth:`_snap`. The busy flag means a second tap during the cold start is
+    def prewarm(self) -> None:
+        """Start the admin browser now, in the background, so the gear only has to uncover it."""
+        threading.Thread(target=self._prewarm, name="kiosk-prewarm", daemon=True).start()
+
+    def _prewarm(self) -> None:
+        """Wait for the admin service, start the browser on it, then take the panel back.
+
+        The browser then sits behind our window for the life of the kiosk with the page loaded
+        and polling, which is what makes the gear instant. It costs a couple of hundred MB of a
+        box that has 8 GB, and the alternative is a button that answers in seconds.
+        """
+        url = self._admin_url()
+        for _ in range(PREWARM_TRIES):
+            if not self.running:
+                return
+            if _admin_reachable(url):
+                break
+            time.sleep(PREWARM_RETRY_S)
+        else:
+            print(
+                f"· admin service never answered on {url}; the gear will start its own browser",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        if not self._start_browser(url):
+            return
+        print("· admin page warmed up behind the panel", flush=True)
+        for delay in PANEL_RETAKE_S:  # its window mapped on top of ours; see PANEL_RETAKE_S
+            time.sleep(delay)
+            if self._admin_busy.is_set():
+                return  # someone tapped the gear while we were starting: the page is theirs now
+            self._retake.set()
+
+    def _start_browser(self, url: str) -> bool:
+        """Launch Chromium on the admin page and wait for it to have it. True if it is up.
+
+        Its output goes to a file rather than /dev/null: the two usual reasons the panel ends up
+        with no admin page - no Wayland socket because the kiosk was started over ssh, and a
+        corrupt profile - both announce themselves there and nowhere else.
+        """
+        CHROME_LOG.parent.mkdir(parents=True, exist_ok=True)
+        launched_at = time.time()
+        with CHROME_LOG.open("wb") as log:
+            proc = _spawn_browser(url, log)  # the child keeps the fd; closing ours is fine
+        if proc is None:
+            return False
+        self._browser = proc
+        if not _wait_for_page(proc, launched_at, PAGE_WAIT_S):
+            if proc.poll() is not None:
+                print(
+                    f"· the admin browser died starting up; see {CHROME_LOG}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return False
+            # It is alive but never fetched the page - an admin service that went away between
+            # the probe and now, most likely. Show it anyway: a browser on an error page can at
+            # least be looked at, and refusing the tap outright explains nothing.
+            print(
+                "· the admin browser never reported the page; showing it anyway",
+                file=sys.stderr,
+                flush=True,
+            )
+        if not self.running:  # we are on our way out; do not leave a window covering the panel
+            _stop_browser(proc)
+            return False
+        return True
+
+    def _ensure_browser(self, url: str) -> bool:
+        """The warm browser, or a fresh one if it died. False when there is nothing to show."""
+        proc = self._browser
+        if proc is not None and proc.poll() is None:
+            return True
+        # The warm-up never got one up, or it crashed since. This is the slow path the warm-up
+        # exists to avoid, and it costs this one tap: the new window maps on top of ours by
+        # itself, which is exactly where the uncovering below wants it.
+        return self._start_browser(url)
+
+    def _open_admin(self) -> None:
+        """Uncover the admin page, off-thread - highgui owns the main one.
+
+        Same shape as :meth:`_snap`. The busy flag means a second tap while the page is up is
         ignored rather than starting a second browser: sharing a profile directory, the second
         invocation would hand its URL to the first and exit at once, leaving us holding a dead
         pid and a fullscreen window nothing can close.
@@ -333,55 +476,56 @@ class Kiosk:
         threading.Thread(target=self._admin_session, name="kiosk-admin", daemon=True).start()
 
     def _admin_session(self) -> None:
-        """The whole life of the admin window: probe, launch, wait, take it back down."""
-        url = f"http://127.0.0.1:{self.controller.settings.admin_port}/"
+        """The whole life of the visible page: probe, uncover, wait, take the panel back."""
+        url = self._admin_url()
+        shown = False
         try:
             if not _admin_reachable(url):
+                # A kiosk-mode browser has no address bar and no back button, so a page that
+                # cannot reach its own service would leave the panel with nothing to tap.
                 print(
                     f"· admin page not answering on {url} (systemctl status cyclops-admin)",
                     file=sys.stderr,
                     flush=True,
                 )
                 return
+            if not self._ensure_browser(url):
+                return
             BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)  # a stale note must not close this one
-            CHROME_LOG.parent.mkdir(parents=True, exist_ok=True)
-            launched_at = time.time()
-            with CHROME_LOG.open("wb") as log:
-                proc = _spawn_browser(url, log)
-                if proc is None:
-                    return
-                self._browser = proc
-                print(f"· admin page open ({url})", flush=True)
-                self._watch_browser(proc, launched_at)
+            shown_at = time.time()
+            shown = True
+            self._reveal.set()
+            print(f"· admin page open ({url})", flush=True)
+            self._watch_page(shown_at)
         finally:
-            self._browser = None
+            if shown:
+                self._retake.set()
+                print("· admin page closed", flush=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
             self._admin_busy.clear()
-            self._refocus.set()
-            print("· admin page closed", flush=True)
 
-    def _watch_browser(self, proc: subprocess.Popen, launched_at: float) -> None:
+    def _watch_page(self, shown_at: float) -> None:
         """Wait for the page to ask to close, for the browser to die, or for the hard cap.
 
-        The page cannot close a window it did not open, so its Close button drops
-        :data:`~cyclops.config.BROWSER_CLOSE_FLAG` and the decision is taken here, where the
-        process handle lives. The note counts only if it was written after we launched, so one
-        left behind by an earlier round can never shut this window the moment it opens.
+        The page cannot uncover or cover anything itself, so its Close button drops
+        :data:`~cyclops.config.BROWSER_CLOSE_FLAG` and the decision is taken here, on the thread
+        that put it up. The note counts only if it was written after we uncovered the page, so
+        one left behind by an earlier round can never take it away the moment it appears.
         """
+        proc = self._browser
         deadline = time.monotonic() + ADMIN_MAX_S
-        while proc.poll() is None:
+        while proc is not None and proc.poll() is None:
             try:
-                asked = BROWSER_CLOSE_FLAG.stat().st_mtime >= launched_at
+                asked = BROWSER_CLOSE_FLAG.stat().st_mtime >= shown_at
             except OSError:
                 asked = False
             if asked or time.monotonic() > deadline:
                 break
             time.sleep(ADMIN_POLL_S)
-        _stop_browser(proc)
 
     def close_browser(self) -> None:
-        """Take the admin page down with the kiosk, so nothing is left covering the panel."""
+        """Take the warm browser down with the kiosk, so nothing is left covering the panel."""
         proc = self._browser
         if proc is not None and proc.poll() is None:
             _stop_browser(proc)
@@ -513,11 +657,21 @@ class Kiosk:
 
         while self.running:
             started = time.monotonic()
-            if self._refocus.is_set():
-                # highgui is main-thread only, so the browser watcher cannot do this itself.
-                self._refocus.clear()
-                self._apply_fullscreen()
-            self._sync_volume()
+            # highgui is main-thread only, so the admin thread asks for both of these rather
+            # than touching the window itself.
+            if self._reveal.is_set():
+                self._reveal.clear()
+                self._drop_window()  # the warm browser has been behind us all along
+                self._hidden = True
+            if self._retake.is_set():
+                self._retake.clear()
+                self._drop_window()  # ... and the next frame builds a window on top of it again
+                self._hidden = False
+                self._touched_at = time.monotonic()  # closing the page is a touch like any other
+            self._sync_volume()  # the page sets the volume, so keep reading it while it is up
+            if self._hidden:
+                time.sleep(1.0 / ADMIN_FPS)  # nothing we draw now can be seen by anyone
+                continue
 
             status = self.controller.status()
             state = self._effective(str(status["state"]))
@@ -542,7 +696,7 @@ class Kiosk:
             self._prev_state = state
 
             if asleep:
-                cv2.imshow(WINDOW, _black(width, height))  # no picture, and no chrome either
+                self._paint(_black(width, height), width, height)  # no picture, no chrome
             else:
                 # The chrome is drawn through the wake-up: the buttons must answer the tap even
                 # while the camera is still opening behind them.
@@ -562,12 +716,13 @@ class Kiosk:
                     flash=flash,
                     pressed=self._pressed_now(),
                 )
-                cv2.imshow(WINDOW, composite(canvas, chrome))
+                self._paint(composite(canvas, chrome), width, height)
 
             spent = time.monotonic() - started
-            # While the browser covers the panel we are compositing frames nobody can see,
-            # against the very cold start we are waiting on. Give the core back. A dark panel
-            # is cheaper still - one black frame, redrawn only to keep taps and keys answered.
+            # A tap that has to start a browser is compositing frames against a cold start it
+            # is waiting on; give the core back. (Once the page is up we are not here at all -
+            # the loop is asleep above.) A dark panel is cheaper still: one black frame, redrawn
+            # only to keep taps and keys answered.
             if self._asleep:
                 budget = 1.0 / SLEEP_FPS
             elif self._admin_busy.is_set():
@@ -581,6 +736,8 @@ class Kiosk:
             elif key == ord("f"):
                 self.fullscreen = not self.fullscreen
                 self._apply_fullscreen()
+            # Never our own uncovering: that path sleeps above rather than arriving here
+            # with no window to ask about.
             if cv2.getWindowProperty(WINDOW, cv2.WND_PROP_VISIBLE) < 1:
                 self.running = False  # the user closed the window
 
@@ -614,6 +771,10 @@ def main() -> None:
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
     kiosk.adopt_volume()
+    # Get the admin browser up now rather than on the tap that wants it. It comes up in front
+    # of the window opened below and is covered again a moment later - a flicker of the
+    # dashboard a second or two into startup is this, and is the price of an instant gear.
+    kiosk.prewarm()
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
