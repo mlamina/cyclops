@@ -16,6 +16,8 @@ from pathlib import Path
 
 import cv2
 
+from .overlay import sharpen
+
 WARMUP_FRAMES = 10  # let auto-exposure/white-balance settle before the real shot
 WARMUP_SECONDS = 0.4
 MAX_EDGE = 1024
@@ -301,8 +303,15 @@ def _capture_locked(
 
 
 def _encode_and_save(frame, save_dir: Path, index: int | str, keep_as: str) -> Capture:
-    """Shrink, JPEG-encode and archive a frame, whoever grabbed it."""
-    frame = _resize_to_max_edge(frame, MAX_EDGE)
+    """Sharpen, shrink, JPEG-encode and archive a frame, whoever grabbed it.
+
+    The sharpen is the same one the preview gets and is here for the same reason: the endoscope
+    is a 640x480 sensor behind a quality-44 encoder, and this is the only lever left. It matters
+    more here than on the panel, because this frame is what the model is asked to read a part
+    number off. It happens before the resize so that a frame big enough to be shrunk - a real
+    webcam - is sharpened at full size and then cleanly reduced, rather than the other way about.
+    """
+    frame = _resize_to_max_edge(sharpen(frame), MAX_EDGE)
     encoded, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
     if not encoded:
         raise WebcamError("JPEG encoding failed.")

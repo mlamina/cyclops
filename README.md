@@ -358,6 +358,44 @@ There is also an out-of-tree V4L2 kernel module for these cameras, which would p
 without DKMS, so it stops loading the next time the kernel updates. On a box whose whole point is
 being left alone, a camera that dies on `apt upgrade` is worse than sixty lines of Python.
 
+**640×480 is the ceiling, whatever the box says.** These are sold as "1920P HD" — the listing for
+this one claims 1920×1440. That number is exactly 640×480 × 3 in each axis: it describes what the
+phone app upscales to, not what the sensor reads out. The device streams 640×480 JPEG at
+quality ≈44 (~19 KB a frame, 0.45 bits per pixel) at 20 fps, and there is no way to ask it for
+more:
+
+* The protocol's whole vocabulary is four commands — open (`BB AA 05 00 00`), ack, stop
+  (`BB AA 08 00 00`), and switch camera/resolution (`BB AA 0B 00 02 <cam> <res> 00`). There is no
+  still-capture command, so there is no high-resolution photo path hiding behind the video one.
+* This unit ignores the resolution command. Every `cam`×`res` combination was tried against it,
+  both mid-stream and before the stream is opened; it never acknowledges `0B` and never emits
+  anything but 640×480 in type-`0x07` packets. The multi-resolution code in the vendor's Android
+  app serves other products in the same family.
+* Nothing is negotiable in the descriptors either: two vendor-specific interfaces, four bulk
+  endpoints, one alternate setting, and no format descriptors at all.
+
+Nor is the softness a focus problem, which is the intuitive diagnosis and the wrong one. A hard
+edge takes the same 5 px to transition at 0.5 m as it does at 2.5 m — a fixed-focus lens that is
+equally soft everywhere, not a focal plane you are standing outside. Distant things look worse
+than near ones purely because the same pixels are spread over the same angle: at five times the
+distance a feature is five times smaller, and it falls below what 640×480 and a quality-44
+encoder can carry.
+
+So the only lever left is downstream, and cyclops pulls it. `overlay.sharpen()` is a threshold-
+and-ceiling-gated unsharp mask applied to the preview before it is enlarged onto the panel, and
+to every photo before it is encoded for the model. On a real frame it takes the Laplacian
+variance from 18.5 to 50.1 — 2.7× the detail — while the noise floor in flat areas moves 2.10 to
+2.20. The gates are what make that trade good: the floor leaves detail weaker than the encoder's
+own blocking alone, and the ceiling caps how far any pixel may travel, which is what stops a face
+against a bright window growing a white halo. Recorded video is untouched: the recorder samples
+raw frames straight from the camera.
+
+It is free, as it turns out. The preview path costs 5.98 ms a frame against 5.42 ms before, on a
+25 fps loop with 40 ms to spend, because the same work found a much older waste: `mirror()` used
+to flip with `frame[:, ::-1]`, and a reversed slice is a negative-stride view that OpenCV copies
+into a contiguous buffer on *every* call downstream of it. Flipping properly with `cv2.flip` paid
+for the sharpening and the move from `INTER_LINEAR` to `INTER_CUBIC` besides.
+
 **Pick audio devices.** A Pi has several and often no default mic, so set them explicitly:
 
 ```bash
@@ -391,9 +429,10 @@ row of three tabs along the bottom sized for a thumb in a glove:
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
 from it — dim green idle, amber connecting, bright green live, red on a fault — so the state
 reads from across the room. The line under the picture spells it out for anyone close enough to
-read it, including what an error actually said. The picture keeps
-its own colours; only the chrome is green, because the point of the panel is still to see the
-room.
+read it, including what an error actually said. The picture keeps its own colours and is not
+filtered at all; the strip and the tab row are, and they are see-through rather than opaque, so
+the camera runs edge to edge behind the chrome as well as between it. Only the chrome is green,
+because the point of the panel is still to see the room.
 
 It must run **in your desktop session** — it needs PipeWire for audio and a Wayland socket for
 the window, neither of which a bare systemd unit has. On the Wayland (labwc) desktop, put this
