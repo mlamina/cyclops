@@ -17,8 +17,10 @@ import threading
 import time
 from dataclasses import replace
 
+from . import sfx
 from .agent import VoiceAgent
 from .audio import (
+    SAMPLE_RATE,
     EchoGuard,
     Microphone,
     Speaker,
@@ -71,6 +73,14 @@ class SessionController:
         self._mic: Microphone | None = None
         self._error = ""
         self._started_at: float | None = None  # monotonic, for the kiosk's session timer
+        # This controller is the only thing that knows when a session is *finished* rather than
+        # merely cancelled - the socket, the audio devices and the recording all outlive the
+        # agent - so the sound that says so is sounded from here.
+        self._cues = sfx.Cues(
+            rate=SAMPLE_RATE,
+            device=resolve_device(settings.output_device),
+            enabled=settings.sounds,
+        )
 
     @property
     def _running(self) -> bool:
@@ -180,6 +190,10 @@ class SessionController:
                 self._loop = self._task = self._agent = self._speaker = self._mic = None
                 self._started_at = None  # the timer disappears with the session
             loop.close()
+            # Now it is over: the folder is written and the panel is about to go back to
+            # STANDBY. This cuts off the closing ticks the kiosk started on the tap, however
+            # long or short the teardown turned out to be.
+            self._cues.play("ended")
 
     async def _session(self, loop: asyncio.AbstractEventLoop) -> None:
         s = self.settings

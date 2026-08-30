@@ -37,6 +37,7 @@ class Settings:
     model: str = "gpt-realtime-2.1"  # newest GA speech-to-speech model (Jul 2026)
     voice: str = "marin"
     volume: float = 1.0  # output gain 0.0-1.0 (CYCLOPS_VOLUME is a percent 0-100)
+    sounds: bool = True  # session cues: the link opening and closing, and the shutter
     reasoning_effort: str | None = None  # None: "low" on reasoning models, omitted otherwise
     camera_index: int | None = None  # None: probe cameras and remember the one that works
     half_duplex: bool | None = None  # None: auto-detect from the output device
@@ -153,6 +154,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         model=_env("CYCLOPS_MODEL") or Settings.model,
         voice=_env("CYCLOPS_VOICE") or Settings.voice,
         volume=_volume("CYCLOPS_VOLUME"),
+        sounds=_flag("CYCLOPS_SOUNDS", Settings.sounds),
         reasoning_effort=_env("CYCLOPS_REASONING_EFFORT"),
         camera_index=_int("CYCLOPS_CAMERA_INDEX"),
         half_duplex=_tristate(_env("CYCLOPS_HALF_DUPLEX")),

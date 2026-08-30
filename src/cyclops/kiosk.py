@@ -31,7 +31,8 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import mixer, session, webcam  # noqa: E402
+from . import mixer, session, sfx, webcam  # noqa: E402
+from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
 from .config import (  # noqa: E402
@@ -226,6 +227,13 @@ class Kiosk:
         self._pending: str | None = None  # "start"/"stop" until the session catches up
         self._pending_at = 0.0
         self._snap_busy = threading.Event()  # one shutter at a time; see _snap
+        # The shutter sound is the kiosk's own: a photo can be taken with no session running,
+        # so it cannot wait for an agent to exist to own the noise.
+        self._cues = sfx.Cues(
+            rate=SAMPLE_RATE,
+            device=resolve_device(controller.settings.output_device),
+            enabled=controller.settings.sounds,
+        )
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
@@ -359,6 +367,7 @@ class Kiosk:
             return
         self._snap_busy.set()
         self._flash_until = time.monotonic() + FLASH_SECONDS
+        self._cues.play("shutter")  # the flash, said out loud - same moment, same event
         threading.Thread(target=self._capture, name="kiosk-snap", daemon=True).start()
 
     def _capture(self) -> None:
@@ -554,6 +563,10 @@ class Kiosk:
         if starting:
             self.controller.start()
         else:
+            # On the tap, not on the teardown. Everything after this point waits on a task
+            # that has to notice it was cancelled, and the panel already shows CLOSING from
+            # here - the sound belongs to the press, the same way the shutter does.
+            self._cues.play("closing")
             self.controller.stop()
 
     def _effective(self, raw: str) -> str:

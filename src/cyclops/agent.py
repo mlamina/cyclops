@@ -23,8 +23,8 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import session
-from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker
+from . import session, sfx
+from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
 from .webcam import Capture
@@ -490,6 +490,14 @@ class VoiceAgent:
         self._dead_item_ids: set[str] = set()  # interrupted items: drop their in-flight output
         self._assistant_line_open = False
         self._background: set[asyncio.Task[None]] = set()
+        # Cues sound on their own stream (see cyclops.sfx), but on the same device as the voice
+        # rather than whatever the system calls default - those are not always the same speaker.
+        # Public because the shutter is sounded by whoever holds the camera, not by the agent.
+        self.cues = sfx.Cues(
+            rate=SAMPLE_RATE,
+            device=resolve_device(settings.output_device),
+            enabled=settings.sounds,
+        )
 
     @property
     def unacked_item_ids(self) -> frozenset[str]:
@@ -565,18 +573,32 @@ class VoiceAgent:
     # ---------------------------------------------------------------- lifecycle
 
     async def run(self) -> None:
-        client = AsyncOpenAI(api_key=self.settings.api_key)
-        async with client.realtime.connect(model=self.settings.model) as conn:
-            self._conn = conn
-            await conn.session.update(session=self.session_config())
-            try:
+        self.cues.play("connecting", loop=True)
+        # The try opens before the connect, not after it: a bad key or a dead network raises
+        # from there, and that is precisely when the connecting cue is playing. Left outside,
+        # the finally never runs and the kiosk pings on over a red border.
+        try:
+            client = AsyncOpenAI(api_key=self.settings.api_key)
+            async with client.realtime.connect(model=self.settings.model) as conn:
+                self._conn = conn
+                await conn.session.update(session=self.session_config())
                 async for event in conn:
                     await self._handle_event(event)
-            finally:
-                for task in self._background:
-                    task.cancel()
-                await asyncio.gather(*self._background, return_exceptions=True)
-                self._conn = None
+        except Exception:
+            # A connect that never landed: the ping is ours to stop, because nothing else is
+            # going to - the panel just goes red. A *cancel* is the other thing entirely, and
+            # deliberately not caught here: someone pressed stop, and the sound of stopping
+            # belongs to them. Ending a session is sounded by whoever owns its lifecycle (the
+            # kiosk on the tap, the CLI on its way out), never from here, because this runs
+            # long before it is over - the socket, the devices and the recording outlive it.
+            if not self.ready.is_set():
+                self.cues.stop()
+            raise
+        finally:
+            for task in self._background:
+                task.cancel()
+            await asyncio.gather(*self._background, return_exceptions=True)
+            self._conn = None
 
     async def close(self) -> None:
         if self._conn is not None:
@@ -644,6 +666,23 @@ class VoiceAgent:
 
     # ---------------------------------------------------------------- audio up
 
+    async def _listen(self, *, after_s: float) -> None:
+        """Open the mic once the ready chime has finished, and pump it from there on.
+
+        The chime plays on its own stream, so the EchoGuard - which only knows about the
+        Speaker - cannot mute the mic for it, and on headphones there is no guard at all.
+        Rather than defend against hearing our own chime, we just don't listen until it has
+        stopped: the chime is the thing telling you to talk, so nobody is mid-sentence during
+        it, and this is the one moment in a session where half a second of deafness is free.
+        Draining afterwards rather than before then clears exactly the blocks it played into.
+        """
+        assert self.mic is not None
+        if after_s:
+            await asyncio.sleep(after_s + sfx.SETTLE_S)
+        self.mic.drain()  # audio from before the session was configured is stale
+        self._log("listening — talk, or take a photo, Ctrl+C to quit")
+        await self._pump_mic()
+
     async def _pump_mic(self) -> None:
         assert self.mic is not None
         async for chunk in self.mic.chunks():
@@ -695,11 +734,10 @@ class VoiceAgent:
     def _on_session_ready(self) -> None:
         if self.ready.is_set():
             return
-        self.ready.set()
+        self.ready.set()  # set first: the panel and show_photo() both gate on it
+        sounding = self.cues.play("ready")  # which also ends the connecting loop
         if self.mic is not None:
-            self.mic.drain()  # audio from before the session was configured is stale
-            self._spawn(self._pump_mic())
-            self._log("listening — talk, or take a photo, Ctrl+C to quit")
+            self._spawn(self._listen(after_s=sounding))
 
     def _on_error(self, err: RealtimeError) -> None:
         if err.code == "conversation_already_has_active_response":

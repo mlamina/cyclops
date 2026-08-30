@@ -82,6 +82,7 @@ async def snap(agent: VoiceAgent, settings: Settings) -> None:
     streaming while the camera wakes up.
     """
     save_dir, keep_as = session.photo_target(settings, by="you")
+    agent.cues.play("shutter")  # on the keypress, not on the file: a shutter, not a save
     try:
         async with asyncio.timeout(CAPTURE_TIMEOUT_S):
             shot = await capture_image_async(
@@ -171,6 +172,7 @@ async def _run(settings: Settings) -> None:
                 task.cancel()
             mic.stop()
             speaker.stop()
+            agent.cues.play("ended")  # the CLI's whole teardown is here; the kiosk's is not
 
 
 def main() -> None:
