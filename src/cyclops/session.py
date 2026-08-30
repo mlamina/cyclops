@@ -762,13 +762,19 @@ def _render_record(record: dict) -> str:
 def _render_photo(record: dict, at: str) -> str:
     file = str(record.get("file", ""))
     if record.get("by") == "cyclops":
+        # Historical: Cyclops used to hold its own shutter. Kept because --fix re-renders old
+        # logs, and a card full of them would otherwise lose half its pictures' captions.
         line = f"*Cyclops took a photo* ({at})"
         if record.get("focus"):
             line += f" — asked to focus on: {record['focus']}"
         label = "Cyclops"
+    elif record.get("shown"):
+        line = f"*You took a photo* ({at}) — the shutter button. Cyclops looked at it."
+        label = "You"
     else:
-        # The shutter photo is written to disk and stops there - it never enters the
-        # conversation - and a page that showed both images identically would be lying.
+        # No `shown` key at all means a record from before the shutter fed the conversation,
+        # for which this sentence is simply true. A False one is a photo taken with nothing
+        # live to show it to. Either way the picture stopped at the disk, so say so.
         line = f"*You took a photo* ({at}) — the shutter button. Cyclops never saw this one."
         label = "You"
     if not file:

@@ -29,6 +29,7 @@ from .audio import (
 from .config import Settings
 from .record import FrameSource
 from .session import SessionLog
+from .webcam import Capture
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
     "idle",
@@ -87,8 +88,32 @@ class SessionController:
     def stop(self) -> None:
         with self._lock:
             loop, task = self._loop, self._task
-        if loop is not None and task is not None:
+        if loop is None or task is None:
+            return
+        try:
             loop.call_soon_threadsafe(task.cancel)
+        except RuntimeError:
+            pass  # it finished on its own between the read and the call; nothing left to cancel
+
+    def show_photo(self, capture: Capture) -> bool:
+        """Hand a photo to the running agent. False when there is nothing live to hand it to.
+
+        Called from the kiosk's snap thread and from nothing that can afford to wait, so it
+        dispatches and returns - the same shape as :meth:`stop`, and the same shape the audio
+        callbacks use to reach this loop. All it can honestly report is that it handed the photo
+        to a live, connected session; whether the model got it is answered on the other side.
+        """
+        with self._lock:
+            loop, agent = self._loop, self._agent
+        if loop is None or agent is None or loop.is_closed() or not loop.is_running():
+            return False
+        if not agent.ready.is_set() or not agent.connected:
+            return False
+        try:
+            loop.call_soon_threadsafe(agent.queue_photo, capture)
+        except RuntimeError:
+            return False  # the loop closed in the moment between the guard and the call
+        return True
 
     def join(self, timeout: float) -> None:
         """Wait for a stopping session to finish - it may still be muxing its recording."""
@@ -148,10 +173,13 @@ class SessionController:
                 message = "OpenAI rejected the API key"
             self._error = message
         finally:
-            loop.close()
+            # Cleared before the close, not after: anything holding this controller reads these
+            # under the lock, and a loop that is closed but still published is one they will
+            # call into and get RuntimeError from.
             with self._lock:
                 self._loop = self._task = self._agent = self._speaker = self._mic = None
                 self._started_at = None  # the timer disappears with the session
+            loop.close()
 
     async def _session(self, loop: asyncio.AbstractEventLoop) -> None:
         s = self.settings

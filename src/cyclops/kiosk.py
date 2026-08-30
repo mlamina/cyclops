@@ -3,8 +3,8 @@
 ``cyclops-kiosk`` is the whole front-end and needs no browser of its own. It owns the camera
 (via :class:`~cyclops.camera.CameraSource`), draws each frame into a fullscreen OpenCV window
 with a PIL-rendered overlay on top, and turns taps into session control. The agent itself runs
-on a background thread inside a :class:`~cyclops.ui.SessionController`, and its webcam tool
-borrows frames from the very camera you are watching.
+on a background thread inside a :class:`~cyclops.ui.SessionController`, and the photos the
+SNAP button feeds it are borrowed from the very camera you are watching.
 
 highgui must own the main thread, so the render loop lives here and everything else is off-thread.
 """
@@ -42,7 +42,6 @@ from .config import (  # noqa: E402
 )
 from .overlay import (  # noqa: E402
     IDLE,
-    LOOKING,
     STARTING,
     STOPPING,
     Overlay,
@@ -226,7 +225,7 @@ class Kiosk:
         self._pressed: str | None = None  # which button is still showing its tap
         self._pending: str | None = None  # "start"/"stop" until the session catches up
         self._pending_at = 0.0
-        self._prev_state = IDLE
+        self._snap_busy = threading.Event()  # one shutter at a time; see _snap
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
@@ -351,7 +350,14 @@ class Kiosk:
         The capture borrows a frame from the camera we are already previewing (see
         :func:`cyclops.webcam.set_live_source`), so it costs milliseconds - but it still writes
         a file, and the render loop must not stall behind a disk that is busy.
+
+        One at a time. Two taps inside the same second raced in webcam._unique, which checks a
+        name is free and then writes it, so both shots landed on one path and one was lost.
+        They would now also be two photos handed to the model for one thing held up.
         """
+        if self._snap_busy.is_set():
+            return
+        self._snap_busy.set()
         self._flash_until = time.monotonic() + FLASH_SECONDS
         threading.Thread(target=self._capture, name="kiosk-snap", daemon=True).start()
 
@@ -368,6 +374,9 @@ class Kiosk:
         except WebcamError as exc:
             print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
         else:
+            # The whole point of the button: the photo goes to Cyclops, which answers out loud.
+            # False means there was no live session to show it to - it is still on the card.
+            shown = self.controller.show_photo(shot)
             session.note(
                 "photo",
                 by="you",
@@ -375,8 +384,12 @@ class Kiosk:
                 width=shot.width,
                 height=shot.height,
                 bytes=shot.jpeg_bytes,
+                shown=shown,
             )
-            print(f"· snapped {shot.path}", flush=True)
+            print(f"· snapped {shot.path}{'' if shown else ' (nothing live to show it to)'}",
+                  flush=True)
+        finally:
+            self._snap_busy.clear()
 
     # ---- admin page ----
 
@@ -691,10 +704,6 @@ class Kiosk:
                 self.overlay = Overlay(width, height)
                 self._size = (width, height)
 
-            if state == LOOKING and self._prev_state != LOOKING:
-                self._flash_until = time.monotonic() + FLASH_SECONDS
-            self._prev_state = state
-
             if asleep:
                 self._paint(_black(width, height), width, height)  # no picture, no chrome
             else:
@@ -767,7 +776,7 @@ def main() -> None:
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
 
-    webcam.set_live_source(camera)  # the agent's tool shoots from this same camera
+    webcam.set_live_source(camera)  # the shutter shoots from this same camera
     # The recorder gets the source even when nothing is plugged in: it waits its own moment for
     # a first frame and says so in the session log if none comes, and a camera present by the
     # time the next session starts is then recorded without anything being rewired.
@@ -795,7 +804,7 @@ def main() -> None:
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
-        "  the tab row along the bottom: SNAP takes a photo · SESSION starts and stops\n"
+        "  the tab row along the bottom: SNAP shows Cyclops a photo · SESSION starts and stops\n"
         "  SYSTEM opens the admin page, which is where the volume lives\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",

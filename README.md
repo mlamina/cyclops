@@ -1,9 +1,9 @@
 # cyclops
 
 A low-latency speech-to-speech agent built on the **OpenAI Realtime API** (WebSocket, `openai` Python SDK 3.x).
-It listens on your microphone, answers through your speakers, and has exactly one tool: it can
-**snap a picture with your webcam and look at it**. Hold something up to the camera, say
-"take a look at this", and talk about it.
+It listens on your microphone, answers through your speakers, and **you** decide when it looks:
+press the shutter, and the photo goes straight into its context so it answers about what you are
+holding. It never takes a picture on its own.
 
 ## How it works
 
@@ -11,16 +11,18 @@ It listens on your microphone, answers through your speakers, and has exactly on
 mic ──PCM16 24kHz──▶ input_audio_buffer.append ──▶ OpenAI Realtime (server VAD)
                                                         │
 speakers ◀──PCM16 24kHz── response.output_audio.delta ◀─┤
-                                                        │ function call: capture_webcam_image
-webcam ──▶ JPEG (≤1024px) ──▶ function_call_output + input_image item ──▶ response.create
+                                                        │
+SNAP button ──▶ webcam ──▶ JPEG (≤1024px) ──▶ input_image item ──▶ response.create
 ```
 
 * One WebSocket session, server-side voice activity detection, no push-to-talk.
 * Barge-in: when you start talking the local playback buffer is flushed and the assistant's
   audio item is truncated to what you actually heard, so the model doesn't think you heard the rest.
-* The webcam tool runs in a worker thread, discards warm-up frames, shrinks the frame to 1024 px,
-  and injects it as an `input_image` so the model's next reply is about what it sees.
-  Every capture is also written into the session's own folder (see **Sessions** below).
+* The shutter shrinks the frame to 1024 px and injects it as an `input_image`, then asks for a
+  response, so the model's next reply is about what it just saw. On the panel it borrows a frame
+  from the preview already on screen; from the CLI it opens the camera in a worker thread and
+  discards warm-up frames. Every capture is also written into the session's own folder (see
+  **Sessions** below).
 
 ## Setup
 
@@ -40,9 +42,9 @@ uv sync
 uv run cyclops
 ```
 
-Talk. Say something like *"Can you see what I'm holding?"* to trigger the camera. Press `Ctrl+C` to quit.
+Talk. Press `Enter` to take a photo and show it to Cyclops. Press `Ctrl+C` to quit.
 
-Headless smoke test (no mic/speakers; sends text turns and exercises the webcam tool):
+Headless smoke test (no mic/speakers; sends text turns and hands the model a photo):
 
 ```bash
 uv run cyclops-smoke
@@ -62,8 +64,8 @@ sessions/
     project.md        which project this got filed under, or why it didn't
     video.mp4         the recording (kiosk only)
     photos/
-      14-32-40_cyclops.jpg
       14-33-12_you.jpg
+      14-32-40_cyclops.jpg   (only on older cards - Cyclops used to hold its own shutter)
 ```
 
 `session.md` opens in any markdown viewer with both images inline and every line stamped as an
@@ -154,8 +156,9 @@ sudo deploy/install-recover.sh
 journalctl -u cyclops-recover -b     # what it found and what it did
 ```
 
-Photos taken with no session running (the smoke test, mostly) still land in `captures/`, which
-keeps only the last 20 alongside `latest.jpg`. A session's own photos are never pruned.
+Photos taken with no session running land in `captures/`, which keeps only the last 20 alongside
+`latest.jpg`. Nothing sees those — with no session there is no model to show them to — and the
+session page says so. A session's own photos are never pruned.
 
 ## Projects
 
@@ -298,7 +301,7 @@ Variables already exported in your shell take precedence over `.env`. List audio
 ## macOS notes
 
 * **Permissions:** the first run triggers Microphone and Camera prompts for the app you launched
-  from (Terminal, iTerm, PyCharm…). If the camera tool times out, check
+  from (Terminal, iTerm, PyCharm…). If a capture times out, check
   *System Settings → Privacy & Security → Camera / Microphone*.
 * **Speakers vs. headphones.** With open speakers the mic hears the assistant, so a naive setup
   answers itself in a loop. When the output device is a speaker (e.g. "MacBook Pro Speakers")
@@ -422,7 +425,7 @@ row of three tabs along the bottom sized for a thumb in a glove:
 
 | Tab | What it does |
 | --- | --- |
-| **SNAP** | takes a photo now — into the running session's `photos/`, or into `captures/` if none |
+| **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
 | **SYSTEM** | opens the [admin page](#admin-page) fullscreen on the panel |
 | **SESSION** | starts and stops the conversation; the tab stays lit while one is up |
 

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import sys
+from collections.abc import Callable
 from dataclasses import replace
 
 from openai import OpenAIError
 from websockets.exceptions import WebSocketException
 
+from . import session
 from .agent import SessionError, VoiceAgent
 from .audio import (
     EchoGuard,
@@ -23,6 +26,7 @@ from .audio import (
 )
 from .config import ConfigError, Settings, load_settings
 from .session import SessionLog
+from .webcam import CAPTURE_TIMEOUT_S, WebcamError, capture_image_async
 
 
 def resolve_half_duplex(settings: Settings, output_name: str) -> tuple[bool, str]:
@@ -33,6 +37,77 @@ def resolve_half_duplex(settings: Settings, output_name: str) -> tuple[bool, str
     if output_is_speaker(output_name):
         return True, f"output is '{output_name}', which the mic would hear"
     return False, f"output is '{output_name}'"
+
+
+def watch_stdin(
+    loop: asyncio.AbstractEventLoop, on_enter: Callable[[], None]
+) -> Callable[[], None]:
+    """Call ``on_enter`` when Enter is pressed. Does nothing at all when stdin is not a terminal.
+
+    The terminal is the CLI's shutter button - it has no panel to tap. The isatty gate is what
+    makes that safe: under systemd or a pipe, stdin is at EOF and therefore *always* readable,
+    so an unguarded reader would spin a core forever. Returns the teardown.
+
+    fd 0 is deliberately left in whatever mode the shell handed over: a TTY in canonical mode
+    only becomes readable once a whole line is buffered, so the read never blocks, and the
+    process does not leave a non-blocking stdin behind for the shell to trip over.
+    """
+    try:
+        if not sys.stdin.isatty():
+            return lambda: None
+        fd = sys.stdin.fileno()
+    except (ValueError, OSError):
+        return lambda: None
+
+    def readable() -> None:
+        try:
+            data = os.read(fd, 4096)
+        except OSError:
+            data = b""
+        if not data:  # EOF - stop watching rather than spin on a fd that is readable forever
+            loop.remove_reader(fd)
+            return
+        if b"\n" in data or b"\r" in data:
+            on_enter()
+
+    loop.add_reader(fd, readable)
+    return lambda: loop.remove_reader(fd)
+
+
+async def snap(agent: VoiceAgent, settings: Settings) -> None:
+    """Take a photo and show it to the model - the CLI's version of tapping SNAP.
+
+    No live source is registered here, so this is the slow open-warm-shoot path. It runs on a
+    thread of its own (see :func:`cyclops.webcam.capture_image_async`) so the mic keeps
+    streaming while the camera wakes up.
+    """
+    save_dir, keep_as = session.photo_target(settings, by="you")
+    try:
+        async with asyncio.timeout(CAPTURE_TIMEOUT_S):
+            shot = await capture_image_async(
+                settings.camera_index, save_dir=save_dir, keep_as=keep_as
+            )
+    except TimeoutError:
+        print(
+            f"· snapshot failed: camera did not answer within {CAPTURE_TIMEOUT_S:.0f}s",
+            file=sys.stderr,
+            flush=True,
+        )
+        return
+    except WebcamError as exc:
+        print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
+        return
+    print(f"· snapped {shot.path}", flush=True)
+    await agent.add_photo(shot)
+    session.note(
+        "photo",
+        by="you",
+        file=f"{session.PHOTOS}/{shot.path.name}",
+        width=shot.width,
+        height=shot.height,
+        bytes=shot.jpeg_bytes,
+        shown=True,
+    )
 
 
 async def _run(settings: Settings) -> None:
@@ -66,12 +141,34 @@ async def _run(settings: Settings) -> None:
 
     speaker.start()
     mic.start()
+
+    # Enter is the shutter. One at a time, and not before the session is up, so a held-down key
+    # cannot queue a burst of captures that all serialise behind the camera lock.
+    snapping: set[asyncio.Task] = set()
+
+    def on_enter() -> None:
+        if snapping or not agent.ready.is_set() or not agent.connected:
+            return
+        task = asyncio.ensure_future(snap(agent, settings))
+        snapping.add(task)
+        task.add_done_callback(snapping.discard)
+
+    unwatch = watch_stdin(loop, on_enter)
+    if sys.stdin.isatty():
+        print("· press ENTER to take a photo and show it to Cyclops", flush=True)
+    else:
+        print("· stdin is not a terminal, so there is no shutter - this session cannot see",
+              flush=True)
+
     # No camera is held open here, so no frames and no video.mp4 - the folder gets its transcript
     # and its photos and nothing else. That is by construction, not by a check.
     with SessionLog(settings, agent, entrypoint="cli", mic=mic, speaker=speaker):
         try:
             await agent.run()
         finally:
+            unwatch()
+            for task in snapping:
+                task.cancel()
             mic.stop()
             speaker.stop()
 

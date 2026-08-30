@@ -1,9 +1,9 @@
 """Headless smoke test: ``uv run cyclops-smoke``.
 
-No microphone or speakers. Sends two typed turns through the very same session config the
-voice app uses, and checks that (1) audio + transcript come back and (2) the model calls the
-webcam tool and then talks about the picture, and (3) the model calls the web_search tool
-and answers from what it found.
+No microphone or speakers. Sends typed turns through the very same session config the voice
+app uses, and checks that (1) audio + transcript come back, (2) a photo handed to the model
+the way the shutter hands it one comes back described, and (3) the model calls the web_search
+tool and answers from what it found.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from openai.types.realtime import RealtimeServerEvent
 from .agent import VoiceAgent, function_calls
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE
 from .config import ConfigError, load_settings
+from .webcam import capture_image_async
 
 READY_TIMEOUT_S = 30.0
 TURN_TIMEOUT_S = 90.0
@@ -93,17 +94,20 @@ async def _main() -> int:
         if not turn.has_transcript:
             failures.append("turn 1 returned no transcript")
 
+        # The model has no camera of its own any more, so this is the shutter's path exactly:
+        # take a photo, hand it over, and see whether the next thing it says is about the photo.
         turn.reset()
-        await agent.send_text(
-            "Take a picture with your webcam and describe in two sentences what you see."
+        capture = await capture_image_async(
+            settings.camera_index, save_dir=settings.captures_dir
         )
+        print(f"· photo {capture.width}x{capture.height} → {capture.path}")
+        await agent.add_photo(capture)
         await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
         print(
-            f"· turn 2: tools={turn.tool_calls}, {turn.seconds_of_audio:.1f}s audio, "
-            f"transcript={turn.transcripts!r}"
+            f"· turn 2: {turn.seconds_of_audio:.1f}s audio, transcript={turn.transcripts!r}"
         )
-        if "capture_webcam_image" not in turn.tool_calls:
-            failures.append("model did not call capture_webcam_image")
+        if turn.audio_bytes == 0:
+            failures.append("turn 2 returned no audio for the photo")
         if not turn.has_transcript:
             failures.append("turn 2 returned no transcript")
         latest = settings.captures_dir / "latest.jpg"

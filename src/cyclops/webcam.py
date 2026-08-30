@@ -26,6 +26,7 @@ PROBE_INDICES = 3
 USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
+CAPTURE_TIMEOUT_S = 12.0  # generous: a cold open can sit behind a macOS permission prompt
 
 _camera_lock = threading.Lock()  # one capture at a time, even if a timed-out one is still running
 _last_good_index: int | None = None  # remembered across captures when probing automatically
@@ -35,7 +36,7 @@ _live_source: object | None = None  # a cyclops.camera.CameraSource while the ki
 def set_live_source(source: object | None) -> None:
     """Register an already-open camera (a :class:`~cyclops.camera.CameraSource`) to shoot from.
 
-    The kiosk holds the device open for its live preview, so the tool cannot open it again.
+    The kiosk holds the device open for its live preview, so a capture cannot open it again.
     While a source is registered, captures borrow the sharpest of its recent frames - no open,
     no warm-up. Passing ``None`` restores the standalone open-warm-shoot-release path.
     """

@@ -27,42 +27,18 @@ from . import session
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker
 from .config import Settings
 from .search import SearchError, search_web
-from .webcam import WebcamError, capture_image_async
+from .webcam import Capture
 
-CAPTURE_TIMEOUT_S = 12.0
 BARGE_IN_CONFIRM_S = 1.5  # server must report speech within this long of a local barge-in
 TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
-MAX_FOCUS_CHARS = 200
 MAX_QUERY_CHARS = 300
 MAX_PROJECT_NAME_CHARS = 80
 MAX_PROJECT_TAGLINE_CHARS = 300  # a little under store.MAX_TAGLINE_CHARS
 MAX_PROJECT_NOTES_CHARS = 4000  # a project page, not a card's worth of them
 SEARCH_TIMEOUT_S = 14.0  # above search.SEARCH_TIMEOUT_S, so its own message wins
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # keep \t and \n
-
-WEBCAM_TOOL: RealtimeFunctionToolParam = {
-    "type": "function",
-    "name": "capture_webcam_image",
-    "description": (
-        "Take a photo with the user's webcam right now and look at it. Call this whenever the "
-        "user shows you something, holds something up, asks what you can see, or refers to an "
-        "object in front of the camera. The photo is added to the conversation as an image you "
-        "can see, so you can describe it and talk about it."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "focus": {
-                "type": "string",
-                "description": "Optional: what to look for in the photo, in the user's words.",
-            }
-        },
-        "required": [],
-        "additionalProperties": False,
-    },
-}
 
 WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
@@ -152,7 +128,8 @@ TRACK_PROJECT_TOOL: RealtimeFunctionToolParam = {
 BASE_INSTRUCTIONS = """\
 You are Cyclops: a one-eyed device that sits on the bench next to someone who is making or
 fixing something. They switch you on, point you at the job, and switch you off when they are
-done. The eye is their webcam, and you can look through it whenever it would help.
+done. The eye is their webcam, and they hold the shutter: you see what they show you,
+when they show it.
 
 WHAT YOU ARE FOR
 Help this project move forward - the thing on the bench today, and the one they come back to
@@ -178,21 +155,24 @@ HOW YOU TALK
 - Do not read out URLs, file paths, or JSON.
 
 USING THE EYE
-- Whenever they show you something, hold something up, say "look at this", or ask what you can
-  see, call the capture_webcam_image tool. Do not guess what is in view - take a photo.
-- Take a NEW photo only when they clearly ask you to look again or show you something new.
-  Never take a photo in reply to a short, vague, or unclear utterance.
-- After a photo arrives, say what you actually see, then answer what they asked about it. If
-  the image is dark, blurry, or empty, say so ONCE and wait - do not keep taking photos of an
-  empty or unclear scene.
+- You cannot take photos. They take them, by pressing the SNAP button on the panel, and the
+  photo reaches you the moment they do.
+- A photo arriving means they just pressed that button, sometimes mid-sentence. Go straight to
+  what you actually see, briefly, then answer whatever they were asking about it. No preamble:
+  never open with "look at this", "let me see", or by narrating that a photo arrived.
+- When they hold something up or ask what you can see, and no photo has arrived, ask them for
+  one - once, in a few words. "Hit SNAP and I'll look."
+- Ask once and then let it go. If no photo comes, carry on without it; never nag for one, and
+  never claim to see something you have not been shown.
+- If the image is dark, blurry, or empty, say so ONCE and wait. Do not ask for another.
 
 LOOKING THINGS UP
 - When they ask something factual you are not sure about - a spec, a size, a torque value,
   whether two parts fit together, what something costs, anything that may have changed
   recently - call the web_search tool instead of guessing. Say a few words first ("let me look
   that up") so they are not left in silence, because the search takes several seconds.
-- Combine the two tools when it helps: look at the thing, then search for what you saw. If a
-  search comes back empty or failed, say so plainly instead of inventing an answer.
+- Combine the two when it helps: ask for a photo of the thing, then search for what you saw.
+  If a search comes back empty or failed, say so plainly instead of inventing an answer.
 
 THE PROJECTS YOU KEEP
 - You keep notes on the things they are building. Whichever ones exist are listed further down;
@@ -311,7 +291,7 @@ def function_calls(response: RealtimeResponse) -> list[RealtimeConversationItemF
 
 
 class VoiceAgent:
-    """Owns one Realtime session: streams mic audio up, plays audio down, runs the webcam tool.
+    """Owns one Realtime session: streams mic audio up, plays audio down, shows it the photos.
 
     Response sequencing: the server allows one active response, and with server VAD it
     creates responses on its own whenever the user stops talking. So after adding items we
@@ -332,7 +312,7 @@ class VoiceAgent:
         self.mic = mic
         self.speaker = speaker
         self.guard = guard
-        self.tool_active = False  # True while the webcam tool is capturing (UI 'looking')
+        self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
         self._turn_serial = 0  # bumped when the user speaks; lets a late search spot staleness
         self._barge_in_timer: asyncio.TimerHandle | None = None
@@ -362,6 +342,18 @@ class VoiceAgent:
         paths: the server-VAD one and the local :class:`~cyclops.audio.EchoGuard` one.
         """
         return frozenset(self._dead_item_ids)
+
+    @property
+    def connected(self) -> bool:
+        """Whether the socket is still up.
+
+        Not the same question as :attr:`ready`, which is a latch: it is set once the server
+        accepts our config and never cleared. ``run()`` drops the connection on the way out
+        while the controller is still holding the agent - and still finishing the session
+        folder, which takes seconds - so anything arriving from another thread has to ask this
+        instead, or it reaches the assert in :attr:`conn`.
+        """
+        return self._conn is not None
 
     @property
     def conn(self) -> AsyncRealtimeConnection:
@@ -398,7 +390,7 @@ class VoiceAgent:
                     "speed": 1.0,
                 },
             },
-            "tools": [WEBCAM_TOOL, WEB_SEARCH_TOOL, *_project_tools(self.settings)],
+            "tools": [WEB_SEARCH_TOOL, *_project_tools(self.settings)],
             "tool_choice": "auto",
         }
         effort = self.settings.reasoning_effort  # explicit setting always goes through
@@ -434,6 +426,59 @@ class VoiceAgent:
             {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
         )
         await self._request_response()
+
+    # ---------------------------------------------------------------- photos down the pipe
+
+    def queue_photo(self, capture: Capture) -> None:
+        """Show the model a photo the user just took. Safe to call from the loop thread only.
+
+        The entry point for a button press: :meth:`cyclops.ui.SessionController.show_photo`
+        hands it here with ``call_soon_threadsafe``, so this is where the "is there still a
+        session to show it to" question gets its authoritative answer - on the loop, where it
+        cannot go stale between the check and the send. The work is spawned as a *tracked*
+        task so ``run()``'s teardown cancels it rather than leaving it pending on a closing loop.
+        """
+        if not self.connected or not self.ready.is_set():
+            return
+        self._spawn(self.add_photo(capture))
+
+    async def add_photo(self, capture: Capture) -> None:
+        """Put a photo into the conversation as an image, and ask for a reply about it.
+
+        The model has no camera of its own, so this is the only way anything is ever seen. The
+        item is a synthetic user turn rather than a tool result, because there is no tool call
+        to answer: as far as the conversation is concerned the user held something up.
+        """
+        if not self.connected:
+            return
+        self.tool_active = True
+        try:
+            await self._send_item(
+                {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            # Flat and unquotable on purpose: a caption written as speech
+                            # ("look at this") comes back out of the speaker verbatim.
+                            "text": "[Photo from their camera, taken just now.]",
+                        },
+                        {
+                            "type": "input_image",
+                            "image_url": capture.data_url,
+                            "detail": "auto",
+                        },
+                    ],
+                }
+            )
+            await self._request_response()
+        finally:
+            self.tool_active = False
+        self._log(
+            f"[photo] {capture.width}x{capture.height}, "
+            f"{capture.jpeg_bytes // 1024} KB → {capture.path}"
+        )
 
     # ---------------------------------------------------------------- audio up
 
@@ -492,7 +537,7 @@ class VoiceAgent:
         if self.mic is not None:
             self.mic.drain()  # audio from before the session was configured is stale
             self._spawn(self._pump_mic())
-            self._log("listening — talk, show the camera something, Ctrl+C to quit")
+            self._log("listening — talk, or take a photo, Ctrl+C to quit")
 
     def _on_error(self, err: RealtimeError) -> None:
         if err.code == "conversation_already_has_active_response":
@@ -610,71 +655,10 @@ class VoiceAgent:
         if call.name in {"open_project", "track_project"}:
             await self._run_project_tool(call)
             return
-        if call.name != "capture_webcam_image":
-            await self._send_tool_output(call.call_id, {"ok": False, "error": "unknown tool"})
-            await self._request_response()
-            return
-        focus = _tool_focus(call.arguments)
-        self._log(
-            f"[tool] capture_webcam_image {focus!r}" if focus else "[tool] capture_webcam_image"
-        )
-
-        image_item: ConversationItemParam | None = None
-        save_dir, keep_as = session.photo_target(self.settings, by="cyclops")
-        self.tool_active = True
-        try:
-            async with asyncio.timeout(CAPTURE_TIMEOUT_S):
-                capture = await capture_image_async(
-                    self.settings.camera_index, save_dir=save_dir, keep_as=keep_as
-                )
-        except TimeoutError:
-            output = {
-                "ok": False,
-                "error": f"camera did not answer within {CAPTURE_TIMEOUT_S:.0f}s "
-                "(macOS may be showing a camera permission prompt)",
-            }
-        except WebcamError as exc:
-            output = {"ok": False, "error": str(exc)}
-        except Exception as exc:  # never leave the model waiting for a tool result
-            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        else:
-            output = {
-                "ok": True,
-                "width": capture.width,
-                "height": capture.height,
-                "note": "Photo captured; it follows as an image in the next user message.",
-            }
-            caption = "[Webcam photo captured by the capture_webcam_image tool just now"
-            if focus:
-                caption += f"; the tool was asked to focus on: {focus}"
-            image_item = {
-                "type": "message",
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": caption + "]"},
-                    {"type": "input_image", "image_url": capture.data_url, "detail": "auto"},
-                ],
-            }
-            session.note(
-                "photo",
-                by="cyclops",
-                file=f"{session.PHOTOS}/{capture.path.name}",
-                width=capture.width,
-                height=capture.height,
-                bytes=capture.jpeg_bytes,
-                focus=focus or None,  # logged here because this is the only place `focus` exists
-            )
-            self._log(
-                f"[tool] photo {capture.width}x{capture.height}, "
-                f"{capture.jpeg_bytes // 1024} KB → {capture.path}"
-            )
-
-        self.tool_active = False
-        if not output["ok"]:
-            self._log(f"[tool] failed: {output['error']}", stream=sys.stderr)
-        await self._send_tool_output(call.call_id, output)
-        if image_item is not None:
-            await self._send_item(image_item)
+        # Every name still gets an output. A tool the model invents, or one it remembers from a
+        # session config that has since changed, must be answered or it waits for it forever.
+        self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
+        await self._send_tool_output(call.call_id, {"ok": False, "error": "unknown tool"})
         await self._request_response()
 
     async def _run_web_search(self, call: RealtimeConversationItemFunctionCall) -> None:
@@ -826,11 +810,6 @@ def _tool_string(arguments: str | None, key: str, limit: int) -> str:
     if not isinstance(args, dict):
         return ""
     return str(args.get(key) or "")[:limit]
-
-
-def _tool_focus(arguments: str | None) -> str:
-    """The webcam tool's optional 'focus' argument."""
-    return _tool_string(arguments, "focus", MAX_FOCUS_CHARS)
 
 
 def _project_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
