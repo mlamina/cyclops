@@ -66,6 +66,9 @@ sessions/
     photos/
       14-33-12_you.jpg
       14-32-40_cyclops.jpg   (only on older cards - Cyclops used to hold its own shutter)
+    diagrams/
+      14-35-01_relay-driven-from-gpio.svg    the picture, embedded in session.md
+      14-35-01_relay-driven-from-gpio.json   the spec, so it can be drawn again
 ```
 
 `session.md` opens in any markdown viewer with both images inline and every line stamped as an
@@ -242,6 +245,48 @@ Every session end costs one model call even when nothing gets filed, because dec
 the call. At these model sizes it rounds to nothing, but `CYCLOPS_PROJECTS=0` turns the whole
 feature off — no sweep, and the two project tools aren't offered to the voice agent at all.
 
+## Diagrams
+
+Some answers are a picture. Ask *"how do I wire this relay to GPIO 17"* and Cyclops draws it on
+the touchscreen — a wiring diagram with named pins and routed wires, a pinout, a block diagram, a
+flow or a state machine. It appears a few seconds later, fills the panel, and has the same
+full-width **Close** bar as the system page.
+
+**The voice model does not draw it.** It calls `draw_diagram` with one sentence, and that sentence
+goes to a text model which returns a small JSON description — nodes, ports and wires. The panel
+translates that into shapes with [JointJS](https://www.jointjs.com). The model never writes
+JointJS and never writes coordinates for anything that does not need them: it says
+`{"type": "resistor", "label": "1k"}` and the zigzag lives in the template. That split is the
+whole reliability story, because it moves correctness onto a schema we validate ourselves in a
+millisecond — and a diagram that fails validation is redrawn once, with the complaint attached.
+
+It draws boxes and wires, so it is good at connections and useless at shapes. A cutting list, a
+joinery detail or anything to scale is not something it can express, and it is told to say so
+rather than draw a wrong picture.
+
+**Diagrams are kept, like photos.** Each one lands in the session folder as a pair — the `.json`
+Cyclops re-reads and the `.svg` you open — and when the session is filed, *every* diagram is
+copied into the project:
+
+```
+projects/Pelican Display Mount/
+  Diagrams/
+    2026-08-29_19-40-12_relay-driven-from-gpio.svg    the picture, in the log entry
+    2026-08-29_19-40-12_relay-driven-from-gpio.json   the spec, so it can be put back up
+```
+
+Unlike photos there is no curator and no limit: a photo is a frame caught in passing and three of
+forty are worth keeping, but a diagram was asked for out loud and looked at. The svg carries its
+own dark background, so it opens the way it looked on the panel rather than as invisible green on
+white.
+
+Ask for one again — *"put that relay wiring back up"* — and `find_diagram` matches on the title
+and re-renders the stored spec. That is instant and costs no model call, which is also why it is
+preferred to drawing it twice: a redraw would come back subtly different.
+
+The three vendored bundles under `src/cyclops/admin/static/` are served from the Pi, never a CDN
+(see `NOTICE.md` there). Nothing about the panel needs the internet.
+
 ## Admin page
 
 `cyclops-admin` serves a small Django status page on **port 80**, so from anywhere on your
@@ -315,6 +360,9 @@ ssh dobby@raspberrypi.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_PROJECTS_DIR` | `projects`     | Where project folders are written (relative to the CWD; `~` ok). |
 | `CYCLOPS_PROJECTS`     | `1`            | Keep `projects/` up to date, and offer Cyclops the `open_project` / `track_project` tools; `0` turns the whole feature off. |
 | `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
+| `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them; `0` withholds both drawing tools. |
+| `CYCLOPS_SOUNDS`       | `1`            | Cues for the link opening and closing, and the shutter; `0` disables. |
+| `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_RECORD`       | `1`            | Record the camera into the session folder; `0` disables. |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |

@@ -59,6 +59,7 @@ PAGE_NAME = "session.md"
 SUMMARY_NAME = "summary.md"
 RECEIPT_NAME = "project.md"  # written into the session folder by projects/store.py
 PHOTOS = "photos"
+DIAGRAMS = "diagrams"
 PARTS = "parts"
 VIDEO = "video.mp4"
 
@@ -68,7 +69,9 @@ STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobod
 # Everything a session folder is allowed to contain. Only ever consulted before deleting one:
 # a folder holding anything not on this list is something a person put there, and is never
 # removed however empty triage thinks it is.
-KNOWN = frozenset({LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS})
+KNOWN = frozenset(
+    {LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, DIAGRAMS, PARTS}
+)
 
 
 # ------------------------------------------------------------------ writing
@@ -279,12 +282,22 @@ class State:
     summary: bool
     filed: bool
     named: bool
+    # Defaulted, unlike every field above it, so the existing constructions in the tests and in
+    # recovery keep working unchanged. A diagram is the one artefact here that was asked for out
+    # loud rather than caught in passing, so it counts towards salvage like a photo does.
+    diagrams: int = 0
 
     @property
     def salvage(self) -> bool:
         """Is there anything here worth keeping? The only question deletion ever asks."""
         return bool(
-            self.records or self.photos or self.video or self.parts or self.page or self.summary
+            self.records
+            or self.photos
+            or self.diagrams
+            or self.video
+            or self.parts
+            or self.page
+            or self.summary
         )
 
 
@@ -298,6 +311,12 @@ def triage(folder: Path) -> State:
     records, dropped = read_log(folder / LOG_NAME)
     photos_dir = folder / PHOTOS
     photos = sum(1 for p in photos_dir.glob("*.jpg") if written(p)) if photos_dir.is_dir() else 0
+    # The spec, not the picture: a diagram whose svg never came back from the panel is still a
+    # diagram, and counting both would count every diagram twice.
+    diagrams_dir = folder / DIAGRAMS
+    diagrams = (
+        sum(1 for p in diagrams_dir.glob("*.json") if written(p)) if diagrams_dir.is_dir() else 0
+    )
     page = written(folder / PAGE_NAME)
     parts = (folder / PARTS).is_dir()
     video = written(folder / VIDEO)
@@ -305,7 +324,7 @@ def triage(folder: Path) -> State:
 
     if locked(folder):
         verdict = "live"  # asked first: a folder being written to is not judged at all
-    elif not (records or photos or video or parts or page or summary):
+    elif not (records or photos or diagrams or video or parts or page or summary):
         verdict = "empty"
     elif parts or not page:
         verdict = "unfinished"  # parts/ means the mux never finished, whatever else is here
@@ -318,6 +337,7 @@ def triage(folder: Path) -> State:
         records=len(records),
         dropped=dropped,
         photos=photos,
+        diagrams=diagrams,
         video=video,
         parts=parts,
         page=page,

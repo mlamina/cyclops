@@ -39,6 +39,7 @@ lets the live agent's two tools, ``cyclops-projects --check`` and plain listing 
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import re
 import shutil
@@ -59,6 +60,7 @@ README_NAME = "README.md"
 LOG_NAME = "Log.md"
 DATA_NAME = "Project Data.xlsx"  # the numbers; see projects/data.py for what is in it
 PHOTOS = "Photos"
+DIAGRAMS = "Diagrams"  # drawings, kept whole: the spec Cyclops re-reads and the svg you open
 RECEIPT_NAME = "project.md"  # written into the *session* folder, not the project
 
 # The end of one entry in Log.md, and the only thing in that file a program reads. An HTML comment
@@ -211,6 +213,10 @@ class Project:
     @property
     def photos_dir(self) -> Path:
         return self.path / PHOTOS
+
+    @property
+    def diagrams_dir(self) -> Path:
+        return self.path / DIAGRAMS
 
     @property
     def data(self) -> Path:
@@ -689,6 +695,59 @@ def copy_photos(
     return written
 
 
+def copy_diagrams(project: Project, session_dir: Path) -> list[tuple[str, str]]:
+    """Copy every diagram this session drew in, and hand back ``(relative path, title)``.
+
+    Every one, with no curator and no limit - the one place this deliberately parts company with
+    :func:`copy_photos`. A photo is a frame caught in passing and three of forty are worth
+    keeping, so a model picks. A diagram was asked for out loud, drawn on purpose and looked at;
+    there is no version of "which of these did you mean" worth asking about it.
+
+    Both halves travel: the ``.json`` is what Cyclops reads to put it back on the panel, and the
+    ``.svg`` beside it is what a person opens. The svg is what gets linked from the log, because
+    a log entry is read by people.
+
+    Idempotent the same way, by the same trick - the target name is the session's date plus the
+    diagram's own - and never pruned, for the same reason: Log.md is never rewritten.
+    """
+    source_dir = session_dir / card.DIAGRAMS
+    if not source_dir.is_dir():
+        return []
+    date = session_dir.name[:10]
+    written = []
+    for spec in sorted(source_dir.glob("*.json")):
+        if not card.written(spec):
+            continue  # a drawing interrupted mid-write; the next sweep finds it whole or not
+        stem = f"{date}_{spec.stem}"
+        picture = spec.with_suffix(".svg")
+        for source, target in ((spec, project.diagrams_dir / f"{stem}.json"),
+                               (picture, project.diagrams_dir / f"{stem}.svg")):
+            if not card.written(source):
+                continue  # a diagram the panel never sent a picture back for keeps its spec
+            try:
+                if not target.is_file() or target.stat().st_size != source.stat().st_size:
+                    project.diagrams_dir.mkdir(parents=True, exist_ok=True)
+                    tmp = card.tmp_for(target)
+                    shutil.copy2(source, tmp)
+                    card.land(tmp, target)
+            except OSError:
+                continue  # a drawing is never worth failing a filing over
+        if card.written(project.diagrams_dir / f"{stem}.svg"):
+            title = _diagram_title(spec)
+            written.append((f"{DIAGRAMS}/{stem}.svg", title))
+    return written
+
+
+def _diagram_title(spec: Path) -> str:
+    """What a diagram calls itself, for the log entry's caption. Its filename if it will not say."""
+    try:
+        found = json.loads(spec.read_text(encoding="utf-8"))
+        title = str(found.get("title", "")).strip()
+    except (OSError, ValueError):
+        title = ""
+    return title or spec.stem
+
+
 def append_entry(
     project: Project,
     *,
@@ -699,6 +758,7 @@ def append_entry(
     stamp: str,
     span: str,
     photos: list[tuple[str, str]],
+    diagrams: list[tuple[str, str]] | None = None,
 ) -> None:
     """Add one session to the log. Appended, fsynced, and never touched again.
 
@@ -713,6 +773,9 @@ def append_entry(
     """
     blocks = [f"## {when:%A %-d %B %Y} - {title}".rstrip(" -"), body.strip()]
     blocks += [f"![{caption}]({path})" for path, caption in photos]
+    # After the photos: a photo is what the bench looked like and a diagram is what was worked
+    # out, and the second reads better as the conclusion of an entry than as its illustration.
+    blocks += [f"![{caption}]({path})" for path, caption in (diagrams or [])]
     blocks.append(f"<!-- cyclops:session {uuid} · {stamp} · {span} -->")
     text = "\n\n".join(block for block in blocks if block)
     project.log.parent.mkdir(parents=True, exist_ok=True)
@@ -724,7 +787,12 @@ def append_entry(
         os.fsync(handle.fileno())
 
 
-def render_page(project: Project, page: dict[str, object], photos: list[tuple[str, str]]) -> str:
+def render_page(
+    project: Project,
+    page: dict[str, object],
+    photos: list[tuple[str, str]],
+    diagrams: list[tuple[str, str]] | None = None,
+) -> str:
     """The whole README: our frontmatter, then the model's prose in our sections.
 
     The split is not tidiness. If a model wrote the frontmatter, one malformed run would mangle
@@ -750,6 +818,9 @@ def render_page(project: Project, page: dict[str, object], photos: list[tuple[st
             blocks += [f"## {heading}", "\n".join(f"- {item}" for item in items)]
     if photos:
         blocks += ["## Photos", "\n".join(f"![{caption}]({path})" for path, caption in photos)]
+    if diagrams:
+        blocks += ["## Diagrams",
+                   "\n".join(f"![{caption}]({path})" for path, caption in diagrams)]
 
     plural = "" if project.sessions == 1 else "s"
     footer = f"*{project.sessions} session{plural}"

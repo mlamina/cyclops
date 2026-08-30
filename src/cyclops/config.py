@@ -21,6 +21,19 @@ BROWSER_CLOSE_FLAG = Path.home() / ".cache" / "cyclops" / "browser-close"
 # announces nothing, and nothing can be asked what is currently on the panel.
 PAGE_SERVED_FLAG = Path.home() / ".cache" / "cyclops" / "page-served"
 
+# And where a finished diagram waits for the panel to notice it. This one holds the drawing
+# itself rather than being an empty note, because the page has to render it and the two processes
+# share no memory - and because a diagram drawn with no session running is never written to the
+# card, so a path would have nothing to point at. Written by whoever drew it, read by the admin
+# service, removed by the kiosk when it takes the panel back: absent means "show the dashboard".
+DIAGRAM_FILE = Path.home() / ".cache" / "cyclops" / "diagram.json"
+
+# And where the page says it has actually painted that diagram. The kiosk waits for this before
+# uncovering the browser, exactly as it waits on PAGE_SERVED_FLAG at startup - without it the
+# panel would show the dashboard for as long as it takes JointJS to lay the drawing out, which
+# is the one moment somebody is watching.
+DIAGRAM_SHOWN_FLAG = Path.home() / ".cache" / "cyclops" / "diagram-shown"
+
 # And where it leaves the output volume it wants. Same reason it cannot just set it itself:
 # the service runs with PrivateDevices=yes and has no /dev/snd, and at boot there is no user
 # session to reach PipeWire through. The kiosk, which has both, reads this and applies it.
@@ -50,6 +63,7 @@ class Settings:
     projects_dir: Path = Path("projects")  # one folder per project; README, Log, Photos
     slug: bool = True  # name each finished session from its transcript (cyclops.slug)
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
+    diagrams: bool = True  # offer the drawing tools, and keep what they draw (cyclops.diagram)
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the camera to the session folder (needs an open camera)
     record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 640x480
@@ -167,6 +181,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         projects_dir=Path(_env("CYCLOPS_PROJECTS_DIR") or Settings.projects_dir).expanduser(),
         slug=_flag("CYCLOPS_SLUG", Settings.slug),
         projects=_flag("CYCLOPS_PROJECTS", Settings.projects),
+        diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
         project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,

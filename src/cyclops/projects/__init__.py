@@ -174,6 +174,11 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
         project = fresh
 
         photos = store.copy_photos(project, folder, picks, limit=settings.project_photos)
+        # No limit and no curator, unlike the photos: see store.copy_diagrams. Copied inside the
+        # lock and before the log for the same reason the photos are - the entry about to be
+        # appended links to these files, and a link written before the file exists is a broken
+        # one in a log that is never rewritten.
+        diagrams = store.copy_diagrams(project, folder)
         if session.uuid and session.uuid.lower() in store.filed_uuids(project):
             note = "already in the log"
         else:
@@ -186,6 +191,7 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
                 stamp=folder.name,
                 span=session.span,
                 photos=photos,
+                diagrams=diagrams,
             )
             note = "filed"
 
@@ -202,10 +208,13 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
         project.last = session.uuid or project.last
         project.aliases = _merge(project.aliases, scribed.aliases, store.MAX_ALIASES)
         project.keywords = _merge(project.keywords, scribed.keywords, store.MAX_KEYWORDS)
-        store.rewrite_readme(project, store.render_page(project, scribed.page.model_dump(), photos))
+        store.rewrite_readme(
+            project, store.render_page(project, scribed.page.model_dump(), photos, diagrams)
+        )
         store.write_receipt(folder, project)
     shot = f", {len(photos)} photo(s)" if photos else ""
-    return f"{folder.name}: {note} under {project.name!r}{shot}"
+    drawn = f", {len(diagrams)} diagram(s)" if diagrams else ""
+    return f"{folder.name}: {note} under {project.name!r}{shot}{drawn}"
 
 
 def _merge(existing: list[str], added: list[str], limit: int) -> list[str]:

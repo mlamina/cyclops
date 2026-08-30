@@ -32,13 +32,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
+IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
     "idle",
     "connecting",
     "listening",
     "speaking",
     "looking",
     "searching",
+    "drawing",
     "error",
 )
 # Optimistic states the kiosk shows the instant you tap, before the session agrees. Tearing a
@@ -69,6 +70,7 @@ HALOS = {
     SPEAKING: GREEN,
     LOOKING: GREEN,
     SEARCHING: GREEN,
+    DRAWING: GREEN,
     ERROR: RED,
 }
 # What the strip calls each state. Kept here rather than taken from the controller's ``detail``
@@ -83,6 +85,7 @@ LABELS = {
     SPEAKING: "SPEAKING",
     LOOKING: "OPTICS",
     SEARCHING: "SEARCH",
+    DRAWING: "DRAWING",
     ERROR: "FAULT",
 }
 CAPTIONS = {  # ... and what it says underneath before a session exists to say anything

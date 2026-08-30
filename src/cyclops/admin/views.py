@@ -6,10 +6,13 @@ JavaScript are looking at exactly the same fields and the formatting lives in on
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import asdict
+from pathlib import Path
 
 from django.http import (
+    Http404,
     HttpRequest,
     HttpResponse,
     HttpResponseBadRequest,
@@ -19,9 +22,11 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import mixer, stats
+from .. import card, mixer, stats
 from ..config import (
     BROWSER_CLOSE_FLAG,
+    DIAGRAM_FILE,
+    DIAGRAM_SHOWN_FLAG,
     PAGE_SERVED_FLAG,
     ConfigError,
     Settings,
@@ -30,6 +35,17 @@ from ..config import (
 
 LOOPBACK = {"127.0.0.1", "::1"}
 GIB = 1024**3  # what df -h means by "G", so the page and the shell agree
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+# The three vendored bundles, by the only names that will be served. A allow-list rather than a
+# path check because there is no argument to be had about what a suffixed, slashed or dotted name
+# resolves to if the set of legal answers is written out in full.
+STATIC_FILES = {
+    "joint.min.js": "text/javascript",
+    "dagre.min.js": "text/javascript",
+    "directed-graph.min.js": "text/javascript",
+}
+MAX_SVG_BYTES = 4 * 1024 * 1024  # a 40-pin pinout is ~90 KB; this is a ceiling, not a budget
 
 _settings_cache: Settings | None = None
 
@@ -156,6 +172,97 @@ def close_browser(request: HttpRequest) -> HttpResponse:
     BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
     BROWSER_CLOSE_FLAG.touch()
     return HttpResponse(status=204)
+
+
+# ------------------------------------------------------------------ diagrams
+
+
+def _pending() -> dict | None:
+    """The diagram waiting to be shown, or None - see ``DIAGRAM_FILE``.
+
+    Never raises. A half-written file is not possible (they go through ``card.write_text``) but a
+    truncated one from an older build, or none at all, both mean the same thing to the page: show
+    the dashboard.
+    """
+    try:
+        found = json.loads(DIAGRAM_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
+        return None
+    return found if isinstance(found, dict) and found.get("id") else None
+
+
+def panel(request: HttpRequest) -> JsonResponse:
+    """What the panel should be showing. Polled fast, so it stays one ``read`` and nothing else.
+
+    Deliberately not folded into :func:`status`: that one collects temperatures, walks the
+    sessions directory and formats a dozen strings, and this is asked several times a second.
+    """
+    found = _pending()
+    return JsonResponse({"diagram": found["id"] if found else None})
+
+
+def diagram(request: HttpRequest, ident: str) -> JsonResponse:
+    """The drawing itself, by id, for the page to render.
+
+    The id is checked against the pending one rather than used to look anything up, so there is
+    no path here for a caller to name and nothing to escape out of.
+    """
+    found = _pending()
+    if found is None or found["id"] != ident:
+        raise Http404("no such diagram is waiting")
+    return JsonResponse(found)
+
+
+@require_POST
+def diagram_shown(request: HttpRequest) -> HttpResponse:
+    """The page has painted the diagram: keep the picture, and tell the kiosk it may uncover.
+
+    Two jobs in one request on purpose. The kiosk is waiting on ``DIAGRAM_SHOWN_FLAG`` before it
+    drops its window, and this is also the only moment the rendered SVG exists anywhere - the
+    panel draws it, so the panel is the only thing that can hand it back for the card.
+
+    The destination comes from our own pending file and never from the request. The body is one
+    anonymous blob of bytes; letting it choose where those bytes land would make this the one
+    endpoint on the box worth attacking.
+    """
+    if not _is_local(request):
+        return HttpResponseForbidden("only the kiosk's own browser paints the panel")
+    found = _pending()
+    if found is None:
+        return HttpResponseBadRequest("no diagram is waiting")
+
+    svg = request.body[:MAX_SVG_BYTES]
+    target = found.get("svg")
+    if svg and target:
+        try:
+            card.write_bytes(Path(target), svg)
+        except OSError as exc:  # the drawing is on the panel either way, which is the point
+            print(f"· could not keep the diagram picture ({exc})", flush=True)
+    try:
+        DIAGRAM_SHOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        DIAGRAM_SHOWN_FLAG.touch()
+    except OSError as exc:
+        print(f"· could not leave the diagram-shown note ({exc})", flush=True)
+    return HttpResponse(status=204)
+
+
+def static_file(request: HttpRequest, name: str) -> HttpResponse:
+    """Serve one of the vendored bundles - see ``static/NOTICE.md``.
+
+    There is no ``staticfiles`` app here and no INSTALLED_APPS to add one to, which for four
+    files is the smaller thing rather than the missing thing. They never change between deploys,
+    so they are handed out with a long cache lifetime and read straight off the card.
+    """
+    kind = STATIC_FILES.get(name)
+    if kind is None:
+        raise Http404("no such file")
+    try:
+        body = (STATIC_DIR / name).read_bytes()
+    except OSError as exc:
+        raise Http404("no such file") from exc
+    response = HttpResponse(body, content_type=kind)
+    response["Cache-Control"] = "public, max-age=31536000, immutable"
+    return response
 
 
 @require_POST

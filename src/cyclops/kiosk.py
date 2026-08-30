@@ -31,12 +31,14 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import mixer, session, sfx, webcam  # noqa: E402
+from . import diagram, mixer, session, sfx, webcam  # noqa: E402
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
 from .config import (  # noqa: E402
     BROWSER_CLOSE_FLAG,
+    DIAGRAM_FILE,
+    DIAGRAM_SHOWN_FLAG,
     PAGE_SERVED_FLAG,
     ConfigError,
     load_settings,
@@ -120,6 +122,10 @@ PAGE_WAIT_S = 30.0  # how long the browser gets to fetch the page; a cold start 
 # one covers a map slow enough to have landed after it - the failure it prevents is a panel left
 # showing the dashboard with nobody having asked for it.
 PANEL_RETAKE_S = (0.6, 2.4)
+# How long the page gets to lay a drawing out before we uncover it anyway. Generously over the
+# ~400 ms poll plus a JointJS layout, because the cost of being wrong is asymmetric: uncovering
+# early shows the dashboard for a moment, and never uncovering loses the diagram entirely.
+DIAGRAM_WAIT_S = 8.0
 VOLUME_POLL_S = 0.4  # how often we look for a volume the admin page left for us
 BROWSER_GRACE_S = 5.0  # how long Chromium gets to go quietly before it is killed
 # Its own profile, under ~/.cache rather than /tmp so the second open is a warm start rather
@@ -173,23 +179,43 @@ def _spawn_browser(url: str, log: BinaryIO) -> subprocess.Popen | None:
     return None
 
 
+def _noted_since(flag: Path, since: float) -> bool:
+    """Has this note been left, and left *after* ``since``?
+
+    The freshness half is the whole point: a note from an earlier round - or, for the page flag,
+    one left by our own reachability probe a moment before - would otherwise answer for something
+    that has not happened yet.
+    """
+    try:
+        return flag.stat().st_mtime >= since
+    except OSError:
+        return False
+
+
+def _wait_for_flag(flag: Path, since: float, timeout: float) -> bool:
+    """Wait until :func:`_noted_since` says so, or give up. True if the note arrived."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if _noted_since(flag, since):
+            return True
+        time.sleep(ADMIN_POLL_S)
+    return False
+
+
 def _wait_for_page(proc: subprocess.Popen, since: float, timeout: float) -> bool:
     """Wait for the admin service to say it has handed the page to a browser here.
 
     Chromium announces nothing when it is ready, and nothing can be asked what the panel is
     showing, so the service leaves a note instead (:data:`~cyclops.config.PAGE_SERVED_FLAG`).
-    The note has to be newer than the launch, or the one left by our own reachability probe a
-    moment earlier would answer for a browser that is still faulting itself in off the card.
+    Unlike :func:`_wait_for_flag` this also gives up the moment the browser dies, which is the
+    difference between a slow start and one that is not coming.
     """
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if proc.poll() is not None:
             return False
-        try:
-            if PAGE_SERVED_FLAG.stat().st_mtime >= since:
-                return True
-        except OSError:
-            pass
+        if _noted_since(PAGE_SERVED_FLAG, since):
+            return True
         time.sleep(ADMIN_POLL_S)
     return False
 
@@ -241,6 +267,12 @@ class Kiosk:
         self._volume_at = 0.0  # when we last looked for a new one
         self._browser: subprocess.Popen | None = None  # the admin browser, kept warm from boot
         self._admin_busy = threading.Event()  # set from the tap until the page is done with
+        # A second latch rather than reusing _admin_busy, which the tab row reads to decide
+        # whether SYSTEM is lit (see _pressed_now). A diagram is not the system page, and a
+        # panel that lights SYSTEM whenever Cyclops draws would be telling the truth about the
+        # browser and a lie about what you are looking at. Both still gate _open_admin, so the
+        # two can never be up at once.
+        self._page_busy = threading.Event()  # any page has the panel: the admin one or a diagram
         self._reveal = threading.Event()  # asks the render loop to uncover the admin page
         self._retake = threading.Event()  # ... and to take the panel back off it
         self._hidden = False  # the admin page has the panel; nothing we draw can be seen
@@ -435,8 +467,8 @@ class Kiosk:
         print("· admin page warmed up behind the panel", flush=True)
         for delay in PANEL_RETAKE_S:  # its window mapped on top of ours; see PANEL_RETAKE_S
             time.sleep(delay)
-            if self._admin_busy.is_set():
-                return  # someone tapped the gear while we were starting: the page is theirs now
+            if self._page_busy.is_set():
+                return  # something took the panel while we were starting: the page is theirs now
             self._retake.set()
 
     def _start_browser(self, url: str) -> bool:
@@ -492,8 +524,9 @@ class Kiosk:
         invocation would hand its URL to the first and exit at once, leaving us holding a dead
         pid and a fullscreen window nothing can close.
         """
-        if self._admin_busy.is_set():
+        if self._page_busy.is_set():
             return
+        self._page_busy.set()
         self._admin_busy.set()
         threading.Thread(target=self._admin_session, name="kiosk-admin", daemon=True).start()
 
@@ -526,6 +559,7 @@ class Kiosk:
                 print("· admin page closed", flush=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
             self._admin_busy.clear()
+            self._page_busy.clear()
 
     def _watch_page(self, shown_at: float) -> None:
         """Wait for the page to ask to close, for the browser to die, or for the hard cap.
@@ -538,13 +572,60 @@ class Kiosk:
         proc = self._browser
         deadline = time.monotonic() + ADMIN_MAX_S
         while proc is not None and proc.poll() is None:
-            try:
-                asked = BROWSER_CLOSE_FLAG.stat().st_mtime >= shown_at
-            except OSError:
-                asked = False
-            if asked or time.monotonic() > deadline:
+            if _noted_since(BROWSER_CLOSE_FLAG, shown_at) or time.monotonic() > deadline:
                 break
             time.sleep(ADMIN_POLL_S)
+
+    # ---- diagrams ----
+
+    def show_diagram(self) -> bool:
+        """Put the diagram waiting in ``DIAGRAM_FILE`` on the panel. False if the panel is busy.
+
+        Called from the agent's thread, so it does nothing here but set a flag and start a
+        thread: highgui belongs to the render loop and this is not it.
+        """
+        if self._page_busy.is_set():
+            return False  # the admin page is up, or a diagram already is; do not stack them
+        self._page_busy.set()
+        threading.Thread(target=self._diagram_session, name="kiosk-diagram", daemon=True).start()
+        return True
+
+    def _diagram_session(self) -> None:
+        """The whole life of one diagram: wait for it to be drawn, show it, wait, take it back.
+
+        The same shape as :meth:`_admin_session` and for the same reasons, with one difference:
+        the admin page is already loaded in the warm browser, and a diagram is not. So this waits
+        for the page to say it has actually painted before uncovering, rather than uncovering onto
+        a dashboard that turns into a diagram half a second later while somebody is watching.
+        """
+        url = self._admin_url()
+        shown = False
+        try:
+            if not _admin_reachable(url) or not self._ensure_browser(url):
+                print("· diagram: no page to draw it on", file=sys.stderr, flush=True)
+                return
+            DIAGRAM_SHOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            DIAGRAM_SHOWN_FLAG.unlink(missing_ok=True)  # a stale note must not answer for this one
+            BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
+            asked_at = time.time()
+            if not _wait_for_flag(DIAGRAM_SHOWN_FLAG, asked_at, DIAGRAM_WAIT_S):
+                # Uncover anyway. The page polls, so it is probably a slow layout rather than a
+                # dead browser, and a diagram arriving a moment late beats one that never comes.
+                print("· diagram: the page was slow to draw; showing anyway", flush=True)
+            shown_at = time.time()
+            shown = True
+            self._reveal.set()
+            print("· diagram on the panel", flush=True)
+            self._watch_page(shown_at)
+        finally:
+            # The drawing goes before the panel comes back, so the page has already switched
+            # itself off the diagram by the time it is visible again behind the window.
+            DIAGRAM_FILE.unlink(missing_ok=True)
+            if shown:
+                self._retake.set()
+                print("· diagram closed", flush=True)
+            BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
+            self._page_busy.clear()
 
     def close_browser(self) -> None:
         """Take the warm browser down with the kiosk, so nothing is left covering the panel."""
@@ -639,7 +720,7 @@ class Kiosk:
         """
         now = time.monotonic()
         after = self.controller.settings.sleep_after_s
-        if state not in (IDLE, ERROR) or self._admin_busy.is_set():
+        if state not in (IDLE, ERROR) or self._page_busy.is_set():
             self._touched_at = now
         elif after and not self._asleep and now - self._touched_at > after:
             self._sleep()
@@ -751,7 +832,7 @@ class Kiosk:
             # only to keep taps and keys answered.
             if self._asleep:
                 budget = 1.0 / SLEEP_FPS
-            elif self._admin_busy.is_set():
+            elif self._page_busy.is_set():
                 budget = 1.0 / ADMIN_FPS
             else:
                 budget = frame_budget
@@ -795,6 +876,7 @@ def main() -> None:
     # time the next session starts is then recorded without anything being rewired.
     controller = SessionController(settings, frames=camera, entrypoint="kiosk")
     kiosk = Kiosk(controller, camera, fullscreen, screen)
+    diagram.set_panel(kiosk)  # so a finished diagram can find a panel to appear on
     kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
     kiosk.adopt_volume()
     # Get the admin browser up now rather than on the tap that wants it. It comes up in front
@@ -830,6 +912,8 @@ def main() -> None:
     finally:
         kiosk.close_browser()
         kiosk.backlight.on()  # never leave the panel dark behind us
+        diagram.set_panel(None)
+        DIAGRAM_FILE.unlink(missing_ok=True)  # nothing should be waiting for a panel that is gone
         webcam.set_live_source(None)
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away

@@ -9,6 +9,7 @@ import re
 import sys
 import uuid
 from collections.abc import Callable, Coroutine
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
@@ -23,7 +24,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import session, sfx
+from . import diagram, session, sfx
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -66,6 +67,62 @@ WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
             "query": {
                 "type": "string",
                 "description": "What to search for, as a specific question or phrase.",
+            }
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "draw_diagram",
+    "description": (
+        "Draw a technical diagram on the touchscreen: a wiring or connection diagram, a pinout, "
+        "a block diagram, a flow or a state machine. Use it when the answer is a layout or a set "
+        "of connections that would take several sentences to say and one picture to show - "
+        "'wire this relay to GPIO 17', 'what goes where on the header', 'how does this loop "
+        "work'. It appears on the panel a few seconds later and stays until they close it, so "
+        "say one short sentence out loud first and then keep talking; do not narrate the drawing "
+        "or read it back to them, they can see it. "
+        "Do NOT use it for: anything with real measured shapes or dimensions - a cutting list, a "
+        "joinery detail, an exploded view, a panel layout to scale - it draws boxes and wires "
+        "and cannot express those, so describe those out loud instead. Do not use it to show a "
+        "diagram you have already drawn this session; use find_diagram."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "request": {
+                "type": "string",
+                "description": (
+                    "What to draw, in one or two sentences, with every value that matters - "
+                    "part names, pin numbers, resistances, voltages. Whoever draws it sees only "
+                    "this sentence and nothing of your conversation, so it has to stand alone."
+                ),
+            }
+        },
+        "required": ["request"],
+        "additionalProperties": False,
+    },
+}
+
+FIND_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "find_diagram",
+    "description": (
+        "Put a diagram you drew before back on the touchscreen - this session's or one kept with "
+        "a project. Use it whenever they refer back to one ('show me that wiring again', 'put "
+        "the pinout back up'), because it is instant and drawing it again is not, and because a "
+        "redraw would come back subtly different. If nothing matches it says so; offer to draw "
+        "it rather than guessing at which one they meant."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What the diagram was of, in their words. Matched on its title.",
             }
         },
         "required": ["query"],
@@ -329,6 +386,12 @@ LOOKING THINGS UP
 - Combine the two when it helps: ask for a photo of the thing, then search for what you saw.
   If a search comes back empty or failed, say so plainly instead of inventing an answer.
 
+SHOWING THEM SOMETHING
+- You have the screen they are looking at, and you can draw on it. When the answer is a set of
+  connections or a layout, draw it rather than saying it - see draw_diagram for what it can and
+  cannot draw. Say one short sentence first, because it takes a few seconds to appear.
+- Once it is up, stop describing it. They can see it. Answer what they ask about it.
+
 THE PROJECTS YOU KEEP
 - You keep notes on the things they are building. Whichever ones exist are listed further down;
   you are told their names but not what is in them.
@@ -476,6 +539,7 @@ class VoiceAgent:
         self.guard = guard
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
+        self.drawing_active = False  # True while a diagram is being drawn (UI 'drawing')
         self._turn_serial = 0  # bumped when the user speaks; lets a late search spot staleness
         self._barge_in_timer: asyncio.TimerHandle | None = None
         self.ready = asyncio.Event()  # set once the server accepted our session config
@@ -560,7 +624,11 @@ class VoiceAgent:
                     "speed": 1.0,
                 },
             },
-            "tools": [WEB_SEARCH_TOOL, *_project_tools(self.settings)],
+            "tools": [
+                WEB_SEARCH_TOOL,
+                *_diagram_tools(self.settings),
+                *_project_tools(self.settings),
+            ],
             "tool_choice": "auto",
         }
         effort = self.settings.reasoning_effort  # explicit setting always goes through
@@ -858,6 +926,12 @@ class VoiceAgent:
         if call.name in DATA_TOOLS:
             await self._run_data_tool(call)
             return
+        if call.name == "draw_diagram":
+            await self._run_draw_diagram(call)
+            return
+        if call.name == "find_diagram":
+            await self._run_find_diagram(call)
+            return
         # Every name still gets an output. A tool the model invents, or one it remembers from a
         # session config that has since changed, must be answered or it waits for it forever.
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
@@ -909,6 +983,127 @@ class VoiceAgent:
             self._log(f"[tool] search failed: {output['error']}", stream=sys.stderr)
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
+
+    # ---- diagrams ----
+
+    async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Draw one, keep it, and put it on the panel.
+
+        The drawing model gets its own module and its own retry, so what is left here is the
+        lifecycle: say the panel is drawing, write the result down, and hand the model back one
+        sentence about what happened. It is deliberately *not* told what the diagram contains -
+        it asked for a picture and the picture is on the screen, and a model given the JSON back
+        will read it out.
+        """
+        request = _tool_string(call.arguments, "request", diagram.MAX_REQUEST_CHARS)
+        self._log(f"[tool] draw_diagram {request!r}")
+        if not request:
+            await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing described"})
+            await self._request_response()
+            return
+
+        self.drawing_active = True
+        try:
+            spec = await diagram.draw(request, self.settings)
+        except diagram.DiagramError as exc:
+            session.note("diagram", title=request[:80], error=str(exc))
+            self._log(f"[tool] diagram failed: {exc}", stream=sys.stderr)
+            output: dict[str, Any] = {"ok": False, "error": str(exc)}
+        except Exception as exc:  # never leave the model waiting for a tool result
+            session.note("diagram", title=request[:80], error=f"{type(exc).__name__}")
+            self._log(f"[tool] diagram failed: {exc!r}", stream=sys.stderr)
+            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        else:
+            output = await asyncio.to_thread(self._keep_and_show, spec)
+        finally:
+            self.drawing_active = False
+
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    async def _run_find_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Put a diagram we already have back on the panel. No model, so this is disk speed."""
+        query = _tool_string(call.arguments, "query", MAX_DATA_QUERY_CHARS)
+        self._log(f"[tool] find_diagram {query!r}")
+        if not query:
+            missing = {"ok": False, "error": "nothing to look for"}
+            await self._send_tool_output(call.call_id, missing)
+            await self._request_response()
+            return
+        output = await asyncio.to_thread(self._find_diagram, query)
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    def _diagram_folders(self) -> list[Path]:
+        """Everywhere a diagram might be: this session first, then every project on the card.
+
+        This session first because "that one" almost always means the one from ten minutes ago,
+        and :func:`cyclops.diagram.search` keeps the first copy of any id it sees twice.
+        """
+        folders = []
+        if (live := session.current()) is not None:
+            folders.append(live.diagrams_dir)
+        if self.settings.projects:
+            from .projects import store
+
+            folders.extend(p.diagrams_dir for p in store.catalog(self.settings))
+        return folders
+
+    def _keep_and_show(self, spec: dict[str, Any]) -> dict[str, Any]:
+        """Write the drawing down, then ask for the panel. Blocking; runs off the loop's thread.
+
+        Written before it is shown, and shown whether or not writing worked: the panel is what
+        was asked for, and a diagram nobody can keep is still a diagram somebody can read.
+        """
+        folder = session.diagram_target(self.settings)
+        kept: diagram.Diagram | None = None
+        if folder is not None:
+            try:
+                kept = diagram.write(spec, folder)
+            except OSError as exc:
+                self._log(f"[tool] could not keep the diagram: {exc}", stream=sys.stderr)
+
+        shown = diagram.offer(spec, kept) and diagram.show()
+        if kept is not None:
+            session.note(
+                "diagram",
+                title=kept.title,
+                caption=kept.caption,
+                kind=kept.kind,
+                file=f"{session.DIAGRAMS}/{kept.path.name}" if kept.path else "",
+                svg=f"{session.DIAGRAMS}/{kept.ident}.svg" if shown else "",
+            )
+        if not shown:
+            return {
+                "ok": True,
+                "title": spec["title"],
+                "shown": False,
+                "note": (
+                    "It was drawn but there is no panel to show it on. Say so plainly rather "
+                    "than describing it."
+                ),
+            }
+        return {"ok": True, "title": spec["title"], "shown": True}
+
+    def _find_diagram(self, query: str) -> dict[str, Any]:
+        """Search the card for a diagram and put the best match back up. Blocking."""
+        found = diagram.search(self._diagram_folders(), query)
+        if not found:
+            return {
+                "ok": True,
+                "hits": 0,
+                "note": "Nothing drawn matches that. Offer to draw it rather than guessing.",
+            }
+        best = found[0]
+        shown = diagram.offer(best.spec, best) and diagram.show()
+        session.note("diagram", title=best.title, kind=best.kind, found=True)
+        return {
+            "ok": True,
+            "hits": len(found),
+            "title": best.title,
+            "shown": shown,
+            "others": [d.title for d in found[1:3]],
+        }
 
     async def _run_project_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Open a project's notes, or start keeping some. Both are reads and writes of the card.
@@ -1159,6 +1354,15 @@ def _tool_string(arguments: str | None, key: str, limit: int) -> str:
     if not isinstance(args, dict):
         return ""
     return str(args.get(key) or "")[:limit]
+
+
+def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """Both drawing tools, or neither. Left out rather than refused, as with the project tools.
+
+    They come as a pair on purpose: find_diagram with nothing that can draw one is a tool whose
+    only possible answer is "nothing found", and a model given that will keep trying it.
+    """
+    return [DRAW_DIAGRAM_TOOL, FIND_DIAGRAM_TOOL] if settings.diagrams else []
 
 
 def _project_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
