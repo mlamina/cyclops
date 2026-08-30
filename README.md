@@ -168,8 +168,9 @@ folder of its own that a person can read without knowing anything about any of t
 ```
 projects/
   Pelican Display Mount/
-    README.md    what it is, where it stands, what's still open, what was decided
-    Log.md       one dated entry per session, oldest first, never rewritten
+    README.md            what it is, where it stands, what's still open, what was decided
+    Log.md               one dated entry per session, oldest first, never rewritten
+    Project Data.xlsx    the numbers: torques, sizes, part numbers, codes
     Photos/
       2026-08-26_16-48-48_cyclops.jpg
 ```
@@ -211,6 +212,31 @@ uv run cyclops-projects --sweep --again  # re-read everything; the log ledger pr
 
 Oldest first is not cosmetic: a project's page is rewritten against what the session before it
 left behind. `cyclops-sessions` flags anything still `unfiled`.
+
+### The numbers
+
+The prose says what was decided. **`Project Data.xlsx`** says the bore is 12.7 mm. Numbers want
+different storage from sentences — a torque that goes through a summariser comes back as "around
+25" — so they live in a sheet, one row each, filed under tabs Cyclops picks: *Torque specs*,
+*Dimensions*, *Paint*. Three columns, **Key | Value | Note**, and the value is stored exactly as
+it was spoken or read off the plate, unit included. Nothing here is a database either: it's a
+spreadsheet, and if a value is wrong you open it and fix it.
+
+Hold a spec plate up, press SNAP, and every number on it goes down in one write. Ask
+*"what was the caliper torque?"* three weeks later and it looks the value up rather than
+remembering it — the difference being that looking it up can come back empty, and it will tell
+you so instead of producing a plausible number.
+
+**Values are never loaded into the conversation.** All Cyclops is told when it opens a project is
+the tab names and how many rows are in each — one line — and every value after that is a tool
+call. So a project with two hundred numbers in it costs the same attention as one with two, which
+is the entire reason this is a file and not part of the notes. Retrieval is a plain word-overlap
+score with a spelling fallback, so "caliper torq" through a microphone still finds *Caliper bolt
+torque*; there is no index to rebuild and no embedding to go stale.
+
+It only ever writes into a project you already track, and it will ask which one rather than
+guess. Deleting is the one thing it refuses to do on a guess: if more than one value could be the
+one you meant, it deletes nothing and asks.
 
 Every session end costs one model call even when nothing gets filed, because deciding that *is*
 the call. At these model sizes it rounds to nothing, but `CYCLOPS_PROJECTS=0` turns the whole

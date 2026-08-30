@@ -752,11 +752,35 @@ def _render_record(record: dict) -> str:
         if record.get("action") == "tracked":
             return f"*Started keeping notes on* ({at}) — **{name}**"
         return f"*Looked up its notes on* ({at}) — **{name}**"
+    if kind == "data":
+        return _render_data(record, at)
     if kind == "transcript_failed":
         return f"*You said something that could not be transcribed* ({at})"
     if kind == "error":
         return f"*Something went wrong* ({at}) — {record.get('message', '')}"
     return ""
+
+
+def _render_data(record: dict, at: str) -> str:
+    """One line for a trip to ``Project Data.xlsx``. The values themselves stay in the workbook.
+
+    Named rather than quoted on purpose: the page is the conversation, and the sheet beside it is
+    where a number lives. Printing both would give a reader two copies to disagree with each
+    other, and only one of them is the one Cyclops will read back next week.
+    """
+    project = record.get("project", "")
+    keys = ", ".join(str(key) for key in record.get("keys") or [])
+    action = record.get("action")
+    if action == "saved":
+        again = f", {record['replaced']} replacing a value" if record.get("replaced") else ""
+        tab = record.get("tab", "")
+        return f"*Wrote down* ({at}) — **{project}** / {tab}: {keys}{again}"
+    if action == "forgot":
+        return f"*Deleted a value* ({at}) — **{project}** / {record.get('tab', '')}: {keys}"
+    query = record.get("query", "")
+    hits = record.get("hits", 0)
+    found = f"{hits} found" if hits else "nothing written down"
+    return f'*Looked up a value* ({at}) — "{query}" in **{project}** → {found}'
 
 
 def _render_photo(record: dict, at: str) -> str:

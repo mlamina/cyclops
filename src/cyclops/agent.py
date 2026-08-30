@@ -9,7 +9,7 @@ import re
 import sys
 import uuid
 from collections.abc import Callable, Coroutine
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from openai import AsyncOpenAI
 from openai.resources.realtime.realtime import AsyncRealtimeConnection
@@ -29,6 +29,10 @@ from .config import Settings
 from .search import SearchError, search_web
 from .webcam import Capture
 
+if TYPE_CHECKING:  # the projects package pulls in pydantic_ai; the tools import it when called
+    from .projects.data import Book
+    from .projects.store import Project
+
 BARGE_IN_CONFIRM_S = 1.5  # server must report speech within this long of a local barge-in
 TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
@@ -38,6 +42,12 @@ MAX_PROJECT_NAME_CHARS = 80
 MAX_PROJECT_TAGLINE_CHARS = 300  # a little under store.MAX_TAGLINE_CHARS
 MAX_PROJECT_NOTES_CHARS = 4000  # a project page, not a card's worth of them
 SEARCH_TIMEOUT_S = 14.0  # above search.SEARCH_TIMEOUT_S, so its own message wins
+MAX_DATA_TAB_CHARS = 40  # a sheet title Excel will take; see projects.data.MAX_TITLE_CHARS
+MAX_DATA_KEY_CHARS = 80  # a label someone looks a value up by, not a sentence
+MAX_DATA_VALUE_CHARS = 200
+MAX_DATA_NOTE_CHARS = 200
+MAX_DATA_QUERY_CHARS = 120
+MAX_DATA_ENTRIES = 20  # one plate's worth of values, generously
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # keep \t and \n
 
 WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
@@ -123,6 +133,151 @@ TRACK_PROJECT_TOOL: RealtimeFunctionToolParam = {
     },
 }
 
+SAVE_DATA_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "save_data",
+    "description": (
+        "Write down a value belonging to a project so it can be looked up again weeks from now: "
+        "a torque, a size, a pressure, a part number, a paint code, a setting, a short "
+        "descriptor. Call it the moment one comes up - when they tell you one, and when you read "
+        "one off a plate, label or manual page in a photo they have just shown you. Do not ask "
+        "permission and do not offer: save it, then say in a few words what you wrote down. "
+        "Saving a key that is already there replaces its value, which is how a corrected "
+        "measurement is recorded."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "project": {
+                "type": "string",
+                "description": (
+                    "Which project this belongs to, as the user calls it - one of the ones you "
+                    "are keeping notes on. Close is good enough. If you cannot tell from the "
+                    "conversation which one it is, ask them in one short sentence instead of "
+                    "guessing, and never start a new project just to have somewhere to put it."
+                ),
+            },
+            "tab": {
+                "type": "string",
+                "description": (
+                    "The sheet to file these under, grouped by kind: 'Torque specs', "
+                    "'Dimensions', 'Paint', 'Part numbers', 'Settings'. Reuse a tab that already "
+                    "fits - open_project tells you which ones exist and how full they are - "
+                    "rather than making a near-duplicate of one."
+                ),
+            },
+            "entries": {
+                "type": "array",
+                "description": (
+                    "Every value from this photo or this sentence, in ONE call. A plate with six "
+                    "numbers on it is six entries here, not six calls."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "key": {
+                            "type": "string",
+                            "description": (
+                                "What a person would look it up by: 'Caliper bolt torque', 'Jaw "
+                                "width', 'Cover paint'. A short label, not a sentence, and "
+                                "specific enough to tell it from the next bolt along."
+                            ),
+                        },
+                        "value": {
+                            "type": "string",
+                            "description": (
+                                "Exactly as they said it or as it is written on the thing, unit "
+                                "included: '25 Nm', '3/8 inch', 'RAL 7016', 'M10x1.5'. Never "
+                                "strip the unit, never convert, never round."
+                            ),
+                        },
+                        "note": {
+                            "type": "string",
+                            "description": (
+                                "Optional: the one thing that makes the value usable later - "
+                                "'dry thread', 'measured, not spec', 'front pair only'. Leave it "
+                                "out when there is nothing to add."
+                            ),
+                        },
+                    },
+                    "required": ["key", "value"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["project", "tab", "entries"],
+        "additionalProperties": False,
+    },
+}
+
+FIND_DATA_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "find_data",
+    "description": (
+        "Look up a value that was written down for a project. Call this every single time they "
+        "ask for something that was measured, set or specified before - never answer such a "
+        "question from memory, because what you remember of a number is not what was written "
+        "down. It searches by meaning, so their own words are enough. If it comes back with "
+        "nothing, say plainly that it was not written down instead of producing a number."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "project": {
+                "type": "string",
+                "description": (
+                    "Which project to look in, as the user calls it. Close is good enough. Only "
+                    "this project is searched, so if you cannot tell which one they mean, ask."
+                ),
+            },
+            "query": {
+                "type": "string",
+                "description": (
+                    "What they are after, in their words: 'caliper torque', 'jaw width', 'the "
+                    "paint code'. Near enough is fine - spelling and word order do not matter."
+                ),
+            },
+        },
+        "required": ["project", "query"],
+        "additionalProperties": False,
+    },
+}
+
+FORGET_DATA_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "forget_data",
+    "description": (
+        "Delete one value from a project, for when they say it was wrong, was for something "
+        "else, or is finished with. To CORRECT a value, call save_data with the same key "
+        "instead - that replaces it and keeps its place. If more than one thing matches, this "
+        "deletes nothing and hands you the candidates: ask which one they mean."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "project": {
+                "type": "string",
+                "description": "Which project the value is in, as the user calls it.",
+            },
+            "key": {
+                "type": "string",
+                "description": "The value to remove, as they refer to it. Close is good enough.",
+            },
+            "tab": {
+                "type": "string",
+                "description": (
+                    "Optional: the sheet it is on, when you know it and the key alone would "
+                    "match more than one thing."
+                ),
+            },
+        },
+        "required": ["project", "key"],
+        "additionalProperties": False,
+    },
+}
+
+DATA_TOOLS = frozenset({"save_data", "find_data", "forget_data"})
+
 # The static half of what the model is told. The other half - what the last few sessions were
 # about - is read off the card at connect time by :func:`build_instructions`.
 BASE_INSTRUCTIONS = """\
@@ -194,6 +349,13 @@ THE PROJECTS YOU KEEP
 - Everything else is automatic: every session about a tracked project is written into its folder
   on your memory card when you switch off. Do not offer to write things down, and do not read
   file paths out.
+
+NUMBERS YOU KEEP
+- Alongside the notes, every project has a sheet of the small hard facts about it: sizes,
+  torques, pressures, part numbers, settings, codes. Write one down whenever it comes up. It
+  costs a moment now and it is the whole reason they can ask you in three weeks.
+- When they want one back, look it up. Never answer a saved value from memory, and if it is not
+  there, say so rather than produce a number.
 
 WHEN THEY CUT IN
 - If they say "stop", "wait", "hold on", "never mind", "that's enough", or anything like that,
@@ -655,6 +817,9 @@ class VoiceAgent:
         if call.name in {"open_project", "track_project"}:
             await self._run_project_tool(call)
             return
+        if call.name in DATA_TOOLS:
+            await self._run_data_tool(call)
+            return
         # Every name still gets an output. A tool the model invents, or one it remembers from a
         # session config that has since changed, must be answered or it waits for it forever.
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
@@ -743,7 +908,16 @@ class VoiceAgent:
                     }
                 session.note("project", action="opened", key=project.key, name=project.name)
                 notes = projects.store.read_body(project)[:MAX_PROJECT_NOTES_CHARS]
-                return {"ok": True, "project": project.name, "notes": notes}
+                # The tab names and their row counts, and not one value. Twenty tokens that tell
+                # the model numbers exist here and roughly what kind, so it calls find_data at
+                # the right moment instead of answering out of the prose - which is the whole
+                # bargain of the workbook: two hundred values cost the conversation two lines.
+                return {
+                    "ok": True,
+                    "project": project.name,
+                    "notes": notes,
+                    "data": projects.store.read_data(project).tabs(),
+                }
 
             project = projects.create(self.settings, name, tagline=description)
             session.note("project", action="tracked", key=project.key, name=project.name)
@@ -767,6 +941,143 @@ class VoiceAgent:
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         except Exception as exc:  # noqa: BLE001 - never leave the model waiting for a result
             return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    async def _run_data_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Save, find or forget one project's numbers. Local disk, and back in milliseconds.
+
+        The same shape as the project tools above, through a thread for the same reason, and
+        showing nothing on the panel for the same one: it is over before a caption could render.
+        """
+        name = _tool_project(call.arguments)
+        self._log(f"[tool] {call.name} {name!r}")
+        if not name:
+            output: dict[str, Any] = {
+                "ok": False,
+                "error": "no project name given",
+                "note": "Ask them which project this is for. Do not guess.",
+            }
+        else:
+            output = await asyncio.to_thread(self._data_call, call.name, name, call.arguments)
+        if not output["ok"]:
+            self._log(f"[tool] {call.name} failed: {output['error']}", stream=sys.stderr)
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    def _data_call(self, kind: str, name: str, arguments: str | None) -> dict[str, Any]:
+        """The blocking half of the three data tools. Returns an answer, never raises.
+
+        One lock spans read, change and write. Every tool call of a response is spawned as its
+        own task, so two ``save_data`` calls off one photo genuinely do arrive here at once, and
+        without this the second would write a book built before the first one's rows existed.
+        """
+        from .projects import store
+
+        try:
+            tracked = store.catalog(self.settings)
+            project = store.find(tracked, name)
+            if project is None:
+                return {
+                    "ok": False,
+                    "error": f"nothing is being tracked called {name!r}",
+                    "tracked": [p.name for p in tracked],
+                    "note": "Ask which project they mean. Do not create one to hold a value.",
+                }
+            with store.data_held():
+                book = store.read_data(project)
+                if kind == "find_data":
+                    return self._find_data(project, book, arguments)
+                if kind == "save_data":
+                    return self._save_data(project, book, arguments)
+                return self._forget_data(project, book, arguments)
+        except OSError as exc:
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        except Exception as exc:  # noqa: BLE001 - never leave the model waiting for a result
+            return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+
+    def _find_data(self, project: Project, book: Book, arguments: str | None) -> dict[str, Any]:
+        from .projects import data
+
+        query = _tool_data_query(arguments)
+        if not query:
+            return {"ok": False, "error": "no query given"}
+        hits = data.search(book, query)
+        session.note(
+            "data", action="found", project=project.name, query=query, hits=len(hits)
+        )
+        self._log(f"[tool] find_data {query!r} → {len(hits)} hit(s)")
+        found = {
+            "ok": True,
+            "project": project.name,
+            "query": query,
+            "found": [row.as_dict() for row in hits],
+        }
+        if not hits:
+            found["note"] = (
+                "Nothing is written down for that. Say so plainly - do not offer a number from "
+                "memory, and do not read out a value for something else instead."
+            )
+        return found
+
+    def _save_data(self, project: Project, book: Book, arguments: str | None) -> dict[str, Any]:
+        from .projects import data, store
+
+        entries = _tool_entries(arguments)
+        if not entries:
+            return {"ok": False, "error": "no values given"}
+        wanted = _tool_tab(arguments)
+        tab = book.tab_named(wanted) or data.sheet_title(wanted)
+        saved: list[str] = []
+        replaced: list[str] = []
+        for key, value, note in entries:
+            (replaced if book.put(tab, key, value, note) else saved).append(key)
+        store.write_data(project, book)
+        session.note(
+            "data",
+            action="saved",
+            project=project.name,
+            tab=tab,
+            keys=saved + replaced,
+            replaced=len(replaced),
+        )
+        self._log(f"[tool] save_data {project.name!r}/{tab!r} ← {len(entries)} value(s)")
+        return {
+            "ok": True,
+            "project": project.name,
+            "tab": tab,
+            "saved": saved,
+            "replaced": replaced,
+        }
+
+    def _forget_data(self, project: Project, book: Book, arguments: str | None) -> dict[str, Any]:
+        from .projects import store
+
+        key = _tool_key(arguments)
+        if not key:
+            return {"ok": False, "error": "no key given"}
+        matches = book.find_key(key, _tool_tab(arguments) or None)
+        if not matches:
+            return {
+                "ok": False,
+                "error": f"nothing is written down called {key!r}",
+                "note": "Say so. Nothing was deleted.",
+            }
+        if len(matches) > 1:
+            # A wrong delete is the only thing here that cannot be undone, so it never happens
+            # on a guess. The candidates go back so the model can ask in the user's own words.
+            return {
+                "ok": False,
+                "error": f"{len(matches)} values could be {key!r}",
+                "candidates": [row.as_dict() for row in matches],
+                "note": "Ask which one they mean. Nothing has been deleted.",
+            }
+        gone = matches[0]
+        book.drop(gone)
+        store.write_data(project, book)
+        session.note(
+            "data", action="forgot", project=project.name, tab=gone.tab, keys=[gone.key]
+        )
+        self._log(f"[tool] forget_data {project.name!r}/{gone.tab!r} ← {gone.key!r}")
+        return {"ok": True, "project": project.name, "forgot": gone.as_dict()}
 
     async def _send_tool_output(self, call_id: str, output: dict[str, Any]) -> None:
         await self._send_item(
@@ -813,12 +1124,24 @@ def _tool_string(arguments: str | None, key: str, limit: int) -> str:
 
 
 def _project_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
-    """The two project tools, or neither. ``CYCLOPS_PROJECTS=0`` leaves them out entirely.
+    """The five project tools, or none of them. ``CYCLOPS_PROJECTS=0`` leaves them out entirely.
 
     Left out rather than offered and refused: a tool the model can see is a tool it will try, and
     being told "that is switched off" mid-conversation is worse than never being offered it.
+
+    The three data tools ride on the same switch and need no flag of their own, because the
+    workbook they write lives *inside* a project folder: with no projects there is nowhere to put
+    a value and nothing to look one up in.
     """
-    return [OPEN_PROJECT_TOOL, TRACK_PROJECT_TOOL] if settings.projects else []
+    if not settings.projects:
+        return []
+    return [
+        OPEN_PROJECT_TOOL,
+        TRACK_PROJECT_TOOL,
+        SAVE_DATA_TOOL,
+        FIND_DATA_TOOL,
+        FORGET_DATA_TOOL,
+    ]
 
 
 def _tool_name(arguments: str | None) -> str:
@@ -834,3 +1157,54 @@ def _tool_description(arguments: str | None) -> str:
 def _tool_query(arguments: str | None) -> str:
     """The search tool's required 'query' argument."""
     return _tool_string(arguments, "query", MAX_QUERY_CHARS)
+
+
+def _tool_project(arguments: str | None) -> str:
+    """The data tools' required 'project' argument - which workbook this call is about."""
+    return _tool_string(arguments, "project", MAX_PROJECT_NAME_CHARS)
+
+
+def _tool_tab(arguments: str | None) -> str:
+    """The sheet to file under. Required by save_data, optional for forget_data."""
+    return _tool_string(arguments, "tab", MAX_DATA_TAB_CHARS)
+
+
+def _tool_key(arguments: str | None) -> str:
+    """forget_data's required 'key' argument."""
+    return _tool_string(arguments, "key", MAX_DATA_KEY_CHARS)
+
+
+def _tool_data_query(arguments: str | None) -> str:
+    """find_data's required 'query' argument. Shorter cap than the web search: this is a label."""
+    return _tool_string(arguments, "query", MAX_DATA_QUERY_CHARS)
+
+
+def _tool_entries(arguments: str | None) -> list[tuple[str, str, str]]:
+    """save_data's 'entries' argument, as (key, value, note) triples.
+
+    The only structured argument any tool here takes, and parsed in exactly the spirit of
+    :func:`_tool_string`: every malformed thing is dropped and nothing raises, so a model that
+    sends one good row and one piece of nonsense still gets the good row written down. A row
+    without a key is nonsense - there would be no way to ask for it back.
+    """
+    try:
+        args = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(args, dict) or not isinstance(raw := args.get("entries"), list):
+        return []
+    entries: list[tuple[str, str, str]] = []
+    for item in raw[:MAX_DATA_ENTRIES]:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "")[:MAX_DATA_KEY_CHARS].strip()
+        if not key:
+            continue
+        entries.append(
+            (
+                key,
+                str(item.get("value") or "")[:MAX_DATA_VALUE_CHARS].strip(),
+                str(item.get("note") or "")[:MAX_DATA_NOTE_CHARS].strip(),
+            )
+        )
+    return entries

@@ -42,6 +42,7 @@ import fcntl
 import os
 import re
 import shutil
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -52,9 +53,11 @@ from pathlib import Path
 from .. import card
 from ..config import Settings
 from ..slug import fold, safe_folder_name
+from . import data
 
 README_NAME = "README.md"
 LOG_NAME = "Log.md"
+DATA_NAME = "Project Data.xlsx"  # the numbers; see projects/data.py for what is in it
 PHOTOS = "Photos"
 RECEIPT_NAME = "project.md"  # written into the *session* folder, not the project
 
@@ -208,6 +211,10 @@ class Project:
     @property
     def photos_dir(self) -> Path:
         return self.path / PHOTOS
+
+    @property
+    def data(self) -> Path:
+        return self.path / DATA_NAME
 
     def names(self) -> set[str]:
         """Every spelling that should resolve here, folded."""
@@ -376,6 +383,44 @@ def read_body(project: Project) -> str:
         return ""
     _, body = split_front(text)
     return body
+
+
+# One project's numbers are read, changed and written back, and the three steps must not
+# interleave. They can: `_on_response_done` spawns every tool call of one response as its own
+# task, so a photo of a spec plate yielding two `save_data` calls has two threads in here at
+# once, and the second would write a book built before the first one's rows existed. The
+# cross-process flock from `held()` is deliberately not taken - the sweep never opens this file,
+# and that lock is about sweeps.
+_DATA_LOCK = threading.Lock()
+
+
+def read_data(project: Project) -> data.Book:
+    """A project's numbers. A missing or unreadable file is an empty book, as in `read_body`."""
+    try:
+        return data.load(project.data.read_bytes())
+    except OSError:
+        return data.load(None)
+
+
+def write_data(project: Project, book: data.Book) -> None:
+    """Write the numbers back, whole or not at all.
+
+    Through :func:`card.write_bytes` like every other byte on the card, so a power cut costs the
+    save and never the file. It is a spreadsheet somebody opens in Excel; a half-written zip is
+    not a degraded version of one, it is a file that will not open.
+    """
+    try:
+        blob: bytes | None = project.data.read_bytes()
+    except OSError:
+        blob = None
+    card.write_bytes(project.data, data.dump(book, blob))
+
+
+@contextmanager
+def data_held() -> Iterator[None]:
+    """Hold the numbers of every project for one read-change-write. See :data:`_DATA_LOCK`."""
+    with _DATA_LOCK:
+        yield
 
 
 def history(project: Project, entries: int = 5) -> str:
