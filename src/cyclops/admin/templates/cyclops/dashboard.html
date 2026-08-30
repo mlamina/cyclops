@@ -238,32 +238,57 @@ on every device on the network is exactly the sprawl this replaced.
   }
   .close:active, .close:disabled { background: var(--green); color: var(--ink); border-color: var(--green); }
 
+  /* Over a diagram it is a square in the corner instead. Still 58 of the panel's 480 px - about
+     11 mm, a thumb in a glove - because the point was to give the drawing the other 700 px of
+     width, not to make the way out harder to hit. */
+  body.drawing .close {
+    position: fixed;
+    top: calc(22 * var(--u));
+    right: calc(22 * var(--u));
+    z-index: 8;
+    width: calc(58 * var(--u));
+    height: calc(58 * var(--u));
+    margin: 0;
+    font-size: calc(24 * var(--u));
+    letter-spacing: 0;
+    /* The drawing runs underneath, so this cannot be see-through the way the tab row is. */
+    background: var(--screen);
+  }
+  body.drawing .close .word { display: none; }
+
   /* ---- diagrams ---- */
   /* The second thing this page can be. Not a second page: the browser behind the panel is warm
      and pointed here, and navigating it would mean waiting for a load at the one moment somebody
      is watching. So both screens live in one document and the body class picks. */
   .stage { position: relative; min-height: 0; overflow: hidden; display: none; }
   .stage svg { display: block; }
-  body.drawing .tiles, body.drawing .volume { display: none; }
+
+  /* A diagram gets the whole panel. Everything the dashboard needs around it - the header, the
+     volume, the full-width way out - is chrome for a page of numbers, and a wiring diagram at
+     arm's length wants the pixels more than it wants a title bar. So the grid collapses to one
+     row and the two things still worth having float on top of the drawing. */
+  body.drawing { grid-template-rows: minmax(0, 1fr); }
+  body.drawing header, body.drawing .tiles, body.drawing .volume { display: none; }
   body.drawing .stage { display: block; }
-  body.drawing .page::after { content: "DIAGRAM"; }
-  body.drawing .page span { display: none; }
-  /* The drawing's own name, in the corner the LINK OK indicator uses on the dashboard - it is
-     the more useful thing to know while a diagram is up, and there is only room for one. */
+
+  /* The drawing's own name, over the top-left of it. */
   .dtitle {
-    margin-left: auto;
+    display: none;
+    position: fixed;
+    top: calc(26 * var(--u));
+    left: calc(30 * var(--u));
+    z-index: 8;
     font-size: calc(13 * var(--u));
     letter-spacing: .2em;
     text-transform: uppercase;
     color: var(--mid);
-    max-width: 55%;
+    max-width: calc(600 * var(--u));
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    display: none;
+    pointer-events: none;
   }
   body.drawing .dtitle { display: block; }
-  body.drawing .link { display: none; }
   /* Said while JointJS lays the drawing out. It is on screen for a frame or two on the panel,
      and for longer than that on anything slower, which is the case it is here for. */
   .laying-out {
@@ -289,10 +314,11 @@ on every device on the network is exactly the sprawl this replaced.
   <header>
     <span class="brand">CYCLOPS</span>
     <span class="bar"></span>
-    <span class="page"><span>SYSTEM</span></span>
-    <span class="dtitle" id="dtitle"></span>
+    <span class="page">SYSTEM</span>
     <span class="link"></span>
   </header>
+  <!-- Outside the header on purpose: a diagram hides the header, and this has to outlive it. -->
+  <span class="dtitle" id="dtitle"></span>
 
   <main class="tiles">
     <section class="tile" id="temp" data-band="{{ temp_band }}">
@@ -325,7 +351,8 @@ on every device on the network is exactly the sprawl this replaced.
            aria-label="Speaker volume">
     <output class="vvalue" id="volval">{{ volume|default:80 }}%</output>
   </section>
-  <button class="close" id="close" type="button">&#10005; &nbsp;Close</button>
+  <button class="close" id="close" type="button"><span class="glyph">&#10005;</span><span
+    class="word" id="closeword">&nbsp;Close</span></button>
   {% endif %}
 
 <script>
@@ -379,16 +406,22 @@ on every device on the network is exactly the sprawl this replaced.
   }
 
   const close = document.getElementById('close');
+  const closeword = document.getElementById('closeword');
   if (close) close.addEventListener('click', async () => {
     close.disabled = true;
-    close.textContent = 'Closing…';
+    // The word only, never the whole button: over a diagram the word is hidden and the glyph is
+    // the entire control, and replacing the button's text used to take the glyph with it.
+    if (closeword) closeword.textContent = '\u00a0Closing…';
     // The kiosk owns the browser process; this only leaves it a note asking it to take its
     // panel back. It does not take this page down with it - the browser stays running behind
     // the panel so the next tap of the gear is instant - so the button has to put itself back.
     // Without that, the second opening finds it disabled and reading "Closing…" for ever.
     try { await fetch('/close', { method: 'POST' }); }
     catch (e) { /* the service is gone; the kiosk cannot be told, but the button still resets */ }
-    finally { close.disabled = false; close.textContent = 'Close'; }
+    finally {
+      close.disabled = false;
+      if (closeword) closeword.textContent = '\u00a0Close';
+    }
   });
 
   // kiosk hardening: no context menu, no pinch/double-tap zoom
@@ -566,8 +599,12 @@ only thing between it and the panel is the layout.
     }
     // useModelGeometry false, not true: true fits the element boxes and knows nothing about the
     // port labels hanging outside them, which silently clips every outboard label off the edge.
+    // Asymmetric: the only chrome over the drawing is the title and the X, and both live in a
+    // band across the top. Padding the sides to match would give away the width this layout
+    // exists to win back.
     paper.transformToFitContent({
-      padding: 22, maxScale: 1.3, useModelGeometry: false,
+      padding: { top: 58, right: 16, bottom: 16, left: 16 },
+      maxScale: 1.3, useModelGeometry: false,
       verticalAlign: 'middle', horizontalAlign: 'middle' });
     return paper;
   }
