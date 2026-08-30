@@ -13,13 +13,13 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=exec
-User=dobby
-Group=dobby
+User=cyclops
+Group=cyclops
 # MUST match the CWD the kiosk runs in. sessions_dir is CWD-relative and deliberately not
 # resolved (see cyclops/config.py), and load_settings() finds .env by walking up from the CWD -
 # start this anywhere else and the page reports zero sessions with no error anywhere.
-WorkingDirectory=/home/dobby/cyclops
-ExecStart=/home/dobby/cyclops/.venv/bin/cyclops-admin
+WorkingDirectory=/home/cyclops/cyclops
+ExecStart=/home/cyclops/cyclops/.venv/bin/cyclops-admin
 Environment=PYTHONUNBUFFERED=1
 Environment=DJANGO_SETTINGS_MODULE=cyclops.admin.settings
 
@@ -41,8 +41,8 @@ LockPersonality=yes
 SystemCallFilter=@system-service
 
 # --- deliberately NOT set; each of these silently breaks something ---
-# ProtectHome=          hides /home/dobby: no working directory, no venv, no sessions/
-# ProtectSystem=strict  read-only /home; would need ReadWritePaths=/home/dobby/.cache/cyclops
+# ProtectHome=          hides /home/cyclops: no working directory, no venv, no sessions/
+# ProtectSystem=strict  read-only /home; would need ReadWritePaths=/home/cyclops/.cache/cyclops
 # PrivateTmp=           a private /tmp. Harmless only because the kiosk's close flag lives in
 #                       ~/.cache; if it ever moves to /tmp this would make the kiosk blind to
 #                       the file this service writes, with no error on either side.

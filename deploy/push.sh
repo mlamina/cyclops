@@ -4,7 +4,7 @@
 # The Pi's own .env is never touched - the key lives there, not here.
 set -eu
 
-TARGET=${1:-dobby@raspberrypi.local}
+TARGET=${1:-cyclops@cyclops.local}
 DEST=cyclops
 
 # The leading slash on /projects is load-bearing: an rsync pattern without one matches at

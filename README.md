@@ -290,7 +290,7 @@ The three vendored bundles under `src/cyclops/admin/static/` are served from the
 ## Admin page
 
 `cyclops-admin` serves a small Django status page on **port 80**, so from anywhere on your
-network you can open `http://raspberrypi.local/` and see how the box is doing: **CPU
+network you can open `http://cyclops.local/` and see how the box is doing: **CPU
 temperature**, **memory**, **disk**, and **how many sessions have been recorded**. It is
 read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
 A session counts as finished once it has written its `session.md`; anything else shows as in
@@ -337,7 +337,7 @@ does not, which aborts the push rather than printing a success line over a dead 
 ```bash
 deploy/push.sh                       # deploy, restart both, verify the kiosk came back
 SKIP_KIOSK=1 deploy/push.sh          # leave the running kiosk alone
-ssh dobby@raspberrypi.local cyclops/deploy/start-kiosk.sh   # just restart it
+ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 ```
 
 ## Configuration (`.env`)

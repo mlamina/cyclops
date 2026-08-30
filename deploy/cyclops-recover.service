@@ -21,7 +21,7 @@ After=network-online.target
 After=cyclops-admin.service
 # If sessions/ ever becomes a real removable mount rather than a directory on the root fs, this
 # is the line that stops us "recovering" an empty tree.
-RequiresMountsFor=/home/dobby/cyclops
+RequiresMountsFor=/home/cyclops/cyclops
 # Bounded, unlike cyclops-admin.service's StartLimitIntervalSec=0. That page must never give up.
 # This must: a card that cannot be repaired in five tries will not be repaired by a sixth, and
 # it will wait for the next boot - which is the same retry queue everything else here runs on.
@@ -30,14 +30,14 @@ StartLimitBurst=5
 
 [Service]
 Type=oneshot
-User=dobby
-Group=dobby
+User=cyclops
+Group=cyclops
 # MUST match the CWD the kiosk runs in - the same argument cyclops-admin.service makes, and the
 # same way to get it silently wrong. sessions_dir and projects_dir are CWD-relative and
 # deliberately unresolved (cyclops/config.py), and load_settings() finds .env by walking up from
 # here. Start this anywhere else and it repairs an empty tree, reports success, touches nothing.
-WorkingDirectory=/home/dobby/cyclops
-ExecStart=/home/dobby/cyclops/.venv/bin/cyclops-sessions --recover
+WorkingDirectory=/home/cyclops/cyclops
+ExecStart=/home/cyclops/cyclops/.venv/bin/cyclops-sessions --recover
 Environment=PYTHONUNBUFFERED=1
 # One mux is capped at 120 s and the projects sweep budgets itself 900 s; this is the backstop
 # over a whole card, not a budget anything plans against.
@@ -56,7 +56,7 @@ LockPersonality=yes
 SystemCallFilter=@system-service
 
 # --- deliberately NOT set; each of these silently breaks something ---
-# ProtectHome=          hides /home/dobby: no venv, no sessions/, nothing to repair - and it
+# ProtectHome=          hides /home/cyclops: no venv, no sessions/, nothing to repair - and it
 #                       would still exit 0, because an absent tree reads as "no sessions".
 # ProtectSystem=strict  read-only /home; writing there is the entire point of this unit.
 # PrivateTmp=           ffmpeg and the OpenAI SDK both use /tmp.
