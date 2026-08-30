@@ -7,11 +7,14 @@ array to alpha-blend onto the frame. Geometry doubles as the hit-test map: every
 element returns its rectangle, so a tap can be resolved without a second layout.
 
 The layout is a terminal screen: a rounded border hard against the panel's edges, a readout
-strip along the top, three tabs along the bottom, and the camera showing through the band
-between them. The picture keeps its own colours - only the chrome is green, plus a wash faint
-enough to leave faces looking like faces - because the panel's job is still to let you see the
-room. The border carries the session state in its colour and glows inwards from it, which is
-the one thing that has to be readable across a workshop without reading any words.
+strip along the top, three tabs along the bottom, and the camera behind all of it. The picture
+itself is left alone - no wash, no scanlines, nothing between you and the lens - because the
+panel's job is to let you see the room and the endoscope has no detail to spare. The filter is
+what the strip and the tab row are made of instead: they used to be opaque bars, and are now
+that same phosphor wash, corner shading and scanline field laid over the live picture, so the
+camera shows through the chrome as well as between it. The border carries the session state in
+its colour and glows inwards from it, which is the one thing that has to be readable across a
+workshop without reading any words.
 
 Everything that holds still while the state does - the halo, the scanlines, the vignette, the
 frame and its glow, the mode word, the tab row - is built once and cached, keyed on the state.
@@ -27,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, ERROR = (
     "idle",
@@ -91,19 +94,20 @@ CAPTIONS = {  # ... and what it says underneath before a session exists to say a
 HALO_CORE = 0.004  # fraction of the height held at full brightness, hard against the edge
 HALO_FALLOFF = 0.024  # and how far the light reaches inwards before it is gone
 HALO_PEAK = 0.45  # alpha at the border, falling away to nothing before it reaches any text
-TINT_ALPHA = 0.05  # green wash over the whole panel - phosphor cast, not a colour filter
-SCANLINE_EVERY = 3  # every third row of the picture is darkened...
+TINT_ALPHA = 0.05  # green wash under the chrome - phosphor cast, not a colour filter
+SCANLINE_EVERY = 3  # every third row of the chrome is darkened...
 SCANLINE_ALPHA = 0.17  # ...by this much, which is a CRT at arm's length and not a zebra
 VIGNETTE_FROM = 0.46  # where the corner shading starts, as a fraction of the half-diagonal
 VIGNETTE_ALPHA = 0.42
 GLOW_RADIUS = 4.0  # blur, in reference pixels, of the bloom baked in under the frame lines
 GLOW_ALPHA = 0.42
-# The strip, the tab row and the surround are opaque, and not as a matter of taste: at 98%
-# a bright wall two feet away still came through a near-black bar as legible furniture, and
-# a tab row you can read the room through is a tab row with worse contrast than the room.
-BAR_ALPHA = 255  # the readout strip and the tab row
-CORNER_ALPHA = 255  # ...and the four scraps of panel outside the border's rounded corners
-PLATE_ALPHA = 210  # ...but not the caption slab, which is meant to sit on the picture
+# The strip, the tab row and the four corner scraps used to be opaque near-black, which bought
+# contrast at the price of a third of the panel: HEADER_H and FOOTER_H together cover 29% of the
+# screen, and that is 29% of a feed you are holding down a pipe to see what is at the bottom of
+# it. They now carry the filter and nothing else, so the picture runs edge to edge behind them
+# and the chrome earns its contrast from its own opaque glyphs rather than from a bar.
+PLATE_ALPHA = 210  # the one dark backing left: the caption slab, which sits on the picture
+TAB_LIVE_ALPHA = 165  # ...and the selected tab's cell, tinted just enough to read as selected
 
 # Layout, all as fractions of the height - the official 7" panel is 800x480 and is the
 # reference. The tab row is deliberately the tallest thing here: three cells across the full
@@ -120,10 +124,10 @@ HEADER_H = 0.118
 FOOTER_H = 0.170
 
 METER_SEGMENTS = 8  # steps in the signal bar
-# How much colour is stirred into the strip for the parts that are meant to look faded. These
-# are mixes rather than alphas on purpose - see _mix: anything drawn translucently onto the bars
-# does not dim, it punches a window through them onto the room behind.
-TAB_LIVE = 0.20  # the selected tab's cell
+# How much colour is stirred into the chrome for the parts that are meant to look faded. These
+# are mixes rather than alphas on purpose - see _mix: drawing them translucently would not dim
+# them, it would open a window onto whatever the camera is pointed at.
+TAB_LIVE = 0.20  # the selected tab's cell, which is then drawn at TAB_LIVE_ALPHA
 METER_OFF = 0.45  # an unlit signal segment
 RING_MIX = 0.55  # the ring around the open eye
 TABS = ("shutter", "admin", "eye")  # left to right; shutter and eye keep the corners they had
@@ -158,13 +162,13 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
 def _mix(base: tuple[int, int, int], other: tuple[int, int, int], amount: float) -> tuple:
     """*amount* of *other* stirred into *base*, so a tinted fill can be one opaque colour.
 
-    The rule everything drawn onto the strip or the tab row obeys: PIL's ImageDraw *writes* into
-    an RGBA image rather than compositing onto it, so a fill at 40% alpha does not come out 40%
-    dimmer - it replaces that patch of near-opaque chrome with a 40%-opaque one, and the camera
-    shows through. (This was not theoretical: the unlit signal segments were a row of little
-    windows onto the room.) Anything meant to look faded on the chrome is therefore mixed
-    towards :data:`SCREEN` and drawn opaque. Alpha is still alpha over the *picture*, which is
-    where the caption slab and the shutter flash live.
+    The rule everything small on the chrome obeys. PIL's ImageDraw *writes* into an RGBA image
+    rather than compositing onto it, so a fill at 40% alpha does not come out 40% dimmer - it
+    stamps a 40%-opaque patch and the picture behind the panel shows through it. Now that the
+    strip and the tab row are see-through that is fine for a whole cell, and deliberate for the
+    selected one, but it is no good for the small things that have to stay legible against
+    whatever the camera happens to be pointed at: an unlit signal segment has to read as unlit
+    over a lamp. Those are mixed towards :data:`SCREEN` and drawn opaque instead.
     """
     return tuple(round(b + (o - b) * amount) for b, o in zip(base, other, strict=True))
 
@@ -286,8 +290,10 @@ class Overlay:
         self.font_caption = _load_font(max(8, round(14 * scale)))
 
         self._halo = halo_alpha(width, height)
-        # The colour-independent half of the backdrop, flattened once: wash, corner shading and
-        # scanlines. Each halo colour is laid over this rather than rebuilding the stack.
+        # The tube filter - wash, corner shading, scanlines - flattened once. It is the whole
+        # substance of the strip and the tab row now, rather than something laid under opaque
+        # bars, so the picture band is cut straight out of it: the camera reaches the middle of
+        # the panel with nothing whatsoever in front of it, and only the chrome wears the tube.
         base: tuple[np.ndarray, np.ndarray] = (
             np.zeros((height, width, 3), dtype=np.float32),
             np.zeros((height, width), dtype=np.float32),
@@ -295,7 +301,11 @@ class Overlay:
         base = _over(base, GREEN, np.full((height, width), TINT_ALPHA, dtype=np.float32))
         base = _over(base, (0, 0, 0), vignette_alpha(width, height))
         base = _over(base, (0, 0, 0), scanline_alpha(width, height))
-        self._backdrop = base
+        rgb, alpha = base
+        alpha = alpha.copy()
+        v = self.viewport
+        alpha[v.y : v.bottom, v.x : v.right] = 0.0
+        self._backdrop = (rgb, alpha)
         self._chrome = self._build_chrome()
         self._bases: dict[tuple[str, bool], Image.Image] = {}
         # The readout strip's right-hand group is laid out from the frame edge inwards, and in a
@@ -383,16 +393,6 @@ class Overlay:
                 d.line([x, y, x + arm * dx, y], fill=(*GREEN_MID, 200), width=self.line)
                 d.line([x, y, x, y + arm * dy], fill=(*GREEN_MID, 200), width=self.line)
 
-    def _inside_mask(self) -> Image.Image:
-        """255 inside the frame's rounded outline, 0 outside it."""
-        mask = Image.new("L", (self.width, self.height), 0)
-        ImageDraw.Draw(mask).rounded_rectangle(
-            [self.frame.x, self.frame.y, self.frame.right - 1, self.frame.bottom - 1],
-            radius=self.radius,
-            fill=255,
-        )
-        return mask
-
     def _base(self, state: str, recording: bool) -> Image.Image:
         """Everything that holds still while the state does, built once and copied per frame.
 
@@ -410,26 +410,11 @@ class Overlay:
         if cached is not None:
             return cached
         halo = HALOS.get(state, GREEN_DIM)
-        image = _to_image(*self._backdrop)
-        inside = self._inside_mask()
-
-        # The four scraps of panel left outside the border's rounded corners. All that survives
-        # of what used to be a bezel all the way round, and small enough to read as the corner
-        # of the screen rather than as a frame drawn inside one.
-        corners = Image.new("RGBA", image.size, (*SCREEN, CORNER_ALPHA))
-        corners.putalpha(ImageChops.multiply(corners.getchannel("A"), ImageChops.invert(inside)))
-        image = Image.alpha_composite(image, corners)
-
-        # The two bars, clipped to the same outline so they cannot poke past its corners. On
-        # their own layer because ImageDraw writes into an RGBA image rather than compositing
-        # onto it, and would take the backdrop's alpha with it.
-        bars = Image.new("RGBA", image.size, (0, 0, 0, 0))
-        bd = ImageDraw.Draw(bars)
-        for bar in (self.header, self.footer):
-            bd.rectangle([bar.x, bar.y, bar.right - 1, bar.bottom - 1], fill=(*SCREEN, BAR_ALPHA))
-        bars.putalpha(ImageChops.multiply(bars.getchannel("A"), inside))
-        image = Image.alpha_composite(image, bars)
-        image = Image.alpha_composite(image, self._chrome)
+        # The filter, and then the chrome drawn on it. There is nothing opaque underneath either
+        # of them any more: the strip, the tab row and the four scraps outside the border's
+        # rounded corners are all just the wash and the scanlines over the live picture, and the
+        # picture between them is not covered at all - not even by the border's own corners.
+        image = Image.alpha_composite(_to_image(*self._backdrop), self._chrome)
 
         d = ImageDraw.Draw(image)
         self._bake_header(d, state, halo, recording)
@@ -672,15 +657,17 @@ class Overlay:
         if pressed:
             fill, glyph, label = (*halo, 255), INK, INK
         elif live:
-            fill, glyph, label = (*_mix(SCREEN, halo, TAB_LIVE), 255), halo, GREEN
+            # Translucent, unlike a press: the row is see-through now, and a selected tab that
+            # blacked out a third of it would put back the bar this layout just took away.
+            fill, glyph, label = (*_mix(SCREEN, halo, TAB_LIVE), TAB_LIVE_ALPHA), halo, GREEN
         else:
             fill, glyph, label = None, GREEN_MID, GREEN_MID
 
         inset = max(1, round(3 * self.scale))
         if fill is not None:
             # The outermost tabs reach the panel's own bottom corners, so their fill has to be
-            # rounded to match or it squeezes out past the border and sits in the dark corner
-            # scrap behind it. Only the one outer corner each: the rest of the cell is square.
+            # rounded to match or it squeezes out past the border, into the corner the border
+            # cuts off. Only the one outer corner each: the rest of the cell is square.
             d.rounded_rectangle(
                 [cell.x + inset, cell.y + inset, cell.right - inset, cell.bottom - inset],
                 radius=max(0, self.radius - inset),
