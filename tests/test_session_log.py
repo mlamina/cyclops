@@ -113,3 +113,71 @@ def test_recovery_would_leave_this_session_alone_while_it_runs(log, tmp_path, ca
 
     assert "a session is writing here; left alone" in out
     assert log.dir.is_dir(), "and above all, it was not renamed or removed out from under us"
+
+
+# ------------------------------------------------------------------ what a record may be called
+
+
+def test_a_record_field_may_not_be_called_kind(log):
+    """``note`` takes the record's type as its first parameter, and that parameter is ``kind``.
+
+    So no record can carry a field of that name: the call raises TypeError before anything is
+    written. This is not hypothetical - the diagram tool shipped with ``kind=`` in its record and
+    every draw threw, after the picture was already on the panel, which lost the log line and left
+    the model waiting for a tool result that never came. Fields are keyword arguments, so this is
+    a runtime error at the call site and nothing catches it earlier.
+    """
+    with log:
+        with pytest.raises(TypeError):
+            session.note("diagram", kind="wiring")
+
+
+def test_the_diagram_record_survives_the_page(log):
+    """The exact fields the draw and find tools write, through the log and into session.md."""
+    with log:
+        session.note(
+            "diagram",
+            title="Relay driven from GPIO 17",
+            caption="A 1k base resistor between the pin and the module.",
+            shape="wiring",
+            file="diagrams/19-40-12_relay.json",
+            svg="diagrams/19-40-12_relay.svg",
+        )
+        session.note("diagram", title="Raspberry Pi 5 header", shape="pinout", found=True)
+        session.note("diagram", title="a hydraulic circuit", error="it came back wrong twice")
+
+    page = (log.dir / card.PAGE_NAME).read_text()
+    assert "![Relay driven from GPIO 17](diagrams/19-40-12_relay.svg)" in page
+    assert "A 1k base resistor" in page
+    assert "Showed a diagram again" in page and "Raspberry Pi 5 header" in page
+    assert "it came back wrong twice" in page
+
+
+def test_a_diagram_the_panel_never_drew_still_says_so(log):
+    """No svg means the picture never came back. The spec is still on the card, so say that."""
+    with log:
+        session.note("diagram", title="Relay wiring", shape="wiring", svg="")
+
+    page = (log.dir / card.PAGE_NAME).read_text()
+    assert "the spec is on the card" in page
+    assert "![" not in page.split("Relay wiring")[1], "no broken image for a picture we lack"
+
+
+def test_no_call_site_anywhere_passes_a_kind_field():
+    """The test above proves the rule; this one enforces it across the source.
+
+    A ``session.note(..., kind=...)`` is only a TypeError when that line actually runs, which for
+    a tool means during a real conversation. Reading the source costs nothing and finds it now.
+    """
+    import re
+    from pathlib import Path
+
+    src = Path(__file__).resolve().parents[1] / "src" / "cyclops"
+    calls = []
+    for path in src.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for match in re.finditer(r"(?:session\.)?note\(\s*(.*?)\)", text, re.S):
+            if re.search(r"\bkind\s*=", match.group(1)):
+                line = text[: match.start()].count("\n") + 1
+                calls.append(f"{path.relative_to(src.parent.parent)}:{line}")
+    assert not calls, f"note() cannot take a 'kind' field; rename it at {', '.join(calls)}"

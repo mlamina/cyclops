@@ -2,8 +2,14 @@
 
 No microphone or speakers. Sends typed turns through the very same session config the voice
 app uses, and checks that (1) audio + transcript come back, (2) a photo handed to the model
-the way the shutter hands it one comes back described, and (3) the model calls the web_search
-tool and answers from what it found.
+the way the shutter hands it one comes back described, (3) the model calls the web_search tool
+and answers from what it found, and (4) it draws a diagram that lands on the card.
+
+The diagram turn is here rather than in ``tests/`` because it is the only check that runs the
+whole tool - the drawing model, the validation, the write, and the record the session log keeps.
+A TypeError in that record once threw *after* the picture was already on the panel, which cost
+the log line and left the model waiting for a tool result that never came; nothing offline saw
+it, because offline nothing calls the tool.
 """
 
 from __future__ import annotations
@@ -16,7 +22,7 @@ from openai.types.realtime import RealtimeServerEvent
 
 from .agent import VoiceAgent, function_calls
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE
-from .config import ConfigError, load_settings
+from .config import DIAGRAM_FILE, ConfigError, load_settings
 from .webcam import capture_image_async
 
 READY_TIMEOUT_S = 30.0
@@ -57,6 +63,20 @@ class TurnObserver:
     @property
     def has_transcript(self) -> bool:
         return any(t.strip() for t in self.transcripts)
+
+
+def _offered_at() -> float:
+    """When a diagram was last handed to the panel, or 0.0 - see ``config.DIAGRAM_FILE``.
+
+    This is what a headless run can check. Smoke keeps no session (the photo turn uses
+    ``captures/`` for the same reason), so a drawing has nowhere on the card to be written and
+    ``diagram_target`` correctly declines to invent one. But the offer is made either way, and a
+    file that appears is proof the model returned a spec that passed validation.
+    """
+    try:
+        return DIAGRAM_FILE.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 async def _await_or_fail(agent_task: asyncio.Task, event: asyncio.Event, limit_s: float) -> None:
@@ -127,6 +147,34 @@ async def _main() -> int:
             failures.append("model did not call web_search")
         if not turn.has_transcript:
             failures.append("turn 3 returned no transcript")
+
+        # A diagram, drawn for real. There is no panel and no session here, so the tool answers
+        # "shown: false" and writes nothing to the card - both correct. What is under test is the
+        # model calling it, the spec surviving validation, and the tool answering at all: this
+        # turn timing out is what a tool that raises instead of replying looks like from here.
+        turn.reset()
+        before = _offered_at()
+        await agent.send_text(
+            "Draw me a wiring diagram: a Raspberry Pi 5 GPIO 17 through a 1k resistor into the "
+            "IN pin of a 5V relay module, with 5V to VCC and ground to GND."
+        )
+        await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
+        offered = _offered_at() > before
+        print(
+            f"· turn 4: tools={turn.tool_calls}, {turn.seconds_of_audio:.1f}s audio, "
+            f"spec offered to the panel: {offered}"
+        )
+        if "draw_diagram" not in turn.tool_calls:
+            failures.append("model did not call draw_diagram")
+        elif not offered:
+            # The tool answered, so nothing is stuck - but no spec reached the panel, which means
+            # the drawing model failed validation twice.
+            failures.append("draw_diagram was called but no valid spec came back")
+        if not turn.has_transcript:
+            failures.append("turn 4 returned no transcript")
+        # Leave nothing waiting: on the Pi this file is what the panel's page draws, and a
+        # smoke run must not leave a diagram sitting behind the kiosk window.
+        DIAGRAM_FILE.unlink(missing_ok=True)
 
         if agent.unacked_item_ids:
             failures.append(f"server never acknowledged items {sorted(agent.unacked_item_ids)}")

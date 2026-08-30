@@ -1004,17 +1004,20 @@ class VoiceAgent:
 
         self.drawing_active = True
         try:
+            # Keeping and showing is inside the try, not in an else. It was in an else once, and
+            # a TypeError in the record it writes propagated straight out of this coroutine: the
+            # diagram was on the panel, and the model sat waiting for a tool result that was
+            # never sent until the user spoke over it.
             spec = await diagram.draw(request, self.settings)
+            output = await asyncio.to_thread(self._keep_and_show, spec)
         except diagram.DiagramError as exc:
             session.note("diagram", title=request[:80], error=str(exc))
             self._log(f"[tool] diagram failed: {exc}", stream=sys.stderr)
-            output: dict[str, Any] = {"ok": False, "error": str(exc)}
+            output = {"ok": False, "error": str(exc)}
         except Exception as exc:  # never leave the model waiting for a tool result
             session.note("diagram", title=request[:80], error=f"{type(exc).__name__}")
             self._log(f"[tool] diagram failed: {exc!r}", stream=sys.stderr)
             output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        else:
-            output = await asyncio.to_thread(self._keep_and_show, spec)
         finally:
             self.drawing_active = False
 
@@ -1030,7 +1033,11 @@ class VoiceAgent:
             await self._send_tool_output(call.call_id, missing)
             await self._request_response()
             return
-        output = await asyncio.to_thread(self._find_diagram, query)
+        try:
+            output = await asyncio.to_thread(self._find_diagram, query)
+        except Exception as exc:  # a card that will not read is not a reason to hang the model
+            self._log(f"[tool] find_diagram failed: {exc!r}", stream=sys.stderr)
+            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
@@ -1065,11 +1072,14 @@ class VoiceAgent:
 
         shown = diagram.offer(spec, kept) and diagram.show()
         if kept is not None:
+            # `shape`, not `kind`: session.note takes the record's own type as its first
+            # parameter, and that parameter is called kind. Passing one as a field is a
+            # TypeError at the call, not at import - so it costs a whole session to find.
             session.note(
                 "diagram",
                 title=kept.title,
                 caption=kept.caption,
-                kind=kept.kind,
+                shape=kept.kind,
                 file=f"{session.DIAGRAMS}/{kept.path.name}" if kept.path else "",
                 svg=f"{session.DIAGRAMS}/{kept.ident}.svg" if shown else "",
             )
@@ -1096,7 +1106,7 @@ class VoiceAgent:
             }
         best = found[0]
         shown = diagram.offer(best.spec, best) and diagram.show()
-        session.note("diagram", title=best.title, kind=best.kind, found=True)
+        session.note("diagram", title=best.title, shape=best.kind, found=True)
         return {
             "ok": True,
             "hits": len(found),
