@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from dataclasses import asdict
 from pathlib import Path
 
@@ -18,11 +19,12 @@ from django.http import (
     HttpResponseBadRequest,
     HttpResponseForbidden,
     JsonResponse,
+    StreamingHttpResponse,
 )
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import card, mixer, stats
+from .. import card, library, mixer, stats
 from ..config import (
     BROWSER_CLOSE_FLAG,
     DIAGRAM_FILE,
@@ -46,6 +48,21 @@ STATIC_FILES = {
     "directed-graph.min.js": "text/javascript",
 }
 MAX_SVG_BYTES = 4 * 1024 * 1024  # a 40-pin pinout is ~90 KB; this is a ceiling, not a budget
+
+# What may come out of a session folder, and as what. An allow-list by suffix for the same reason
+# STATIC_FILES is one: the set of legal answers is short enough to write down, and writing it down
+# is the end of every argument about what some other name might resolve to.
+MEDIA_TYPES = {
+    ".mp4": "video/mp4",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".svg": "image/svg+xml",
+}
+# The only sub-directories of a session a browser is ever given. video.mp4 sits in the root, which
+# is the third case and the reason this is a set of names rather than a single one.
+MEDIA_DIRS = frozenset({card.PHOTOS, card.DIAGRAMS})
+RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
+CHUNK = 64 * 1024
 
 _settings_cache: Settings | None = None
 
@@ -284,3 +301,131 @@ def set_volume(request: HttpRequest) -> HttpResponse:
     except ValueError:
         return HttpResponseBadRequest("level must be a whole percent")
     return JsonResponse({"volume": mixer.request(wanted)})  # clamped; echo what actually landed
+
+
+# ------------------------------------------------------------------ what is on the card
+
+
+def _entries() -> list[library.Entry]:
+    return library.entries(_settings().sessions_dir)
+
+
+def sessions(request: HttpRequest) -> JsonResponse:
+    """Every session on the card, newest first. Fetched when a view opens, not on a poll."""
+    return JsonResponse({"sessions": library.as_dicts(_entries())})
+
+
+def session(request: HttpRequest, name: str) -> JsonResponse:
+    """One session, without its transcript - which the panel never asks for."""
+    found = library.entry(_settings().sessions_dir, name)
+    if found is None:
+        raise Http404("no such session")
+    return JsonResponse(asdict(found))
+
+
+def session_records(request: HttpRequest, name: str) -> JsonResponse:
+    """One session's transcript. A separate route because the narrow layout does not show one.
+
+    Splitting it off the entry above is the whole of "everything on desktop, only the video on the
+    panel": the panel does not hide the transcript, it never asks for it, and a session that ran
+    for an hour costs it nothing.
+    """
+    if library.entry(_settings().sessions_dir, name) is None:
+        raise Http404("no such session")
+    return JsonResponse({"records": library.records(_settings().sessions_dir, name)})
+
+
+def media_stream(request: HttpRequest) -> JsonResponse:
+    """Every picture and every drawing on the card, newest first, as one run."""
+    return JsonResponse({"items": library.as_dicts(library.stream(_settings().sessions_dir))})
+
+
+def _media_file(name: str, relative: str) -> tuple[Path, str]:
+    """One file inside one session, or 404 - and never a file outside the sessions directory.
+
+    Two resolutions, each ending in a comparison rather than in an inspection of the string. The
+    folder must be a direct child of the sessions directory (``library.resolve``), and the file
+    must sit either in that folder or in one of the two sub-directories a session is allowed to
+    have. ``..``, an absolute name, a symlink out of the tree and a nested path all fail the same
+    comparison, so there is no ordering of checks to get wrong.
+    """
+    folder = library.resolve(_settings().sessions_dir, name)
+    if folder is None:
+        raise Http404("no such session")
+    try:
+        found = (folder / relative).resolve()
+    except OSError as exc:
+        raise Http404("no such file") from exc
+    parent = found.parent
+    if parent != folder and not (parent.parent == folder and parent.name in MEDIA_DIRS):
+        raise Http404("no such file")
+    kind = MEDIA_TYPES.get(found.suffix.lower())
+    if kind is None or not found.is_file():
+        raise Http404("no such file")
+    return found, kind
+
+
+def _chunks(path: Path, start: int, length: int):
+    """The bytes, a block at a time, so a 27 MB recording is never a 27 MB string."""
+    with path.open("rb") as handle:
+        handle.seek(start)
+        left = length
+        while left > 0:
+            block = handle.read(min(CHUNK, left))
+            if not block:
+                break
+            left -= len(block)
+            yield block
+
+
+def media(request: HttpRequest, name: str, relative: str) -> HttpResponse:
+    """A recording, a photo or a drawing, with byte ranges - which video is not optional about.
+
+    Django serves no ranges of its own (there is no ``HTTP_RANGE`` anywhere in it), and without a
+    206 Safari will not start an ``<video>`` at all and nothing anywhere can seek in one. It also
+    keeps this off gunicorn's 30 s worker timeout: scrubbing becomes a run of short requests
+    rather than one long transfer held open by a paused player.
+    """
+    path, kind = _media_file(name, relative)
+    size = path.stat().st_size
+
+    start, end = 0, size - 1
+    partial = False
+    asked = RANGE.match(request.META.get("HTTP_RANGE", "").strip())
+    if asked:
+        first, last = asked.groups()
+        if first:
+            start = int(first)
+            end = min(int(last), size - 1) if last else size - 1
+        elif last:  # bytes=-500: the *final* 500, which is a suffix length and not an offset
+            start = max(0, size - int(last))
+        else:
+            asked = None
+        if asked:
+            if start > end or start >= size:
+                refused = HttpResponse(status=416)
+                refused["Content-Range"] = f"bytes */{size}"
+                return refused
+            partial = True
+
+    length = end - start + 1
+    # A HEAD asks what the file is, not for it. Django does not strip the body for one and
+    # gunicorn drops it at the socket with a warning per request, having made us read 27 MB off
+    # the card first - which is the whole cost of the request and none of the answer.
+    body = () if request.method == "HEAD" else _chunks(path, start, length)
+    response = StreamingHttpResponse(body, content_type=kind, status=206 if partial else 200)
+    response["Content-Length"] = str(length)
+    response["Accept-Ranges"] = "bytes"
+    if partial:
+        response["Content-Range"] = f"bytes {start}-{end}/{size}"
+    # Not `immutable` like the vendored bundles: a diagram's picture can land after its spec, and
+    # a session being recorded right now grows. An hour is long enough to scrub a video without
+    # re-fetching it and short enough that nothing goes stale for a day.
+    response["Cache-Control"] = "private, max-age=3600"
+    response["X-Content-Type-Options"] = "nosniff"
+    if kind == "image/svg+xml":
+        # Our own panel drew it, from our own spec, on a private LAN - and it is still the one
+        # thing here that a browser would happily execute. It is rendered through <img>, which
+        # never runs script in one; this is the belt to that's braces.
+        response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+    return response

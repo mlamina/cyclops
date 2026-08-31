@@ -289,12 +289,30 @@ The three vendored bundles under `src/cyclops/admin/static/` are served from the
 
 ## Admin page
 
-`cyclops-admin` serves a small Django status page on **port 80**, so from anywhere on your
-network you can open `http://cyclops.local/` and see how the box is doing: **CPU
-temperature**, **memory**, **disk**, and **how many sessions have been recorded**. It is
-read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
-A session counts as finished once it has written its `session.md`; anything else shows as in
-progress.
+`cyclops-admin` serves a small Django page on **port 80**, so from anywhere on your network you
+can open `http://cyclops.local/` and see both how the box is doing and what it has recorded. It
+is read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
+
+Three screens, picked by the tabs in the header and by the hash in the address bar, so nothing
+ever navigates (the kiosk's browser is kept warm on this page and a reload would be felt):
+
+| | |
+|---|---|
+| **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
+| **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
+| **MEDIA** `#/media` | Every photo and every drawing on the card as one stream, newest first. Tap one to fill the screen and flip through with the arrows, the arrow keys, or the columns down either side. |
+
+**The session view changes shape with the screen.** On a laptop it is the recording on the left
+and the whole conversation on the right, with the photos and drawings sitting inline where they
+were taken; every line is stamped with its offset, and clicking one seeks the video to that
+moment — the transcript's `t` *is* the recording's timeline. On the 7" panel and on a phone it is
+the video and what it is called, and nothing else: at a bench you are not there to read. The
+narrow layout does not hide the transcript, it never asks the server for it.
+
+Recordings, photos and drawings are served from `/media/<session>/<file>` with byte ranges, which
+is what lets a video seek (and what lets Safari play one at all). Only `.mp4`, `.jpg` and `.svg`
+inside a session folder are ever served, and the folder has to be a direct child of `sessions/` —
+so there is nothing to escape out of and nothing else on the card to reach.
 
 The temperature tile is colour-coded on the Pi 5's own limits: green below 70 °C, orange from
 70, red from **80 °C**, where the firmware starts capping the clock. A permanently red tile is
@@ -302,8 +320,12 @@ not a bug in the page; it means the board wants better cooling.
 
 On the kiosk, the **SYSTEM tab** opens the same page fullscreen in Chromium on the panel — same
 green terminal chrome, so it reads as the next screen of the same device — and the page grows a
-full-width **Close** bar to get you back to the camera. That bar only appears for the Pi's own
-browser — from a laptop there is nothing to close. If the panel ever gets stuck showing the
+volume slider and a full-width **Close** bar to get you back to the camera. Both appear only for
+the Pi's own browser: from a laptop there is nothing to close, and the panel is meant to be the
+one place the volume is set. The slider sits on **SYSTEM** only, so browsing does not spend 52 of
+the panel's 480 px carrying a control you did not come for. Closing the page also returns it to
+SYSTEM, so the next tap lands where it always has. A drawing arriving from the agent outranks
+whatever you were looking at, takes the whole panel, and hands the screen back when it clears. If the panel ever gets stuck showing the
 browser, `touch ~/.cache/cyclops/browser-close` over ssh takes it down; so does quitting the
 kiosk.
 
