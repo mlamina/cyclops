@@ -15,7 +15,8 @@ what the strip and the tab row are made of instead: they used to be opaque bars,
 that same phosphor wash, corner shading and scanline field laid over the live picture, so the
 camera shows through the chrome as well as between it. The border carries the session state in
 its colour and glows inwards from it, which is the one thing that has to be readable across a
-workshop without reading any words.
+workshop without reading any words - and it says so in *hue* rather than in brightness, because
+dim green and bright green are the same colour to anyone more than a pace away.
 
 His eye is the one thing here that is a face rather than a readout, and it is what lets the rest
 stay this terse: a glance at the middle of the row answers "is he there, and what is he up to",
@@ -27,7 +28,8 @@ opens what the box has kept, because what you ask a face is what it remembers.
 The row's top rule runs in from both sides, lifts over the top of his head and comes down the
 other side. That shoulder is the join: it is what makes him part of the bar rather than a badge
 sitting on it. And nothing whatsoever moves while he is asleep, which is what makes any of the
-rest of it read as awake.
+rest of it read as awake. The single exception is the WAKE UP cell, which breathes: it is the
+only control left to press, and a control nobody finds is worse than one that beckons.
 
 Everything that holds still while the state does - the halo, the scanlines, the vignette, the
 frame and its glow, the mode word, the tab row and its two glyphs, the shoulder - is built once
@@ -86,30 +88,40 @@ def awake(state: str) -> bool:
     return state not in (IDLE, ERROR, STOPPING)
 
 
-# Phosphor palette. A Pip-Boy screen is one hue, so the chrome is one hue: the only colour that
-# changes is the halo, because it is the only part answering "is the agent up?" from across a
-# room. Amber and red are the two the tube is allowed - a terminal warning and a terminal fault.
+# Phosphor palette. The chrome is one hue - the brand, the rules, the ticks, the two tabs that do
+# not change, the words of the caption - because a panel where everything is a colour has none.
+# What steps off it is the handful of things that only mean anything while a session is up, and
+# they all wear the state's own accent. Asleep, none of them do, and the whole screen is green.
 GREEN = (86, 255, 140)  # phosphor at full brightness: text, live chrome
 GREEN_MID = (46, 176, 100)  # rules, dividers, glyphs at rest
 GREEN_DIM = (32, 118, 70)  # the faintest thing still legible on the panel
 AMBER = (255, 184, 60)
 RED = (255, 86, 70)
+# The two the tube gets while he is up. Asleep, the panel is one hue and he is the same green as
+# the furniture he sits in; awake, the live parts step off it. That is the whole job of these:
+# dim green and bright green are the same colour to anyone more than a pace away, so a panel that
+# said "awake" only by getting brighter did not say it at all.
+CYAN = (64, 226, 255)  # listening, speaking, looking - he is here and it is your turn
+VIOLET = (168, 150, 255)  # searching, drawing - he is off doing something of his own
 SCREEN = (5, 15, 10)  # the green-black the readout strip and the tab row are made of
 INK = (3, 11, 7)  # text on a filled tab
 
-# The halo answers one question only - is the agent up? - so the states collapse onto three
-# colours, plus red for a session that fell over. Anything finer is on the readout strip, which
-# spells the state out in words for anyone close enough to read them.
+# The halo answers one question only from across a room - is the agent up? - and the state's
+# accent answers it in colour rather than in brightness, which is the only half of it that
+# survives the distance. Everything wearing this moves together: the border and its inward glow,
+# the mode word, the signal meter, the session clock, the caption's marker and the lit edge of
+# the tab that is holding the session open. The rest of the chrome stays green, because a panel
+# where everything is an accent has none.
 HALOS = {
     IDLE: GREEN_DIM,
     STARTING: AMBER,
     STOPPING: AMBER,  # disconnecting is the same transition, run backwards
     CONNECTING: AMBER,
-    LISTENING: GREEN,
-    SPEAKING: GREEN,
-    LOOKING: GREEN,
-    SEARCHING: GREEN,
-    DRAWING: GREEN,
+    LISTENING: CYAN,
+    SPEAKING: CYAN,
+    LOOKING: CYAN,
+    SEARCHING: VIOLET,
+    DRAWING: VIOLET,
     ERROR: RED,
 }
 # What the strip calls each state. Kept here rather than taken from the controller's ``detail``
@@ -170,19 +182,19 @@ MOODS = {
     # Awake and attending. A resting breath, a barely-moving ring set, and the one mood whose
     # iris opens to your voice - which is the panel saying it can hear you.
     LISTENING: Mood(
-        tint=GREEN, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4
+        tint=CYAN, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4
     ),
     # Talking: a faster breath and a wider iris, because he is doing the thing rather than
     # waiting to. Barely opens to level here - the level *is* his own voice coming back.
     SPEAKING: Mood(
-        tint=GREEN, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5
+        tint=CYAN, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5
     ),
     # Looking at a photo. Wide, still, and it does not blink: this is a stare.
-    LOOKING: Mood(tint=GREEN, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0),
+    LOOKING: Mood(tint=CYAN, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0),
     # Hunting. Narrowed to a point, breathing fast, rings tearing round with a scanning arc.
-    SEARCHING: Mood(tint=GREEN, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
+    SEARCHING: Mood(tint=VIOLET, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
     # Drawing. Deliberate, and turning the other way, because it is making rather than looking.
-    DRAWING: Mood(tint=GREEN, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
+    DRAWING: Mood(tint=VIOLET, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
     # A fault. Still and red, and pointedly not pulsing: a thing that throbs is asking to be
     # watched, and this one is asking to be read - the caption underneath says what broke.
     ERROR: Mood(tint=RED, aperture=0.20, swell=0.0, breath_s=0.0, spin=0.0),
@@ -193,6 +205,7 @@ MOODS = {
 # "listening — talk to me" holds still. Every phrase the controller publishes obeys the same rule,
 # which is why none of them has to say twice whether it is a job or a state.
 BUSY_MARK = "…"
+MARKER = "› "  # what every caption opens with, and the smallest thing that wears the accent
 CAPTION_ALPHA = 245
 CAPTION_DOTS = 3
 DOT_PERIOD_S = 1.2  # one sweep of the three dots...
@@ -241,6 +254,15 @@ EYE_RISE = 0.052  # how far the centre sits above the tab row's top rule - 25 px
 EYE_SHOULDER = 0.013  # ...and the gap between his rim and the rule that arcs over it
 EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on purpose: this
 # one sits over the middle of the picture, and a porthole you cannot see through is a hole
+# The one thing that moves on a sleeping panel. Everything else holds still - that stillness is
+# what makes awake read as awake - but the button that ends it may say so, because a control that
+# does nothing until you find it is worth pointing at. A slow swell, not a flash: this is an
+# invitation, and a panel blinking at you across a workshop is an alarm.
+WAKE_PERIOD_S = 2.9  # seconds a breath takes, and not a multiple of any other on this panel
+WAKE_GLOW = 0.62  # how far the glyph and the word travel from GREEN_MID towards GREEN...
+WAKE_WASH = 0.13  # ...and how much colour swells into the cell behind them
+WAKE_WASH_ALPHA = 120  # at this much, at the top of a breath - see mix() for why not a fill
+
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
 # the caption may do, because this is the one thing readable across a workshop
@@ -791,6 +813,8 @@ class Overlay:
             # but the box is still working, and a panel that went stone still the moment you
             # pressed stop would look like it had stopped rather than like it was finishing.
             self._draw_rim(d, halo, phase)
+        elif state == IDLE and pressed != "wake":
+            self._draw_invite(d, phase)
         if flash > 0.0:
             # Green-white rather than white: a photo taken through a phosphor screen.
             d.rectangle([0, 0, self.width, self.height], fill=(214, 255, 228, int(190 * flash)))
@@ -856,7 +880,10 @@ class Overlay:
         clock_right, _, meter_right = self._readouts(taping)
         whole = 0 if elapsed is None else int(elapsed)
         clock = "--:--" if elapsed is None else f"{whole // 60:02d}:{whole % 60:02d}"
-        colour = (*GREEN_DIM, 255) if elapsed is None else (*GREEN, 255)
+        # Dim green with nothing to count, the state's accent the moment there is - the numbers
+        # that only mean something during a session are the right place for the colour that only
+        # appears during one.
+        colour = (*GREEN_DIM, 255) if elapsed is None else (*halo, 255)
         self._text(d, clock_right, cy, clock, self.font_read, colour, align="r")
 
         seg_w, seg_h, gap = self._seg
@@ -898,8 +925,8 @@ class Overlay:
         # Off the limit before the trim and back onto the width after it, so a sentence long
         # enough to be elided cannot push its own dots off the edge of the panel.
         dots_w = self._dots_w if busy else 0.0
-        text = self._elide(f"› {text}", font, limit - dots_w)
-        width = font.getlength(text) + dots_w
+        text = self._elide(text, font, limit - dots_w - font.getlength(MARKER))
+        width = font.getlength(MARKER + text) + dots_w
         height = round(24 * self.scale)
         y = self.footer.y - round(12 * self.scale) - height / 2
         inset = round(8 * self.scale)
@@ -916,7 +943,12 @@ class Overlay:
         # background an awake panel that pulses says nothing at all.
         sunk, lit = caption_pulse(phase) if session_up(state) else (0.0, 0)
         colour = mix(halo if state == ERROR else GREEN, SCREEN, sunk)
-        used = self._text(d, x + inset, y, text, font, (*colour, CAPTION_ALPHA))
+        # The marker takes the accent and the sentence does not. A whole line of running text in
+        # cyan over a live camera is harder to read than the same line in phosphor, and the
+        # marker is the part that is decoration anyway - so it is the part that gets to be a
+        # colour, and it breathes with the words it introduces.
+        used = self._text(d, x + inset, y, MARKER, font, (*mix(halo, SCREEN, sunk), CAPTION_ALPHA))
+        used += self._text(d, x + inset + used, y, text, font, (*colour, CAPTION_ALPHA))
         if busy and lit:
             # Hard against the last letter, where an ellipsis belongs - these are standing in
             # for the one the phrase arrived with, not sitting beside it as a separate mark.
@@ -1003,6 +1035,40 @@ class Overlay:
                 fill=(*c, 255),
                 width=stroke,
             )
+
+    def _draw_invite(self, d: ImageDraw.ImageDraw, phase: float) -> None:
+        """Breathe the WAKE UP cell, because it is the only thing left to do.
+
+        Drawn per frame over the cell the base baked at rest, which is why the wash goes down
+        first and the glyph and the word on top of it: the base's own copies of those are
+        underneath, and this covers them.
+
+        Only while he is asleep proper. Not on a fault - a red panel with a green button
+        beckoning at you is a machine asking to be prodded rather than read, and the line under
+        the picture is where a fault has something to say.
+        """
+        cell = self._cells["wake"]
+        swell = breath(phase, WAKE_PERIOD_S)
+        inset = max(1, round(3 * self.scale))
+        d.rounded_rectangle(
+            [cell.x + inset, cell.y + inset, cell.right - inset, cell.bottom - inset],
+            radius=max(0, self.radius - inset),
+            corners=(False, False, True, False),
+            fill=(*mix(SCREEN, GREEN, WAKE_WASH * swell), round(WAKE_WASH_ALPHA * swell)),
+        )
+        colour = mix(GREEN_MID, GREEN, WAKE_GLOW * swell)
+        cx, gy, radius = self._glyph_at(cell)
+        self._glyph_mic(d, cx, gy, radius, colour, IDLE)
+        self._text(
+            d,
+            cx,
+            cell.bottom - round(23 * self.scale),
+            tab_label("wake", IDLE),
+            self.font_tab,
+            (*colour, 255),
+            align="c",
+            tracking=max(1.0, 2.4 * self.scale),
+        )
 
     def _draw_rim(self, d: ImageDraw.ImageDraw, halo: tuple, phase: float) -> None:
         """Re-stroke the border, sunk by one breath. Only ever called while a session is up.

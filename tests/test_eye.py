@@ -259,17 +259,67 @@ def _lit(crop: np.ndarray) -> int:
     return int(((crop[:, :, :3].astype(int).sum(axis=2) > 300) & (crop[:, :, 3] > 150)).sum())
 
 
-def test_nothing_moves_while_he_is_asleep() -> None:
-    # The headline. Every animation on this panel has to be gated on there being a session, and
-    # this is the one assertion that notices when a new one is not - including the caption's
-    # breath, which used to run at IDLE and made a resting panel quietly pulse.
+def _asleep(ov: overlay.Overlay, state: str, detail: str = "") -> list[np.ndarray]:
+    shown = dict(state=state, level=0.0, detail=detail, elapsed=None)
+    _settle(ov, **shown)  # the eye is *meant* to travel between moods, and then hold
+    return [ov.render(phase=100.0 + i * 0.31, **shown) for i in range(40)]
+
+
+def test_nothing_moves_while_he_is_asleep_except_the_way_out() -> None:
+    # The headline. Every animation on this panel is gated on there being a session, and this is
+    # the one assertion that notices when a new one is not - including the caption's breath,
+    # which used to run at IDLE and made a resting panel quietly pulse. The single exception is
+    # the WAKE UP cell, which is allowed to beckon because it is the only thing left to press.
     ov = _panel()
+    keep = ov._cells["wake"]
     for state, detail in ((overlay.IDLE, ""), (overlay.ERROR, "OpenAI rejected the API key")):
-        shown = dict(state=state, level=0.0, detail=detail, elapsed=None)
-        _settle(ov, **shown)  # the eye is *meant* to travel between moods, and then hold
-        frames = [ov.render(phase=100.0 + i * 0.73, **shown) for i in range(40)]
+        frames = [f.copy() for f in _asleep(ov, state, detail)]
+        for f in frames:
+            f[keep.y : keep.bottom, keep.x : keep.right] = 0
         moved = [i for i, f in enumerate(frames) if not np.array_equal(f, frames[0])]
-        assert not moved, f"{state} moved at phases {moved[:5]}"
+        assert not moved, f"{state} moved outside the wake cell at frames {moved[:5]}"
+
+
+def _invite(ov: overlay.Overlay, phase: float) -> float:
+    """How bright the WAKE UP glyph is, off a rendered frame."""
+    cell = ov._cells["wake"]
+    cx, gy, r = ov._glyph_at(cell)
+    frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=phase)
+    crop = frame[gy - r : gy + r, cx - r : cx + r].astype(float)
+    return float(crop[crop[:, :, 3] > 150][:, 1].mean())
+
+
+def test_the_way_out_glows_while_he_is_asleep() -> None:
+    ov = _panel()
+    lit = [_lit(f[c.y : c.bottom, c.x : c.right])
+           for c in (ov._cells["wake"],) for f in _asleep(ov, overlay.IDLE)]
+    assert max(lit) > min(lit), "the WAKE UP cell held still - nothing invites the tap"
+
+
+def test_the_glow_swells_rather_than_flashing() -> None:
+    # A swell, not a blink: a panel flashing at you across a workshop is an alarm, and a control
+    # that switches between two brightnesses reads as a fault light rather than as an invitation.
+    # Same raised-cosine argument the caption's breath makes.
+    ov = _panel()
+    sweep = [_invite(ov, i * overlay.WAKE_PERIOD_S / 24) for i in range(24)]
+    steps = {round(v) for v in sweep}
+    assert len(steps) > 8, f"it steps rather than swelling: {sorted(steps)}"
+    assert min(sweep) > 0.55 * max(sweep), "it goes dark at the bottom of the breath"
+    assert max(sweep) > 1.15 * min(sweep), "the swell is too slight to notice"
+    for t in (0.0, 1.3, 86_400.7):  # ...and it comes back round
+        assert eye.breath(t + overlay.WAKE_PERIOD_S, overlay.WAKE_PERIOD_S) == pytest.approx(
+            eye.breath(t, overlay.WAKE_PERIOD_S), abs=1e-6
+        )
+
+
+def test_a_fault_does_not_beckon() -> None:
+    # A red panel with a green button pulsing at you is a machine asking to be prodded rather
+    # than read, and a fault has something to say on the line under the picture.
+    ov = _panel()
+    cell = ov._cells["wake"]
+    lit = [_lit(f[cell.y : cell.bottom, cell.x : cell.right])
+           for f in _asleep(ov, overlay.ERROR, "OpenAI rejected the API key")]
+    assert len(set(lit)) == 1
 
 
 def test_the_rings_turn_while_he_is_awake() -> None:
@@ -334,6 +384,62 @@ def test_the_pupil_widens_with_your_voice() -> None:
     quiet = _lit(_face(ov, ov.render(level=0.0, **shown)))
     loud = _lit(_face(ov, ov.render(level=1.0, **shown)))
     assert loud > quiet
+
+
+def test_awake_is_a_different_colour_and_not_just_a_brighter_green() -> None:
+    # The whole point of the accent. Dim green and bright green are the same colour to anyone
+    # more than a pace away, so a panel that said "awake" by getting brighter did not say it.
+    # Measured on the border, which is the one thing meant to be read from across a workshop.
+    ov = _panel()
+
+    def rim(state: str) -> np.ndarray:
+        shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+        _settle(ov, **shown)
+        row = ov.render(phase=0.0, **shown)[0].astype(float)
+        px = row[row[:, 3] > 200][:, :3]
+        return px.mean(axis=0) / max(1.0, px.mean(axis=0).sum())  # hue, with brightness divided out
+
+    asleep = rim(overlay.IDLE)
+    for state in (overlay.LISTENING, overlay.SEARCHING, overlay.CONNECTING, overlay.ERROR):
+        apart = float(np.abs(rim(state) - asleep).sum())
+        assert apart > 0.1, f"{state} is the same hue as asleep, only brighter ({apart:.3f})"
+
+
+def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
+    # A panel where everything is an accent has none. The brand, the rules and the two tabs that
+    # do not change stay phosphor whatever he is doing.
+    ov = _panel()
+    shown = dict(state=overlay.LISTENING, level=0.8, elapsed=73.0)
+    _settle(ov, **shown)
+    frame = ov.render(phase=10.0, **shown)
+
+    def bluest(box: tuple[int, int, int, int]) -> int:
+        crop = frame[box[1] : box[3], box[0] : box[2]].astype(int)
+        px = crop[crop[:, :, 3] > 200]
+        return int((px[:, 2] - px[:, 1]).max()) if len(px) else -999
+
+    clock_right, _, meter_right = ov._readouts(False)
+    meter_x = int(ov._meter_x(meter_right))
+    cy = ov.header.center[1]
+    assert bluest((meter_x, cy - 10, int(meter_right), cy + 10)) > 0, "the meter is not accented"
+    clock = (int(clock_right - ov._clock_w), cy - 10, int(clock_right), cy + 10)
+    assert bluest(clock) > 0, "the session clock is not accented"
+    # The caption's marker takes the accent and its sentence does not - a running line in cyan
+    # over a live camera is harder to read than the same line in phosphor.
+    slab_x = ov.viewport.x + ov.pad + round(34 * ov.scale) + round(8 * ov.scale)
+    marker_w = int(ov.font_caption.getlength(overlay.MARKER))
+    top = int(ov.footer.y - round(12 * ov.scale) - round(24 * ov.scale) / 2) - 6
+    assert bluest((slab_x, top, slab_x + marker_w, top + 14)) > 0, "the marker is not accented"
+    assert bluest((slab_x + marker_w, top, slab_x + marker_w + 60, top + 14)) < 0, (
+        "the caption's own words went blue"
+    )
+    # The SNAP glyph and its word, well inside the cell: the panel's own border runs along the
+    # bottom of it and that *is* accented, which is the point.
+    snap = ov._cells["shutter"]
+    cx, gy, r = ov._glyph_at(snap)
+    assert bluest((cx - r - 2, gy - r - 2, cx + r + 2, snap.bottom - ov.line - 1)) < 0, (
+        "SNAP went blue"
+    )
 
 
 def test_he_changes_colour_with_what_he_is_doing() -> None:
