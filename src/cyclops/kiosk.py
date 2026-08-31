@@ -268,8 +268,8 @@ class Kiosk:
         self._browser: subprocess.Popen | None = None  # the admin browser, kept warm from boot
         self._admin_busy = threading.Event()  # set from the tap until the page is done with
         # A second latch rather than reusing _admin_busy, which the tab row reads to decide
-        # whether SYSTEM is lit (see _pressed_now). A diagram is not the system page, and a
-        # panel that lights SYSTEM whenever Cyclops draws would be telling the truth about the
+        # whether HISTORY is lit (see _pressed_now). A diagram is not that page, and a
+        # panel that lights HISTORY whenever Cyclops draws would be telling the truth about the
         # browser and a lie about what you are looking at. Both still gate _open_admin, so the
         # two can never be up at once.
         self._page_busy = threading.Event()  # any page has the panel: the admin one or a diagram
@@ -374,7 +374,7 @@ class Kiosk:
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
-        """Which tab to draw as held. The SYSTEM tab stays lit while its page is up.
+        """Which tab to draw as held. The HISTORY tab stays lit while its page is up.
 
         Uncovering a warm browser is immediate, so this is normally seen for a frame or two.
         It still earns its place on the one tap that has to start a browser: without it the
@@ -435,7 +435,13 @@ class Kiosk:
     # ---- admin page ----
 
     def _admin_url(self) -> str:
-        return f"http://127.0.0.1:{self.controller.settings.admin_port}/"
+        """The page, opened on the sessions list rather than on the four numbers.
+
+        The tab says HISTORY, so it had better land on some. The hash is what the page routes on
+        and it never navigates, so this only decides which screen the warm browser is holding when
+        it is uncovered - the numbers are still one tap away, on the third tab.
+        """
+        return f"http://127.0.0.1:{self.controller.settings.admin_port}/#/sessions"
 
     def prewarm(self) -> None:
         """Start the admin browser now, in the background, so the gear only has to uncover it."""
@@ -865,7 +871,7 @@ def main() -> None:
         camera.wait_for_frame()
     except WebcamError as exc:
         # A missing camera is a degraded panel, not a dead one. Everything else still works -
-        # SESSION starts a session, SYSTEM opens the admin page, the light and the volume
+        # SESSION starts a session, HISTORY opens the admin page, the light and the volume
         # behave - and a Pi showing nothing at all reads as broken hardware, which sends
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
@@ -900,7 +906,7 @@ def main() -> None:
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
         "  the tab row along the bottom: SNAP shows Cyclops a photo · SESSION starts and stops\n"
-        "  SYSTEM opens the admin page, which is where the volume lives\n"
+        "  HISTORY opens the recordings and pictures, and is where the volume lives\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,

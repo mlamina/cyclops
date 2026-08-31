@@ -32,6 +32,12 @@ on every device on the network is exactly the sprawl this replaced.
     --u: clamp(0.7px, min(0.125vw, 0.2083vh), 2px);
   }
   * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+  /* A finger on a picture is scrolling, not picking it up. Chromium makes every <img> draggable
+     by default, and on a touchscreen that drag swallows the pan: measured on the media grid, a
+     swipe starting on empty space moved 148 px and the same swipe starting on a photo moved 0.
+     There is nothing here to drag a picture *to*, so no image is ever a drag handle. Also kills
+     the long-press callout, which is the same gesture arriving a moment later. */
+  img, video { -webkit-user-drag: none; user-drag: none; -webkit-touch-callout: none; }
   ::-webkit-scrollbar { width: 0; height: 0; }
   html, body {
     margin: 0;
@@ -47,7 +53,7 @@ on every device on the network is exactly the sprawl this replaced.
     font-family: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", Menlo, monospace;
     font-size: calc(14 * var(--u));
     /* Cleared of the border below, and of the glow that falls inwards from it - the kiosk's
-       own measurement, so tapping SYSTEM changes what the screen says and not what kind of
+       own measurement, so tapping HISTORY changes what the screen says and not what kind of
        thing it is. */
     padding: calc(17 * var(--u));
     display: grid;
@@ -82,6 +88,20 @@ on every device on the network is exactly the sprawl this replaced.
     pointer-events: none;
     z-index: 9;
   }
+
+  /* - except over the thing you opened to look at. The scanlines and the glow are what makes
+     this a screen rather than a web page, and they earn that on the frame, the numbers and the
+     thumbnails. They do not earn it on a wiring diagram you are trying to read a pin label off,
+     or on a photo you took to check a part number: there the phosphor is between you and the
+     only reason the picture is on the card.
+
+     Two mechanisms, because there are two shapes of "looking at it". A picture that has taken
+     the whole screen - the lightbox, and a drawing on the panel - is the entire view, so both
+     overlays simply stop. A video or a photo sitting in a page that still has a header and a
+     transcript around it lifts itself over them instead, and leaves the rest of the page
+     wearing them. The border stays either way: that is the bezel, not a filter. */
+  body.lit::after, body.drawing::after { content: none; }
+  body.lit::before, body.drawing::before { box-shadow: none; }
   /* The server went away; what is on screen is stale, and says so up in the header. */
   body.offline { opacity: .5; }
 
@@ -311,7 +331,7 @@ on every device on the network is exactly the sprawl this replaced.
   body.view-sessions .sessions,
   body.view-session  .watch,
   body.view-media    .media { display: grid; }
-  /* The volume lives on SYSTEM, where it always has. Carrying it into every view would cost the
+  /* The volume lives on the System screen. Carrying it into every view would cost the
      panel 52 of its 480 px on every screen to hold a control nobody came to that screen to use. */
   body.view-status:not(.drawing) .volume { display: grid; }
   /* A drawing is Cyclops answering a question out loud. It outranks anything you were reading. */
@@ -334,42 +354,61 @@ on every device on the network is exactly the sprawl this replaced.
 
   /* ---- the session list ---- */
   .sessions, .media { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+  /* Two columns and no padding on the row itself - the gaps around the still *were* the padding.
+     The still is flush to three of the row's edges and stretches to whatever height the title
+     needs; the column is 4:3 against the min-height, so `cover` has almost nothing to crop off a
+     640x480 frame. The text carries its own padding instead. */
   .row {
+    position: relative;
     display: grid;
-    grid-template-columns: calc(120 * var(--u)) minmax(0, 1fr);
-    gap: calc(4 * var(--u)) calc(12 * var(--u));
-    align-items: center;
+    grid-template-columns: calc(132 * var(--u)) minmax(0, 1fr);
+    align-items: stretch;
+    min-height: calc(100 * var(--u));
     width: 100%; text-align: left;
     background: var(--screen); color: inherit; font: inherit;
     border: calc(1 * var(--u)) solid var(--dim);
-    padding: calc(8 * var(--u));
+    padding: 0;
     margin-bottom: calc(8 * var(--u));
+    overflow: hidden;   /* the still is cut by the row's own edge rather than drawn past it */
   }
   .row:active, .row:focus-visible { border-color: var(--green); outline: none; }
   /* The still is the recording's own first seconds, asked for with a media fragment - see the
      script. No poster file, no ffmpeg, nothing cached on the card. */
+  .shot { position: relative; display: block; background: #000; min-width: 0; }
   .thumb {
-    width: 100%; aspect-ratio: 4 / 3; display: block; background: #000;
-    border: calc(1 * var(--u)) solid var(--dim); object-fit: cover;
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    display: block; border: 0; object-fit: cover; background: #000;
   }
   .thumb.none {
-    display: grid; place-content: center; color: var(--dim);
+    display: grid; place-content: center; text-align: center; color: var(--dim);
     font-size: calc(11 * var(--u)); letter-spacing: .2em;
   }
+  /* How long it runs, where a video player puts it: on the picture, bottom left. It is a fact
+     about the recording, so it belongs on the recording and not in a line of prose beside it. */
+  .len {
+    position: absolute; left: 0; bottom: 0; z-index: 2;
+    padding: calc(3 * var(--u)) calc(7 * var(--u));
+    background: rgba(0, 0, 0, .72); color: var(--green);
+    font-size: calc(12 * var(--u)); letter-spacing: .06em;
+    font-variant-numeric: tabular-nums;
+  }
+  .rowtext { padding: calc(10 * var(--u)) calc(12 * var(--u)); align-self: center; min-width: 0; }
   .rowtitle {
     font-size: calc(16 * var(--u)); color: var(--green); line-height: 1.25;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    padding-right: calc(96 * var(--u));   /* keeps a long title out from under the date */
   }
-  .rowmeta {
-    font-size: calc(12 * var(--u)); color: var(--dim); letter-spacing: .12em;
-    text-transform: uppercase; margin-top: calc(6 * var(--u));
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  /* The corner, and only the corner: when it happened, stacked so it stays narrow. */
+  .rowwhen {
+    position: absolute; top: calc(9 * var(--u)); right: calc(11 * var(--u)); z-index: 2;
+    text-align: right; white-space: nowrap;
+    font-size: calc(12 * var(--u)); color: var(--dim);
+    letter-spacing: .12em; text-transform: uppercase;
   }
-  .row .thumb, .row .thumb.none { grid-row: 1 / -1; }
-  .rowtext, .rowmeta { grid-column: 2; }
+  .rowtime, .rowsub { display: block; margin-top: calc(2 * var(--u)); }
+  .rowsub.live { color: var(--amber); }
+  .rowsub.broke { color: var(--red); }
   .rowsum { display: none; }
-  .rowmeta .live { color: var(--amber); }
-  .rowmeta .broke { color: var(--red); }
 
   /* ---- the picture stream ---- */
   .grid {
@@ -404,7 +443,8 @@ on every device on the network is exactly the sprawl this replaced.
      stop working to read. The whole conversation is on the laptop, where you are sitting down. */
   .watch { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
   .playing { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; gap: calc(8 * var(--u)); }
-  .video { width: 100%; height: 100%; min-height: 0; background: #000; display: block; object-fit: contain; }
+  .video { width: 100%; height: 100%; min-height: 0; background: #000; display: block;
+           object-fit: contain; position: relative; z-index: 10; }
   .stitle {
     font-size: calc(16 * var(--u)); color: var(--green); line-height: 1.3;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -429,11 +469,104 @@ on every device on the network is exactly the sprawl this replaced.
   .aside b { color: var(--mid); font-style: normal; font-weight: normal; }
   .line.bad .aside { color: var(--red); }
   .inline { margin-top: calc(8 * var(--u)); border: calc(1 * var(--u)) solid var(--dim);
-            background: #000; display: block; max-width: 100%; }
+            background: #000; display: block; max-width: 100%;
+            position: relative; z-index: 10; }
+
+  /* ---- a recording on the panel gets the panel ---- */
+  /* The same bargain the drawing gets, and for the same reason. Measured on the panel before
+     this: the header, the caption line and the full-width way out took 221 of 480 rows - 46% of
+     the screen - and what was left showed the picture at 337x253, which is 22% of a 7" display
+     spent on the thing you opened the screen to look at. Dropping the chrome puts it at 595x446:
+     3.1x the area, and the biggest lever there is by a distance.
+
+     The side bars are not waste and cannot be recovered: the camera is capped at 640x480 and the
+     panel is 800x480, so an uncropped frame always leaves ~85 px down each side. Cropping to fill
+     would win another 45% and lose a fifth of every frame, which is the wrong trade for footage
+     you replay to read a part number off. So the bars get the controls instead, where they cost
+     no rows at all - and the picture keeps every pixel it has.
+
+     `solo` is set from the script rather than by a media query, because it is not only a width:
+     it also decides that the transcript is never fetched, and that the video wears our controls
+     instead of the browser's. One switch, one place. */
+  body.solo header, body.solo .caption { display: none; }
+  /* One row, like a drawing gets. Hidden children stop being grid items, so what is left lands in
+     the first `auto` track and the 1fr below it quietly keeps the space - 18 px of picture that
+     nothing was using and nothing was going to admit to. */
+  body.solo { grid-template-rows: minmax(0, 1fr); }
+  body.solo .playing { position: relative; grid-template-rows: minmax(0, 1fr); gap: 0; }
+
+  /* Everything below is positioned from the script, which measures where the picture actually
+     landed inside the element - object-fit leaves letterboxing that CSS cannot see. */
+  .vtitle, .scrub, .rig, .back { display: none; }
+
+  .vtitle {
+    position: absolute; z-index: 11;
+    padding: calc(9 * var(--u)) calc(13 * var(--u));
+    background: linear-gradient(to bottom, rgba(0, 0, 0, .75), transparent);
+    color: var(--mid); font-size: calc(13 * var(--u)); letter-spacing: .06em;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    pointer-events: none;
+  }
+  body.solo .vtitle { display: block; }
+
+  /* 40u of touch target for an 8u track: the bar you can hit is not the bar you can see, and on
+     a panel the first one has to be a thumb wide. */
+  .scrub {
+    position: absolute; z-index: 11; height: calc(40 * var(--u));
+    display: grid; align-items: center; padding: 0 calc(12 * var(--u));
+    background: linear-gradient(to top, rgba(0, 0, 0, .75), transparent);
+    touch-action: none;
+  }
+  body.solo .scrub { display: grid; }
+  .scrub-track {
+    height: calc(8 * var(--u)); background: #0d2418;
+    border: calc(1 * var(--u)) solid var(--dim);
+  }
+  .scrub-fill { height: 100%; width: 0; background: var(--green); }
+  .scrub:active .scrub-fill { background: #fff; }
+
+  body.solo .rig { display: grid; }
+  .rig {
+    position: fixed; z-index: 11; justify-items: center; gap: calc(9 * var(--u));
+  }
+  .rig-play {
+    width: calc(76 * var(--u)); height: calc(76 * var(--u));
+    background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
+    color: var(--green); padding: 0;
+  }
+  .rig-play:active { background: var(--green); color: var(--ink); }
+  .pg { width: 60%; height: 60%; fill: currentColor; display: block; margin: 0 auto; }
+  .rig-play .pg-pause, .rig-play[data-on] .pg-play { display: none; }
+  .rig-play[data-on] .pg-pause { display: inline; }
+  .rig-time {
+    font-size: calc(13 * var(--u)); text-align: center; line-height: 1.45;
+    font-variant-numeric: tabular-nums; color: var(--dim);
+  }
+  #vnow { display: block; color: var(--green); }
+
+  /* Two ways out, at opposite ends of the same bar so neither is the other by accident: back up
+     one step to the list, and off the page entirely to the camera. */
+  body.solo .back { display: block; }
+  .back {
+    position: fixed; top: calc(22 * var(--u)); right: calc(22 * var(--u)); z-index: 11;
+    width: calc(58 * var(--u)); height: calc(58 * var(--u));
+    background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
+    color: var(--green); font: inherit; font-size: calc(30 * var(--u)); line-height: 1;
+  }
+  .back:active { background: var(--green); color: var(--ink); }
+  /* Written with :not(.drawing) rather than left to the cascade: the drawing's own corner rule is
+     further up this file, and a tie on specificity would hand the panel to whichever came last. */
+  body.solo:not(.drawing) .close {
+    position: fixed; top: auto; left: auto;
+    bottom: calc(22 * var(--u)); right: calc(22 * var(--u)); z-index: 11;
+    width: calc(58 * var(--u)); height: calc(58 * var(--u));
+    margin: 0; font-size: calc(24 * var(--u)); letter-spacing: 0; background: var(--screen);
+  }
+  body.solo:not(.drawing) .close .word { display: none; }
 
   /* ---- flipping through ---- */
   .lightbox {
-    display: none; position: fixed; inset: 0; z-index: 8; background: #000;
+    display: none; position: fixed; inset: 0; z-index: 12; background: #000;
     grid-template-rows: minmax(0, 1fr) auto; padding: calc(20 * var(--u));
   }
   body.lit .lightbox { display: grid; }
@@ -476,18 +609,17 @@ on every device on the network is exactly the sprawl this replaced.
     .tiles { grid-template-columns: repeat(4, 1fr); grid-template-rows: calc(150 * var(--u));
              align-content: start; }
     .sessions, .media { padding: calc(12 * var(--u)) calc(4 * var(--u)); }
-    .row { grid-template-columns: calc(160 * var(--u)) minmax(0, 1fr) auto;
-           gap: calc(18 * var(--u)); padding: calc(10 * var(--u)); }
-    .row .thumb, .row .thumb.none { grid-row: auto; }
-    .rowmeta { grid-column: 3; }
+    /* 176 wide against a 132 min-height is 4:3 to the pixel, so the still is uncropped as well
+       as ungapped. */
+    .row { grid-template-columns: calc(176 * var(--u)) minmax(0, 1fr);
+           min-height: calc(132 * var(--u)); }
     .row:hover { border-color: var(--mid); }
+    .rowtext { padding: calc(14 * var(--u)) calc(16 * var(--u)); }
     .rowsum {
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
       color: var(--dim); font-size: calc(13 * var(--u)); line-height: 1.4;
-      margin-top: calc(7 * var(--u));
+      margin-top: calc(7 * var(--u)); padding-right: calc(96 * var(--u));
     }
-    .rowmeta { text-align: right; margin: 0; }
-    .row .rowmeta { white-space: normal; }
     .grid { grid-template-columns: repeat(auto-fill, minmax(calc(210 * var(--u)), 1fr));
             gap: calc(10 * var(--u)); }
     .cell:hover { border-color: var(--mid); }
@@ -524,9 +656,9 @@ on every device on the network is exactly the sprawl this replaced.
     <span class="brand">CYCLOPS</span>
     <span class="bar"></span>
     <nav class="nav">
-      <button class="tab" type="button" data-go="/">System</button>
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
       <button class="tab" type="button" data-go="/media">Media</button>
+      <button class="tab" type="button" data-go="/">System</button>
     </nav>
     <span class="link"></span>
   </header>
@@ -561,6 +693,10 @@ on every device on the network is exactly the sprawl this replaced.
   <main class="view watch" id="v-session">
     <div class="playing">
       <video class="video" id="video" controls playsinline preload="metadata"></video>
+      <!-- Over the picture, and only on the panel: the drawing already says its own name in the
+           top-left corner of the screen it took, and a recording should say it the same way. -->
+      <div class="vtitle" id="vtitle"></div>
+      <div class="scrub" id="scrub"><div class="scrub-track"><div class="scrub-fill" id="scrubfill"></div></div></div>
       <div class="caption">
         <div class="stitle" id="stitle"></div>
         <div class="smeta" id="smeta"></div>
@@ -568,6 +704,18 @@ on every device on the network is exactly the sprawl this replaced.
       </div>
     </div>
     <div class="talk" id="talk"></div>
+    <!-- The controls, out in the bar the aspect mismatch hands us for nothing. Drawn rather than
+         typed: DejaVu Sans Mono is what the panel has, and a pause glyph is not in it. -->
+    <div class="rig" id="rig">
+      <button class="rig-play" id="play" type="button" aria-label="Play">
+        <svg class="pg" viewBox="0 0 24 24" aria-hidden="true">
+          <path class="pg-play" d="M7 4 L20 12 L7 20 Z"/>
+          <path class="pg-pause" d="M7 4 h4 v16 h-4 z M13 4 h4 v16 h-4 z"/>
+        </svg>
+      </button>
+      <div class="rig-time"><span id="vnow">0:00</span><span id="vall"></span></div>
+    </div>
+    <button class="back" id="back" type="button" aria-label="Back to sessions">&#8249;</button>
   </main>
 
   <main class="view media" id="v-media"></main>
@@ -660,13 +808,16 @@ on every device on the network is exactly the sprawl this replaced.
     finally {
       close.disabled = false;
       if (closeword) closeword.textContent = '\u00a0Close';
-      // Leaving the page leaves the screen too: the next tap of SYSTEM should land on the four
-      // numbers it has always landed on, not wherever this was left three days ago.
-      location.hash = '#/';
+      // Leaving the page leaves the screen too: the next tap of HISTORY should land where the
+      // kiosk points the browser at boot, not wherever this was left three days ago.
+      location.hash = '#/sessions';
     }
   });
 
-  // kiosk hardening: no context menu, no pinch/double-tap zoom
+  // kiosk hardening: no context menu, no pinch/double-tap zoom, and nothing is draggable.
+  // A native drag is a scroll that did not happen - the finger picks a picture up off the grid
+  // instead of moving the grid under it - and there is nowhere in this interface to drop one.
+  document.addEventListener('dragstart', (e) => e.preventDefault());
   document.addEventListener('contextmenu', (e) => e.preventDefault());
   document.addEventListener('gesturestart', (e) => e.preventDefault());
   document.addEventListener('dblclick', (e) => e.preventDefault());
@@ -696,6 +847,14 @@ on every device on the network is exactly the sprawl this replaced.
   const ssum = document.getElementById('ssum');
   const talk = document.getElementById('talk');
   const tabs = [...document.querySelectorAll('.tab')];
+  const rig = document.getElementById('rig');
+  const play = document.getElementById('play');
+  const vnow = document.getElementById('vnow');
+  const vall = document.getElementById('vall');
+  const vtitle = document.getElementById('vtitle');
+  const scrub = document.getElementById('scrub');
+  const scrubTrack = scrub.querySelector('.scrub-track');
+  const scrubFill = document.getElementById('scrubfill');
 
   const esc = (text) => String(text == null ? '' : text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -726,6 +885,13 @@ on every device on the network is exactly the sprawl this replaced.
     return String(at.getHours()).padStart(2, '0') + ':' + String(at.getMinutes()).padStart(2, '0');
   };
   const megabytes = (n) => !n ? '' : (n / 1048576).toFixed(1) + ' MB';
+  // On a still it is a running time, not a duration in prose - written the way a player writes it.
+  const stamp = (seconds) => {
+    const whole = Math.max(0, Math.round(seconds || 0));
+    const mm = Math.floor(whole / 60) % 60, ss = String(whole % 60).padStart(2, '0');
+    const hh = Math.floor(whole / 3600);
+    return hh ? hh + ':' + String(mm).padStart(2, '0') + ':' + ss : mm + ':' + ss;
+  };
   const many = (n, one) => n === 1 ? '1 ' + one : n + ' ' + one + 's';
 
   async function grab(url) {
@@ -759,22 +925,26 @@ on every device on the network is exactly the sprawl this replaced.
   }, { rootMargin: '200px' });
 
   function sessionRow(one) {
-    const bits = [day(one.started) + ' ' + time(one.started), span(one.seconds)];
-    if (one.photos) bits.push(many(one.photos, 'photo'));
-    if (one.diagrams) bits.push(many(one.diagrams, 'diagram'));
-    if (one.filed) bits.push(esc(one.filed));
-    let flag = '';
-    if (one.verdict === 'live') flag = ' <span class="live">· recording</span>';
-    else if (one.verdict !== 'finished') flag = ' <span class="broke">· ' + one.verdict + '</span>';
+    // What a row says, and where. The still carries how long it runs, the corner carries when it
+    // was, and the rest is the title. The project it was filed under and the count of drawings
+    // were both true, and neither earned a line of a list you are scanning.
     const still = one.video
       ? '<video class="thumb" muted playsinline preload="none" data-src="/media/' +
-        encodeURIComponent(one.name) + '/video.mp4"></video>'
-      : '<div class="thumb none">no video</div>';
+        encodeURIComponent(one.name) + '/video.mp4"></video>' +
+        '<span class="len">' + stamp(one.seconds) + '</span>'
+      : '<span class="thumb none">no video</span>';
+    // One line under the date, and a warning outranks a count: a session still recording, or one
+    // that never finished, is the thing about that row you need to know.
+    let sub = '';
+    if (one.verdict === 'live') sub = '<span class="rowsub live">recording</span>';
+    else if (one.verdict !== 'finished') sub = '<span class="rowsub broke">' + one.verdict + '</span>';
+    else if (one.photos) sub = '<span class="rowsub">' + many(one.photos, 'photo') + '</span>';
     return '<button class="row" type="button" data-open="' + esc(one.name) + '">' +
-      still +
+      '<span class="shot">' + still + '</span>' +
       '<span class="rowtext"><span class="rowtitle">' + esc(one.title) + '</span>' +
       '<span class="rowsum">' + esc(one.summary) + '</span></span>' +
-      '<span class="rowmeta">' + bits.join(' · ') + flag + '</span>' +
+      '<span class="rowwhen">' + day(one.started) +
+      '<span class="rowtime">' + time(one.started) + '</span>' + sub + '</span>' +
       '</button>';
   }
 
@@ -836,7 +1006,8 @@ on every device on the network is exactly the sprawl this replaced.
     }
     let shot = '';
     if (record.url) {
-      shot = '<img class="inline" loading="lazy" src="' + esc(record.url) + '" alt="">';
+      shot = '<img class="inline" loading="lazy" draggable="false" src="' +
+             esc(record.url) + '" alt="">';
     } else if (kind === 'diagram' && !record.error && !record.found) {
       shot = '<div class="who">the panel never sent the picture back</div>';
     }
@@ -844,10 +1015,94 @@ on every device on the network is exactly the sprawl this replaced.
       at + '<span><span class="aside">' + aside(record) + '</span>' + shot + '</span></div>';
   }
 
+  // ---------------------------------------------------------------- the player
+
+  // Where the picture actually is. object-fit: contain letterboxes inside the element and leaves
+  // nothing in the DOM to hang anything off, so the bars have to be measured. Everything that
+  // sits over or beside the picture is placed from this - which is also what makes it correct on
+  // a phone held upright, where the same arithmetic puts the bars top and bottom instead.
+  function fit() {
+    if (!document.body.classList.contains('solo')) return;
+    const box = video.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const ratio = (video.videoWidth || 4) / (video.videoHeight || 3);
+    const wide = box.width / box.height > ratio;
+    const w = wide ? box.height * ratio : box.width;
+    const h = wide ? box.height : box.width / ratio;
+    const padX = (box.width - w) / 2, padY = (box.height - h) / 2;
+    for (const el of [vtitle, scrub]) { el.style.left = padX + 'px'; el.style.right = padX + 'px'; }
+    vtitle.style.top = padY + 'px';
+    scrub.style.bottom = padY + 'px';
+    // Centred in the gutter to the left of the picture, and never off the edge of a screen too
+    // narrow to have one - there it sits over the picture, as it does in every player.
+    const gutter = box.left + padX;
+    rig.style.left = Math.max(6, (gutter - rig.offsetWidth) / 2) + 'px';
+    rig.style.top = Math.round(box.top + box.height / 2 - rig.offsetHeight / 2) + 'px';
+  }
+
+  function solo(on) {
+    document.body.classList.toggle('solo', on);
+    video.controls = !on;   // the browser's own bar is desktop furniture at 800x480
+    if (on) requestAnimationFrame(fit);
+  }
+
+  const paint = () => {
+    vnow.textContent = clock(video.currentTime);
+    scrubFill.style.width = (video.duration ? 100 * video.currentTime / video.duration : 0) + '%';
+  };
+  video.addEventListener('timeupdate', paint);
+  video.addEventListener('loadedmetadata', () => {
+    vall.textContent = isFinite(video.duration) ? clock(video.duration) : '';
+    fit();
+    paint();
+  });
+  const mark = () => { if (video.paused) play.removeAttribute('data-on'); else play.dataset.on = '1'; };
+  video.addEventListener('play', mark);
+  video.addEventListener('pause', mark);
+  const toggle = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
+  play.addEventListener('click', toggle);
+  // The picture is the biggest target on the screen; on a panel it should do the commonest thing.
+  video.addEventListener('click', () => { if (document.body.classList.contains('solo')) toggle(); });
+  window.addEventListener('resize', fit);
+
+  const seek = (e) => {
+    const box = scrubTrack.getBoundingClientRect();
+    if (!video.duration || !box.width) return;
+    video.currentTime = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * video.duration;
+    paint();
+  };
+  scrub.addEventListener('pointerdown', (e) => { scrub.setPointerCapture(e.pointerId); seek(e); });
+  scrub.addEventListener('pointermove', (e) => {
+    if (scrub.hasPointerCapture(e.pointerId)) seek(e);
+  });
+
+  document.getElementById('back').addEventListener('click', () => { location.hash = '#/sessions'; });
+
+  // ---------------------------------------------------------------- one session
+
   let openName = null;
+
+  async function transcript(name) {
+    try {
+      const found = (await grab('/api/session/' + encodeURIComponent(name) + '/records')).records;
+      if (openName !== name) return;
+      talk.innerHTML = found.length ? found.map(line).join('')
+                                    : '<div class="empty">nothing was said</div>';
+    } catch (e) { /* the video is the point; a missing transcript is not worth a broken page */ }
+  }
+
+  // The panel and the laptop are not the same screen, and a window can become the other one.
+  WIDE.addEventListener('change', () => {
+    if (!openName) return;
+    solo(!WIDE.matches);
+    if (WIDE.matches && !talk.childElementCount) transcript(openName);
+    else if (!WIDE.matches) talk.innerHTML = '';
+  });
+
   async function showSession(name) {
     openName = name;
     talk.innerHTML = '';
+    solo(!WIDE.matches);
     try {
       const one = await grab('/api/session/' + encodeURIComponent(name));
       if (openName !== name) return;   // you tapped through to another one while this landed
@@ -858,9 +1113,14 @@ on every device on the network is exactly the sprawl this replaced.
       if (one.filed) bits.push('filed under ' + one.filed);
       smeta.textContent = bits.join(' · ');
       ssum.textContent = one.summary;
+      vtitle.textContent = one.title;
       if (one.video) {
         video.src = '/media/' + encodeURIComponent(name) + '/video.mp4';
         video.hidden = false;
+        // You tapped a session to watch it, so watch it. The click that got you here is the
+        // gesture the autoplay policy wants; if a browser refuses anyway it stays paused, and
+        // the play button is now 76 u of thumb rather than something to aim at.
+        video.play().catch(() => {});
       } else {
         video.removeAttribute('src');
         video.load();
@@ -872,16 +1132,12 @@ on every device on the network is exactly the sprawl this replaced.
       ssum.textContent = '';
     }
     if (!WIDE.matches) return;   // the panel is the video and its name, and asks for no more
-    try {
-      const found = (await grab('/api/session/' + encodeURIComponent(name) + '/records')).records;
-      if (openName !== name) return;
-      talk.innerHTML = found.length ? found.map(line).join('')
-                                    : '<div class="empty">nothing was said</div>';
-    } catch (e) { /* the video is the point; a missing transcript is not worth a broken page */ }
+    await transcript(name);
   }
 
   function letGo() {
     openName = null;
+    solo(false);
     video.pause();
     video.removeAttribute('src');
     video.load();   // without this the decoder keeps the last file open behind the panel
@@ -905,7 +1161,8 @@ on every device on the network is exactly the sprawl this replaced.
         ? '<div class="grid">' + shots.map((one, i) =>
             '<button class="cell" type="button" data-shot="' + i + '">' +
             (one.drawn
-              ? '<img loading="lazy" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">'
+              ? '<img loading="lazy" draggable="false" src="' + esc(one.url) +
+                '" alt="' + esc(one.title) + '">'
               : '<div class="undrawn">not drawn</div>') +
             '<div class="cellcap">' + esc(one.kind === 'diagram' ? one.title : day(one.when) + ' ' + time(one.when)) +
             '</div></button>').join('') + '</div>'
@@ -927,7 +1184,7 @@ on every device on the network is exactly the sprawl this replaced.
     lit = (i + shots.length) % shots.length;
     const one = shots[lit];
     litshot.innerHTML = one.drawn
-      ? '<img src="' + esc(one.url) + '" alt="' + esc(one.title) + '">'
+      ? '<img draggable="false" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">'
       : '<div class="empty">the panel never sent this picture back</div>';
     litcap.textContent = one.title + ' · ' + day(one.when) + ' ' + time(one.when) +
       ' · ' + (lit + 1) + ' of ' + shots.length;
@@ -948,6 +1205,60 @@ on every device on the network is exactly the sprawl this replaced.
     else if (e.key === 'ArrowLeft') light(lit - 1);
     else if (e.key === 'ArrowRight') light(lit + 1);
   });
+
+  // ---------------------------------------------------------------- dragging a list about
+
+  // Insurance, not the main event. A touchscreen that the stack reports as a touchscreen pans by
+  // itself and this stays out of the way. The panel's ft5x06 is also exposed as `mouse0` by the
+  // kernel's legacy mousedev emulation, and anywhere that wins, a finger arrives as a *mouse*
+  // drag - which selects, or drags, or does nothing at all, but never scrolls. So for pointers
+  // that are not touch, the drag is turned into a scroll here.
+  function dragScroll(el) {
+    const SLOP = 6;          // below this it was a tap with a shaky hand, not a drag
+    let id = null, y0 = 0, top0 = 0, far = 0, last = 0, lastAt = 0, vel = 0, glide = 0;
+    const halt = () => { cancelAnimationFrame(glide); glide = 0; };
+
+    el.addEventListener('pointerdown', (e) => {
+      halt(); id = null; far = 0;
+      if (e.pointerType === 'touch' || e.button) return;
+      id = e.pointerId; y0 = last = e.clientY; lastAt = e.timeStamp;
+      top0 = el.scrollTop; vel = 0;
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== id) return;
+      const dy = e.clientY - y0;
+      far = Math.max(far, Math.abs(dy));
+      if (far <= SLOP) return;
+      el.setPointerCapture(id);   // the list keeps the drag even when the finger leaves a row
+      el.scrollTop = top0 - dy;
+      const gap = e.timeStamp - lastAt;
+      if (gap > 0) vel = (e.clientY - last) / gap;   // px per ms, for the throw
+      last = e.clientY; lastAt = e.timeStamp;
+      e.preventDefault();
+    });
+    const release = () => {
+      if (id === null) return;
+      id = null;
+      if (Math.abs(vel) < 0.06) return;
+      // A list that stops dead under your finger feels broken even when it is not. Decay per
+      // frame, and give up once the movement is under a pixel or so.
+      let v = vel;
+      const roll = () => {
+        v *= 0.94;
+        el.scrollTop -= v * 16;
+        if (Math.abs(v) > 0.02) glide = requestAnimationFrame(roll);
+      };
+      glide = requestAnimationFrame(roll);
+    };
+    el.addEventListener('pointerup', release);
+    el.addEventListener('pointercancel', release);
+    // A drag that travelled is not a tap, whatever it happens to finish on top of.
+    el.addEventListener('click', (e) => {
+      if (far > SLOP) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  }
+  dragScroll(vSessions);
+  dragScroll(vMedia);
 
   // ---------------------------------------------------------------- the router
 

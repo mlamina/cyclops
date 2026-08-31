@@ -294,7 +294,8 @@ can open `http://cyclops.local/` and see both how the box is doing and what it h
 is read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
 
 Three screens, picked by the tabs in the header and by the hash in the address bar, so nothing
-ever navigates (the kiosk's browser is kept warm on this page and a reload would be felt):
+ever navigates (the kiosk's browser is kept warm on this page and a reload would be felt). The
+kiosk opens it on **SESSIONS**, which is what its tab promises:
 
 | | |
 |---|---|
@@ -318,13 +319,13 @@ The temperature tile is colour-coded on the Pi 5's own limits: green below 70 °
 70, red from **80 °C**, where the firmware starts capping the clock. A permanently red tile is
 not a bug in the page; it means the board wants better cooling.
 
-On the kiosk, the **SYSTEM tab** opens the same page fullscreen in Chromium on the panel — same
+On the kiosk, the **HISTORY tab** opens the same page fullscreen in Chromium on the panel — same
 green terminal chrome, so it reads as the next screen of the same device — and the page grows a
 volume slider and a full-width **Close** bar to get you back to the camera. Both appear only for
 the Pi's own browser: from a laptop there is nothing to close, and the panel is meant to be the
 one place the volume is set. The slider sits on **SYSTEM** only, so browsing does not spend 52 of
-the panel's 480 px carrying a control you did not come for. Closing the page also returns it to
-SYSTEM, so the next tap lands where it always has. A drawing arriving from the agent outranks
+the panel's 480 px carrying a control you did not come for. Closing the page returns it to
+SESSIONS, so the next tap lands where the tab says it will. A drawing arriving from the agent outranks
 whatever you were looking at, takes the whole panel, and hands the screen back when it clears. If the panel ever gets stuck showing the
 browser, `touch ~/.cache/cyclops/browser-close` over ssh takes it down; so does quitting the
 kiosk.
@@ -390,7 +391,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
 | `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
 | `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |
-| `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. The kiosk's SYSTEM tab opens the same port. |
+| `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. The kiosk's HISTORY tab opens the same port. |
 
 Variables already exported in your shell take precedence over `.env`. List audio devices with `uv run cyclops-devices`.
 
@@ -522,7 +523,7 @@ row of three tabs along the bottom sized for a thumb in a glove:
 | Tab | What it does |
 | --- | --- |
 | **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
-| **SYSTEM** | opens the [admin page](#admin-page) fullscreen on the panel |
+| **HISTORY** | opens the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
 | **SESSION** | starts and stops the conversation; the tab stays lit while one is up |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
@@ -543,7 +544,7 @@ cd /home/<you>/cyclops && .venv/bin/cyclops-kiosk >/tmp/kiosk_live.log 2>&1 &
 ```
 
 Set an initial speaker level with `CYCLOPS_VOLUME` (percent); after that the volume lives on the
-admin page, behind the SYSTEM tab. Nothing leaves the Pi except the audio and vision the agent
+admin page, behind the HISTORY tab. Nothing leaves the Pi except the audio and vision the agent
 sends to OpenAI.
 
 `q` or `ESC` quits, `f` toggles fullscreen, and `--windowed` / `--size=WxH` are there for

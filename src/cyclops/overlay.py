@@ -134,7 +134,13 @@ TAB_LIVE = 0.20  # the selected tab's cell, which is then drawn at TAB_LIVE_ALPH
 METER_OFF = 0.45  # an unlit signal segment
 RING_MIX = 0.55  # the ring around the open eye
 TABS = ("shutter", "admin", "eye")  # left to right; shutter and eye keep the corners they had
-TAB_LABELS = {"shutter": "SNAP", "admin": "SYSTEM", "eye": "SESSION"}
+# "eye" and "admin" are the keys these tabs have always had, and what they open has not
+# changed - only what they are called and what they are drawn as. Renaming them would reach
+# into kiosk.py's press handling to buy nothing anybody can see.
+# "SYSTEM" was honest when the page behind this tab was four numbers about the board. It now
+# opens everything the box has kept - the recordings, the photos, the drawings - and the four
+# numbers are one screen inside that. Named for what you go there for, not for what it was.
+TAB_LABELS = {"shutter": "SNAP", "admin": "HISTORY", "eye": "SESSION"}
 
 _FONT_CANDIDATES = (
     # A terminal is monospaced, so this list is monospaced faces first and only.
@@ -688,9 +694,9 @@ class Overlay:
         if name == "shutter":
             self._glyph_aperture(d, cx, gy, radius, glyph)
         elif name == "admin":
-            self._glyph_gear(d, cx, gy, radius, glyph)
+            self._glyph_history(d, cx, gy, radius, glyph)
         else:
-            self._glyph_eye(d, cx, gy, radius, glyph, state)
+            self._glyph_mic(d, cx, gy, radius, glyph, state)
         self._text(
             d,
             cx,
@@ -720,29 +726,34 @@ class Overlay:
                 width=stroke,
             )
 
-    def _glyph_gear(self, d: ImageDraw.ImageDraw, cx: int, cy: int, r: int, c: tuple) -> None:
-        """Open the admin page."""
+    def _glyph_history(self, d: ImageDraw.ImageDraw, cx: int, cy: int, r: int, c: tuple) -> None:
+        """Everything the box has kept. A dial with the arrow running backwards.
+
+        A gear was here while the tab said SYSTEM and the page behind it was four numbers about
+        the board. It opens the recordings now, and a gear over the word HISTORY promises
+        settings - the one thing that page has never had.
+        """
         stroke = max(2, round(3 * self.scale))
-        ring = round(r * 0.72)
-        d.ellipse([cx - ring, cy - ring, cx + ring, cy + ring], outline=(*c, 255), width=stroke)
-        hub = max(2, round(ring * 0.34))
-        d.ellipse([cx - hub, cy - hub, cx + hub, cy + hub], fill=(*c, 255))
-        tooth = ring * 0.42
-        for index in range(8):  # eight teeth read as a gear even at this size
-            angle = math.radians(index * 45)
-            d.line(
-                [
-                    cx + ring * math.cos(angle),
-                    cy + ring * math.sin(angle),
-                    cx + (ring + tooth) * math.cos(angle),
-                    cy + (ring + tooth) * math.sin(angle),
-                ],
-                fill=(*c, 255),
-                width=stroke,
-            )
+        ring = round(r * 0.82)
+        # Open at the top right, which is where the arrowhead goes: the gap is what stops this
+        # reading as a plain clock face.
+        d.arc([cx - ring, cy - ring, cx + ring, cy + ring], start=-35, end=250,
+              fill=(*c, 255), width=stroke)
+        tip = ring + round(r * 0.30)
+        d.polygon(
+            [
+                (cx + ring - round(r * 0.15), cy - ring - round(r * 0.05)),
+                (cx + tip, cy - round(r * 0.18)),
+                (cx + ring - round(r * 0.55), cy - round(r * 0.30)),
+            ],
+            fill=(*c, 255),
+        )
+        # Two hands, so it is a dial being wound and not an arrow going in a circle.
+        d.line([cx, cy, cx, cy - round(ring * 0.55)], fill=(*c, 255), width=stroke)
+        d.line([cx, cy, cx + round(ring * 0.45), cy], fill=(*c, 255), width=stroke)
 
     def _draw_ring(self, d: ImageDraw.ImageDraw, colour: tuple, level: float) -> None:
-        """The ring around the open eye - the one thing on the panel that moves with your voice.
+        """The ring around the microphone - the one thing on the panel that moves with your voice.
 
         Drawn per frame rather than baked with the rest of the tab, for the obvious reason that
         it is the only part of the tab row with anything to say between one frame and the next.
@@ -755,24 +766,44 @@ class Overlay:
             width=max(1, self.line // 2),
         )
 
-    def _glyph_eye(
+    def _glyph_mic(
         self, d: ImageDraw.ImageDraw, cx: int, cy: int, r: int, c: tuple, state: str
     ) -> None:
-        """Start or stop the agent. Closed while it is down, open and watching while it is up."""
+        """Start or stop the agent. Hollow while it is down, filled in while it is listening.
+
+        A microphone rather than the eye that was here: what this tab starts is a conversation,
+        and the camera it also opens is the *other* two tabs' business - SNAP shows Cyclops a
+        picture, and the panel behind all three is already a viewfinder. An eye over the word
+        SESSION said the wrong one of the two things this box does.
+
+        Filled is the whole state indicator, and it has to survive being 32 px on a panel seen
+        from across a bench: an outline that gained a detail when live would read as neither.
+        """
         stroke = max(2, round(3 * self.scale))
-        if state in (IDLE, ERROR, STOPPING):
-            d.arc(
-                [cx - r, cy - round(r * 0.8), cx + r, cy + round(r * 0.8)],
-                start=15,
-                end=165,
-                fill=(*c, 255),
-                width=stroke,
-            )
-            return
-        ry = round(r * 0.68)
-        d.ellipse([cx - r, cy - ry, cx + r, cy + ry], outline=(*c, 255), width=stroke)
-        ir = round(r * 0.40)
-        d.ellipse([cx - ir, cy - ir, cx + ir, cy + ir], fill=(*c, 255))
+        live = state not in (IDLE, ERROR, STOPPING)
+
+        # Four parts, and they must not overlap. The first cut of this made the head 1.84 r tall,
+        # which left the cradle and the stem drawn straight through it - at 32 px that reads as a
+        # bullet with fins rather than as a microphone. The head gets the top half and stops; the
+        # cradle's arms rise past its waist without reaching its crown; the stand has the rest.
+        half = round(r * 0.44)
+        head = [cx - half, cy - round(r * 0.94), cx + half, cy + round(r * 0.19)]
+        if live:
+            d.rounded_rectangle(head, radius=half, fill=(*c, 255))
+        else:
+            d.rounded_rectangle(head, radius=half, outline=(*c, 255), width=stroke)
+
+        # An arc over an ellipse wider than the head, so its arms end beside the head and not
+        # under it. Drawn 0 to 180, which is the lower half.
+        arms = round(r * 0.69)
+        d.arc(
+            [cx - arms, cy - round(r * 0.69), cx + arms, cy + round(r * 0.56)],
+            start=0, end=180, fill=(*c, 255), width=stroke,
+        )
+        d.line([cx, cy + round(r * 0.56), cx, cy + round(r * 0.88)], fill=(*c, 255), width=stroke)
+        # The foot is what stops it reading as a pill hung on a hook.
+        foot, base = round(r * 0.38), cy + round(r * 0.88)
+        d.line([cx - foot, base, cx + foot, base], fill=(*c, 255), width=stroke)
 
 
 def composite(frame_bgr: np.ndarray, rgba: np.ndarray) -> np.ndarray:
