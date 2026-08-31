@@ -73,6 +73,13 @@ class SessionController:
         self._speaker: Speaker | None = None
         self._mic: Microphone | None = None
         self._error = ""
+        # What the session is doing when there is no agent to ask - which is both ends of it:
+        # the audio devices going up before one exists, and the whole teardown after its socket
+        # has gone. A plain string, written from this thread and from the kiosk's, read from the
+        # kiosk's: one rebinding of one name, which is the same bargain the flags on the agent
+        # have always made. See :meth:`_detail`.
+        self._phase = ""
+        self._closing = False  # a teardown is under way; see the property below
         self._started_at: float | None = None  # monotonic, for the kiosk's session timer
         # This controller is the only thing that knows when a session is *finished* rather than
         # merely cancelled - the socket, the audio devices and the recording all outlive the
@@ -92,6 +99,8 @@ class SessionController:
             if self._running:
                 return
             self._error = ""
+            self._phase = "opening the link…"  # said on the tap; the thread does not exist yet
+            self._closing = False
             self._started_at = time.monotonic()  # the clock starts on the tap, not on connect
             self._thread = threading.Thread(target=self._run, name="cyclops-session", daemon=True)
             self._thread.start()
@@ -101,6 +110,12 @@ class SessionController:
             loop, task = self._loop, self._task
         if loop is None or task is None:
             return
+        # On the tap, like the closing cue in the kiosk, and for a reason beyond symmetry: for
+        # the couple of seconds it takes the task to notice it was cancelled this controller
+        # still honestly reports LISTENING, so without a phrase here the caption would sit
+        # saying "listening - talk to me" underneath a strip that already says CLOSING.
+        self._phase = "closing the link…"
+        self._closing = True
         try:
             loop.call_soon_threadsafe(task.cancel)
         except RuntimeError:
@@ -134,23 +149,47 @@ class SessionController:
 
     def status(self) -> dict[str, object]:
         state, level = self._state_and_level()
-        detail = {
-            IDLE: "Tap to start",
-            CONNECTING: "Connecting…",
-            LISTENING: "Listening — talk to me",
-            SPEAKING: "Speaking…",
-            LOOKING: "Looking…",
-            SEARCHING: "Searching the web…",
-            DRAWING: "Drawing…",
-            ERROR: self._error or "Something went wrong",
-        }[state]
         started = self._started_at
         return {
             "state": state,
             "level": round(level, 3),
-            "detail": detail,
+            "detail": self._detail(state),
             "elapsed": None if started is None else round(time.monotonic() - started, 1),
         }
+
+    @property
+    def closing(self) -> bool:
+        """Is a teardown under way - the stretch between the tap that stops it and the last file?
+
+        Asked by the kiosk, which shows an optimistic CLOSING on the tap and needs to know how
+        long to keep believing it. This controller goes on honestly reporting LISTENING the
+        whole time, because the state machine describes the *agent* and the agent is the first
+        thing to go; the mux and the naming that follow it are not a state, they are a queue.
+        """
+        return self._closing
+
+    def _say_phase(self, phase: str) -> None:
+        """What the teardown is doing, handed to :class:`~cyclops.session.SessionLog`.
+
+        It runs inside :meth:`_session`, so the agent is still published while it works - but
+        the agent's socket is already down and it has nothing left to narrate, which is exactly
+        why the last seconds of a session need a channel that is not the agent.
+        """
+        self._phase = phase
+
+    def _detail(self, state: str) -> str:
+        """The live line for the bottom of the panel: what is going on, when we know.
+
+        Empty is a real answer and the commonest one. It means nothing is happening beyond the
+        state itself, and the overlay's own resting sentence for that state is the better thing
+        to say - which is why this used to be a sentence per state here and is not any more.
+        Those were the same nine strings the overlay already had, and one of them ("Searching
+        the web…") a vaguer version of what the agent can now name outright.
+        """
+        if state == ERROR:
+            return self._error or "something went wrong"
+        agent = self._agent  # snapshot: _run()'s finally clears it, from the session thread
+        return (agent.activity if agent is not None else "") or self._phase
 
     def _state_and_level(self) -> tuple[str, float]:
         if not self._running:
@@ -193,6 +232,8 @@ class SessionController:
             with self._lock:
                 self._loop = self._task = self._agent = self._speaker = self._mic = None
                 self._started_at = None  # the timer disappears with the session
+            self._phase = ""  # the folder is written; there is nothing left to report
+            self._closing = False
             loop.close()
             # Now it is over: the folder is written and the panel is about to go back to
             # STANDBY. This cuts off the closing ticks the kiosk started on the tap, however
@@ -200,6 +241,7 @@ class SessionController:
             self._cues.play("ended")
 
     async def _session(self, loop: asyncio.AbstractEventLoop) -> None:
+        self._phase = "opening the audio devices…"
         s = self.settings
         in_dev = resolve_device(s.input_device)
         out_dev = resolve_device(s.output_device)
@@ -216,6 +258,7 @@ class SessionController:
             guard.on_barge_in = agent.local_barge_in
         with self._lock:
             self._speaker, self._mic, self._agent = speaker, mic, agent
+        self._phase = ""  # there is an agent now, and it narrates itself from here
         speaker.start()
         mic.start()
         # The log is the one thing every entry point shares, so it does its own wiring: it hooks
@@ -223,7 +266,13 @@ class SessionController:
         # on the way out - including when the session dies rather than stops. The inner `finally`
         # still runs first, so the recorder is stopped only once the audio callbacks have ceased.
         with SessionLog(
-            s, agent, entrypoint=self._entrypoint, mic=mic, speaker=speaker, frames=self._frames
+            s,
+            agent,
+            entrypoint=self._entrypoint,
+            mic=mic,
+            speaker=speaker,
+            frames=self._frames,
+            on_phase=self._say_phase,
         ):
             try:
                 await agent.run()

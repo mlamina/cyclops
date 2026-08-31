@@ -7,6 +7,7 @@ import base64
 import json
 import re
 import sys
+import time
 import uuid
 from collections.abc import Callable, Coroutine
 from pathlib import Path
@@ -49,6 +50,12 @@ MAX_DATA_VALUE_CHARS = 200
 MAX_DATA_NOTE_CHARS = 200
 MAX_DATA_QUERY_CHARS = 120
 MAX_DATA_ENTRIES = 20  # one plate's worth of values, generously
+ACTIVITY_SUBJECT_CHARS = 40  # a subject on the caption, not a sentence
+# How long a finished job's sentence stays on the panel. A data tool is off the card and back in
+# five milliseconds - a tenth of one frame - so without a floor under it the caption would strobe
+# a phrase nobody could catch, which is worse than the nothing it used to show. Fifteen frames is
+# about a glance.
+ACTIVITY_HOLD_S = 0.6
 _CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")  # keep \t and \n
 
 WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
@@ -515,6 +522,21 @@ def function_calls(response: RealtimeResponse) -> list[RealtimeConversationItemF
     return [item for item in (response.output or []) if item.type == "function_call"]
 
 
+class _Doing:
+    """One job the panel is reporting, and how long it is still worth reporting.
+
+    Mutable, and deliberately not a frozen dataclass: :meth:`VoiceAgent._done_doing` marks one
+    of these finished by writing a deadline into it, and rebuilding the whole tuple to do that
+    would race with a second tool starting on the same loop.
+    """
+
+    __slots__ = ("line", "until")
+
+    def __init__(self, line: str) -> None:
+        self.line = line
+        self.until = float("inf")  # monotonic; infinite while the work is actually running
+
+
 class VoiceAgent:
     """Owns one Realtime session: streams mic audio up, plays audio down, shows it the photos.
 
@@ -540,6 +562,16 @@ class VoiceAgent:
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
         self.drawing_active = False  # True while a diagram is being drawn (UI 'drawing')
+        # ...and, beside those three, the sentence the panel says underneath. The flags answer
+        # "what mode is this?", which colours the border and picks the word on the strip, and
+        # they stay a closed set of three. This answers "what is it doing?", which is open-ended
+        # - every tool adds one - and so it is carried as text rather than as another flag.
+        #
+        # A tuple rather than one string because a response can call two tools at once
+        # (_on_response_done spawns a task per call), and a find_data that lands in five
+        # milliseconds must not take a fifteen-second search's caption down with it. Oldest
+        # first; the newest one still worth saying wins.
+        self._doing: tuple[_Doing, ...] = ()
         self._turn_serial = 0  # bumped when the user speaks; lets a late search spot staleness
         self._barge_in_timer: asyncio.TimerHandle | None = None
         self.ready = asyncio.Event()  # set once the server accepted our session config
@@ -562,6 +594,56 @@ class VoiceAgent:
             device=resolve_device(settings.output_device),
             enabled=settings.sounds,
         )
+
+    # ---- what the panel says we are doing ----
+    #
+    # Written from this agent's own event loop and read from the kiosk's render thread, once a
+    # frame, with no lock between them. What makes that safe is that every write is a single
+    # rebinding of ``_doing`` to a new tuple: the reader binds the name once and then walks a
+    # tuple nobody can shorten under it, so it sees the old set of jobs or the new one and never
+    # half of either. The deadline inside a :class:`_Doing` is written by one thread and read by
+    # the other, which on CPython is one float store - the reader can be a frame behind, and a
+    # frame is 40 ms.
+
+    def _doing_now(self) -> tuple[_Doing, ...]:
+        """The jobs still worth mentioning, with the expired ones dropped.
+
+        Pruning on the way in rather than on a timer is what keeps the tuple the length of the
+        work actually in flight - one to three - rather than the length of the session.
+        """
+        now = time.monotonic()
+        return tuple(job for job in self._doing if now < job.until)
+
+    def _start_doing(self, line: str) -> _Doing | None:
+        """Say *line* until told otherwise. Hand what comes back to :meth:`_done_doing`.
+
+        An empty line is not an error and not a job: a tool with nothing worth naming leaves the
+        panel saying whatever it was saying, which is better than blanking it for the duration.
+        """
+        if not line:
+            return None
+        job = _Doing(line)
+        self._doing = (*self._doing_now(), job)
+        return job
+
+    def _done_doing(self, job: _Doing | None) -> None:
+        """That job is over - but let it stand for a beat, or nobody could have read it."""
+        if job is not None and job.until == float("inf"):
+            job.until = time.monotonic() + ACTIVITY_HOLD_S
+
+    @property
+    def activity(self) -> str:
+        """One sentence about work in flight, or empty when there is nothing to add.
+
+        The newest job still worth mentioning wins, falling back through anything underneath it
+        that is genuinely still running - so a lookup that finished instantly hands the line
+        back to the search it interrupted rather than to nothing at all.
+        """
+        now = time.monotonic()
+        for job in reversed(self._doing):
+            if now < job.until:
+                return job.line
+        return ""
 
     @property
     def unacked_item_ids(self) -> frozenset[str]:
@@ -646,10 +728,17 @@ class VoiceAgent:
         # from there, and that is precisely when the connecting cue is playing. Left outside,
         # the finally never runs and the kiosk pings on over a red border.
         try:
+            # Narrated in two steps because they fail in two different places and take
+            # noticeably different amounts of time: the socket, and then the round trip that
+            # settles the config. A panel that said only "connecting" for both would leave the
+            # commonest failure - a key the server rejects, which happens after the connect -
+            # looking like a network that never came up.
+            self._start_doing("connecting to OpenAI…")
             client = AsyncOpenAI(api_key=self.settings.api_key)
             async with client.realtime.connect(model=self.settings.model) as conn:
                 self._conn = conn
                 await conn.session.update(session=self.session_config())
+                self._start_doing("waiting for the model…")
                 async for event in conn:
                     await self._handle_event(event)
         except Exception:
@@ -704,6 +793,7 @@ class VoiceAgent:
         if not self.connected:
             return
         self.tool_active = True
+        job = self._start_doing("looking at the photo…")
         try:
             await self._send_item(
                 {
@@ -727,6 +817,7 @@ class VoiceAgent:
             await self._request_response()
         finally:
             self.tool_active = False
+            self._done_doing(job)
         self._log(
             f"[photo] {capture.width}x{capture.height}, "
             f"{capture.jpeg_bytes // 1024} KB → {capture.path}"
@@ -803,6 +894,11 @@ class VoiceAgent:
         if self.ready.is_set():
             return
         self.ready.set()  # set first: the panel and show_photo() both gate on it
+        # Both handshake lines go at once rather than expiring: nothing else can be in flight
+        # this early - a tool needs a response and a response needs this - so there is nothing
+        # underneath them to hand the caption back to. From here the state's own resting line is
+        # the true one, until a tool has something better to say.
+        self._doing = ()
         sounding = self.cues.play("ready")  # which also ends the connecting loop
         if self.mic is not None:
             self._spawn(self._listen(after_s=sounding))
@@ -917,6 +1013,19 @@ class VoiceAgent:
     # ---------------------------------------------------------------- the tools
 
     async def _run_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Run one tool call, saying on the panel what it is for as long as it takes.
+
+        One place says it, for every tool there is. The chain below already knows the name, so a
+        line in each of its six branches would only be six chances to forget the seventh - and
+        the seventh is precisely the one nobody would notice was silent.
+        """
+        job = self._start_doing(_activity_line(call))
+        try:
+            await self._dispatch_tool(call)
+        finally:
+            self._done_doing(job)
+
+    async def _dispatch_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
         if call.name == "web_search":
             await self._run_web_search(call)
             return
@@ -1188,8 +1297,10 @@ class VoiceAgent:
     async def _run_data_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Save, find or forget one project's numbers. Local disk, and back in milliseconds.
 
-        The same shape as the project tools above, through a thread for the same reason, and
-        showing nothing on the panel for the same one: it is over before a caption could render.
+        The same shape as the project tools above, and through a thread for the same reason. It
+        used to show nothing on the panel on the grounds that it is over before a caption could
+        render, which is true and is why :meth:`_run_tool` holds a finished job's line up for
+        ACTIVITY_HOLD_S rather than dropping it the instant the work ends.
         """
         name = _tool_project(call.arguments)
         self._log(f"[tool] {call.name} {name!r}")
@@ -1460,3 +1571,58 @@ def _tool_entries(arguments: str | None) -> list[tuple[str, str, str]]:
             )
         )
     return entries
+
+
+def _subject(text: str) -> str:
+    """A tool's argument, cut down to something that still reads as part of a spoken phrase.
+
+    Cut on a word boundary rather than mid-syllable, and with no marker left behind: the caption
+    is elided again on the way to the panel, and two sets of trailing dots on one line - one for
+    "there was more of this" and one for "this is still happening" - say nothing between them.
+    """
+    text = " ".join(text.split())
+    if len(text) <= ACTIVITY_SUBJECT_CHARS:
+        return text
+    return text[:ACTIVITY_SUBJECT_CHARS].rsplit(" ", 1)[0]
+
+
+def _phrase(verb: str, subject: str, bare: str) -> str:
+    """*verb* applied to *subject*, or *bare* when the model sent nothing to name."""
+    named = _subject(subject)
+    return f"{verb} {named}…" if named else f"{bare}…"
+
+
+def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
+    """One clause for the panel about what this call is off to do.
+
+    Written for someone glancing up from a bench rather than reading a log, so it names the
+    subject and not the tool - "searching for the M8 torque", never "web_search" - and stays in
+    the second person about the user's own things. Five of these had no way to reach the panel
+    at all before, which is most of the point: a session could open a project, write six numbers
+    down and look two more up while the strip said only LISTENING.
+
+    Every line ends in an ellipsis. That is not decoration either - it is how the overlay tells a
+    caption about work in flight from one about a state, and decides whether to walk its dots
+    underneath it. See :data:`cyclops.overlay.BUSY_MARK`.
+    """
+    args = call.arguments
+    if call.name == "web_search":
+        return _phrase("searching for", _tool_query(args), "searching the web")
+    if call.name == "draw_diagram":
+        return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
+    if call.name == "find_diagram":
+        return _phrase("looking for a drawing of", _tool_data_query(args), "looking for a drawing")
+    if call.name == "open_project":
+        return _phrase("opening", _tool_name(args), "opening a project")
+    if call.name == "track_project":
+        return _phrase("starting to track", _tool_name(args), "starting a project")
+    if call.name == "save_data":
+        rows = len(_tool_entries(args))
+        if not rows:
+            return "writing that down…"
+        return f"writing down {rows} value{'' if rows == 1 else 's'}…"
+    if call.name == "find_data":
+        return _phrase("looking up", _tool_data_query(args), "looking that up")
+    if call.name == "forget_data":
+        return _phrase("forgetting", _tool_key(args), "rubbing that out")
+    return "working…"  # a tool the model invented; it still gets an answer, so it still gets a line

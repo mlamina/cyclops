@@ -48,6 +48,7 @@ import threading
 import time
 import uuid as uuid_module
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -159,6 +160,11 @@ class SessionLog:
         mic: Microphone | None = None,
         speaker: Speaker | None = None,
         frames: FrameSource | None = None,  # only the kiosk has one; only it gets a video.mp4
+        # Somewhere to say which step of the teardown is running. Optional because only the
+        # kiosk has a panel to say it on - the CLI passes nothing and is unchanged. This is the
+        # longest the device is ever silent: a mux gets up to record.MUX_TIMEOUT_S and the
+        # naming model up to SLUG_JOIN_S, and all of it used to happen behind one fixed word.
+        on_phase: Callable[[str], None] | None = None,
     ) -> None:
         self.settings = settings
         self.uuid = str(uuid_module.uuid4())
@@ -172,6 +178,7 @@ class SessionLog:
         self._mic = mic
         self._speaker = speaker
         self._frames = frames
+        self._on_phase = on_phase
         self._t0 = time.monotonic()
         self._lock = threading.Lock()
         self._handle = None
@@ -182,6 +189,11 @@ class SessionLog:
         self._speech: deque[tuple[float, float]] = deque(maxlen=16)
         self._speech_at = 0.0
         self._item_at: dict[str, float] = {}
+
+    def _say(self, phase: str) -> None:
+        """Tell whoever is holding a screen what this teardown is up to. Never raises."""
+        if self._on_phase is not None:
+            self._on_phase(phase)
 
     @property
     def photos_dir(self) -> Path:
@@ -230,8 +242,9 @@ class SessionLog:
                 _live = None
         self._agent.on_event = None
         namer = self._start_naming()  # its round trip hides behind the mux below
-        self._stop_recorder()
+        self._stop_recorder()  # says "saving the video" for itself, when there is one
         if namer is not None:
+            self._say("summarising…")
             namer.join(SLUG_JOIN_S)
         reason = _reason(exc_type)
         fields: dict[str, Any] = {
@@ -242,6 +255,10 @@ class SessionLog:
         }
         if reason == "error" and exc is not None:
             fields["error"] = f"{type(exc).__name__}: {exc}"
+        # One phrase over the four steps that follow rather than one each: the fsync is the only
+        # one of them that takes measurable time, and "naming the folder" for a rename that
+        # returns in microseconds is a caption about nothing.
+        self._say("writing the notes…")
         self.event("end", **fields)
         self._sync_log()  # the records are on the card before anything is derived from them
         self._write_summary()  # before the page, so the page stays the "finished" marker
@@ -278,6 +295,10 @@ class SessionLog:
         recorder, self._recorder = self._recorder, None
         if recorder is None:
             return
+        # Named on the panel because this is the long pole of a teardown - ffmpeg gets up to
+        # record.MUX_TIMEOUT_S, and even the usual couple of seconds is a couple of seconds the
+        # caption used to spend saying nothing more useful than "closing the link".
+        self._say("saving the video…")
         finished = recorder.stop()
         if finished is not None:
             self.event("video", file=finished.name, seconds=self._elapsed())

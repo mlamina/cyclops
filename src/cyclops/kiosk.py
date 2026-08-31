@@ -670,7 +670,13 @@ class Kiosk:
             done = raw in (IDLE, ERROR)  # both mean the session is no longer up
         else:
             done = raw != IDLE  # anything else is an outcome, ERROR included - show it
-        if done or time.monotonic() - self._pending_at > PENDING_TIMEOUT_S:
+        # The timeout guards against a session that never corroborates - but a teardown that
+        # is still visibly working *is* corroboration, and it can legitimately take minutes: the
+        # mux alone gets record.MUX_TIMEOUT_S. Giving up on it at eight seconds would drop a
+        # green LISTENING strip over a caption saying, correctly, that the video is still being
+        # written, which is the one moment this panel most needs to be believed.
+        stale = time.monotonic() - self._pending_at > PENDING_TIMEOUT_S
+        if done or (stale and not self.controller.closing):
             self._pending = None
             return raw
         return STOPPING if self._pending == "stop" else STARTING
@@ -824,10 +830,15 @@ class Kiosk:
                     recording=self.controller.settings.record,
                     flash=flash,
                     pressed=self._pressed_now(),
-                    # The controller's own sentence, which is the only place a session that
-                    # fell over says what went wrong. The strip beneath the picture is now
-                    # somewhere to put it; the old chrome could only render it as a red rim.
+                    # The controller's own sentence: what is being searched for, which
+                    # project is being opened, how far the teardown has got, and - the one it
+                    # was added for - what went wrong, which the old chrome could only render
+                    # as a red rim. Empty whenever the state alone says it all.
                     detail=str(status["detail"]),
+                    # One instant for the whole frame, taken at the top of the loop. The caption
+                    # breathes and counts its dots off this rather than off a clock of its own,
+                    # so the animation cannot drift between elements or with the frame rate.
+                    phase=started,
                 )
                 self._paint(composite(canvas, chrome), width, height)
 

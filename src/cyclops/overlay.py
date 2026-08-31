@@ -88,11 +88,32 @@ LABELS = {
     DRAWING: "DRAWING",
     ERROR: "FAULT",
 }
-CAPTIONS = {  # ... and what it says underneath before a session exists to say anything
+# ... and the resting line underneath: what is true about a state when nothing finer is known.
+# The controller sends a better sentence whenever it has one - what is being searched for, which
+# project is being opened, which step of the teardown is running - and that wins; this is what the
+# panel falls back on. Every state has one, so the line is never blank while a session is up.
+CAPTIONS = {
     IDLE: "ready — tap SESSION to begin",
     STARTING: "opening the link…",
     STOPPING: "closing the link…",
+    CONNECTING: "opening the link…",
+    LISTENING: "listening — talk to me",
+    SPEAKING: "speaking…",
+    LOOKING: "looking…",
+    SEARCHING: "searching the web…",
+    DRAWING: "drawing…",
 }
+
+# A caption that ends in an ellipsis is a caption about work in flight, and that is the whole test
+# the line uses to decide whether to move: "searching the web…" walks its dots and breathes,
+# "listening — talk to me" holds still. Every phrase the controller publishes obeys the same rule,
+# which is why none of them has to say twice whether it is a job or a state.
+BUSY_MARK = "…"
+CAPTION_ALPHA = 245
+CAPTION_DOTS = 3
+DOT_PERIOD_S = 1.2  # one sweep of the three dots...
+BREATH_PERIOD_S = 2.4  # ...and one breath of the phosphor, at half that rate so the two never lock
+BREATH_DEPTH = 0.30  # how far the text sinks towards the slab at the bottom of a breath
 
 HALO_CORE = 0.004  # fraction of the height held at full brightness, hard against the edge
 HALO_FALLOFF = 0.024  # and how far the light reaches inwards before it is gone
@@ -180,6 +201,25 @@ def _mix(base: tuple[int, int, int], other: tuple[int, int, int], amount: float)
     over a lamp. Those are mixed towards :data:`SCREEN` and drawn opaque instead.
     """
     return tuple(round(b + (o - b) * amount) for b, o in zip(base, other, strict=True))
+
+
+def caption_pulse(phase: float) -> tuple[float, int]:
+    """How far the caption has sunk, and how many dots trail it, at monotonic time *phase*.
+
+    A raised cosine rather than a square wave: this is a phosphor tube, and a line snapping on
+    and off reads as a fault light rather than as work being done. What comes back is a *mix*
+    and not an alpha, which is not a detail - see :func:`_mix`. PIL writes into the chrome layer
+    rather than compositing onto it, so a translucent letter is not a dimmer letter, it is a
+    window onto whatever the camera is pointed at, punched through the slab that was put there
+    to stop exactly that.
+
+    Time rather than frames, because the loop does not run at one rate - 25 fps with the camera
+    up, 5 while the admin page covers the panel, 4 asleep - and a dot per frame would gallop and
+    stall along with it.
+    """
+    breath = 0.5 - 0.5 * math.cos(2.0 * math.pi * (phase % BREATH_PERIOD_S) / BREATH_PERIOD_S)
+    step = DOT_PERIOD_S / (CAPTION_DOTS + 1)
+    return BREATH_DEPTH * breath, int((phase % DOT_PERIOD_S) / step)
 
 
 @dataclass(frozen=True)
@@ -322,6 +362,10 @@ class Overlay:
         # per frame - and, more to the point, the baked half and the drawn half then agree.
         self._clock_w = self.font_read.getlength("00:00")
         self._rec_w = self.font_micro.getlength("REC") + round(7 * scale) * 2
+        # The space the dots will need, reserved whether any of them are showing or not. The slab
+        # is sized to its text, so without this it would breathe in and out with them - and a dark
+        # rectangle changing width four times a second is far more distracting than the dots.
+        self._dots_w = self.font_caption.getlength("." * CAPTION_DOTS)
         self._gap = max(4, round(18 * scale))
         self._seg = (max(3, round(9 * scale)), max(6, round(18 * scale)), max(2, round(5 * scale)))
         self.hitboxes = self._layout()
@@ -520,14 +564,21 @@ class Overlay:
         flash: float = 0.0,
         pressed: str | None = None,
         detail: str = "",
+        phase: float = 0.0,
     ) -> np.ndarray:
-        """Draw the whole chrome for this frame and return it as an RGBA numpy array."""
+        """Draw the whole chrome for this frame and return it as an RGBA numpy array.
+
+        ``phase`` is a monotonic clock in seconds, and the only argument here that is not about
+        what the panel is showing but about *when*. It is passed in rather than read here so a
+        frame is a pure function of its arguments and the caption's animation can be tested
+        without a clock - the same shape as ``flash``, which the kiosk has always computed.
+        """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording).copy()
         d = ImageDraw.Draw(layer)
 
         self._draw_readouts(d, halo, level, elapsed, self._taping(state, recording))
-        self._draw_caption(d, state, halo, detail)
+        self._draw_caption(d, state, halo, detail, phase)
         if state not in (IDLE, ERROR, STOPPING):  # the eye is open and the ring is breathing
             self._draw_ring(d, _mix(_mix(SCREEN, halo, TAB_LIVE), halo, RING_MIX), level)
         if pressed is not None:
@@ -617,32 +668,52 @@ class Overlay:
             )
 
     def _draw_caption(
-        self, d: ImageDraw.ImageDraw, state: str, halo: tuple, detail: str
+        self, d: ImageDraw.ImageDraw, state: str, halo: tuple, detail: str, phase: float
     ) -> None:
         """One line of plain English along the bottom of the picture, on its own dark slab.
 
         The slab is not decoration: this text sits on the live camera, and white-on-anything is
         a coin toss. It is also where an error actually says what went wrong, which the old
         chrome could only render as a red rim.
+
+        The controller's sentence wins over this module's own table, and not the other way round
+        as it used to: it is the half that knows what is being searched for, which project is
+        being opened and how far the teardown has got, and CAPTIONS is what is left to say when
+        it knows nothing finer. Reversed, every one of those sentences would be swallowed by a
+        state word during exactly the states worth narrating.
         """
-        text = CAPTIONS.get(state) or detail
+        text = detail or CAPTIONS.get(state, "")
         if not text:
             return  # the strip already says the mode; saying it twice is not a caption
+        busy = text.endswith(BUSY_MARK)
+        if busy:
+            text = text[: -len(BUSY_MARK)]  # the dots take the ellipsis's place, and move
         font = self.font_caption
         pad = self.pad
         # Clear of the bottom-left corner tick, which would otherwise run under the slab.
         x = self.viewport.x + pad + round(34 * self.scale)
         limit = self.viewport.right - pad - x - round(30 * self.scale)
-        text = self._elide(f"› {text}", font, limit)
-        width = font.getlength(text)
+        # Off the limit before the trim and back onto the width after it, so a sentence long
+        # enough to be elided cannot push its own dots off the edge of the panel.
+        dots_w = self._dots_w if busy else 0.0
+        text = self._elide(f"› {text}", font, limit - dots_w)
+        width = font.getlength(text) + dots_w
         height = round(24 * self.scale)
         y = self.footer.y - round(12 * self.scale) - height / 2
         inset = round(8 * self.scale)
         d.rectangle(
             [x, y - height / 2, x + width + inset * 2, y + height / 2], fill=(*SCREEN, PLATE_ALPHA)
         )
-        colour = halo if state == ERROR else GREEN
-        self._text(d, x + inset, y, text, font, (*colour, 245))
+        # The breath runs under every caption - it is what makes the line read as a live tube
+        # rather than a printed label - and the dots only under one about work in flight, where
+        # they mean the thing everybody already reads them to mean.
+        sunk, lit = caption_pulse(phase)
+        colour = _mix(halo if state == ERROR else GREEN, SCREEN, sunk)
+        used = self._text(d, x + inset, y, text, font, (*colour, CAPTION_ALPHA))
+        if busy and lit:
+            # Hard against the last letter, where an ellipsis belongs - these are standing in
+            # for the one the phrase arrived with, not sitting beside it as a separate mark.
+            self._text(d, x + inset + used, y, "." * lit, font, (*colour, CAPTION_ALPHA))
 
     # ---- the tab row ----
 
