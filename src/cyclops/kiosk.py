@@ -31,7 +31,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import barge, diagram, mixer, session, sfx, webcam  # noqa: E402
+from . import barge, diagram, filming, mixer, session, sfx, webcam  # noqa: E402
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
@@ -55,6 +55,7 @@ from .overlay import (  # noqa: E402
     platform_font_note,
     session_up,
 )
+from .record import PanelSource  # noqa: E402
 from .ui import ERROR, SessionController  # noqa: E402
 from .webcam import WebcamError  # noqa: E402
 
@@ -244,6 +245,13 @@ class Kiosk:
     ):
         self.controller = controller
         self.camera = camera
+        # Where every painted frame is published, for a session that is recording the screen
+        # rather than the camera. Its own object rather than a handle back to this one, because
+        # the recorder is given it directly and must not be able to reach anything else here.
+        # Empty until the first paint, and that cannot matter: the only thing that starts a
+        # session is a tap, taps are dispatched from inside waitKey, and the callback that
+        # catches them is not installed until the window's first frame is already up.
+        self.panel = PanelSource()
         self.fullscreen = fullscreen
         self.overlay: Overlay | None = None
         self.backlight = Backlight()  # the panel's light, off while it sleeps
@@ -319,7 +327,12 @@ class Kiosk:
 
         Rebuilding is the only way back on top of the browser: a window that is merely redrawn
         keeps the place in the stack it already had, which is underneath.
+
+        Everything that reaches the glass comes through here, which is why this is where a
+        session recording the screen takes its frames from - the dark panel and the "No camera
+        found" card included, since those are as much what you were looking at as the picture is.
         """
+        self.panel.publish(image)  # a recording of the screen samples this; see PanelSource
         if self._window_up:
             cv2.imshow(WINDOW, image)
         else:
@@ -660,6 +673,15 @@ class Kiosk:
         self._pending = "start" if starting else "stop"
         self._pending_at = time.monotonic()
         if starting:
+            # What this session's video will be of, settled here because here is the last moment
+            # it is free: the encoder is opened at a fixed frame size a second or two from now.
+            # A switch flipped after this lands on the next session, which is what the settings
+            # screen says it does. See cyclops.filming.
+            wanted = filming.chosen(self.controller.settings)
+            self.controller.set_record_source(
+                self.panel if wanted == filming.SCREEN else self.camera
+            )
+            print(f"· recording the {wanted}", flush=True)
             self.controller.start()
         else:
             # On the tap, not on the teardown. Everything after this point waits on a task
@@ -819,6 +841,13 @@ class Kiosk:
                 self._reveal.clear()
                 self._drop_window()  # the warm browser has been behind us all along
                 self._hidden = True
+                # A session recording the screen is still sampling, and the screen is no longer
+                # ours to hand it. Black rather than the frame we happened to stop on: a diagram
+                # can hold the panel for a quarter of an hour mid-session, and a frozen halo over
+                # a running timer watches back as a hung encoder rather than as what happened.
+                # `or` would not do: (0, 0) before the first frame is a truthy tuple, and
+                # a 0x0 frame is one the recorder cannot resize and gives up over.
+                self.panel.publish(_black(*(self._size if all(self._size) else NO_CAMERA_SIZE)))
             if self._retake.is_set():
                 self._retake.clear()
                 self._drop_window()  # ... and the next frame builds a window on top of it again
@@ -925,10 +954,12 @@ def main() -> None:
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
 
-    webcam.set_live_source(camera)  # the shutter shoots from this same camera
-    # The recorder gets the source even when nothing is plugged in: it waits its own moment for
-    # a first frame and says so in the session log if none comes, and a camera present by the
-    # time the next session starts is then recorded without anything being rewired.
+    webcam.set_live_source(camera)  # the shutter shoots from this same camera, always
+    # Whichever of the two the tap picks, the recorder gets a source even when nothing is plugged
+    # in: it waits its own moment for a first frame and says so in the session log if none comes,
+    # and a camera present by the time the next session starts is then recorded without anything
+    # being rewired. The camera is the constructor's answer only so a session started by anything
+    # but _toggle_session still has one; _toggle_session always says which of the two it wants.
     controller = SessionController(settings, frames=camera, entrypoint="kiosk")
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     diagram.set_panel(kiosk)  # so a finished diagram can find a panel to appear on

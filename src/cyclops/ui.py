@@ -49,10 +49,12 @@ LEVEL_FULL_SCALE = 3000.0  # int16 RMS that maps to a full meter
 class SessionController:
     """Starts/stops a VoiceAgent on its own thread and reports a thread-safe status snapshot.
 
-    ``frames`` is an already-open camera to record the session from - the kiosk's own, which it
-    holds open for the preview. Every session is logged either way; ``entrypoint`` is what goes
-    in the log, and it is passed rather than inferred from ``frames`` because that would only
-    be right by accident.
+    ``frames`` is what the session's video is a recording of, and only the kiosk has one: either
+    the camera it is already holding open for the preview, or the panel that preview ends up on
+    (see :mod:`cyclops.filming`). It is settable, because which of the two is a switch on the
+    settings screen - see :meth:`set_record_source`. Every session is logged either way;
+    ``entrypoint`` is what goes in the log, and it is passed rather than inferred from ``frames``
+    because that would only be right by accident.
     """
 
     def __init__(
@@ -135,6 +137,20 @@ class SessionController:
             guard = self._guard
         if guard is not None:
             guard.set_barge_in(margin_db)
+
+    def set_record_source(self, frames: FrameSource | None) -> None:
+        """Say what the *next* session's video should be of - see :mod:`cyclops.filming`.
+
+        Unlike :meth:`set_barge_in` this deliberately does not reach into a running session, and
+        could not usefully: the encoder is opened once, at the frame size its first frame had, so
+        a source swapped mid-recording would at best be stretched to the shape of the other one.
+        The kiosk calls this on the tap that starts a session, which is the moment the answer is
+        needed and the last moment it can still be changed for free.
+
+        One store of one name, from the kiosk's thread, read by the session thread a beat later
+        in :meth:`_session` - the same bargain the rest of this class makes.
+        """
+        self._frames = frames
 
     def show_photo(self, capture: Capture) -> bool:
         """Hand a photo to the running agent. False when there is nothing live to hand it to.

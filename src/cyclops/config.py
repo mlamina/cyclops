@@ -45,6 +45,12 @@ VOLUME_FILE = Path.home() / ".cache" / "cyclops" / "volume"
 # CYCLOPS_BARGE_IN_DB is left to decide - see :mod:`cyclops.barge`.
 BARGE_IN_FILE = Path.home() / ".cache" / "cyclops" / "barge-in"
 
+# And where it leaves the answer to "what is a session's video a recording of?" - the panel, or
+# the camera on its own. The same note-and-pick-up shape again, for the plainest reason of the
+# three: the page is not the process holding either one. Absent means nobody has ever said, and
+# CYCLOPS_RECORD_SOURCE is left to decide - see :mod:`cyclops.filming`.
+RECORD_SOURCE_FILE = Path.home() / ".cache" / "cyclops" / "record-source"
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -71,9 +77,10 @@ class Settings:
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
     diagrams: bool = True  # offer the drawing tools, and keep what they draw (cyclops.diagram)
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
-    record: bool = True  # record the camera to the session folder (needs an open camera)
-    record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 640x480
-    record_width: int = 640  # recorded video is fit to this width, never upscaled
+    record: bool = True  # record the session to its folder (needs a camera, or a panel)
+    record_source: str = "screen"  # "screen": the panel, UI and all; "camera": the raw picture
+    record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 800x480
+    record_width: int = 0  # cap the recorded width, never upscaling; 0 keeps the source's own
     sleep_after_s: int = 60  # untouched for this long the panel goes dark; 0 keeps it awake
     admin_host: str = "0.0.0.0"  # the admin page is meant to be read from the LAN, not just here
     admin_port: int = 80  # so it opens with a bare hostname
@@ -147,6 +154,20 @@ def _volume(name: str) -> float:
     return max(0.0, min(1.0, percent / 100.0))
 
 
+def _record_source(name: str) -> str:
+    """Which of the two things a session's video is of. See :mod:`cyclops.filming`.
+
+    Spelled out rather than made a flag because "record the screen: off" does not say what you
+    get instead, and the two words are the whole feature.
+    """
+    raw = _env(name)
+    if raw is None:
+        return Settings.record_source
+    if raw.lower() not in {"camera", "screen"}:
+        raise ConfigError(f"{name} must be 'camera' or 'screen', got {raw!r}")
+    return raw.lower()
+
+
 def _lang(name: str) -> str | None:
     raw = _env(name)
     if raw is None:
@@ -190,8 +211,10 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
         project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
+        record_source=_record_source("CYCLOPS_RECORD_SOURCE"),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,
-        record_width=_int("CYCLOPS_RECORD_WIDTH") or Settings.record_width,
+        # _count, not `or`: 0 means "whatever the source is", which `or` would read as unset.
+        record_width=_count("CYCLOPS_RECORD_WIDTH", Settings.record_width),
         # _count, not `or`: 0 means "never blank", which `or` would read as unset. See _count.
         sleep_after_s=_count("CYCLOPS_SLEEP_AFTER_S", Settings.sleep_after_s),
         admin_host=_env("CYCLOPS_ADMIN_HOST") or Settings.admin_host,

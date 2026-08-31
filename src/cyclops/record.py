@@ -1,15 +1,19 @@
-"""Recording a whole kiosk session: the raw camera, plus the two sides of the conversation.
+"""Recording a whole kiosk session: what was on the panel, plus the two sides of the conversation.
 
-A session leaves one ``video.mp4`` in its own folder behind - H.264 video of what the camera saw,
-with a stereo audio track carrying the user on the left channel and Cyclops on the right. Keeping
-the two voices apart means neither is mixed into the other (listen to one side alone, or mix them
-down later), and it sidesteps the double-counting you would get from recording an open microphone
-that is also hearing the speaker.
+A session leaves one ``video.mp4`` in its own folder behind - H.264 video of either the panel or
+the camera, whichever the settings screen asked for (:mod:`cyclops.filming`), with a stereo audio
+track carrying the user on the left channel and Cyclops on the right. Neither choice reaches this
+module: it is handed a :class:`FrameSource` and samples it, and the two answers are two objects
+that satisfy that one method.
+
+Keeping the two voices apart means neither is mixed into the other (listen to one side alone, or
+mix them down later), and it sidesteps the double-counting you would get from recording an open
+microphone that is also hearing the speaker.
 
 Three streams have to line up, and each arrives on its own clock:
 
 * video is sampled here on the wall clock at a fixed rate - re-writing the previous frame when the
-  camera has not produced a new one, so video time never drifts away from wall time;
+  source has not produced a new one, so video time never drifts away from wall time;
 * the user track is written one block per microphone callback, so it stays 1:1 with the input clock;
 * the agent track is taken from the speaker callback *after* its zero-fill, which makes it a
   continuous record of what actually came out of the speaker, the silence between utterances
@@ -45,7 +49,10 @@ from . import card
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE, EchoGuard
 
 DEFAULT_FPS = 15
-DEFAULT_WIDTH = 640  # 640 wide at 15 fps measures ~4% of one Pi 5 core with libx264 ultrafast
+# 0 means "whatever the source hands us", which is the only width that is right for both of the
+# things this records: the panel is 800x480 and wants to be kept 1:1, and a camera has its own
+# native size worth keeping. It is a ceiling when set, never an upscale - see _output_size.
+DEFAULT_WIDTH = 0
 CRF = "26"
 # The guard releases up to PREROLL_BLOCKS at once on a barge-in; the delay line has to be able to
 # reach back over all of them, so it is exactly that deep.
@@ -134,9 +141,51 @@ def mux(work_dir: Path, out_path: Path) -> Mux:
 
 
 class FrameSource(Protocol):
-    """What the recorder needs from a camera: the newest frame, or None."""
+    """What the recorder needs from whatever it is recording: the newest frame, or None.
+
+    Two things satisfy it, and which one a session gets is the settings screen's answer (see
+    :mod:`cyclops.filming`): :class:`~cyclops.camera.CameraSource`, which is the sensor, and
+    :class:`PanelSource` below, which is the glass.
+    """
 
     def frame(self): ...
+
+
+class PanelSource:
+    """The screen as a frame source: whatever the kiosk last put on the panel.
+
+    :class:`~cyclops.camera.CameraSource` is polled - it holds a device open and hands out the
+    newest frame it read. This is the same contract from the other side. Nothing here reads
+    anything: the render loop hands over each finished frame as it paints it, and the recorder
+    samples that on its own clock exactly as it sampled the camera. What lands in ``video.mp4``
+    is then the panel - mirrored preview, halo, timer, caption, tab row - rather than the raw
+    frames the chrome was drawn over.
+
+    One rebinding of one name, so no lock: see :meth:`publish`.
+    """
+
+    def __init__(self) -> None:
+        self._frame = None
+
+    def publish(self, frame) -> None:
+        """Hand over the frame that has just gone on the panel. The render thread's to call.
+
+        A store and a load of an attribute are each one bytecode, so the recorder's thread sees
+        the previous frame or the new one and never half of one - the same bargain
+        :attr:`cyclops.ui.SessionController._phase` and the flags on the agent already make.
+        What makes it *enough* rather than merely atomic is that these frames are never written
+        to again: :func:`cyclops.overlay.composite` allocates a fresh array every call, so a
+        frame handed over here can be encoded at leisure while the loop builds the next one.
+
+        Only window-sized composites belong here. The first frame decides the encoder's size
+        for the whole session (see :meth:`SessionRecorder._output_size`), so a raw camera frame
+        slipped in before the loop starts would squash every panel frame after it.
+        """
+        self._frame = frame
+
+    def frame(self):
+        """The last frame painted, or None before the first one. See :class:`FrameSource`."""
+        return self._frame
 
 
 class _Track:
@@ -192,7 +241,7 @@ class SessionRecorder:
         self.failed = ""  # non-empty once recording has given up; the session carries on
         self._frames = frames
         self._fps = max(1, fps)
-        self._width = max(2, width)
+        self._width = width if width <= 0 else max(2, width)  # <=0: the source's own width
         self._t0 = 0.0
         self._size: tuple[int, int] = (0, 0)
         self._stop = threading.Event()
@@ -217,7 +266,7 @@ class SessionRecorder:
                 return False
             first = self._await_frame()
             if first is None:
-                self._give_up("camera delivered no frame; this session will not be recorded")
+                self._give_up("no frame to record; this session will not be recorded")
                 self._report()
                 return False
 
@@ -337,9 +386,19 @@ class SessionRecorder:
         return None
 
     def _output_size(self, frame) -> tuple[int, int]:
-        """Fit to the record width without upscaling; both dimensions even, for yuv420p."""
+        """Fit to the record width without upscaling; both dimensions even, for yuv420p.
+
+        A width of 0 - the default - keeps the source's own, which is what makes recording the
+        800x480 panel cost no resample at all: :meth:`_write_frame` only resizes a frame whose
+        shape disagrees with this, and at 800 wide none of them do.
+
+        Whatever comes back is fixed for the whole session, because it is the frame size the
+        encoder was opened with. A window that changes size mid-session is therefore stretched
+        back to this rather than breaking the stream - distorted, never fatal, and not reachable
+        on the Pi, where the panel is one size from boot to shutdown.
+        """
         height, width = frame.shape[:2]
-        out_w = min(self._width, width)
+        out_w = width if self._width <= 0 else min(self._width, width)
         out_h = max(2, round(height * out_w / width))
         return out_w - out_w % 2, out_h - out_h % 2
 

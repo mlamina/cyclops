@@ -65,7 +65,7 @@ sessions/
     session.jsonl     the same events, one JSON object per line, for a program
     summary.md        one sentence and one paragraph: what this session was
     project.md        which project this got filed under, or why it didn't
-    video.mp4         the recording (kiosk only)
+    video.mp4         the recording - the panel, or the camera (kiosk only)
     photos/
       14-33-12_you.jpg
       14-32-40_cyclops.jpg   (only on older cards - Cyclops used to hold its own shutter)
@@ -106,17 +106,48 @@ own recap. The line printed when a session connects says what was handed over:
 · continuity: last session yesterday (22m 14s) + 4 earlier headlines
 ```
 
-**The video.** H.264 of what the camera saw (raw frames — no mirror, no UI chrome) with a
-**stereo** audio track, **you on the left channel and Cyclops on the right**. The two voices are
-never mixed, so you can listen to either side alone. Only the kiosk records: `cyclops` opens the
-camera per photo instead of holding it open, so there is no continuous video for it to record.
+**The video.** H.264 with a **stereo** audio track, **you on the left channel and Cyclops on the
+right**. The two voices are never mixed, so you can listen to either side alone. Only the kiosk
+records, and now for two reasons: `cyclops` opens the camera per photo instead of holding it open,
+so there is no continuous video for it to record — and it has no panel, which is the other thing
+there is to record.
+
+**Which of the two is a switch on the settings screen** — tap the eye, and it sits under
+INTERRUPT. It settles what the *next* session records; an encoder is opened once, at one frame
+size, so a recording already running cannot be handed something else halfway through.
+
+| | what lands in `video.mp4` |
+| --- | --- |
+| **SCREEN** *(the default)* | The panel, 1:1 at 800×480 — the mirrored, sharpened preview with the halo, the timer, the caption, the REC tag and the tab row composited on it. Watching it back is watching the session happen: you can see when Cyclops was thinking, when you cut in, and where the shutter went off. Because it is mirrored, **text in the room reads backwards**. |
+| **CAMERA** | The sensor alone, at its own resolution, nothing drawn over it and nothing flipped. Text reads the right way round and no pixel is spent on chrome. The one to reach for when the recording is evidence rather than a memory — a part number, a wiring colour, a serial you will squint at later. |
+
+`CYCLOPS_RECORD_SOURCE` decides it on a box where nobody has ever touched the switch. The photos
+are unaffected either way: SNAP, the agent's look tool and everything in `photos/` come off the
+raw camera and are never mirrored.
+
+Two smaller consequences of recording the screen. A session started with **no camera** now still
+produces a video — the panel saying `No camera found`, with the chrome and the full stereo audio —
+where before there was no frame to record and the recorder declined. And while a diagram or the
+admin page is covering the panel the recording goes **black**, because the screen is genuinely no
+longer the kiosk's to hand over; the audio carries on throughout.
 
 Needs `ffmpeg` on `PATH` (`brew install ffmpeg`, or `apt install ffmpeg` on the Pi). Without it
 the session runs exactly as before and says once that it isn't recording — nothing here ever
 blocks a conversation, recording and logging included.
 
-At the defaults (640 wide, 15 fps) a recording costs roughly 3 MB per minute and about 4% of one
-Pi 5 core (measured on a Pi 5 with a C920). Nothing is ever pruned; delete what you don't want.
+**What each costs.** Measured on a Pi 5 at 15 fps, against the ~93% of one core the panel already
+spends drawing itself at 25 fps whether anything is recording or not:
+
+| | frame | over drawing alone | on the card |
+| --- | --- | --- | --- |
+| **SCREEN** | 800×480 | **+18%** of one core | **2.5 MB/min** |
+| **CAMERA** | the sensor's own — 1280×720 on a C920 | **+35%** of one core | **8.5 MB/min** |
+
+Two thirds of each figure is the kiosk handing frames over rather than ffmpeg taking them, which
+is why the bigger frame costs the more: it is a memcpy per frame, and 720p is 2.4× the bytes.
+`CYCLOPS_RECORD_WIDTH` caps it if the card matters more than the detail does; 640 was the old
+default, and it costs you a resample that softens the chrome. Nothing is ever pruned; delete
+what you don't want.
 
 **If a session is cut off** — power loss, a killed process — nothing is lost and nothing has to
 be done by hand. The Pi finishes it on the next boot, and the two rules that make that work are
@@ -414,9 +445,10 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_SOUNDS`       | `1`            | Cues for waking and going to sleep, and the shutter; `0` disables. |
 | `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
-| `CYCLOPS_RECORD`       | `1`            | Record the camera into the session folder; `0` disables. |
+| `CYCLOPS_RECORD`       | `1`            | Record the session into its folder; `0` disables. |
+| `CYCLOPS_RECORD_SOURCE`| `screen`       | What a session's video is of: `screen` for the panel, chrome and all, or `camera` for the raw picture. The switch on the settings screen wins over this; it only decides on a box where nobody has ever touched it. |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
-| `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
+| `CYCLOPS_RECORD_WIDTH` | `0`            | Cap the recorded width, never upscaling. `0` keeps whatever the source is — the panel 1:1 at 800 wide, a camera at its own resolution. |
 | `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |
 | `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. Tapping the eye on the panel opens the same port. |
 
@@ -468,7 +500,7 @@ and every camera probe comes up empty.
 cyclops drives them anyway, from userspace over libusb. Once the `/dev/video*` probe finds
 nothing, `open_camera()` looks for a useeplus endoscope and wraps it in the same
 `read()`/`release()` shape the rest of the code already expects, so nothing above it knows the
-difference — preview, SNAP and session recording all behave as usual, at 640×480. A real webcam
+difference — preview, SNAP and a `camera` recording all behave as usual, at 640×480. A real webcam
 still wins if one is plugged in. The startup line says which you got:
 
 ```
@@ -516,8 +548,11 @@ to every photo before it is encoded for the model. On a real frame it takes the 
 variance from 18.5 to 50.1 — 2.7× the detail — while the noise floor in flat areas moves 2.10 to
 2.20. The gates are what make that trade good: the floor leaves detail weaker than the encoder's
 own blocking alone, and the ceiling caps how far any pixel may travel, which is what stops a face
-against a bright window growing a white halo. Recorded video is untouched: the recorder samples
-raw frames straight from the camera.
+against a bright window growing a white halo. A `camera` recording is untouched by it — the
+recorder samples raw frames straight from the device — but a `screen` one is not, and should not
+be: it is the glass, and the glass is sharpened. That is also the recording in which everything
+is mirrored, so this is the setting to move if what you replay a session for is reading a part
+number off it.
 
 It is free, as it turns out. The preview path costs 5.98 ms a frame against 5.42 ms before, on a
 25 fps loop with 40 ms to spend, because the same work found a much older waste: `mirror()` used

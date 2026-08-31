@@ -242,22 +242,43 @@ every device on the network is exactly the sprawl this replaced.
   .vslider:active::-webkit-slider-thumb,
   .vslider:active::-moz-range-thumb { background: #fff; }
 
-  /* ---- the interrupt switch ---- */
+  /* ---- the switches ---- */
   /* Built to the volume row's measurements - same height, same label column, same gaps -
-     because it is the same kind of thing: the two ways this screen changes what the box does
-     rather than what it shows. The button is 46 u tall like the volume's thumb, which is what
-     a thumb is, and fixed in width so ON and OFF do not move it.
+     because they are the same kind of thing: the three ways this screen changes what the box
+     does rather than what it shows. The button is 46 u tall like the volume's thumb, which is
+     what a thumb is, and fixed in width so neither pair of words moves it. 96 u holds SCREEN
+     and CAMERA, the longest of them, with room to spare at this letter-spacing.
 
-     A word between them says what the setting means, because "INTERRUPT: OFF" does not: the
-     one thing somebody wants to know here is whether they now have to wait. */
-  .setting {
+     A word between them says what the setting means, because "INTERRUPT: OFF" does not, and
+     "RECORD: SCREEN" says even less: the one thing somebody wants to know at each is whether
+     they now have to wait, and what they will be watching afterwards. */
+  /* Both switches on one row, because the panel has no row to spare. 480 px holds the header,
+     the four readouts, the volume, this, and a way out - and the readouts are what gives when
+     anything else grows. A second full-height switch row took the big numbers from 45 px of
+     their 58 px line to 19 px, which is not a smaller number but a broken one. Sharing a row
+     costs each switch its width instead, which it can afford: the label goes above the hint
+     rather than beside it, and both keep every word. */
+  .switches {
     display: none;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: calc(16 * var(--u));
+    /* minmax(0, 1fr) and not 1fr: a bare 1fr is minmax(auto, 1fr) and refuses to go below its
+       min-content, which for the left half is a hint that never wraps - so it took more than
+       half the row and pushed its switch across the middle. */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    /* Wider between the two settings than within either, so the row reads as two things and
+       not as one long one - the switch on the left would otherwise sit against the label on
+       the right with nothing to say they belong to different questions. */
+    gap: calc(30 * var(--u));
     padding: 0 calc(16 * var(--u));
     height: calc(52 * var(--u));
   }
+  .setting {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: calc(12 * var(--u));
+  }
+  .stack { display: grid; align-content: center; gap: calc(2 * var(--u)); min-width: 0; }
+  .stack > * { min-width: 0; }  /* so the hint's own ellipsis can engage inside the stack */
   .shint {
     font-size: calc(13 * var(--u));
     color: var(--dim);
@@ -326,7 +347,7 @@ every device on the network is exactly the sprawl this replaced.
      row and the two things still worth having float on top of the drawing. */
   body.drawing { grid-template-rows: minmax(0, 1fr); }
   body.drawing header, body.drawing .tiles,
-  body.drawing .volume, body.drawing .setting { display: none; }
+  body.drawing .volume, body.drawing .switches { display: none; }
   body.drawing .stage { display: block; }
 
   /* The drawing's own name, over the top-left of it. */
@@ -376,7 +397,7 @@ every device on the network is exactly the sprawl this replaced.
   /* The volume lives on the System screen. Carrying it into every view would cost the
      panel 52 of its 480 px on every screen to hold a control nobody came to that screen to use. */
   body.view-status:not(.drawing) .volume,
-  body.view-status:not(.drawing) .setting { display: grid; }
+  body.view-status:not(.drawing) .switches { display: grid; }
   /* A drawing is Cyclops answering a question out loud. It outranks anything you were reading. */
   body.drawing .view, body.drawing .lightbox { display: none !important; }
 
@@ -399,8 +420,9 @@ every device on the network is exactly the sprawl this replaced.
   .sessions, .media { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
   /* Two columns and no padding on the row itself - the gaps around the still *were* the padding.
      The still is flush to three of the row's edges and stretches to whatever height the title
-     needs; the column is 4:3 against the min-height, so `cover` has almost nothing to crop off a
-     640x480 frame. The text carries its own padding instead. */
+     needs; the column is 4:3 against the min-height, which is a camera frame exactly and a
+     screen frame with a little off each side - `cover` settles whichever this one is, and the
+     card holds both. The text carries its own padding instead. */
   .row {
     position: relative;
     display: grid;
@@ -522,11 +544,14 @@ every device on the network is exactly the sprawl this replaced.
      spent on the thing you opened the screen to look at. Dropping the chrome puts it at 595x446:
      3.1x the area, and the biggest lever there is by a distance.
 
-     The side bars are not waste and cannot be recovered: the camera is capped at 640x480 and the
-     panel is 800x480, so an uncropped frame always leaves ~85 px down each side. Cropping to fill
-     would win another 45% and lose a fifth of every frame, which is the wrong trade for footage
-     you replay to read a part number off. So the bars get the controls instead, where they cost
-     no rows at all - and the picture keeps every pixel it has.
+     How much is left down the sides now depends on what was recorded, and both answers are fine
+     because nothing here is measured in advance: `fit()` reads the picture's real ratio off the
+     element and places everything from that. A session recorded from the camera is 640x480 on an
+     800x480 panel, so ~85 px of bar each side, and the controls sit in it. One recorded from the
+     screen is the panel's own 5:3 and fills it edge to edge, so the same controls sit *on* the
+     picture, which is where every phone puts them. Cropping to fill was never on the table for
+     the first case - it would lose a fifth of every frame, the wrong trade for footage you
+     replay to read a part number off - and in the second there is nothing to crop.
 
      `solo` is set from the script rather than by a media query, because it is not only a width:
      it also decides that the transcript is never fetched, and that the video wears our controls
@@ -753,8 +778,9 @@ every device on the network is exactly the sprawl this replaced.
     .tiles { grid-template-columns: repeat(4, 1fr); grid-template-rows: calc(150 * var(--u));
              align-content: start; }
     .sessions, .media { padding: calc(12 * var(--u)) calc(4 * var(--u)); }
-    /* 176 wide against a 132 min-height is 4:3 to the pixel, so the still is uncropped as well
-       as ungapped. */
+    /* 176 wide against a 132 min-height is 4:3 to the pixel: uncropped as well as ungapped for
+       a recording made from the camera, and trimmed down the sides for one made from the 5:3
+       screen. `cover` on .thumb is what makes a list of both look like one list. */
     .row { grid-template-columns: calc(176 * var(--u)) minmax(0, 1fr);
            min-height: calc(132 * var(--u)); }
     .row:hover { border-color: var(--mid); }
@@ -771,7 +797,11 @@ every device on the network is exactly the sprawl this replaced.
     .watch { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
              grid-template-rows: minmax(0, 1fr); gap: calc(18 * var(--u)); }
     .playing { grid-template-rows: min-content min-content; align-content: start; overflow-y: auto; }
-    .video { height: auto; max-height: 52vh; aspect-ratio: 4 / 3;
+    /* `auto` first, so the box takes the recording's own shape once the metadata lands and the
+       ratio after it is only what to hold before that. It has to be both: a session recorded
+       from the screen is 5:3 like the panel, one recorded from the camera is 4:3 like the
+       sensor, and the card holds a mix of the two forever. See cyclops.filming. */
+    .video { height: auto; max-height: 52vh; aspect-ratio: auto 5 / 3;
              border: calc(1 * var(--u)) solid var(--dim); }
     .stitle { font-size: calc(20 * var(--u)); -webkit-line-clamp: 3; }
     .ssum { display: block; color: var(--dim); line-height: 1.5; margin-top: calc(10 * var(--u));
@@ -895,13 +925,26 @@ every device on the network is exactly the sprawl this replaced.
            aria-label="Speaker volume">
     <output class="vvalue" id="volval">{{ volume|default:80 }}%</output>
   </section>
-  <section class="setting">
-    <span class="vlabel">INTERRUPT</span>
-    <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}wait for Cyclops to finish{% endif %}</span>
-    <button class="sw" id="barge" type="button" role="switch"
-            aria-label="Let me interrupt Cyclops"
-            aria-checked="{% if barge_in %}true{% else %}false{% endif %}">{% if barge_in %}ON{% else %}OFF{% endif %}</button>
-  </section>
+  <div class="switches">
+    <section class="setting">
+      <span class="stack">
+        <span class="vlabel">RECORD</span>
+        <span class="shint" id="rechint">{% if record_screen %}this screen, chrome and all{% else %}the camera alone, full size{% endif %}</span>
+      </span>
+      <button class="sw" id="rec" type="button" role="switch"
+              aria-label="Record the screen rather than the camera"
+              aria-checked="{% if record_screen %}true{% else %}false{% endif %}">{% if record_screen %}SCREEN{% else %}CAMERA{% endif %}</button>
+    </section>
+    <section class="setting">
+      <span class="stack">
+        <span class="vlabel">INTERRUPT</span>
+        <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}wait for Cyclops to finish{% endif %}</span>
+      </span>
+      <button class="sw" id="barge" type="button" role="switch"
+              aria-label="Let me interrupt Cyclops"
+              aria-checked="{% if barge_in %}true{% else %}false{% endif %}">{% if barge_in %}ON{% else %}OFF{% endif %}</button>
+    </section>
+  </div><!-- .switches -->
   <button class="close" id="close" type="button"><span class="glyph">&#10005;</span><span
     class="word" id="closeword">&nbsp;Close</span></button>
   {% endif %}
@@ -975,6 +1018,27 @@ every device on the network is exactly the sprawl this replaced.
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: 'on=' + (on ? '1' : '0'),
+        });
+      } catch (e) { /* the service is gone; the next render says what actually stuck */ }
+    });
+  }
+
+  // What a session's video is of. The same note-and-pick-up as the two above, with one honest
+  // difference the hint has to carry: an encoder is opened once, at one frame size, so this lands
+  // on the next session rather than on any recording already running.
+  const rec = document.getElementById('rec');
+  if (rec) {
+    const hint = document.getElementById('rechint');
+    rec.addEventListener('click', async () => {
+      const screen = rec.getAttribute('aria-checked') !== 'true';
+      rec.setAttribute('aria-checked', screen ? 'true' : 'false');   // drawn before the round trip
+      rec.textContent = screen ? 'SCREEN' : 'CAMERA';
+      hint.textContent = screen ? 'this screen, chrome and all' : 'the camera alone, full size';
+      try {
+        await fetch('/record-source', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'source=' + (screen ? 'screen' : 'camera'),
         });
       } catch (e) { /* the service is gone; the next render says what actually stuck */ }
     });
@@ -1226,7 +1290,7 @@ every device on the network is exactly the sprawl this replaced.
     if (!document.body.classList.contains('solo')) return;
     const box = video.getBoundingClientRect();
     if (!box.width || !box.height) return;
-    const ratio = (video.videoWidth || 4) / (video.videoHeight || 3);
+    const ratio = (video.videoWidth || 5) / (video.videoHeight || 3);  // 5:3 until it says
     const wide = box.width / box.height > ratio;
     const w = wide ? box.height * ratio : box.width;
     const h = wide ? box.height : box.width / ratio;
