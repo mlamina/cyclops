@@ -97,12 +97,17 @@ GREEN_MID = (46, 176, 100)  # rules, dividers, glyphs at rest
 GREEN_DIM = (32, 118, 70)  # the faintest thing still legible on the panel
 AMBER = (255, 184, 60)
 RED = (255, 86, 70)
-# The two the tube gets while he is up. Asleep, the panel is one hue and he is the same green as
-# the furniture he sits in; awake, the live parts step off it. That is the whole job of these:
-# dim green and bright green are the same colour to anyone more than a pace away, so a panel that
-# said "awake" only by getting brighter did not say it at all.
-CYAN = (64, 226, 255)  # listening, speaking, looking - he is here and it is your turn
-VIOLET = (168, 150, 255)  # searching, drawing - he is off doing something of his own
+# The one the tube gets while he is up. Asleep, the panel is a single hue and he is the same
+# green as the furniture he sits in; awake, the live parts step off it. That is the whole job of
+# it: dim green and bright green are the same colour to anyone more than a pace away, so a panel
+# that said "awake" only by getting brighter did not say it at all.
+#
+# Thirty degrees round the wheel from the phosphor and no further. A blue-cyan at +50 was tried
+# and fought the green - two colours near enough to be compared and far enough to argue. This one
+# is plainly not the phosphor and still belongs to the same tube. Every state he is up in wears
+# it, searching included: what tells those apart is the eye, which by then is spinning at 155
+# degrees a second with a white-hot arc going round its rim, and the word in the strip.
+AQUA = (80, 245, 215)
 SCREEN = (5, 15, 10)  # the green-black the readout strip and the tab row are made of
 INK = (3, 11, 7)  # text on a filled tab
 
@@ -117,11 +122,11 @@ HALOS = {
     STARTING: AMBER,
     STOPPING: AMBER,  # disconnecting is the same transition, run backwards
     CONNECTING: AMBER,
-    LISTENING: CYAN,
-    SPEAKING: CYAN,
-    LOOKING: CYAN,
-    SEARCHING: VIOLET,
-    DRAWING: VIOLET,
+    LISTENING: AQUA,
+    SPEAKING: AQUA,
+    LOOKING: AQUA,
+    SEARCHING: AQUA,
+    DRAWING: AQUA,
     ERROR: RED,
 }
 # What the strip calls each state. Kept here rather than taken from the controller's ``detail``
@@ -182,19 +187,19 @@ MOODS = {
     # Awake and attending. A resting breath, a barely-moving ring set, and the one mood whose
     # iris opens to your voice - which is the panel saying it can hear you.
     LISTENING: Mood(
-        tint=CYAN, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4
+        tint=AQUA, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4
     ),
     # Talking: a faster breath and a wider iris, because he is doing the thing rather than
     # waiting to. Barely opens to level here - the level *is* his own voice coming back.
     SPEAKING: Mood(
-        tint=CYAN, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5
+        tint=AQUA, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5
     ),
     # Looking at a photo. Wide, still, and it does not blink: this is a stare.
-    LOOKING: Mood(tint=CYAN, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0),
+    LOOKING: Mood(tint=AQUA, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0),
     # Hunting. Narrowed to a point, breathing fast, rings tearing round with a scanning arc.
-    SEARCHING: Mood(tint=VIOLET, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
+    SEARCHING: Mood(tint=AQUA, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
     # Drawing. Deliberate, and turning the other way, because it is making rather than looking.
-    DRAWING: Mood(tint=VIOLET, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
+    DRAWING: Mood(tint=AQUA, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
     # A fault. Still and red, and pointedly not pulsing: a thing that throbs is asking to be
     # watched, and this one is asking to be read - the caption underneath says what broke.
     ERROR: Mood(tint=RED, aperture=0.20, swell=0.0, breath_s=0.0, spin=0.0),
@@ -259,9 +264,7 @@ EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on
 # does nothing until you find it is worth pointing at. A slow swell, not a flash: this is an
 # invitation, and a panel blinking at you across a workshop is an alarm.
 WAKE_PERIOD_S = 2.9  # seconds a breath takes, and not a multiple of any other on this panel
-WAKE_GLOW = 0.62  # how far the glyph and the word travel from GREEN_MID towards GREEN...
-WAKE_WASH = 0.13  # ...and how much colour swells into the cell behind them
-WAKE_WASH_ALPHA = 120  # at this much, at the top of a breath - see mix() for why not a fill
+WAKE_GLOW = 1.0  # the glyph and the word travel the whole way from GREEN_MID to GREEN...
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -944,7 +947,7 @@ class Overlay:
         sunk, lit = caption_pulse(phase) if session_up(state) else (0.0, 0)
         colour = mix(halo if state == ERROR else GREEN, SCREEN, sunk)
         # The marker takes the accent and the sentence does not. A whole line of running text in
-        # cyan over a live camera is harder to read than the same line in phosphor, and the
+        # aqua over a live camera is harder to read than the same line in phosphor, and the
         # marker is the part that is decoration anyway - so it is the part that gets to be a
         # colour, and it breathes with the words it introduces.
         used = self._text(d, x + inset, y, MARKER, font, (*mix(halo, SCREEN, sunk), CAPTION_ALPHA))
@@ -1054,7 +1057,17 @@ class Overlay:
             [cell.x + inset, cell.y + inset, cell.right - inset, cell.bottom - inset],
             radius=max(0, self.radius - inset),
             corners=(False, False, True, False),
-            fill=(*mix(SCREEN, GREEN, WAKE_WASH * swell), round(WAKE_WASH_ALPHA * swell)),
+            fill=(*mix(SCREEN, GREEN, TAB_LIVE), round(TAB_LIVE_ALPHA * swell)),
+        )
+        # ...and a lit edge along the top, swelling with it. Both of those are the vocabulary
+        # this panel already uses for a selected tab, borrowed rather than invented: at the top
+        # of the breath the cell looks exactly the way the SLEEP tab does while a session is up,
+        # and then it fades back to nothing. Nothing is selected while he is asleep, so there is
+        # nothing for it to be confused with.
+        edge = max(2, round(4 * self.scale))
+        d.rectangle(
+            [cell.x + inset, cell.y + inset, cell.right - inset, cell.y + inset + edge],
+            fill=(*GREEN, round(255 * swell)),
         )
         colour = mix(GREEN_MID, GREEN, WAKE_GLOW * swell)
         cx, gy, radius = self._glyph_at(cell)

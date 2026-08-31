@@ -281,12 +281,17 @@ def test_nothing_moves_while_he_is_asleep_except_the_way_out() -> None:
 
 
 def _invite(ov: overlay.Overlay, phase: float) -> float:
-    """How bright the WAKE UP glyph is, off a rendered frame."""
+    """How bright the WAKE UP glyph's strokes are, off a rendered frame.
+
+    The brightest pixel in the box rather than its mean: ImageDraw does not anti-alias, so the
+    strokes are exactly the colour they were drawn in, and a mean would be dragged around by the
+    wash swelling behind them - which moves the other way.
+    """
     cell = ov._cells["wake"]
     cx, gy, r = ov._glyph_at(cell)
     frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=phase)
-    crop = frame[gy - r : gy + r, cx - r : cx + r].astype(float)
-    return float(crop[crop[:, :, 3] > 150][:, 1].mean())
+    crop = frame[gy - r : gy + r, cx - r : cx + r]
+    return float(crop[crop[:, :, 3] > 150][:, 1].max())
 
 
 def test_the_way_out_glows_while_he_is_asleep() -> None:
@@ -413,33 +418,50 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
     _settle(ov, **shown)
     frame = ov.render(phase=10.0, **shown)
 
-    def bluest(box: tuple[int, int, int, int]) -> int:
-        crop = frame[box[1] : box[3], box[0] : box[2]].astype(int)
-        px = crop[crop[:, :, 3] > 200]
-        return int((px[:, 2] - px[:, 1]).max()) if len(px) else -999
+    def wears(box: tuple[int, int, int, int]) -> str:
+        """Whether the brightest thing in a box is nearer the phosphor or nearer the accent.
+
+        Hue, with brightness divided out - which is the whole point of the accent. Asking "is it
+        blue" would have been a question about one particular accent rather than about this one.
+        """
+        crop = frame[box[1] : box[3], box[0] : box[2]].astype(float)
+        px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 250)][:, :3]
+        assert len(px), f"nothing lit in {box}"
+        seen = px.mean(axis=0) / px.mean(axis=0).sum()
+        near = {
+            name: float(np.abs(seen - np.array(c) / sum(c)).sum())
+            for name, c in (("phosphor", overlay.GREEN), ("accent", overlay.AQUA))
+        }
+        return min(near, key=near.get)  # type: ignore[arg-type]
 
     clock_right, _, meter_right = ov._readouts(False)
-    meter_x = int(ov._meter_x(meter_right))
     cy = ov.header.center[1]
-    assert bluest((meter_x, cy - 10, int(meter_right), cy + 10)) > 0, "the meter is not accented"
-    clock = (int(clock_right - ov._clock_w), cy - 10, int(clock_right), cy + 10)
-    assert bluest(clock) > 0, "the session clock is not accented"
-    # The caption's marker takes the accent and its sentence does not - a running line in cyan
+    assert wears((int(ov._meter_x(meter_right)), cy - 10, int(meter_right), cy + 10)) == "accent"
+    assert wears((int(clock_right - ov._clock_w), cy - 10, int(clock_right), cy + 10)) == "accent"
+    # The caption's marker takes the accent and its sentence does not - a running line in aqua
     # over a live camera is harder to read than the same line in phosphor.
     slab_x = ov.viewport.x + ov.pad + round(34 * ov.scale) + round(8 * ov.scale)
     marker_w = int(ov.font_caption.getlength(overlay.MARKER))
     top = int(ov.footer.y - round(12 * ov.scale) - round(24 * ov.scale) / 2) - 6
-    assert bluest((slab_x, top, slab_x + marker_w, top + 14)) > 0, "the marker is not accented"
-    assert bluest((slab_x + marker_w, top, slab_x + marker_w + 60, top + 14)) < 0, (
-        "the caption's own words went blue"
-    )
-    # The SNAP glyph and its word, well inside the cell: the panel's own border runs along the
-    # bottom of it and that *is* accented, which is the point.
+    assert wears((slab_x, top, slab_x + marker_w, top + 14)) == "accent"
+    assert wears((slab_x + marker_w, top, slab_x + marker_w + 60, top + 14)) == "phosphor"
+    # ...and the furniture: the SNAP glyph, well inside its cell, since the panel's own border
+    # runs along the bottom of it and that *is* accented.
     snap = ov._cells["shutter"]
     cx, gy, r = ov._glyph_at(snap)
-    assert bluest((cx - r - 2, gy - r - 2, cx + r + 2, snap.bottom - ov.line - 1)) < 0, (
-        "SNAP went blue"
-    )
+    assert wears((cx - r - 2, gy - r - 2, cx + r + 2, snap.bottom - ov.line - 1)) == "phosphor"
+
+
+def test_the_accent_belongs_to_the_same_tube_as_the_phosphor() -> None:
+    # Far enough round the wheel to be a different colour, near enough to be the same screen.
+    # A blue-cyan at fifty degrees out fought the green; this is the constraint that was missing.
+    import colorsys
+
+    def hue(c: tuple[int, int, int]) -> float:
+        return colorsys.rgb_to_hsv(*[v / 255 for v in c])[0] * 360
+
+    apart = abs(hue(overlay.AQUA) - hue(overlay.GREEN))
+    assert 18 < apart < 40, f"the accent is {apart:.0f} degrees off the phosphor"
 
 
 def test_he_changes_colour_with_what_he_is_doing() -> None:

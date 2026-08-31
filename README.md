@@ -557,12 +557,12 @@ the middle of them:
 | **WAKE UP** | wakes Cyclops and starts the conversation; it says **SLEEP** while he is up, and the tab stays lit |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
-from it — **green asleep, amber waking, cyan awake, violet while he is off searching or drawing,
-red on a fault** — so the state reads from across the room, and while he is up it breathes. Hue
-rather than brightness, because dim green and bright green are the same colour to anyone more
-than a pace away. The same accent goes on the handful of things that only mean something during
-a session: the signal meter, the session clock, the caption's `›`, the lit edge of the SLEEP tab,
-and him. Everything else — the brand, the rules, the ticks, SNAP, the caption's own words — stays
+from it — **green asleep, amber waking, aqua awake, red on a fault** — so the state reads from
+across the room, and while he is up it breathes. Hue rather than brightness, because dim green
+and bright green are the same colour to anyone more than a pace away; and the aqua is thirty
+degrees off the phosphor and no further, so it is plainly a different colour and still the same
+tube. The same accent goes on the handful of things that only mean something during a session:
+the signal meter, the session clock, the caption's `›`, the lit edge of the SLEEP tab, and him. Everything else — the brand, the rules, the ticks, SNAP, the caption's own words — stays
 phosphor green whatever he is doing, because a panel where everything is an accent has none.
 
 Asleep the whole screen is green and completely still, with one exception: the **WAKE UP** cell
