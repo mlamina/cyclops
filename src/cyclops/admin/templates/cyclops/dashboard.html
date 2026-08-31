@@ -330,6 +330,9 @@ on every device on the network is exactly the sprawl this replaced.
   body.view-status   .tiles,
   body.view-sessions .sessions,
   body.view-session  .watch,
+  body.view-projects .projects,
+  body.view-browse   .browse,
+  body.view-file     .file,
   body.view-media    .media { display: grid; }
   /* The volume lives on the System screen. Carrying it into every view would cost the
      panel 52 of its 480 px on every screen to hold a control nobody came to that screen to use. */
@@ -594,6 +597,107 @@ on every device on the network is exactly the sprawl this replaced.
   .empty { color: var(--dim); letter-spacing: .2em; text-transform: uppercase;
            padding: calc(30 * var(--u)); text-align: center; font-size: calc(13 * var(--u)); }
 
+  /* ---- the projects ---- */
+  /* The list is the session list: a project has a photo, a name and a sentence saying what it
+     is, which is the same row with the same target and nothing new to learn. */
+  .projects { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+
+  /* The browser and the reader are one shape twice: a bar saying where you are, and the thing
+     itself scrolling under it. Two rows rather than one scroller, because on the panel that bar
+     is the only way back and a way back that scrolls off the top is not one. */
+  .browse, .file { grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .crumbs {
+    display: flex; align-items: center; gap: calc(2 * var(--u));
+    border-bottom: calc(1 * var(--u)) solid var(--dim);
+    overflow-x: auto; white-space: nowrap;
+  }
+  .crumb {
+    appearance: none; -webkit-appearance: none; border: 0; background: transparent;
+    color: var(--mid); font: inherit; font-size: calc(13 * var(--u)); letter-spacing: .1em;
+    /* 40u, a shade under the tabs above it: this moves you around inside one screen too, and it
+       must not read as a second row of them. The line-height is what centres the text, and it is
+       here rather than on the flex row because the file you are reading is a <span> among
+       <button>s - a button centres its own label and a span left to itself sits at the top. */
+    min-height: calc(40 * var(--u)); line-height: calc(40 * var(--u));
+    padding: 0 calc(6 * var(--u));
+    max-width: calc(240 * var(--u)); overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; text-align: left; flex: none;
+  }
+  .crumb.up { color: var(--green); font-size: calc(22 * var(--u)); padding: 0 calc(8 * var(--u)); }
+  .crumb:active { color: var(--green); }
+  .crumb.here { color: var(--green); }   /* the file you are reading: named, but not a way back */
+  .sep { color: var(--dim); flex: none; }
+  .files { overflow-y: auto; overscroll-behavior: contain;
+           padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+  /* A file row is a project row with the still swapped for a mark. Same box, same border, same
+     target - the column is narrower because a glyph is not a photograph. */
+  .files .row { grid-template-columns: calc(46 * var(--u)) minmax(0, 1fr);
+                min-height: calc(50 * var(--u)); }
+  .mark {
+    display: grid; place-content: center; color: var(--mid);
+    font-size: calc(18 * var(--u)); background: var(--screen);
+    border-right: calc(1 * var(--u)) solid var(--dim);
+  }
+  .mark.dir { color: var(--green); }
+  .files .rowtitle { font-size: calc(14 * var(--u)); -webkit-line-clamp: 1;
+                     padding-right: calc(70 * var(--u)); }
+  .files .rowwhen { top: 50%; transform: translateY(-50%); }
+
+  /* ---- a file, open ---- */
+  /* The markdown arrives as HTML with its pictures already pointed at /project-media - see
+     shelf.py, which is also the only thing that ever put a tag in it. All that is left here is
+     to make a document look like it belongs on this screen rather than in a browser's defaults. */
+  .doc {
+    overflow-y: auto; overscroll-behavior: contain;
+    padding: calc(12 * var(--u)) calc(14 * var(--u));
+    color: var(--mid); line-height: 1.5;
+  }
+  .doc h1, .doc h2, .doc h3 { color: var(--green); line-height: 1.25;
+                              margin: calc(14 * var(--u)) 0 calc(6 * var(--u)); }
+  .doc h1 { font-size: calc(19 * var(--u)); letter-spacing: .04em; }
+  .doc h2 { font-size: calc(13 * var(--u)); letter-spacing: .18em; text-transform: uppercase; }
+  .doc h3 { font-size: calc(14 * var(--u)); letter-spacing: .08em; }
+  .doc > :first-child { margin-top: 0; }
+  .doc p, .doc ul, .doc ol, .doc blockquote { margin: calc(8 * var(--u)) 0; }
+  .doc ul, .doc ol { padding-left: calc(18 * var(--u)); }
+  .doc li { margin: calc(3 * var(--u)) 0; }
+  .doc a { color: var(--green); }
+  .doc code { color: var(--green); background: rgba(86, 255, 140, .08);
+              padding: 0 calc(3 * var(--u)); }
+  .doc pre { border: calc(1 * var(--u)) solid var(--dim); padding: calc(8 * var(--u));
+             overflow-x: auto; }
+  .doc pre code { background: none; padding: 0; }
+  /* Plain words - a JSON spec, a CSV - kept as typed and wrapped, because the panel is 800 px
+     wide and a diagram spec is not. */
+  .doc pre.raw { border: 0; padding: 0; white-space: pre-wrap; word-break: break-word;
+                 font-size: calc(12 * var(--u)); }
+  .doc hr { border: 0; border-top: calc(1 * var(--u)) solid var(--dim);
+            margin: calc(14 * var(--u)) 0; }
+  .doc img { display: block; max-width: 100%; height: auto; margin: calc(10 * var(--u)) 0;
+             border: calc(1 * var(--u)) solid var(--dim); background: #000; }
+  .doc table { border-collapse: collapse; width: 100%; font-size: calc(12 * var(--u)); }
+  .doc th, .doc td { border: calc(1 * var(--u)) solid var(--dim);
+                     padding: calc(4 * var(--u)) calc(7 * var(--u)); text-align: left; }
+  .doc th { color: var(--green); }
+  .doc blockquote { border-left: calc(2 * var(--u)) solid var(--dim); padding-left: calc(10 * var(--u)); }
+  /* One picture, or one recording, filling what the reader has. */
+  .lone { display: block; width: 100%; max-height: 100%; object-fit: contain; background: #000; }
+
+  /* ---- a workbook ---- */
+  /* Project Data.xlsx is a list of remembered pairs under the tab they were written on (see
+     projects/data.py), so that is what it is shown as. A grid would spend the panel on ruling
+     and none of it on the value, which is the only thing anybody opened the file to read. */
+  .pair {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0 calc(10 * var(--u)); align-items: baseline;
+    padding: calc(6 * var(--u)) 0;
+    border-bottom: calc(1 * var(--u)) solid rgba(32, 118, 70, .4);
+  }
+  .pkey { color: var(--mid); min-width: 0; overflow-wrap: anywhere; }
+  .pval { color: var(--green); text-align: right; font-variant-numeric: tabular-nums; }
+  .pnote { grid-column: 1 / -1; color: var(--dim); font-size: calc(11 * var(--u));
+           margin-top: calc(2 * var(--u)); }
+
   /* ---- a laptop ---- */
   /* Landscape and wide. The string is repeated in the script, which must agree with it: the
      transcript is not hidden here, it is never fetched. Keep the two in step.
@@ -657,6 +761,7 @@ on every device on the network is exactly the sprawl this replaced.
     <span class="bar"></span>
     <nav class="nav">
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
+      <button class="tab" type="button" data-go="/projects">Projects</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
     </nav>
@@ -719,6 +824,18 @@ on every device on the network is exactly the sprawl this replaced.
   </main>
 
   <main class="view media" id="v-media"></main>
+
+  <main class="view projects" id="v-projects"></main>
+
+  <main class="view browse" id="v-browse">
+    <div class="crumbs" id="crumbs"></div>
+    <div class="files" id="files"></div>
+  </main>
+
+  <main class="view file" id="v-file">
+    <div class="crumbs" id="fcrumbs"></div>
+    <div class="doc" id="doc"></div>
+  </main>
 
   <!-- Flipping through, which is the verb the stream exists for. Outside the views on purpose:
        it covers whichever one you opened it from, and going back is closing it. -->
@@ -836,11 +953,17 @@ on every device on the network is exactly the sprawl this replaced.
   // "everything on the desktop, only the video on the panel".
   const WIDE = window.matchMedia('(min-width: 900px) and (min-aspect-ratio: 1/1)');
 
-  const VIEWS = ['view-status', 'view-sessions', 'view-session', 'view-media'];
+  const VIEWS = ['view-status', 'view-sessions', 'view-session', 'view-media',
+                 'view-projects', 'view-browse', 'view-file'];
   const FRESH = 20000;   // a listing is worth re-using for as long as nothing new can have ended
 
   const vSessions = document.getElementById('v-sessions');
   const vMedia = document.getElementById('v-media');
+  const vProjects = document.getElementById('v-projects');
+  const crumbBar = document.getElementById('crumbs');
+  const files = document.getElementById('files');
+  const fileCrumbs = document.getElementById('fcrumbs');
+  const doc = document.getElementById('doc');
   const video = document.getElementById('video');
   const stitle = document.getElementById('stitle');
   const smeta = document.getElementById('smeta');
@@ -893,6 +1016,13 @@ on every device on the network is exactly the sprawl this replaced.
     return hh ? hh + ':' + String(mm).padStart(2, '0') + ':' + ss : mm + ':' + ss;
   };
   const many = (n, one) => n === 1 ? '1 ' + one : n + ' ' + one + 's';
+  // What a file weighs, in the unit it is actually in. megabytes() above is for recordings; a
+  // 692-byte README rendered through it reads "0.0 MB", which is worse than saying nothing.
+  const heft = (n) => !n ? '' : n < 1024 ? n + ' B'
+    : n < 1048576 ? Math.round(n / 1024) + ' KB' : (n / 1048576).toFixed(1) + ' MB';
+  // A project's `updated` is a date with no time. new Date() reads a bare YYYY-MM-DD as UTC
+  // midnight, which west of Greenwich is the day before - so it is pinned to local time first.
+  const dated = (iso) => day(/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? iso + 'T00:00' : iso);
 
   async function grab(url) {
     const r = await fetch(url, { cache: 'no-store' });
@@ -1151,6 +1281,153 @@ on every device on the network is exactly the sprawl this replaced.
     video.play().catch(() => {});
   });
 
+  // ---------------------------------------------------------------- the projects
+
+  // Where a project's folder and one file inside it live in the hash. Both halves are encoded
+  // whole, slashes included - shelf.file_route builds the same string server-side - so a nested
+  // Photos/x.jpg stays one segment and the router's split cannot land in the middle of it.
+  const pRoute = (name, path) => '#/p/' + encodeURIComponent(name) + '/' + encodeURIComponent(path || '');
+  const fRoute = (name, path) => '#/f/' + encodeURIComponent(name) + '/' + encodeURIComponent(path || '');
+  const twoParts = (rest) => {
+    const cut = rest.indexOf('/');
+    return cut < 0 ? [decodeURIComponent(rest), '']
+      : [decodeURIComponent(rest.slice(0, cut)), decodeURIComponent(rest.slice(cut + 1))];
+  };
+
+  let shelfHeld = null, shelfAt = 0;
+  async function shelf() {
+    if (shelfHeld && Date.now() - shelfAt < FRESH) return shelfHeld;
+    shelfHeld = (await grab('/api/projects')).projects;
+    shelfAt = Date.now();
+    return shelfHeld;
+  }
+
+  function projectRow(one) {
+    // The first photo in the folder, which is the one the sweep picked as the hero shot. No
+    // media fragment and no <video> here: a project's still is a file, not a frame of one.
+    const shot = one.thumb
+      ? '<img class="thumb" loading="lazy" alt="" src="' + esc(one.thumb) + '">'
+      : '<span class="thumb none">no photo</span>';
+    // A project that is paused or done says so; one that is neither says how much is in it.
+    const sub = one.status !== 'active'
+      ? '<span class="rowsub">' + esc(one.status) + '</span>'
+      : one.sessions ? '<span class="rowsub">' + many(one.sessions, 'session') + '</span>' : '';
+    return '<button class="row" type="button" data-hash="' + esc(pRoute(one.name, '')) + '">' +
+      '<span class="shot">' + shot + '</span>' +
+      '<span class="rowtext"><span class="rowtitle">' + esc(one.title) + '</span>' +
+      '<span class="rowsum">' + esc(one.tagline) + '</span></span>' +
+      '<span class="rowwhen">' + dated(one.updated) + sub + '</span>' +
+      '</button>';
+  }
+
+  async function showProjects() {
+    try {
+      const found = await shelf();
+      vProjects.innerHTML = found.length
+        ? found.map(projectRow).join('')
+        : '<div class="empty">no projects yet</div>';
+    } catch (e) {
+      vProjects.innerHTML = '<div class="empty">could not read the card</div>';
+    }
+  }
+
+  // ---------------------------------------------------------------- one project
+
+  // Where you are, and every step of the way back. Up is one step, whatever that means from
+  // here: out of a file, out of a folder, or off the project entirely and back to the shelf.
+  function crumbs(name, path, leaf) {
+    const parts = path ? path.split('/') : [];
+    const up = leaf ? pRoute(name, path)
+      : parts.length ? pRoute(name, parts.slice(0, -1).join('/'))
+      : '#/projects';
+    let out = '<button class="crumb up" type="button" aria-label="Back" data-hash="' +
+      esc(up) + '">&#8249;</button>' +
+      '<button class="crumb" type="button" data-hash="' + esc(pRoute(name, '')) + '">' +
+      esc(name) + '</button>';
+    let walked = '';
+    for (const part of parts) {
+      walked = walked ? walked + '/' + part : part;
+      out += '<span class="sep">/</span><button class="crumb" type="button" data-hash="' +
+        esc(pRoute(name, walked)) + '">' + esc(part) + '</button>';
+    }
+    if (leaf) out += '<span class="sep">/</span><span class="crumb here">' + esc(leaf) + '</span>';
+    return out;
+  }
+
+  // What a file is, in one character. The four things a project folder actually holds, and a
+  // mark for everything else rather than a blank column that reads as a failure to load.
+  const MARKS = {
+    '.md': '\u00b6', '.xlsx': '\u25a4', '.json': '{}', '.csv': '\u25a4', '.txt': '\u00b6',
+    '.jpg': '\u25a3', '.jpeg': '\u25a3', '.png': '\u25a3', '.svg': '\u25a3', '.mp4': '\u25b6',
+  };
+
+  function fileRow(name, one) {
+    const dir = one.kind === 'dir';
+    const mark = dir ? '\u25b8' : (MARKS[one.suffix] || '\u00b7');
+    const hash = dir ? pRoute(name, one.path) : fRoute(name, one.path);
+    return '<button class="row" type="button" data-hash="' + esc(hash) + '">' +
+      '<span class="mark' + (dir ? ' dir' : '') + '">' + mark + '</span>' +
+      '<span class="rowtext"><span class="rowtitle">' + esc(one.name) + '</span></span>' +
+      '<span class="rowwhen">' + (dir ? '' : heft(one.size)) + '</span>' +
+      '</button>';
+  }
+
+  async function showBrowse(name, path) {
+    crumbBar.innerHTML = crumbs(name, path, '');
+    const url = '/api/project/' + encodeURIComponent(name) +
+      '/files?path=' + encodeURIComponent(path);
+    try {
+      const found = await grab(url);
+      files.innerHTML = found.entries.length
+        ? found.entries.map((one) => fileRow(name, one)).join('')
+        : '<div class="empty">this folder is empty</div>';
+    } catch (e) {
+      files.innerHTML = '<div class="empty">could not read that folder</div>';
+    }
+  }
+
+  // ---------------------------------------------------------------- one file
+
+  // The server decided what this file is worth showing as; this only lays it out. Markdown
+  // arrives as HTML because shelf.py is where the project folder is known - which is what lets
+  // ![cap](Photos/x.jpg) come back already pointed at a URL this page can fetch.
+  function asDoc(found) {
+    if (found.kind === 'markdown') return found.html;
+    if (found.kind === 'sheet') return workbook(found.tabs);
+    if (found.kind === 'image') return '<img class="lone" alt="" src="' + esc(found.url) + '">';
+    if (found.kind === 'video') {
+      return '<video class="lone" controls playsinline preload="metadata" src="' +
+        esc(found.url) + '"></video>';
+    }
+    if (found.kind === 'text') return '<pre class="raw">' + esc(found.text) + '</pre>';
+    return '<div class="empty">' + (heft(found.size) || 'empty') + ' \u2014 nothing to show it with</div>';
+  }
+
+  // A workbook as what it is: pairs, under the tab they were written on.
+  function workbook(tabs) {
+    if (!tabs.length) return '<div class="empty">nothing written down yet</div>';
+    return tabs.map((tab) => '<h2>' + esc(tab.name) + '</h2>' + (tab.rows.length
+      ? tab.rows.map((row) =>
+          '<div class="pair"><span class="pkey">' + esc(row.key) + '</span>' +
+          '<span class="pval">' + esc(row.value) + '</span>' +
+          (row.note ? '<span class="pnote">' + esc(row.note) + '</span>' : '') +
+          '</div>').join('')
+      : '<div class="empty">empty</div>')).join('');
+  }
+
+  async function showFile(name, path) {
+    const cut = path.lastIndexOf('/');
+    fileCrumbs.innerHTML = crumbs(name, cut < 0 ? '' : path.slice(0, cut), path.slice(cut + 1));
+    doc.innerHTML = '';
+    const url = '/api/project/' + encodeURIComponent(name) +
+      '/file?path=' + encodeURIComponent(path);
+    try {
+      doc.innerHTML = asDoc(await grab(url));
+    } catch (e) {
+      doc.innerHTML = '<div class="empty">could not read that file</div>';
+    }
+  }
+
   // ---------------------------------------------------------------- the picture stream
 
   let shots = [];
@@ -1259,6 +1536,9 @@ on every device on the network is exactly the sprawl this replaced.
   }
   dragScroll(vSessions);
   dragScroll(vMedia);
+  dragScroll(vProjects);
+  dragScroll(files);
+  dragScroll(doc);
 
   // ---------------------------------------------------------------- the router
 
@@ -1269,6 +1549,13 @@ on every device on the network is exactly the sprawl this replaced.
   for (const tab of tabs) {
     tab.addEventListener('click', () => { location.hash = '#' + tab.dataset.go; });
   }
+  // Every project row, every file row and every crumb says where it goes, so one listener moves
+  // all of them. The markdown's own links need none: shelf.py writes them as hashes already, and
+  // a hash is the one href that changes this page without navigating away from it.
+  document.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-hash]');
+    if (el) location.hash = el.dataset.hash;
+  });
 
   let at = '';
   function route() {
@@ -1285,11 +1572,23 @@ on every device on the network is exactly the sprawl this replaced.
       view = 'view-session'; tab = '/sessions';
       showSession(decodeURIComponent(path.slice(3)));
     }
+    else if (path === '/projects') { view = 'view-projects'; tab = '/projects'; showProjects(); }
+    else if (path.startsWith('/p/')) {
+      view = 'view-browse'; tab = '/projects';
+      showBrowse(...twoParts(path.slice(3)));
+    }
+    else if (path.startsWith('/f/')) {
+      view = 'view-file'; tab = '/projects';
+      showFile(...twoParts(path.slice(3)));
+    }
     document.body.classList.remove(...VIEWS);
     document.body.classList.add(view);
     for (const el of tabs) el.setAttribute('aria-current', el.dataset.go === tab ? 'true' : 'false');
-    // Views scroll on their own, and a new one always starts at the top.
+    // Views scroll on their own, and a new one always starts at the top. The browser and the
+    // reader keep their crumb bar still and scroll the half under it, so those two are named
+    // here rather than caught by the .view sweep.
     for (const el of document.querySelectorAll('.view')) el.scrollTop = 0;
+    files.scrollTop = doc.scrollTop = 0;
   }
   window.addEventListener('hashchange', route);
   route();

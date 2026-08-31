@@ -274,6 +274,7 @@ source = { editable = "." }
 dependencies = [
     { name = "django" },
     { name = "gunicorn" },
+    { name = "markdown" },
     { name = "numpy" },
     { name = "openai", extra = ["realtime"] },
     { name = "opencv-python" },
@@ -296,6 +297,7 @@ dev = [
 requires-dist = [
     { name = "django", specifier = ">=6.1,<7" },
     { name = "gunicorn", specifier = ">=23" },
+    { name = "markdown", specifier = ">=3.7" },
     { name = "numpy", specifier = ">=2.5.2" },
     { name = "openai", extras = ["realtime"], specifier = ">=3.3.1" },
     { name = "opencv-python", specifier = ">=5.0.0.93" },
@@ -509,6 +511,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/41/83/a2e7de43bb092ffaad904b5756cfc1e0ea4a8d79fdacd24cd55e60790585/logfire_api-4.41.0.tar.gz", hash = "sha256:ec39252acac38b5b50d60cfb9cc62f0ea10c841345fc59692af32dbe3de4a140", size = 92818, upload-time = "2026-08-20T17:42:24.302Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/96/97552d0d742866719b3a6e8fd7e68dd2877804f4c3b10c44a19a1f99b0d6/logfire_api-4.41.0-py3-none-any.whl", hash = "sha256:c71010d086c0211b04b4640181e836e8a75cc635fcfa7f712557f7b0676c1413", size = 143003, upload-time = "2026-08-20T17:42:21.764Z" },
+]
+
+[[package]]
+name = "markdown"
+version = "3.10.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/29/6f/da4c6aea59b3001f2e8c0ec7497475aadaf3b021c10cab5b2858f0f32b26/markdown-3.10.3.tar.gz", hash = "sha256:3589362618f743188b4d955b874402bc814f4f83f544dc207719f4baa7d9c45f", size = 372596, upload-time = "2026-07-30T19:05:29.005Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/64/69/4a5af2bc115a9a33fefe51709749de8262be3f9ba063d1753a837cdbc49c/markdown-3.10.3-py3-none-any.whl", hash = "sha256:fa6c92a00a4a3c98b22728c64a935ae1928250ae65058a6ded814d2cc29a4cea", size = 110757, upload-time = "2026-07-30T19:05:27.883Z" },
 ]
 
 [[package]]

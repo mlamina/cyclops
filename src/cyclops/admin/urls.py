@@ -24,6 +24,17 @@ urlpatterns = [
     # <path:> and not <str:>, so "photos/14-33-12_you.jpg" arrives in one piece. What makes that
     # safe is not the converter - it is the two resolutions in views._media_file.
     path("media/<str:name>/<path:relative>", views.media, name="media"),
+    # The other half of the card, and the durable half: one folder per project, browsed a
+    # directory at a time. Same shape as the session routes above and read-only for the same
+    # reason - store.py is the only thing in this repo that writes into projects/.
+    path("api/projects", views.projects, name="projects"),
+    path("api/project/<str:name>/files", views.project_files, name="project-files"),
+    path("api/project/<str:name>/file", views.project_file, name="project-file"),
+    path(
+        "project-media/<str:name>/<path:relative>",
+        views.project_media,
+        name="project-media",
+    ),
     path("api/panel", views.panel, name="panel"),
     path("api/diagram/<str:ident>", views.diagram, name="diagram"),
     path("diagram/shown", views.diagram_shown, name="diagram-shown"),

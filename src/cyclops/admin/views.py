@@ -24,7 +24,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import card, library, mixer, stats
+from .. import card, library, mixer, shelf, stats
 from ..config import (
     BROWSER_CLOSE_FLAG,
     DIAGRAM_FILE,
@@ -379,14 +379,23 @@ def _chunks(path: Path, start: int, length: int):
 
 
 def media(request: HttpRequest, name: str, relative: str) -> HttpResponse:
-    """A recording, a photo or a drawing, with byte ranges - which video is not optional about.
+    """A recording, a photo or a drawing out of one session."""
+    path, kind = _media_file(name, relative)
+    return _serve(request, path, kind)
+
+
+def _serve(request: HttpRequest, path: Path, kind: str) -> HttpResponse:
+    """One file down the wire, with byte ranges - which video is not optional about.
 
     Django serves no ranges of its own (there is no ``HTTP_RANGE`` anywhere in it), and without a
     206 Safari will not start an ``<video>`` at all and nothing anywhere can seek in one. It also
     keeps this off gunicorn's 30 s worker timeout: scrubbing becomes a run of short requests
     rather than one long transfer held open by a paused player.
+
+    Which file it is has already been decided by the caller. That split is the whole security
+    story of this function: it never sees a name anybody sent, only a path some resolver already
+    proved is inside the root it belongs to.
     """
-    path, kind = _media_file(name, relative)
     size = path.stat().st_size
 
     start, end = 0, size - 1
@@ -429,3 +438,56 @@ def media(request: HttpRequest, name: str, relative: str) -> HttpResponse:
         # never runs script in one; this is the belt to that's braces.
         response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response
+
+
+# ------------------------------------------------------------------ what is in the projects
+
+
+def _project(name: str) -> Path:
+    """The project folder called ``name``, or 404. Never anything outside ``projects_dir``."""
+    folder = shelf.resolve(_settings().projects_dir, name)
+    if folder is None:
+        raise Http404("no such project")
+    return folder
+
+
+def projects(request: HttpRequest) -> JsonResponse:
+    """Every project on the card, most recently worked on first."""
+    return JsonResponse({"projects": shelf.projects(_settings().projects_dir)})
+
+
+def project_files(request: HttpRequest, name: str) -> JsonResponse:
+    """One directory inside one project. ``?path=`` is relative to the project, "" for its root."""
+    found = shelf.listing(_project(name), request.GET.get("path", ""))
+    if found is None:
+        raise Http404("no such folder")
+    return JsonResponse(found)
+
+
+def project_file(request: HttpRequest, name: str) -> JsonResponse:
+    """One file inside one project, in whatever shape it is worth reading in."""
+    relative = request.GET.get("path", "")
+    found = shelf.view(name, _project(name), relative)
+    if found is None:
+        raise Http404("no such file")
+    return JsonResponse(found)
+
+
+def project_media(request: HttpRequest, name: str, relative: str) -> HttpResponse:
+    """A photo, a drawing or a recording out of a project folder.
+
+    The session route's ``MEDIA_DIRS`` allow-list deliberately does not apply here. A session has
+    exactly two sub-directories and both are ours; a project folder is a place a person keeps
+    their own things, and telling them which folders of their own they may open would be a
+    strange thing for a file browser to do. Containment does the work instead - `shelf.inside`
+    resolves first and then requires the result to be under the project - and the suffix list
+    still decides what may be handed over as bytes.
+    """
+    folder = _project(name)
+    found = shelf.inside(folder, relative)
+    if found is None or not found.is_file():
+        raise Http404("no such file")
+    kind = shelf.MEDIA_TYPES.get(found.suffix.lower())
+    if kind is None:
+        raise Http404("no such file")
+    return _serve(request, found, kind)

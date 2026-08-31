@@ -293,7 +293,7 @@ The three vendored bundles under `src/cyclops/admin/static/` are served from the
 can open `http://cyclops.local/` and see both how the box is doing and what it has recorded. It
 is read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
 
-Three screens, picked by the tabs in the header and by the hash in the address bar, so nothing
+Four screens, picked by the tabs in the header and by the hash in the address bar, so nothing
 ever navigates (the kiosk's browser is kept warm on this page and a reload would be felt). The
 kiosk opens it on **SESSIONS**, which is what its tab promises:
 
@@ -301,6 +301,7 @@ kiosk opens it on **SESSIONS**, which is what its tab promises:
 |---|---|
 | **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
 | **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
+| **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one for a plain file browser over its folder; open a file to read it. |
 | **MEDIA** `#/media` | Every photo and every drawing on the card as one stream, newest first. Tap one to fill the screen and flip through with the arrows, the arrow keys, or the columns down either side. |
 
 **The session view changes shape with the screen.** On a laptop it is the recording on the left
@@ -309,6 +310,22 @@ were taken; every line is stamped with its offset, and clicking one seeks the vi
 moment — the transcript's `t` *is* the recording's timeline. On the 7" panel and on a phone it is
 the video and what it is called, and nothing else: at a bench you are not there to read. The
 narrow layout does not hide the transcript, it never asks the server for it.
+
+**A project opens as its folder.** `#/p/<project>/<folder>` browses, `#/f/<project>/<file>`
+reads, and a bar across the top says where you are and is the way back out. `README.md` and
+`Log.md` are rendered as markdown, with the pictures they link to shown inline — the paths are
+rewritten server-side, which is why a relative `![](Photos/x.jpg)` written by the sweep resolves
+at all. `Project Data.xlsx` is shown as what it is: the remembered pairs, under the tab name they
+were written on, rather than a spreadsheet grid nobody wants on a 7" panel. Pictures, drawings
+and recordings open in place; anything else says what it weighs and leaves it at that.
+
+The markdown is turned into HTML on the server, where the project folder is known. The
+frontmatter is dropped (it is the code's half of the file, not the model's), the
+`<!-- cyclops:session … -->` terminators go with it, and everything else that could be a tag is
+escaped — so the only tags the page is handed are ones the renderer wrote. Project files are
+served from `/project-media/<project>/<file>`, by the same suffix allow-list plus `.png`, and
+every path is resolved before it is compared against the project folder, so `..`, an absolute
+name and a symlink out of the tree all fail the same check.
 
 Recordings, photos and drawings are served from `/media/<session>/<file>` with byte ranges, which
 is what lets a video seek (and what lets Safari play one at all). Only `.mp4`, `.jpg` and `.svg`
