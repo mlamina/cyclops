@@ -317,6 +317,51 @@ def test_the_glow_swells_rather_than_flashing() -> None:
         )
 
 
+def _glyph_hue(ov: overlay.Overlay, phase: float) -> str:
+    """Whether the WAKE UP glyph's strokes are nearer the phosphor or nearer the accent."""
+    cell = ov._cells["wake"]
+    cx, gy, r = ov._glyph_at(cell)
+    frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=phase)
+    crop = frame[gy - r : gy + r, cx - r : cx + r].astype(float)
+    px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 250)][:, :3]
+    seen = px.mean(axis=0) / px.mean(axis=0).sum()
+    near = {
+        name: float(np.abs(seen - np.array(c) / sum(c)).sum())
+        for name, c in (("phosphor", overlay.GREEN_MID), ("accent", overlay.AQUA))
+    }
+    return min(near, key=near.get)  # type: ignore[arg-type]
+
+
+def test_the_glow_changes_colour_and_not_only_brightness() -> None:
+    # It breathes towards the accent, which is a promise as well as a signal: the button wears
+    # the colour the whole screen turns when you press it. Brightness alone was the complaint
+    # the accent was introduced to answer, and it would be the same complaint here.
+    ov = _panel()
+    assert _glyph_hue(ov, overlay.WAKE_PERIOD_S) == "phosphor", "it starts somewhere else"
+    assert _glyph_hue(ov, overlay.WAKE_PERIOD_S * 1.5) == "accent", "it only got brighter"
+
+
+def test_the_glow_does_not_grow_a_bar_along_the_top_of_the_cell() -> None:
+    # A lit top edge is how this panel says "selected", and it was too heavy a thing to say with:
+    # the swell is a wash over the whole cell, not a tab lighting up. So the top of the cell must
+    # not come up brighter than the rest of it - compared on a strip clear of the glyph and the
+    # word, at the very top of the breath, which is where a bar would be most obvious.
+    ov = _panel()
+    cell = ov._cells["wake"]
+    inset = max(1, round(3 * ov.scale))
+    edge = max(2, round(4 * ov.scale))
+    left, right = cell.x + inset + 4, cell.x + inset + 4 + round(60 * ov.scale)
+    frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None,
+                      phase=overlay.WAKE_PERIOD_S * 1.5).astype(float)
+
+    def band(top: int) -> float:
+        strip = frame[top : top + edge, left:right]
+        return float((strip[:, :, :3].sum(axis=2) * strip[:, :, 3] / 255).mean())
+
+    at_edge, below = band(cell.y + inset), band(cell.y + inset + edge + 6)
+    assert at_edge < 1.4 * below, f"there is a bar along the top ({at_edge:.0f} vs {below:.0f})"
+
+
 def test_a_fault_does_not_beckon() -> None:
     # A red panel with a green button pulsing at you is a machine asking to be prodded rather
     # than read, and a fault has something to say on the line under the picture.

@@ -566,7 +566,9 @@ the signal meter, the session clock, the caption's `›`, the lit edge of the SL
 phosphor green whatever he is doing, because a panel where everything is an accent has none.
 
 Asleep the whole screen is green and completely still, with one exception: the **WAKE UP** cell
-breathes, slowly. It is the only control left to press. The line under the picture spells it
+breathes, slowly — and it breathes *towards the aqua*, so it is both the only thing moving and
+the only thing not green. That is a promise as much as a signal: the button wears the colour the
+whole screen turns when you press it. The line under the picture spells it
 out for anyone close enough to read it, including what an error actually said.
 
 **The middle of the row is Cyclops.** It is the one thing on the panel that is a face rather than

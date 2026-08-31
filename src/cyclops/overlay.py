@@ -98,7 +98,8 @@ GREEN_DIM = (32, 118, 70)  # the faintest thing still legible on the panel
 AMBER = (255, 184, 60)
 RED = (255, 86, 70)
 # The one the tube gets while he is up. Asleep, the panel is a single hue and he is the same
-# green as the furniture he sits in; awake, the live parts step off it. That is the whole job of
+# green as the furniture he sits in - bar the WAKE UP button, which breathes towards this to say
+# what pressing it does; awake, the live parts step off the green. That is the whole job of
 # it: dim green and bright green are the same colour to anyone more than a pace away, so a panel
 # that said "awake" only by getting brighter did not say it at all.
 #
@@ -264,7 +265,7 @@ EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on
 # does nothing until you find it is worth pointing at. A slow swell, not a flash: this is an
 # invitation, and a panel blinking at you across a workshop is an alarm.
 WAKE_PERIOD_S = 2.9  # seconds a breath takes, and not a multiple of any other on this panel
-WAKE_GLOW = 1.0  # the glyph and the word travel the whole way from GREEN_MID to GREEN...
+WAKE_GLOW = 1.0  # how far the glyph and the word travel towards the colour he will be
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -1046,6 +1047,11 @@ class Overlay:
         first and the glyph and the word on top of it: the base's own copies of those are
         underneath, and this covers them.
 
+        It swells towards the accent rather than up the green, so the glyph and the word change
+        colour and not just brightness - which is the point of the accent everywhere else on this
+        panel, and here it is also a promise: the button wears the colour the whole screen turns
+        when you press it. The one aqua thing on a sleeping panel is the way off it.
+
         Only while he is asleep proper. Not on a fault - a red panel with a green button
         beckoning at you is a machine asking to be prodded rather than read, and the line under
         the picture is where a fault has something to say.
@@ -1057,19 +1063,9 @@ class Overlay:
             [cell.x + inset, cell.y + inset, cell.right - inset, cell.bottom - inset],
             radius=max(0, self.radius - inset),
             corners=(False, False, True, False),
-            fill=(*mix(SCREEN, GREEN, TAB_LIVE), round(TAB_LIVE_ALPHA * swell)),
+            fill=(*mix(SCREEN, AQUA, TAB_LIVE), round(TAB_LIVE_ALPHA * swell)),
         )
-        # ...and a lit edge along the top, swelling with it. Both of those are the vocabulary
-        # this panel already uses for a selected tab, borrowed rather than invented: at the top
-        # of the breath the cell looks exactly the way the SLEEP tab does while a session is up,
-        # and then it fades back to nothing. Nothing is selected while he is asleep, so there is
-        # nothing for it to be confused with.
-        edge = max(2, round(4 * self.scale))
-        d.rectangle(
-            [cell.x + inset, cell.y + inset, cell.right - inset, cell.y + inset + edge],
-            fill=(*GREEN, round(255 * swell)),
-        )
-        colour = mix(GREEN_MID, GREEN, WAKE_GLOW * swell)
+        colour = mix(GREEN_MID, AQUA, WAKE_GLOW * swell)
         cx, gy, radius = self._glyph_at(cell)
         self._glyph_mic(d, cx, gy, radius, colour, IDLE)
         self._text(
