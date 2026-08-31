@@ -249,15 +249,14 @@ LINE = 0.0042  # stroke of the border and the rules
 PAD = 0.036  # inner padding - wide enough that the inward glow never reaches any text
 HEADER_H = 0.118
 FOOTER_H = 0.170
-# The eye, in the middle of the tab row. Radius as a fraction of the panel's height, and a
-# centre a little above the row's top edge so the disc sits *into* the bar rather than on it -
-# the rule runs in from both sides, lifts over the top of him and comes down the other side.
+# The eye, in the middle of the tab row. His centre sits exactly *on* the row's top rule, so the
+# rule runs in from both sides, arcs over the top half of him and comes down the other side, and
+# the two meet at the widest point of the circle - the one place a straight line and a circle
+# join without a corner. Half of him is in the bar and half is in the picture.
 # That shoulder is the whole reason he is here and not in a box in a corner: the bar is the one
 # piece of chrome you already look at to do anything, so his face belongs in it.
 EYE_R = 0.125  # 60 px at 800x480
-EYE_RISE = 0.052  # how far the centre sits above the tab row's top rule - 25 px,
-# which is what leaves the word under him room to be a word and not a chin strap
-EYE_SHOULDER = 0.013  # ...and the gap between his rim and the rule that arcs over it
+EYE_SHOULDER = 0.013  # the gap between his rim and the rule that arcs over it
 EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on purpose: this
 # one sits over the middle of the picture, and a porthole you cannot see through is a hole
 # The one thing that moves on a sleeping panel. Everything else holds still - that stillness is
@@ -284,7 +283,9 @@ TABS = ("shutter", "eye", "wake")  # left to right
 # the wrong cells - `hitboxes.eye` was the microphone. Renaming them does reach into kiosk.py's
 # press handling, which the old comment here said would buy nothing anybody can see; what it
 # buys now is a file that is not lying about which one is the eye.
-TAB_LABELS = {"shutter": "SNAP", "eye": "HISTORY"}
+# The middle cell has no word. It is a face - you tap it to ask what he remembers - and a label
+# under a face reads as a caption for it rather than as a name for the button.
+TAB_LABELS = {"shutter": "SNAP", "eye": ""}
 WAKE_LABEL, SLEEP_LABEL = "WAKE UP", "SLEEP"
 
 
@@ -453,11 +454,11 @@ class Overlay:
             self.footer.y - self.header.bottom,
         )
 
-        # Cyclops himself: a disc centred a little above the tab row's top rule, in the middle
-        # cell. Half of him is in the tab row and half is in the picture, which is what makes the
-        # rule lift over him rather than run past him.
+        # Cyclops himself: a disc on the tab row's top rule, in the middle cell. Half of him is
+        # in the row and half is in the picture, which is what makes the rule lift over him
+        # rather than run past him.
         self.eye_r = max(10, round(EYE_R * height))
-        self.eye = (self.frame.x + width // 2, self.footer.y - max(2, round(EYE_RISE * height)))
+        self.eye = (self.frame.x + width // 2, self.footer.y)
         self.shoulder = self.eye_r + max(2, round(EYE_SHOULDER * height))
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
@@ -925,7 +926,13 @@ class Overlay:
         pad = self.pad
         # Clear of the bottom-left corner tick, which would otherwise run under the slab.
         x = self.viewport.x + pad + round(34 * self.scale)
-        limit = self.viewport.right - pad - x - round(30 * self.scale)
+        # Stopping short of him, not of the panel: he stands on these rows, so a sentence left to
+        # run to the frame's edge would go straight under his face. The margin off the frame is
+        # there to clear the bottom-right corner tick; the margin off him is his own gap, and
+        # counting both would take another thirty pixels off a line that is already the
+        # narrowest thing on the panel.
+        edge = self.viewport.right - pad - round(30 * self.scale)
+        limit = min(edge, self.eye[0] - self.eye_r - self._gap) - x
         # Off the limit before the trim and back onto the width after it, so a sentence long
         # enough to be elided cannot push its own dots off the edge of the panel.
         dots_w = self._dots_w if busy else 0.0

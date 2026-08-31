@@ -550,21 +550,51 @@ def test_the_border_breathes_while_he_is_up() -> None:
 # ---------------------------------------------------------------- the room he takes up
 
 
+@pytest.mark.parametrize("state", STATES)
+def test_the_middle_cell_carries_no_word(state: str) -> None:
+    # He is a face. A label under a face reads as a caption for it rather than as a name for the
+    # button, and the other two cells keep their words so the row still reads as a row.
+    assert overlay.tab_label("eye", state) == ""
+    assert overlay.tab_label("shutter", state)
+    assert overlay.tab_label("wake", state)
+
+
 @pytest.mark.parametrize(("width", "height"), SIZES)
-def test_he_stands_clear_of_the_word_underneath_him(width: int, height: int) -> None:
+def test_his_centre_is_on_the_rule_and_his_chin_is_off_the_bezel(width: int, height: int) -> None:
+    # The centre being *on* the rule is the whole join: a straight line meets a circle without a
+    # corner only at the circle's widest point, and that is where the shoulder's arcs start and
+    # finish. Move him off it and the two stop being tangent.
     ov = overlay.Overlay(width, height)
-    cell = ov._cells["eye"]
-    label_top = cell.bottom - round(23 * ov.scale) - ov.font_tab.size / 2
-    assert ov.eye[1] + ov.eye_r < label_top, f"his chin is on the label at {width}x{height}"
+    assert ov.eye[1] == ov.footer.y
+    assert ov.eye[1] + ov.eye_r < ov.frame.bottom - ov.pad, f"his chin is on the bezel at {width}"
+    assert ov.eye[1] - ov.shoulder > ov.header.bottom, f"his shoulder is in the strip at {width}"
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
-def test_he_fits_his_own_cell_and_stays_out_of_the_caption(width: int, height: int) -> None:
+def test_he_fits_his_own_cell(width: int, height: int) -> None:
     ov = overlay.Overlay(width, height)
     cell = ov._cells["eye"]
     assert cell.x < ov.eye[0] - ov.shoulder and ov.eye[0] + ov.shoulder < cell.right
-    caption_right = ov.viewport.x + ov.pad + round(34 * ov.scale) + ov._dots_w
-    assert ov.eye[0] - ov.eye_r > caption_right
+
+
+def test_no_caption_however_long_runs_under_his_face() -> None:
+    # He stands on the caption's own rows, so the line has to stop at him rather than at the
+    # frame. Nothing about this is visible until some tool reports something wordy.
+    ov = _panel()
+    frame = ov.render(
+        state=overlay.SEARCHING,
+        level=0.0,
+        elapsed=12.0,
+        detail="looking for the torque specification for an M8 stainless bolt into aluminium…",
+        phase=10.0,
+    )
+    cx, r = ov.eye[0], ov.eye_r
+    height = round(24 * ov.scale)
+    top = int(ov.footer.y - round(12 * ov.scale) - height / 2 - height / 2)
+    band = frame[top : top + height, cx - r : cx + r]
+    # Inside his disc the only opaque thing is his own plate and rings; the caption's slab is
+    # drawn at PLATE_ALPHA and would show up here as a rectangle of it.
+    assert not (band[:, :, 3] == overlay.PLATE_ALPHA).any(), "the caption ran under his face"
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)

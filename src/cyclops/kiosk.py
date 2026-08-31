@@ -446,14 +446,14 @@ class Kiosk:
     def _admin_url(self) -> str:
         """The page, opened on the sessions list rather than on the four numbers.
 
-        His cell says HISTORY, so it had better land on some. The hash is what the page routes on
-        and it never navigates, so this only decides which screen the warm browser is holding when
-        it is uncovered - the numbers are still one tap away, on the third tab.
+        Tapping his face asks what he remembers, so it had better land on some. The hash is what
+        the page routes on and it never navigates, so this only decides which screen the warm
+        browser is holding when it is uncovered - the numbers are one tap away inside it.
         """
         return f"http://127.0.0.1:{self.controller.settings.admin_port}/#/sessions"
 
     def prewarm(self) -> None:
-        """Start the admin browser now, in the background, so the gear only has to uncover it."""
+        """Start the admin browser now, in the background, so a tap only has to uncover it."""
         threading.Thread(target=self._prewarm, name="kiosk-prewarm", daemon=True).start()
 
     def _prewarm(self) -> None:

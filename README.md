@@ -553,7 +553,7 @@ the middle of them:
 | Tab | What it does |
 | --- | --- |
 | **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
-| **the eye** | Cyclops, in the middle of the row. Tap him for the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
+| **the eye** | Cyclops, in the middle of the row, centred on the bar's own top rule. No label — he is a face, and you tap a face to ask what it remembers: the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
 | **WAKE UP** | wakes Cyclops and starts the conversation; it says **SLEEP** while he is up, and the tab stays lit |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
