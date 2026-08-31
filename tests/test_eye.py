@@ -527,10 +527,13 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
     assert wears((int(ov._meter_x(meter_right)), cy - 10, int(meter_right), cy + 10)) == "accent"
     assert wears((int(clock_right - ov._clock_w), cy - 10, int(clock_right), cy + 10)) == "accent"
     # The caption's marker takes the accent and its sentence does not - a running line in aqua
-    # over a live camera is harder to read than the same line in phosphor.
-    slab_x = ov.viewport.x + ov.pad + round(34 * ov.scale) + round(8 * ov.scale)
+    # over a live camera is harder to read than the same line in phosphor. The slab hangs off
+    # ov.caption_right and grows leftwards, so the marker is found by measuring back from there.
+    inset = round(8 * ov.scale)
+    text = overlay.MARKER + overlay.CAPTIONS[overlay.LISTENING]
     marker_w = int(ov.font_caption.getlength(overlay.MARKER))
-    top = int(ov.footer.y - round(12 * ov.scale) - round(24 * ov.scale) / 2) - 6
+    slab_x = int(ov.caption_right - ov.font_caption.getlength(text) - inset)
+    top = int(ov.caption_y) - 6  # caption_y is the line's centre, not its top
     assert wears((slab_x, top, slab_x + marker_w, top + 14)) == "accent"
     assert wears((slab_x + marker_w, top, slab_x + marker_w + 60, top + 14)) == "phosphor"
     # ...and the furniture: the SNAP glyph, well inside its cell, since the panel's own border

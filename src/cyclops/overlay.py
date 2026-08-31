@@ -460,6 +460,13 @@ class Overlay:
         self.eye_r = max(10, round(EYE_R * height))
         self.eye = (self.frame.x + width // 2, self.footer.y)
         self.shoulder = self.eye_r + max(2, round(EYE_SHOULDER * height))
+        # The status line's fixed edges. It hangs off the right and grows leftwards, so only its
+        # right edge and its rows are layout; its left edge is however long the sentence is. Up
+        # here rather than inside the drawing because it is geometry, and because everything that
+        # has ever needed to know where this slab is has otherwise had to re-derive it.
+        self.caption_h = round(24 * scale)
+        self.caption_y = self.footer.y - round(12 * scale) - self.caption_h / 2
+        self.caption_right = self.viewport.right - self.pad - round(34 * scale)
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
         self.font_read = _load_font(max(9, round(21 * scale)))
@@ -907,7 +914,7 @@ class Overlay:
     def _draw_caption(
         self, d: ImageDraw.ImageDraw, state: str, halo: tuple, detail: str, phase: float
     ) -> None:
-        """One line of plain English along the bottom of the picture, on its own dark slab.
+        """One line of plain English along the bottom right of the picture, on its own dark slab.
 
         The slab is not decoration: this text sits on the live camera, and white-on-anything is
         a coin toss. It is also where an error actually says what went wrong, which the old
@@ -926,27 +933,25 @@ class Overlay:
         if busy:
             text = text[: -len(BUSY_MARK)]  # the dots take the ellipsis's place, and move
         font = self.font_caption
-        pad = self.pad
-        # Clear of the bottom-left corner tick, which would otherwise run under the slab.
-        x = self.viewport.x + pad + round(34 * self.scale)
-        # Stopping short of him, not of the panel: he stands on these rows, so a sentence left to
-        # run to the frame's edge would go straight under his face. The margin off the frame is
-        # there to clear the bottom-right corner tick; the margin off him is his own gap, and
-        # counting both would take another thirty pixels off a line that is already the
-        # narrowest thing on the panel.
-        edge = self.viewport.right - pad - round(30 * self.scale)
-        limit = min(edge, self.eye[0] - self.eye_r - self._gap) - x
+        # Laid out from the right edge inwards, which is what the readout strip's own right-hand
+        # group does and for the same reason: these are phrases that change length every few
+        # seconds, and a block that grows away from a fixed edge is steadier to read than one
+        # whose far end wanders. It stops at him rather than at the far side of the panel: he
+        # stands on these rows, so a sentence left to run across would go under his face.
+        right = self.caption_right
+        limit = right - (self.eye[0] + self.eye_r + self._gap)
         # Off the limit before the trim and back onto the width after it, so a sentence long
         # enough to be elided cannot push its own dots off the edge of the panel.
         dots_w = self._dots_w if busy else 0.0
         text = self._elide(text, font, limit - dots_w - font.getlength(MARKER))
         width = font.getlength(MARKER + text) + dots_w
-        height = round(24 * self.scale)
-        y = self.footer.y - round(12 * self.scale) - height / 2
+        height, y = self.caption_h, self.caption_y
         inset = round(8 * self.scale)
-        d.rectangle(
-            [x, y - height / 2, x + width + inset * 2, y + height / 2], fill=(*SCREEN, PLATE_ALPHA)
-        )
+        # The slab hangs off the right edge and the text off its left, so the dots reserved above
+        # keep the *left* edge still: without them a sentence would shuffle sideways four times a
+        # second while its dots counted.
+        x = right - width - inset * 2
+        d.rectangle([x, y - height / 2, right, y + height / 2], fill=(*SCREEN, PLATE_ALPHA))
         # The breath runs under every caption of a session that is up - it is what makes the line
         # read as a live tube rather than a printed label - and the dots only under one about work
         # in flight, where they mean the thing everybody already reads them to mean.

@@ -568,7 +568,7 @@ phosphor green whatever he is doing, because a panel where everything is an acce
 Asleep the whole screen is green and completely still, with one exception: the **WAKE UP** cell
 breathes, slowly — and it breathes *towards the aqua*, so it is both the only thing moving and
 the only thing not green. That is a promise as much as a signal: the button wears the colour the
-whole screen turns when you press it. The line under the picture spells it
+whole screen turns when you press it. The status line, bottom right, spells it
 out for anyone close enough to read it, including what an error actually said.
 
 **The middle of the row is Cyclops.** It is the one thing on the panel that is a face rather than

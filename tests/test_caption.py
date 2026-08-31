@@ -206,15 +206,26 @@ def _slab(frame: np.ndarray, ov: overlay.Overlay) -> tuple[int, int]:
     """The caption slab's left and right edge, read back off a rendered frame.
 
     The picture band's backdrop alpha is zeroed (see Overlay.__init__), so inside these rows the
-    only opaque thing is the slab, its text, and the two corner ticks well outside it.
+    only fully opaque things are the slab, the panel's border down either side, and Cyclops - who
+    stands on exactly these rows, in the middle of them, and whose rings are opaque too. So this
+    takes the *rightmost* run that is not the border rather than the first lit column: the slab
+    hangs off ``ov.caption_right`` and everything else opaque out there is to the left of it.
     """
-    height = round(24 * ov.scale)
-    y = ov.footer.y - round(12 * ov.scale) - height / 2
-    band = frame[int(y - height / 2) + 1 : int(y + height / 2) - 1, :, 3].max(axis=0)
-    left = ov.viewport.x + ov.pad + round(34 * ov.scale)
-    lit = [c for c in np.where(band >= overlay.PLATE_ALPHA)[0] if c >= left]
-    break_at = np.where(np.diff(lit) > 1)[0]
-    return left, int(lit[break_at[0]] if len(break_at) else lit[-1])
+    band = frame[
+        int(ov.caption_y - ov.caption_h / 2) + 1 : int(ov.caption_y + ov.caption_h / 2) - 1,
+        :,
+        3,
+    ].max(axis=0)
+    lit = np.where(band >= overlay.PLATE_ALPHA)[0]
+    runs, start = [], lit[0]
+    for a, b in zip(lit, lit[1:], strict=False):
+        if b - a > 1:
+            runs.append((int(start), int(a)))
+            start = b
+    runs.append((int(start), int(lit[-1])))
+    runs = [r for r in runs if r[0] > ov.line and r[1] < ov.frame.right - ov.line]
+    assert runs, "nothing opaque out there but the bezel"
+    return runs[-1]
 
 
 def test_the_slab_does_not_breathe_with_the_dots() -> None:
@@ -239,13 +250,16 @@ def test_the_slab_does_not_breathe_with_the_dots() -> None:
 
 
 def test_a_resting_caption_reserves_no_room_for_dots() -> None:
+    # The slab is pinned to the right and grows leftwards, so the width it reserves shows up on
+    # its left edge - and its right edge must not move at all.
     ov = overlay.Overlay(800, 480)
     at_rest = dict(state=overlay.LISTENING, level=0.0, phase=0.0)
     busy = _slab(ov.render(detail="doing a thing…", **at_rest), ov)
     rest = _slab(ov.render(detail="doing a thing", **at_rest), ov)
-    assert busy[1] - rest[1] == pytest.approx(ov._dots_w, abs=2), (
+    assert rest[0] - busy[0] == pytest.approx(ov._dots_w, abs=2), (
         "a line about work in flight is exactly the dots wider than the same line at rest"
     )
+    assert busy[1] == rest[1], "the slab's right edge is layout and must not move"
 
 
 def test_the_dots_actually_land_on_the_panel() -> None:
