@@ -956,7 +956,7 @@ def main() -> None:
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
         "  the tab row along the bottom: SNAP shows Cyclops a photo · tap his eye in the\n"
         "  middle for the recordings and pictures, and for the volume · WAKE UP wakes him,\n"
-        "  and says SLEEP while he is up\n"
+        "  and says GO TO SLEEP while he is up\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,

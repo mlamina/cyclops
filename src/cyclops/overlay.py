@@ -70,9 +70,10 @@ STARTING, STOPPING = "starting", "stopping"
 def session_up(state: str) -> bool:
     """Is there a session at all - from the tap that starts one to the last file it writes?
 
-    The panel's coarsest question, and the one the *words* answer to: the tab says SLEEP rather
-    than WAKE UP, the caption breathes, the border breathes. The kiosk asks it too, so that what
-    the button says and what the button does can never drift apart - see ``_toggle_session``.
+    The panel's coarsest question, and the one the *words* answer to: the tab says GO TO SLEEP
+    rather than WAKE UP, the caption breathes, the border breathes. The kiosk asks it too, so
+    that what the button says and what the button does can never drift apart - see
+    ``_toggle_session``.
     """
     return state not in (IDLE, ERROR)
 
@@ -287,8 +288,12 @@ TABS = ("shutter", "eye", "wake")  # left to right
 # buys now is a file that is not lying about which one is the eye.
 # The middle cell has no word. It is a face - you tap it to ask what he remembers - and a label
 # under a face reads as a caption for it rather than as a name for the button.
+#
+# The other two are imperatives, and the pair have to match: "WAKE UP" and "SLEEP" did not, one
+# being a thing you say to somebody and the other a thing you would find on a menu. Both are what
+# you would actually say to him now, and the longer one still leaves half its cell empty.
 TAB_LABELS = {"shutter": "SNAP", "eye": ""}
-WAKE_LABEL, SLEEP_LABEL = "WAKE UP", "SLEEP"
+WAKE_LABEL, SLEEP_LABEL = "WAKE UP", "GO TO SLEEP"
 
 
 def tab_label(name: str, state: str) -> str:

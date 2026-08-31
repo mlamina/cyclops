@@ -333,7 +333,7 @@ def _glyph_hue(ov: overlay.Overlay, phase: float) -> str:
 
 
 def _word_colour(ov: overlay.Overlay, state: str, phase: float) -> np.ndarray:
-    """The WAKE UP / SLEEP word's own colour, normalised so brightness is out of the question."""
+    """The wake button's word, as a colour, normalised so brightness is out of the question."""
     cell = ov._cells["wake"]
     baseline = cell.bottom - round(23 * ov.scale)
     box = np.s_[baseline - 10 : baseline + 10, cell.x + 20 : cell.right - 20]

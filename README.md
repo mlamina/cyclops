@@ -554,7 +554,7 @@ the middle of them:
 | --- | --- |
 | **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
 | **the eye** | Cyclops, in the middle of the row, centred on the bar's own top rule. No label — he is a face, and you tap a face to ask what it remembers: the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
-| **WAKE UP** | wakes Cyclops and starts the conversation; it says **SLEEP** while he is up, and the tab stays lit |
+| **WAKE UP** | wakes Cyclops and starts the conversation; it says **GO TO SLEEP** while he is up, and the tab stays lit |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
 from it — **green asleep, amber waking, white awake, red on a fault** — so the state reads from
@@ -563,7 +563,7 @@ green and bright green are the same thing to anyone more than a pace away. The w
 tube's own: a single-phosphor screen driven hard blooms towards white with its colour still in
 it, which is why it is `#E1FFF0` and not paper white, and why nothing clashes — there is no
 second hue to argue with the first. It reads as the same screen turned up. The same accent goes on the handful of things that only mean something during a session:
-the signal meter, the session clock, the caption's `›`, the WAKE UP / SLEEP button's mic and word, and him. Everything else — the brand, the rules, the ticks, SNAP, the caption's own words — stays
+the signal meter, the session clock, the caption's `›`, the WAKE UP / GO TO SLEEP button's mic and word, and him. Everything else — the brand, the rules, the ticks, SNAP, the caption's own words — stays
 phosphor green whatever he is doing, because a panel where everything is an accent has none.
 
 Asleep the whole screen is green and completely still, with one exception: the **WAKE UP** cell
