@@ -99,16 +99,18 @@ AMBER = (255, 184, 60)
 RED = (255, 86, 70)
 # The one the tube gets while he is up. Asleep, the panel is a single hue and he is the same
 # green as the furniture he sits in - bar the WAKE UP button, which breathes towards this to say
-# what pressing it does; awake, the live parts step off the green. That is the whole job of
-# it: dim green and bright green are the same colour to anyone more than a pace away, so a panel
-# that said "awake" only by getting brighter did not say it at all.
+# what pressing it does; awake, the live parts step off the green.
 #
-# Thirty degrees round the wheel from the phosphor and no further. A blue-cyan at +50 was tried
-# and fought the green - two colours near enough to be compared and far enough to argue. This one
-# is plainly not the phosphor and still belongs to the same tube. Every state he is up in wears
-# it, searching included: what tells those apart is the eye, which by then is spinning at 155
-# degrees a second with a white-hot arc going round its rim, and the word in the strip.
-AQUA = (80, 245, 215)
+# Not a second hue at all, in the end: the tube's own white. A single-phosphor screen driven hard
+# blooms towards white with its own colour still in it, which is why this is 225,255,240 and not
+# paper white, and it is why nothing here clashes - there is no second hue to argue with the
+# first. A blue-cyan fifty degrees round the wheel was tried and fought the green; an aqua at
+# thirty got on with it and still read as a decision. This reads as the same screen turned up.
+#
+# It is also the panel's existing way of shouting, promoted: the scan arc on a hunting eye and
+# the REC tag both went pale long before this did, because on a one-hue tube pale is the only
+# direction left.
+WHITE = (225, 255, 240)
 SCREEN = (5, 15, 10)  # the green-black the readout strip and the tab row are made of
 INK = (3, 11, 7)  # text on a filled tab
 
@@ -123,11 +125,11 @@ HALOS = {
     STARTING: AMBER,
     STOPPING: AMBER,  # disconnecting is the same transition, run backwards
     CONNECTING: AMBER,
-    LISTENING: AQUA,
-    SPEAKING: AQUA,
-    LOOKING: AQUA,
-    SEARCHING: AQUA,
-    DRAWING: AQUA,
+    LISTENING: WHITE,
+    SPEAKING: WHITE,
+    LOOKING: WHITE,
+    SEARCHING: WHITE,
+    DRAWING: WHITE,
     ERROR: RED,
 }
 # What the strip calls each state. Kept here rather than taken from the controller's ``detail``
@@ -188,19 +190,19 @@ MOODS = {
     # Awake and attending. A resting breath, a barely-moving ring set, and the one mood whose
     # iris opens to your voice - which is the panel saying it can hear you.
     LISTENING: Mood(
-        tint=AQUA, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4
+        tint=WHITE, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4
     ),
     # Talking: a faster breath and a wider iris, because he is doing the thing rather than
     # waiting to. Barely opens to level here - the level *is* his own voice coming back.
     SPEAKING: Mood(
-        tint=AQUA, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5
+        tint=WHITE, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5
     ),
     # Looking at a photo. Wide, still, and it does not blink: this is a stare.
-    LOOKING: Mood(tint=AQUA, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0),
+    LOOKING: Mood(tint=WHITE, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0),
     # Hunting. Narrowed to a point, breathing fast, rings tearing round with a scanning arc.
-    SEARCHING: Mood(tint=AQUA, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
+    SEARCHING: Mood(tint=WHITE, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
     # Drawing. Deliberate, and turning the other way, because it is making rather than looking.
-    DRAWING: Mood(tint=AQUA, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
+    DRAWING: Mood(tint=WHITE, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
     # A fault. Still and red, and pointedly not pulsing: a thing that throbs is asking to be
     # watched, and this one is asking to be read - the caption underneath says what broke.
     ERROR: Mood(tint=RED, aperture=0.20, swell=0.0, breath_s=0.0, spin=0.0),
@@ -963,7 +965,7 @@ class Overlay:
         sunk, lit = caption_pulse(phase) if session_up(state) else (0.0, 0)
         colour = mix(halo if state == ERROR else GREEN, SCREEN, sunk)
         # The marker takes the accent and the sentence does not. A whole line of running text in
-        # aqua over a live camera is harder to read than the same line in phosphor, and the
+        # white over a live camera is harder to read than the same line in phosphor, and the
         # marker is the part that is decoration anyway - so it is the part that gets to be a
         # colour, and it breathes with the words it introduces.
         used = self._text(d, x + inset, y, MARKER, font, (*mix(halo, SCREEN, sunk), CAPTION_ALPHA))
@@ -998,7 +1000,7 @@ class Overlay:
         # The wake cell is the only one carrying a state, so it is the only one that takes the
         # state's colour - glyph and word together, in every state it has. Asleep it keeps the
         # resting green, because that is the floor the glow lifts off; everywhere else it is
-        # amber, aqua or red along with the rest of the panel. SNAP and the eye's cell are
+        # amber, white or red along with the rest of the panel. SNAP and the eye's cell are
         # furniture and stay phosphor whatever is going on.
         ink = halo if name == "wake" and state != IDLE else GREEN_MID
         if pressed:
@@ -1067,7 +1069,7 @@ class Overlay:
         It swells towards the accent rather than up the green, so the glyph and the word change
         colour and not just brightness - which is the point of the accent everywhere else on this
         panel, and here it is also a promise: the button wears the colour the whole screen turns
-        when you press it. The one aqua thing on a sleeping panel is the way off it.
+        when you press it. The one white thing on a sleeping panel is the way off it.
 
         Only while he is asleep proper. Not on a fault - a red panel with a green button
         beckoning at you is a machine asking to be prodded rather than read, and the line under
@@ -1080,9 +1082,9 @@ class Overlay:
             [cell.x + inset, cell.y + inset, cell.right - inset, cell.bottom - inset],
             radius=max(0, self.radius - inset),
             corners=(False, False, True, False),
-            fill=(*mix(SCREEN, AQUA, TAB_LIVE), round(TAB_LIVE_ALPHA * swell)),
+            fill=(*mix(SCREEN, WHITE, TAB_LIVE), round(TAB_LIVE_ALPHA * swell)),
         )
-        colour = mix(GREEN_MID, AQUA, WAKE_GLOW * swell)
+        colour = mix(GREEN_MID, WHITE, WAKE_GLOW * swell)
         cx, gy, radius = self._glyph_at(cell)
         self._glyph_mic(d, cx, gy, radius, colour, IDLE)
         self._text(

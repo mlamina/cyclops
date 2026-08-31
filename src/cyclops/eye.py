@@ -48,7 +48,7 @@ TICK_SPIN = 1.0
 BRACKET_SPIN = -0.62
 DOT_SPIN = 0.31
 SCAN_SPIN = 2.3  # the sweeping highlight, when a mood asks for one...
-SCAN_HOT = 0.55  # ...and how far towards white it goes, so it reads over the rim
+SCAN_DIM = 0.42  # ...and how far the rim is turned *down* underneath it while it sweeps
 
 # How present each ring is against the rim, before the mood's own `rings` scales all of them.
 RIM_LIT = 1.0
@@ -215,17 +215,20 @@ class EyeEngine:
         def shade(strength: float) -> tuple:
             return (*mix(self.screen, tint, strength * lit), 255)
 
-        # The rim. Also the thing the tab row's rule runs into, so it is always the brightest
-        # ring: it is doing structural work as well as saying how he feels.
-        self._circle(d, cx, cy, r, shade(RIM_LIT), self.stroke)
-        if mood.scan > 0.0:  # a highlight sweeping the rim - a HUD that is hunting for something
-            # Mixed towards white rather than drawn in the tint: the rim is already the tint at
-            # full, so a highlight the same colour is not a highlight. This tube has one hue, and
-            # the way to shout on it is to go pale - the same trick as the inverted REC tag.
+        # The rim. Also the thing the tab row's rule runs into, so it is normally the brightest
+        # ring: it is doing structural work as well as saying how he feels. The exception is a
+        # mood that sweeps - see below.
+        scanning = mood.scan > 0.0
+        self._circle(d, cx, cy, r, shade(RIM_LIT * (SCAN_DIM if scanning else 1.0)), self.stroke)
+        if scanning:
+            # A radar sweep, and built the way one is: the trace is bright and the ring under it
+            # is faint. The highlight used to be mixed towards white over a rim at full, which
+            # worked while the accent was a colour and stopped working the day the accent became
+            # the tube's own white - there is nowhere paler than pale to go. Turning the rim down
+            # instead needs no headroom above the tint and cannot be defeated by any of it.
             start = (SCAN_SPIN * turn) % 360.0
             d.arc(self._box(cx, cy, r), start=start, end=start + mood.scan,
-                  fill=(*mix(tint, (255, 255, 255), SCAN_HOT * lit), 255),
-                  width=self.stroke + self.thin)
+                  fill=shade(RIM_LIT), width=self.stroke + self.thin)
 
         tick = shade(TICK_LIT)
         inner, outer = r * (TICKS - TICK_LEN), r * TICKS

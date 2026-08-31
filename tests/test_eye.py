@@ -327,7 +327,7 @@ def _glyph_hue(ov: overlay.Overlay, phase: float) -> str:
     seen = px.mean(axis=0) / px.mean(axis=0).sum()
     near = {
         name: float(np.abs(seen - np.array(c) / sum(c)).sum())
-        for name, c in (("phosphor", overlay.GREEN_MID), ("accent", overlay.AQUA))
+        for name, c in (("phosphor", overlay.GREEN_MID), ("accent", overlay.WHITE))
     }
     return min(near, key=near.get)  # type: ignore[arg-type]
 
@@ -358,7 +358,7 @@ def test_the_button_wears_the_state_it_is_in(state: str) -> None:
     ov = _panel()
     seen = _word_colour(ov, state, phase=overlay.WAKE_PERIOD_S)
     if state == overlay.IDLE:
-        assert _nearest(seen, ("resting", overlay.GREEN_MID), ("state", overlay.AQUA)) == "resting"
+        assert _nearest(seen, ("resting", overlay.GREEN_MID), ("state", overlay.WHITE)) == "resting"
     else:
         assert _nearest(
             seen, ("resting", overlay.GREEN_MID), ("state", overlay.HALOS[state])
@@ -439,25 +439,42 @@ def test_the_rings_do_not_all_turn_together() -> None:
     assert min(rates) < 0 < max(rates), "nothing counter-rotates"
 
 
-def test_the_scan_arc_sweeps_the_rim_while_he_is_hunting() -> None:
-    # The one part of him that shouts. It is mixed towards white so it reads over a rim already
-    # at full tint, which is also what makes it findable here: nothing else on his face is pale.
-    ov = _panel()
+def _rim_profile(ov: overlay.Overlay, phase: float) -> np.ndarray:
+    """Brightness all the way round his rim, one sample a degree."""
     hunting = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0)
-    _settle(ov, **hunting)
+    frame = ov.render(phase=phase, **hunting).astype(float)
+    cx, cy = ov.eye
+    a = np.radians(np.arange(360))
+    xs = np.round(cx + ov.eye_r * np.cos(a)).astype(int)
+    ys = np.round(cy + ov.eye_r * np.sin(a)).astype(int)
+    px = frame[ys, xs]
+    return px[:, :3].sum(axis=1) * px[:, 3] / 255
 
-    def where(phase: float) -> float:
-        crop = _face(ov, ov.render(phase=phase, **hunting)).astype(int)
-        pale = np.argwhere((crop[:, :, 2] > 175) & (crop[:, :, 3] > 150))
-        assert len(pale), "no scan arc on a face that is supposed to be searching"
-        y, x = pale.mean(axis=0) - ov.eye_r
-        return float(np.degrees(np.arctan2(y, x)) % 360)
 
-    # A quarter of a second, not a whole one: at this mood's spin the highlight goes round very
-    # nearly once a second, so sampling a second apart would find it back where it started and
-    # call that "still".
-    moved = (where(10.25) - where(10.0)) % 360
-    assert 15 < moved < 345, f"the highlight sat still ({moved:.0f} degrees in a quarter second)"
+def test_the_scan_arc_sweeps_the_rim_while_he_is_hunting() -> None:
+    # A radar sweep: a bright trace on a faint ring. Both halves are asserted, because either one
+    # alone passes for the wrong reason - a ring that is bright all the way round still "moves" a
+    # little as the thicker trace goes by, and a trace no brighter than the ring is not a trace.
+    ov = _panel()
+    _settle(ov, state=overlay.SEARCHING, level=0.0, elapsed=12.0)
+
+    def trace(phase: float) -> tuple[float, int]:
+        ring = _rim_profile(ov, phase)
+        lit = ring > (ring.max() + ring.min()) / 2
+        assert lit.any(), "nothing bright anywhere on the rim of a searching eye"
+        # Angular centre of the bright band, taken as a vector so it survives wrapping past 360.
+        a = np.radians(np.flatnonzero(lit))
+        centre = np.degrees(np.arctan2(np.sin(a).mean(), np.cos(a).mean())) % 360
+        return float(centre), int(lit.sum())
+
+    where, span = trace(10.0)
+    scan = overlay.MOODS[overlay.SEARCHING].scan
+    assert span < 300, f"the whole rim is lit - there is no trace, just a bright ring ({span} deg)"
+    assert 0.4 * scan < span < 2.0 * scan, f"the trace is {span} deg against a scan of {scan:.0f}"
+    # A quarter of a second, not a whole one: at this mood's spin the trace goes round very nearly
+    # once a second, so sampling a second apart would find it back where it started.
+    moved = (trace(10.25)[0] - where) % 360
+    assert 15 < moved < 345, f"the trace sat still ({moved:.0f} degrees in a quarter second)"
 
 
 def test_the_iris_is_shut_asleep_and_open_awake() -> None:
@@ -518,7 +535,7 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
         seen = px.mean(axis=0) / px.mean(axis=0).sum()
         near = {
             name: float(np.abs(seen - np.array(c) / sum(c)).sum())
-            for name, c in (("phosphor", overlay.GREEN), ("accent", overlay.AQUA))
+            for name, c in (("phosphor", overlay.GREEN), ("accent", overlay.WHITE))
         }
         return min(near, key=near.get)  # type: ignore[arg-type]
 
@@ -544,15 +561,34 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
 
 
 def test_the_accent_belongs_to_the_same_tube_as_the_phosphor() -> None:
-    # Far enough round the wheel to be a different colour, near enough to be the same screen.
-    # A blue-cyan at fifty degrees out fought the green; this is the constraint that was missing.
+    """The rule three accents were tried against, written down so a fourth need not repeat them.
+
+    A blue-cyan fifty degrees round the wheel fought the green - near enough to be compared with
+    it and far enough to argue. An aqua at thirty got on with it. The tube's own white is eleven
+    degrees off and does not read as green at all, because what separates it is saturation.
+
+    So the constraint is not a hue distance, which would have thrown out the answer. It is that
+    the further round the wheel an accent goes the paler it has to get, and that it must be
+    plainly distinguishable from the phosphor whichever way it got there.
+    """
     import colorsys
 
-    def hue(c: tuple[int, int, int]) -> float:
-        return colorsys.rgb_to_hsv(*[v / 255 for v in c])[0] * 360
+    def hue_sat(c: tuple[int, int, int]) -> tuple[float, float]:
+        h, sat, _ = colorsys.rgb_to_hsv(*[v / 255 for v in c])
+        return h * 360, sat
 
-    apart = abs(hue(overlay.AQUA) - hue(overlay.GREEN))
-    assert 18 < apart < 40, f"the accent is {apart:.0f} degrees off the phosphor"
+    def chroma(c: tuple[int, int, int]) -> np.ndarray:
+        return np.array(c, dtype=float) / sum(c)
+
+    def budget(c: tuple[int, int, int]) -> float:
+        h, sat = hue_sat(c)
+        return abs((h - hue_sat(overlay.GREEN)[0] + 180) % 360 - 180) * sat
+
+    apart = float(np.abs(chroma(overlay.WHITE) - chroma(overlay.GREEN)).sum())
+    assert apart > 0.15, f"the accent does not read as different from the phosphor ({apart:.2f})"
+    assert budget(overlay.WHITE) < 25, "too saturated to be that far round the wheel"
+    # ...and the rule has to reject the one that was rejected, or it is a rubber stamp.
+    assert budget((64, 226, 255)) > 25, "the rule would have let the blue-cyan through"
 
 
 def test_the_rec_tag_is_red() -> None:
@@ -571,18 +607,25 @@ def test_the_rec_tag_is_red() -> None:
 
 
 def test_he_changes_colour_with_what_he_is_doing() -> None:
+    # Stated as what it claims rather than as "warmer": the accent used to be a colour and is now
+    # the tube's own white, which is neutral, so a test that measured red-versus-green was really
+    # a test about one particular accent. Chromaticity against the mood's own tint holds for any.
     ov = _panel()
-
-    def hue(state: str) -> tuple[float, float]:
-        shown = dict(state=state, level=0.0, elapsed=12.0)
+    faces = {
+        "asleep": overlay.IDLE,
+        "waking": overlay.CONNECTING,
+        "awake": overlay.LISTENING,
+        "fault": overlay.ERROR,
+    }
+    tints = [(name, overlay.MOODS[state].tint) for name, state in faces.items()]
+    assert len({c for _, c in tints}) == len(tints), "two of these faces are the same colour"
+    for name, state in faces.items():
+        shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
         _settle(ov, **shown)
         crop = _face(ov, ov.render(phase=10.0, **shown)).astype(float)
-        px = crop[(crop[:, :, :3].sum(axis=2) > 200) & (crop[:, :, 3] > 150)]
-        return float(px[:, 0].mean()), float(px[:, 2].mean())  # red and blue against the green
-
-    green, amber, red = hue(overlay.LISTENING), hue(overlay.CONNECTING), hue(overlay.ERROR)
-    assert amber[0] > green[0] and red[0] > green[0], "waking and faulted are not warmer"
-    assert red[1] < amber[1], "a fault does not read as redder than a wake-up"
+        px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 200)][:, :3]
+        seen = px.mean(axis=0) / px.mean(axis=0).sum()
+        assert _nearest(seen, *tints) == name, f"his {name} face is wearing another mood's colour"
 
 
 def test_he_acknowledges_a_tap_without_going_photographic_negative() -> None:

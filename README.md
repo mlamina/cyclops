@@ -557,16 +557,17 @@ the middle of them:
 | **WAKE UP** | wakes Cyclops and starts the conversation; it says **SLEEP** while he is up, and the tab stays lit |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
-from it — **green asleep, amber waking, aqua awake, red on a fault** — so the state reads from
-across the room, and while he is up it breathes. Hue rather than brightness, because dim green
-and bright green are the same colour to anyone more than a pace away; and the aqua is thirty
-degrees off the phosphor and no further, so it is plainly a different colour and still the same
-tube. The same accent goes on the handful of things that only mean something during a session:
+from it — **green asleep, amber waking, white awake, red on a fault** — so the state reads from
+across the room, and while he is up it breathes. A colour rather than a brightness, because dim
+green and bright green are the same thing to anyone more than a pace away. The white is the
+tube's own: a single-phosphor screen driven hard blooms towards white with its colour still in
+it, which is why it is `#E1FFF0` and not paper white, and why nothing clashes — there is no
+second hue to argue with the first. It reads as the same screen turned up. The same accent goes on the handful of things that only mean something during a session:
 the signal meter, the session clock, the caption's `›`, the WAKE UP / SLEEP button's mic and word, and him. Everything else — the brand, the rules, the ticks, SNAP, the caption's own words — stays
 phosphor green whatever he is doing, because a panel where everything is an accent has none.
 
 Asleep the whole screen is green and completely still, with one exception: the **WAKE UP** cell
-breathes, slowly — and it breathes *towards the aqua*, so it is both the only thing moving and
+breathes, slowly — and it breathes *towards the white*, so it is both the only thing moving and
 the only thing not green. That is a promise as much as a signal: the button wears the colour the
 whole screen turns when you press it. The status line, bottom right, spells it
 out for anyone close enough to read it, including what an error actually said.
@@ -584,7 +585,7 @@ Everything he does is a **mood** — nine numbers and a colour, one row per stat
 dim green and completely still. Waking, he is amber, half open, rings running fast with a
 scanning arc. Listening, he is green and calm, blinking every few seconds and never quite on the
 beat, and his iris opens to your voice. Speaking, he breathes faster and wider. Searching, he
-narrows to a point and the rings tear round. A fault is red and does not move at all. He
+narrows to a point, the rings tear round and a bright trace sweeps a dimmed rim. A fault is red and does not move at all. He
 crossfades between them rather than snapping, because a face that jumped colour between two
 frames would read as a different creature.
 
