@@ -7,19 +7,27 @@ array to alpha-blend onto the frame. Geometry doubles as the hit-test map: every
 element returns its rectangle, so a tap can be resolved without a second layout.
 
 The layout is a terminal screen: a rounded border hard against the panel's edges, a readout
-strip along the top, three tabs along the bottom, and the camera behind all of it. The picture
-itself is left alone - no wash, no scanlines, nothing between you and the lens - because the
-panel's job is to let you see the room and the endoscope has no detail to spare. The filter is
+strip along the top, Cyclops' own square let into the top-right corner, three tabs along the
+bottom, and the camera behind all of it. The picture itself is left alone - no wash, no
+scanlines, nothing between you and the lens - because the panel's job is to let you see the room
+and the endoscope has no detail to spare. The filter is
 what the strip and the tab row are made of instead: they used to be opaque bars, and are now
 that same phosphor wash, corner shading and scanline field laid over the live picture, so the
 camera shows through the chrome as well as between it. The border carries the session state in
 its colour and glows inwards from it, which is the one thing that has to be readable across a
 workshop without reading any words.
 
+The corner square is the one thing here that is a face rather than a readout, and it is what
+lets the rest stay this terse: a glance at it answers "is he there", so the strip is left free to
+say only what he is doing. His eye is shut while he is asleep, heavy-lidded while he is coming
+round, and open while he is up - where it blinks, and its pupil widens with your voice. Nothing
+whatsoever moves while he is asleep, which is what makes any of that read as awake.
+
 Everything that holds still while the state does - the halo, the scanlines, the vignette, the
-frame and its glow, the mode word, the tab row - is built once and cached, keyed on the state.
-A Pi rendering this at 25 fps has 40 ms for the whole loop and the camera wants most of them;
-what is left for a frame here is a signal meter, a clock, a caption and one ring.
+frame and its glow, the mode word, the tab row, the avatar's housing - is built once and
+cached, keyed on the state. A Pi rendering this at 25 fps has 40 ms for the whole loop and the
+camera wants most of them; what is left for a frame here is a signal meter, a clock, a caption,
+one ring, the border line and the eye.
 """
 
 from __future__ import annotations
@@ -173,6 +181,40 @@ LINE = 0.0042  # stroke of the border and the rules
 PAD = 0.036  # inner padding - wide enough that the inward glow never reaches any text
 HEADER_H = 0.118
 FOOTER_H = 0.170
+# The avatar: a square hard against the panel's top and right edges, rounded on that one corner
+# to match the bezel, the mirror of how the outer tabs reach the bottom two. It spends the
+# readout strip's empty right end first and only then the picture, which is why a square this
+# size costs 2.4% of the viewport and not 6%: 115 px across at 800x480, of which the top 57 were
+# never picture at all.
+AVATAR = 0.24
+
+# The eye that lives in it, in fractions of the box and then of its own half-width. It is drawn
+# from one number - how far the lids are apart - so a blink is a lerp and never a swap between
+# two symbols: two frames of a different picture read as a dropped frame, a lid coming down
+# reads as a blink.
+EYE_W = 0.34  # half-width, of the box: the lids meet in points at the canthi
+EYE_TOP = 0.56  # how far the upper lid bulges, wide awake. Fuller on top is what makes it an
+EYE_BOTTOM = 0.40  # ...eye rather than a lens or a leaf
+EYE_SHUT = 0.18  # where both lids land when it is closed - a shallow downward curve, because a
+# straight line is a minus sign and not a sleeping eye
+EYE_PUPIL = 0.26  # pupil at rest...
+EYE_DILATE = 0.14  # ...and what your voice adds. The two sum to EYE_BOTTOM on purpose: fully
+# dilated the pupil exactly fills the eye and can grow no further
+EYE_LIDS = 15  # points sampled along each lid; below about 9 the curve starts to show its joints
+EYE_RINGS = 0.44  # radius of the two arcs around it, quoting the boot mark's concentric rings
+EYE_MIN_PUPIL = 1.5  # ...and how small the pupil may get before it is not worth drawing at all
+EYE_DROWSY = 0.55  # how far the lids manage while he is coming round: WAKING is not yet awake
+
+BLINK_EVERY_S = 4.4  # mean gap between blinks - about how often a person talking blinks
+BLINK_DRIFT_S = 2.6  # ...and how far one may wander inside its window: a blink on a fixed period
+# is a status LED, not a creature
+BLINK_S = 0.22  # one blink, down and back up. Five or six frames at 25 fps; anything shorter is
+# indistinguishable from a dropped frame
+BLINK_DRIFT = 0.6180339887  # golden ratio, so no two consecutive gaps are the same length
+
+RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
+RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
+# the caption may do, because this is the one thing readable across a workshop
 
 METER_SEGMENTS = 8  # steps in the signal bar
 # How much colour is stirred into the chrome for the parts that are meant to look faded. These
@@ -269,6 +311,60 @@ def caption_pulse(phase: float) -> tuple[float, int]:
     """
     step = DOT_PERIOD_S / (CAPTION_DOTS + 1)
     return BREATH_DEPTH * breath(phase, BREATH_PERIOD_S), int((phase % DOT_PERIOD_S) / step)
+
+
+def eye_open(phase: float) -> float:
+    """How far Cyclops' eye is open at monotonic time *phase* - 1.0 wide, 0.0 shut.
+
+    One blink per window of :data:`BLINK_EVERY_S`, but not at the top of it: each window's blink
+    is offset by a different fraction of :data:`BLINK_DRIFT_S`, so consecutive gaps differ and the
+    thing reads as a creature rather than as an indicator lamp. The offsets come from the golden
+    ratio because it is the least rational number there is - the sequence never settles into a
+    period a person can anticipate - and because one multiply and a mod is the whole cost. Not a
+    PRNG, and emphatically not ``hash()`` of anything, which is salted per process and would give
+    the box a different blink on every boot.
+
+    Time rather than frames, for the reason :func:`caption_pulse` gives: the loop does not run at
+    one rate, and a lid that moved a step per frame would snap shut and crawl open again.
+    """
+    window = math.floor(phase / BLINK_EVERY_S)
+    started = window * BLINK_EVERY_S + BLINK_DRIFT_S * ((window * BLINK_DRIFT) % 1.0)
+    since = phase - started
+    if not 0.0 <= since < BLINK_S:
+        return 1.0
+    return 1.0 - breath(since, BLINK_S)
+
+
+def eye_openness(state: str, phase: float) -> float:
+    """How far the eye is open, all in: the state first and then the blink.
+
+    Shut unless he is up, and only half up while he is coming round - the two or three seconds
+    of WAKING are a creature surfacing, not one that is already listening to you. The blink runs
+    through that too, which is what a heavy-lidded blink is.
+    """
+    if not awake(state):
+        return 0.0
+    drowsy = EYE_DROWSY if state in (STARTING, CONNECTING) else 1.0
+    return drowsy * eye_open(phase)
+
+
+def eye_lids(openness: float) -> tuple[float, float]:
+    """Where the two lids sit, as bulges in half-widths, positive downwards.
+
+    Shut is not a special case. At *openness* 0 both lids arrive on the same shallow downward
+    curve, which is what a closed eye looks like and also what makes a blink a single lerp
+    between two positions of one shape.
+    """
+    k = max(0.0, min(1.0, openness))
+    return (
+        EYE_SHUT + (-EYE_TOP - EYE_SHUT) * k,
+        EYE_SHUT + (EYE_BOTTOM - EYE_SHUT) * k,
+    )
+
+
+def rim_breath(phase: float) -> float:
+    """How far the border has sunk towards SCREEN. A *mix*, not an alpha - see :func:`_mix`."""
+    return RIM_DEPTH * breath(phase, RIM_PERIOD_S)
 
 
 @dataclass(frozen=True)
@@ -379,6 +475,11 @@ class Overlay:
             self.frame.w,
             self.footer.y - self.header.bottom,
         )
+        # Cyclops' own corner. Hard against the top and right edges - not inside the padding -
+        # because it is let into the bezel the way the outer tabs are, not floated on the
+        # picture. Clamped so a very short window cannot hand it more than a third of the glass.
+        side = min(max(24, round(AVATAR * height)), height // 3, width // 3)
+        self.avatar = Rect(self.frame.right - side, self.frame.y, side, side)
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
         self.font_read = _load_font(max(9, round(21 * scale)))
@@ -404,6 +505,7 @@ class Overlay:
         v = self.viewport
         alpha[v.y : v.bottom, v.x : v.right] = 0.0
         self._backdrop = (rgb, alpha)
+        self._plate = self._build_plate()
         self._chrome = self._build_chrome()
         self._bases: dict[tuple[str, bool], Image.Image] = {}
         # The readout strip's right-hand group is laid out from the frame edge inwards, and in a
@@ -446,6 +548,27 @@ class Overlay:
 
     # ---- the cached backdrop ----
 
+    def _build_plate(self) -> Image.Image:
+        """The avatar's dark backing, on its own layer under the chrome.
+
+        The same argument the caption's slab makes: this sits on the live camera, and a green
+        eye over whatever the lens happens to be pointed at is a coin toss. It is a separate
+        layer rather than part of :meth:`_build_chrome` because that one blurs its own alpha to
+        make the bloom, and a filled square this size through a Gaussian blur is not a glow, it
+        is a lamp.
+
+        Rounded on the one corner it shares with the bezel, exactly as the outer tabs are.
+        """
+        layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        a = self.avatar
+        ImageDraw.Draw(layer).rounded_rectangle(
+            [a.x, a.y, a.right - 1, a.bottom - 1],
+            radius=self.radius,
+            corners=(False, True, False, False),
+            fill=(*SCREEN, PLATE_ALPHA),
+        )
+        return layer
+
     def _build_chrome(self) -> Image.Image:
         """The rules, the tab dividers and the viewport ticks, on transparency.
 
@@ -459,10 +582,15 @@ class Overlay:
         # A rule with a thinner companion a few pixels off it, top and bottom - the doubled
         # divider is most of what makes a green terminal read as a terminal rather than a form.
         gap = max(2, round(4 * self.scale))
-        for y, offset in ((self.header.bottom, gap), (self.footer.y, -gap)):
-            d.line([f.x + pad, y, f.right - pad, y], fill=(*GREEN_MID, 230), width=w)
+        # The strip's rule runs into the avatar and stops there; the tab row's still crosses the
+        # whole panel. A rule drawn under his corner would be a line through his chin.
+        for y, offset, right in (
+            (self.header.bottom, gap, self.avatar.x),
+            (self.footer.y, -gap, f.right - pad),
+        ):
+            d.line([f.x + pad, y, right, y], fill=(*GREEN_MID, 230), width=w)
             d.line(
-                [f.x + pad * 3, y + offset, f.right - pad * 3, y + offset],
+                [f.x + pad * 3, y + offset, min(right, f.right - pad * 3), y + offset],
                 fill=(*GREEN_DIM, 220),
                 width=max(1, w // 2),
             )
@@ -474,6 +602,7 @@ class Overlay:
                 width=max(1, w // 2),
             )
         self._draw_ticks(d)
+        self._draw_avatar_box(d)
 
         # Bloom, from the alpha of what was just drawn. Blurring the RGBA directly would drag
         # the colour towards black wherever it is transparent, so only the mask is blurred and
@@ -492,8 +621,28 @@ class Overlay:
         box = (v.x + pad, v.y + pad, v.right - pad, v.bottom - pad)
         for x, dx in ((box[0], 1), (box[2], -1)):
             for y, dy in ((box[1], 1), (box[3], -1)):
+                if dx < 0 and dy > 0:
+                    continue  # top right: the avatar is there, and frames that corner itself
                 d.line([x, y, x + arm * dx, y], fill=(*GREEN_MID, 200), width=self.line)
                 d.line([x, y, x, y + arm * dy], fill=(*GREEN_MID, 200), width=self.line)
+
+    def _draw_avatar_box(self, d: ImageDraw.ImageDraw) -> None:
+        """The housing Cyclops lives in: two rules and two arcs. The eye itself is per frame.
+
+        Only the two sides that face the rest of the screen get a rule - the other two are the
+        panel's own edges, and the bezel is already there. The arcs are the boot mark quoted:
+        splash.png is an iris inside concentric HUD rings, and two of those rings around the eye
+        are what make this square read as a housing rather than as a hole cut in the strip.
+        """
+        a = self.avatar
+        d.line([a.x, a.y, a.x, a.bottom - 1], fill=(*GREEN_MID, 230), width=self.line)
+        d.line([a.x, a.bottom - 1, a.right - 1, a.bottom - 1], fill=(*GREEN_MID, 230),
+               width=self.line)
+        cx, cy = a.center
+        r = round(a.w * EYE_RINGS)
+        for start, end in ((200, 340), (20, 160)):  # open at the sides, where the eye is widest
+            d.arc([cx - r, cy - r, cx + r, cy + r], start=start, end=end,
+                  fill=(*GREEN_DIM, 255), width=max(1, self.line // 2))
 
     def _base(self, state: str, recording: bool) -> Image.Image:
         """Everything that holds still while the state does, built once and copied per frame.
@@ -516,7 +665,8 @@ class Overlay:
         # of them any more: the strip, the tab row and the four scraps outside the border's
         # rounded corners are all just the wash and the scanlines over the live picture, and the
         # picture between them is not covered at all - not even by the border's own corners.
-        image = Image.alpha_composite(_to_image(*self._backdrop), self._chrome)
+        image = Image.alpha_composite(_to_image(*self._backdrop), self._plate)
+        image = Image.alpha_composite(image, self._chrome)
 
         d = ImageDraw.Draw(image)
         self._bake_header(d, state, halo, recording)
@@ -552,8 +702,13 @@ class Overlay:
         return recording and session_up(state)
 
     def _readouts(self, taping: bool) -> tuple[float, float, float]:
-        """Right edges of the clock, the REC tag and the signal meter, laid out edge inwards."""
-        clock = self.frame.right - self.pad
+        """Right edges of the clock, the REC tag and the signal meter, laid out inwards.
+
+        Inwards from the avatar rather than from the frame: the strip's right end is his corner
+        now, and the numbers queue up to the left of it. Everything else about this layout is
+        unchanged, because it was always written edge-inwards.
+        """
+        clock = self.avatar.x - self._gap
         rec = clock - self._clock_w - self._gap
         meter = rec - (self._rec_w + self._gap) if taping else rec
         return clock, rec, meter
@@ -621,6 +776,11 @@ class Overlay:
         what the panel is showing but about *when*. It is passed in rather than read here so a
         frame is a pure function of its arguments and the caption's animation can be tested
         without a clock - the same shape as ``flash``, which the kiosk has always computed.
+
+        Nothing here moves while he is asleep. That is deliberate and it is half the design: the
+        eye is shut, the border holds still, the caption stops breathing, and two frames of an
+        idle panel are byte-identical. Against a panel that was quietly pulsing whatever it was
+        doing, an awake one that pulses says nothing.
         """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording).copy()
@@ -628,16 +788,28 @@ class Overlay:
 
         self._draw_readouts(d, halo, level, elapsed, self._taping(state, recording))
         self._draw_caption(d, state, halo, detail, phase)
-        if awake(state):  # the ring is breathing
-            self._draw_ring(d, _mix(_mix(SCREEN, halo, TAB_LIVE), halo, RING_MIX), level)
         if pressed is not None:
             # Redrawn over the tab the base has at rest: an inverted cell is the only feedback
             # a screen with no travel can give, and it lasts a handful of frames.
             cell = self._cells.get(pressed)
             if cell is not None:
                 self._draw_tab(d, cell, pressed, state, halo, pressed=True)
-                if pressed == "eye" and awake(state):
-                    self._draw_ring(d, _mix(halo, INK, RING_MIX), level)
+        # After the pressed cell, not before it: the ring used to be drawn, painted over by an
+        # inverted tab and then drawn again in ink. One order, one draw, one colour.
+        if awake(state):
+            held = pressed == "eye"
+            ring = (
+                _mix(halo, INK, RING_MIX)
+                if held
+                else _mix(_mix(SCREEN, halo, TAB_LIVE), halo, RING_MIX)
+            )
+            self._draw_ring(d, ring, level)
+        self._draw_eye(d, halo, eye_openness(state, phase), level)
+        if session_up(state):
+            # The teardown breathes too. He is not listening any more - the eye is already shut -
+            # but the box is still working, and a panel that went stone still the moment you
+            # pressed stop would look like it had stopped rather than like it was finishing.
+            self._draw_rim(d, halo, phase)
         if flash > 0.0:
             # Green-white rather than white: a photo taken through a phosphor screen.
             d.rectangle([0, 0, self.width, self.height], fill=(214, 255, 228, int(190 * flash)))
@@ -877,8 +1049,67 @@ class Overlay:
         d.line([cx, cy, cx, cy - round(ring * 0.55)], fill=(*c, 255), width=stroke)
         d.line([cx, cy, cx + round(ring * 0.45), cy], fill=(*c, 255), width=stroke)
 
+    def _lid(self, cx: int, cy: int, w: int, bulge: float) -> list[tuple[float, float]]:
+        """One lid, sampled along a parabola whose deepest point is *bulge* px below the line.
+
+        Both lids share their endpoints at ``cx ± w``, so the canthi come to a point without
+        anything having to draw them, and a blink never opens a gap at the corners.
+        """
+        n = EYE_LIDS
+        return [
+            (cx - w + 2 * w * t, cy + 4 * bulge * t * (1 - t))
+            for t in (i / (n - 1) for i in range(n))
+        ]
+
+    def _draw_eye(
+        self, d: ImageDraw.ImageDraw, colour: tuple, openness: float, level: float
+    ) -> None:
+        """Cyclops, in his corner. Two lids and a pupil, drawn from one number.
+
+        The only thing on the panel that is a *face* rather than a readout, and the reason the
+        rest of the chrome can stay as terse as it is: one look at the corner answers "is he
+        there", and the strip is left to say what he is doing.
+
+        Per frame rather than baked, because everything about it moves - it blinks, and the pupil
+        widens with your voice. That is four PIL primitives inside a 115 px box; the tab row, the
+        strip and the frame are all still baked, which is what keeps the budget.
+        """
+        a = self.avatar
+        cx, cy = a.center
+        w = max(4, round(a.w * EYE_W))
+        stroke = max(2, round(3 * self.scale)) + 1
+        for bulge in eye_lids(openness):
+            d.line(self._lid(cx, cy, w, bulge * w), fill=(*colour, 255), width=stroke,
+                   joint="curve")
+        # Scaled by openness as well as by your voice, so the lid swallows the pupil on the way
+        # down instead of leaving a disc sitting on a closed eye.
+        pupil = w * (EYE_PUPIL + EYE_DILATE * max(0.0, min(1.0, level))) * openness
+        if pupil >= EYE_MIN_PUPIL:
+            d.ellipse(
+                [cx - pupil, cy - pupil, cx + pupil, cy + pupil], fill=(*colour, 255)
+            )
+
+    def _draw_rim(self, d: ImageDraw.ImageDraw, halo: tuple, phase: float) -> None:
+        """Re-stroke the border, sunk by one breath. Only ever called while a session is up.
+
+        The state light *around* it is baked - it is a full-screen composite and would cost
+        milliseconds a frame - so what breathes is the crisp line on top of it, which is the
+        brightest edge on the panel and the one a workshop reads from across the room. At the top
+        of the breath the mix is zero and this puts back exactly the pixels ``_base`` drew, so the
+        rim only ever dims from where it is now and never brightens past it.
+
+        Redrawing over the same geometry is safe because ImageDraw does not anti-alias: the sunk
+        stroke covers precisely the pixels the bright one did, with no fringe left showing.
+        """
+        d.rounded_rectangle(
+            [self.frame.x, self.frame.y, self.frame.right - 1, self.frame.bottom - 1],
+            radius=self.radius,
+            outline=(*_mix(halo, SCREEN, rim_breath(phase)), 255),
+            width=self.line,
+        )
+
     def _draw_ring(self, d: ImageDraw.ImageDraw, colour: tuple, level: float) -> None:
-        """The ring around the microphone - the one thing on the panel that moves with your voice.
+        """The ring around the microphone, which swells with your voice as the eye's pupil does.
 
         Drawn per frame rather than baked with the rest of the tab, for the obvious reason that
         it is the only part of the tab row with anything to say between one frame and the next.

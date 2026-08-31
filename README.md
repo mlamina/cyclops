@@ -546,8 +546,9 @@ CYCLOPS_HALF_DUPLEX=1
 
 **The panel.** `cyclops-kiosk` is the whole front-end and needs no browser: it opens the camera,
 draws the live picture fullscreen, and lays a green terminal bezel over it — a readout strip
-along the top (mode, signal meter, `REC`, session clock), the picture through the middle, and a
-row of three tabs along the bottom sized for a thumb in a glove:
+along the top (mode, signal meter, `REC`, session clock), Cyclops' own square let into the
+top-right corner, the picture through the middle, and a row of three tabs along the bottom sized
+for a thumb in a glove:
 
 | Tab | What it does |
 | --- | --- |
@@ -556,9 +557,20 @@ row of three tabs along the bottom sized for a thumb in a glove:
 | **WAKE UP** | wakes Cyclops and starts the conversation; it says **SLEEP** while he is up, and the tab stays lit |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
-from it — dim green idle, amber connecting, bright green live, red on a fault — so the state
-reads from across the room. The line under the picture spells it out for anyone close enough to
-read it, including what an error actually said. The picture keeps its own colours and is not
+from it — dim green asleep, amber waking, bright green awake, red on a fault — so the state
+reads from across the room, and while he is up it breathes. The line under the picture spells it
+out for anyone close enough to read it, including what an error actually said.
+
+**The corner is Cyclops.** It is the one thing on the panel that is a face rather than a readout,
+and it is what lets the rest stay this terse: a glance answers *is he there*, so the strip is
+free to say only what he is doing. His eye is shut while he is asleep, heavy-lidded while he is
+coming round, and open while he is up — where it blinks every few seconds, never quite on the
+beat, and its pupil widens with your voice. It costs 2.4% of the picture, because it spends the
+strip's empty right-hand end before it spends any of the camera.
+
+And while he is asleep **nothing on the panel moves at all** — not the eye, not the border, not
+the caption, which used to breathe whatever was happening. Two frames of a resting panel are
+identical, and that stillness is what makes any of the rest read as awake. The picture keeps its own colours and is not
 filtered at all; the strip and the tab row are, and they are see-through rather than opaque, so
 the camera runs edge to edge behind the chrome as well as between it. Only the chrome is green,
 because the point of the panel is still to see the room.
