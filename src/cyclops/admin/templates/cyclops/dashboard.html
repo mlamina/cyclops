@@ -4,9 +4,10 @@ The whole admin interface: one self-contained file, no external assets, laid out
 - same phosphor palette, same bezel, same monospaced readouts - because on the panel it is not
 a different application, it is the next screen of the same one.
 
-The volume bar and the close bar exist only for the kiosk's own browser: a laptop on the LAN
-has nothing to close, and the panel is meant to be the one place the volume is set - a slider
-on every device on the network is exactly the sprawl this replaced.
+The volume bar, the interrupt switch and the close bar exist only for the kiosk's own browser:
+a laptop on the LAN has nothing to close, everything else here is a read-only copy of what is on
+the card, and the panel is meant to be the one place the box is set - a slider and a switch on
+every device on the network is exactly the sprawl this replaced.
 {% endcomment %}<!doctype html>
 <html lang="en">
 <head>
@@ -57,7 +58,7 @@ on every device on the network is exactly the sprawl this replaced.
        thing it is. */
     padding: calc(17 * var(--u));
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
     gap: calc(6 * var(--u));
     transition: opacity .3s;
   }
@@ -194,7 +195,7 @@ on every device on the network is exactly the sprawl this replaced.
     padding: 0 calc(16 * var(--u));
     height: calc(52 * var(--u));
   }
-  .volume .vlabel {
+  .vlabel {
     font-size: calc(13 * var(--u));
     letter-spacing: .22em;
     color: var(--mid);
@@ -240,6 +241,43 @@ on every device on the network is exactly the sprawl this replaced.
   .vslider::-moz-range-thumb { width: calc(20 * var(--u)); height: calc(46 * var(--u)); border: 0; background: var(--green); }
   .vslider:active::-webkit-slider-thumb,
   .vslider:active::-moz-range-thumb { background: #fff; }
+
+  /* ---- the interrupt switch ---- */
+  /* Built to the volume row's measurements - same height, same label column, same gaps -
+     because it is the same kind of thing: the two ways this screen changes what the box does
+     rather than what it shows. The button is 46 u tall like the volume's thumb, which is what
+     a thumb is, and fixed in width so ON and OFF do not move it.
+
+     A word between them says what the setting means, because "INTERRUPT: OFF" does not: the
+     one thing somebody wants to know here is whether they now have to wait. */
+  .setting {
+    display: none;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: calc(16 * var(--u));
+    padding: 0 calc(16 * var(--u));
+    height: calc(52 * var(--u));
+  }
+  .shint {
+    font-size: calc(13 * var(--u));
+    color: var(--dim);
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .sw {
+    width: calc(96 * var(--u));
+    height: calc(46 * var(--u));
+    border: calc(1 * var(--u)) solid var(--mid);
+    background: var(--screen);
+    color: var(--mid);
+    font-family: inherit;
+    font-size: calc(15 * var(--u));
+    letter-spacing: .24em;
+  }
+  .sw[aria-checked="true"] { background: var(--green); color: var(--ink); border-color: var(--green); }
+  .sw:active { border-color: var(--green); }
 
   /* ---- the way out ---- */
   /* The biggest target on the screen, and shaped like the kiosk's tab row so it is obvious it
@@ -287,7 +325,8 @@ on every device on the network is exactly the sprawl this replaced.
      arm's length wants the pixels more than it wants a title bar. So the grid collapses to one
      row and the two things still worth having float on top of the drawing. */
   body.drawing { grid-template-rows: minmax(0, 1fr); }
-  body.drawing header, body.drawing .tiles, body.drawing .volume { display: none; }
+  body.drawing header, body.drawing .tiles,
+  body.drawing .volume, body.drawing .setting { display: none; }
   body.drawing .stage { display: block; }
 
   /* The drawing's own name, over the top-left of it. */
@@ -336,7 +375,8 @@ on every device on the network is exactly the sprawl this replaced.
   body.view-media    .media { display: grid; }
   /* The volume lives on the System screen. Carrying it into every view would cost the
      panel 52 of its 480 px on every screen to hold a control nobody came to that screen to use. */
-  body.view-status:not(.drawing) .volume { display: grid; }
+  body.view-status:not(.drawing) .volume,
+  body.view-status:not(.drawing) .setting { display: grid; }
   /* A drawing is Cyclops answering a question out loud. It outranks anything you were reading. */
   body.drawing .view, body.drawing .lightbox { display: none !important; }
 
@@ -855,6 +895,13 @@ on every device on the network is exactly the sprawl this replaced.
            aria-label="Speaker volume">
     <output class="vvalue" id="volval">{{ volume|default:80 }}%</output>
   </section>
+  <section class="setting">
+    <span class="vlabel">INTERRUPT</span>
+    <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}wait for Cyclops to finish{% endif %}</span>
+    <button class="sw" id="barge" type="button" role="switch"
+            aria-label="Let me interrupt Cyclops"
+            aria-checked="{% if barge_in %}true{% else %}false{% endif %}">{% if barge_in %}ON{% else %}OFF{% endif %}</button>
+  </section>
   <button class="close" id="close" type="button"><span class="glyph">&#10005;</span><span
     class="word" id="closeword">&nbsp;Close</span></button>
   {% endif %}
@@ -907,6 +954,30 @@ on every device on the network is exactly the sprawl this replaced.
       if (now - sent > 200) { sent = now; send(vol.value); }
     });
     vol.addEventListener('change', () => send(vol.value));   // the level on release always lands
+  }
+
+  // Whether Cyclops may be cut off mid-sentence. Same shape as the volume: the page leaves a
+  // note, and the process holding the microphone picks it up - within half a second, so the
+  // switch is worth reaching for in the middle of a sentence rather than only between two.
+  const barge = document.getElementById('barge');
+  if (barge) {
+    const hint = document.getElementById('bargehint');
+    barge.addEventListener('click', async () => {
+      const on = barge.getAttribute('aria-checked') !== 'true';
+      // Drawn before the round trip. This is a note on a filesystem two processes share, so
+      // there is nothing to fail that waiting would reveal - and a switch that stays where it
+      // was for a moment is a switch you press twice.
+      barge.setAttribute('aria-checked', on ? 'true' : 'false');
+      barge.textContent = on ? 'ON' : 'OFF';
+      hint.textContent = on ? 'talk over Cyclops to cut in' : 'wait for Cyclops to finish';
+      try {
+        await fetch('/barge-in', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: 'on=' + (on ? '1' : '0'),
+        });
+      } catch (e) { /* the service is gone; the next render says what actually stuck */ }
+    });
   }
 
   const close = document.getElementById('close');

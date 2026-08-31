@@ -40,5 +40,6 @@ urlpatterns = [
     path("diagram/shown", views.diagram_shown, name="diagram-shown"),
     path("static/<str:name>", views.static_file, name="static"),
     path("volume", views.set_volume, name="volume"),
+    path("barge-in", views.set_barge_in, name="barge-in"),
     path("close", views.close_browser, name="close"),
 ]

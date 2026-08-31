@@ -331,6 +331,12 @@ class EchoGuard:
     ``k`` tracks the *upper envelope* of the observed echo/playback ratio (fast attack, slow
     decay) - a conservative estimate that avoids false cuts. ``margin_db`` is how much louder
     than that envelope the mic must be; ``None`` disables barge-in (plain half-duplex gating).
+
+    ``half_duplex=False`` is headphones: nothing of the output reaches the mic, so with barge-in
+    on there is nothing to guard against and every block goes through. It still gates when
+    barge-in is turned off, because with nothing holding the mic shut there would be no way to
+    honour that at all - so the guard is built for every session rather than only for speakers,
+    and :meth:`set_barge_in` can flip it in the middle of one.
     """
 
     WARMUP_BLOCKS = 10  # ignore the first 200 ms of playback: the echo hasn't reached the mic yet
@@ -348,11 +354,13 @@ class EchoGuard:
         speaker: Speaker,
         *,
         margin_db: float | None,
+        half_duplex: bool = True,
         on_barge_in: Callable[[int, float], None] | None = None,
     ) -> None:
         self._loop = loop
         self._speaker = speaker
-        self._margin = None if margin_db is None else 10 ** (margin_db / 20)
+        self._half = half_duplex
+        self._margin = _margin(margin_db)
         self.on_barge_in = on_barge_in  # called on the loop thread with (played_ms, strength)
         self.k: float | None = None  # upper envelope of echo rms / playback rms
         self.triggers = 0
@@ -369,8 +377,26 @@ class EchoGuard:
     def barge_in_enabled(self) -> bool:
         return self._margin is not None
 
+    def set_barge_in(self, margin_db: float | None) -> None:
+        """Turn barge-in on or off in a session already running - see :mod:`cyclops.barge`.
+
+        Called from whichever thread the settings screen reaches us on, and read by the audio
+        thread on its next block. That is safe because it is one rebinding of one name and
+        there is no state to unwind: turning it off holds the mic shut for the rest of whatever
+        is being said, and turning it on re-arms against an echo estimate this room has already
+        earned. Only the trigger's run of loud blocks is dropped, so a count that had built up
+        while the switch was off cannot fire on the first block after it comes back.
+        """
+        margin = _margin(margin_db)
+        if margin == self._margin:
+            return
+        self._margin = margin
+        self._consec = 0
+
     def admit(self, block: bytes) -> list[bytes]:
         """Audio-thread hook: return the mic blocks to forward for this 20 ms input block."""
+        if not self._half and self._margin is not None:
+            return [block]  # headphones, barge-in on: there is no echo to guard against
         speaker = self._speaker
         if not speaker.is_audible or speaker.item_serial == self._open_serial:
             self._audible_blocks = 0
@@ -432,3 +458,8 @@ class EchoGuard:
         """No speech followed the trigger: that loudness was echo, so expect it from now on."""
         if self.k is not None:
             self.k = max(self.k, self._trigger_ratio)
+
+
+def _margin(margin_db: float | None) -> float | None:
+    """dB over the predicted echo as a plain ratio, or None for "never interrupt"."""
+    return None if margin_db is None else 10 ** (margin_db / 20)

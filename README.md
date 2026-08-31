@@ -18,6 +18,9 @@ SNAP button ──▶ webcam ──▶ JPEG (≤1024px) ──▶ input_image it
 * One WebSocket session, server-side voice activity detection, no push-to-talk.
 * Barge-in: when you start talking the local playback buffer is flushed and the assistant's
   audio item is truncated to what you actually heard, so the model doesn't think you heard the rest.
+  Over an open speaker that judgement is a guess about a room and can be wrong the worst way —
+  Cyclops hearing its own voice as you — so the panel's **SYSTEM** screen carries an INTERRUPT
+  switch that turns it off: the mic then stays shut until Cyclops has finished.
 * The shutter shrinks the frame to 1024 px and injects it as an `input_image`, then asks for a
   response, so the model's next reply is about what it just saw. On the panel it borrows a frame
   from the preview already on screen; from the CLI it opens the camera in a worker thread and
@@ -338,10 +341,17 @@ not a bug in the page; it means the board wants better cooling.
 
 On the kiosk, the **HISTORY tab** opens the same page fullscreen in Chromium on the panel — same
 green terminal chrome, so it reads as the next screen of the same device — and the page grows a
-volume slider and a full-width **Close** bar to get you back to the camera. Both appear only for
-the Pi's own browser: from a laptop there is nothing to close, and the panel is meant to be the
-one place the volume is set. The slider sits on **SYSTEM** only, so browsing does not spend 52 of
-the panel's 480 px carrying a control you did not come for. Closing the page returns it to
+volume slider, an INTERRUPT switch and a full-width **Close** bar to get you back to the camera.
+All three appear only for the Pi's own browser: from a laptop there is nothing to close,
+everything else on the page is a read-only copy of what is on the card, and the panel is meant to
+be the one place the box is set. The slider and the switch sit on **SYSTEM** only, so browsing
+does not spend a fifth of the panel's 480 px carrying controls you did not come for.
+
+INTERRUPT is barge-in: **ON** and you can talk over Cyclops to cut it off, **OFF** and the mic is
+shut until it has finished. It is a note on the card (`~/.cache/cyclops/barge-in`), which the
+kiosk reads twice a second and hands to the session holding the microphone — so flipping it lands
+on the next 20 ms of audio, not at the end of the turn, which is the point: you reach for it
+having just been cut off by your own voice. Closing the page returns it to
 SESSIONS, so the next tap lands where the tab says it will. A drawing arriving from the agent outranks
 whatever you were looking at, takes the whole panel, and hands the screen back when it clears. If the panel ever gets stuck showing the
 browser, `touch ~/.cache/cyclops/browser-close` over ssh takes it down; so does quitting the
@@ -391,7 +401,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_VOLUME`       | `100`          | Output volume percent (0–100); also a slider in the touchscreen UI. |
 | `CYCLOPS_CAMERA_INDEX` | `auto`         | `auto` probes cameras, remembers the one that delivers frames, and falls back to a useeplus endoscope if no `/dev/video*` answers; a number pins a specific `/dev/video*`. |
 | `CYCLOPS_HALF_DUPLEX`  | `auto`         | `auto`: speaker mode on when the output device is a speaker. `1`/`0` force it. |
-| `CYCLOPS_BARGE_IN_DB`  | `8`            | In speaker mode, how many dB over the echo your voice must be to interrupt. Lower = easier to interrupt, but risks the assistant cutting itself off; `off` disables barge-in. |
+| `CYCLOPS_BARGE_IN_DB`  | `8`            | In speaker mode, how many dB over the echo your voice must be to interrupt. Lower = easier to interrupt, but risks the assistant cutting itself off; `off` disables barge-in. The panel's INTERRUPT switch overrides this once it has been touched. |
 | `CYCLOPS_LANG`         | `en`           | Language hint (ISO-639-1) for transcribing what you say; `auto` to let it detect. Set this to your spoken language for accurate transcripts. |
 | `CYCLOPS_INPUT_DEVICE` | default        | Microphone: a device index or name substring (from `uv run cyclops-devices`). Needed when there's no default mic (e.g. a Raspberry Pi). |
 | `CYCLOPS_OUTPUT_DEVICE`| default        | Speaker: a device index or name substring. |
@@ -425,7 +435,9 @@ Variables already exported in your shell take precedence over `.env`. List audio
   With headphones/earbuds it runs full duplex with instant barge-in. The startup line tells you
   which mode you're in; `CYCLOPS_HALF_DUPLEX=1|0` forces the mode (use `1` for a monitor's
   speakers, which don't have "speaker" in their name), and `CYCLOPS_BARGE_IN_DB` tunes how loud
-  you must be to interrupt over speakers (`off` to disable it).
+  you must be to interrupt over speakers (`off` to disable it). Turning barge-in off shuts the
+  mic while the assistant talks whichever mode you are in, headphones included: that is what
+  "wait for it to finish" has to mean.
 * `chmod 600 .env` keeps your key private on a shared machine.
 * If the wrong camera is used (e.g. your iPhone via Continuity Camera), pin the right one with
   `CYCLOPS_CAMERA_INDEX=<n>`; in `auto` mode a camera that opens but never delivers a frame is skipped.
@@ -560,8 +572,8 @@ in `~/.config/labwc/autostart`:
 cd /home/<you>/cyclops && .venv/bin/cyclops-kiosk >/tmp/kiosk_live.log 2>&1 &
 ```
 
-Set an initial speaker level with `CYCLOPS_VOLUME` (percent); after that the volume lives on the
-admin page, behind the HISTORY tab. Nothing leaves the Pi except the audio and vision the agent
+Set an initial speaker level with `CYCLOPS_VOLUME` (percent); after that the volume — and the
+INTERRUPT switch — lives on the admin page, behind the HISTORY tab. Nothing leaves the Pi except the audio and vision the agent
 sends to OpenAI.
 
 `q` or `ESC` quits, `f` toggles fullscreen, and `--windowed` / `--size=WxH` are there for

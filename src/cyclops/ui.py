@@ -17,7 +17,7 @@ import threading
 import time
 from dataclasses import replace
 
-from . import sfx
+from . import barge, sfx
 from .agent import VoiceAgent
 from .audio import (
     SAMPLE_RATE,
@@ -72,6 +72,7 @@ class SessionController:
         self._agent: VoiceAgent | None = None
         self._speaker: Speaker | None = None
         self._mic: Microphone | None = None
+        self._guard: EchoGuard | None = None
         self._error = ""
         # What the session is doing when there is no agent to ask - which is both ends of it:
         # the audio devices going up before one exists, and the whole teardown after its socket
@@ -120,6 +121,20 @@ class SessionController:
             loop.call_soon_threadsafe(task.cancel)
         except RuntimeError:
             pass  # it finished on its own between the read and the call; nothing left to cancel
+
+    def set_barge_in(self, margin_db: float | None) -> None:
+        """Let the session that is running now be interrupted, or not - see :mod:`cyclops.barge`.
+
+        Called from the kiosk's thread, which is where the settings screen's note is noticed.
+        Nothing to dispatch to the loop: the guard is read on the audio thread and this is one
+        store, so a switch flipped while Cyclops is mid-sentence lands on the next 20 ms block
+        rather than at the end of the turn. No session means nothing to tell - the next one
+        reads the same note when it opens its devices.
+        """
+        with self._lock:
+            guard = self._guard
+        if guard is not None:
+            guard.set_barge_in(margin_db)
 
     def show_photo(self, capture: Capture) -> bool:
         """Hand a photo to the running agent. False when there is nothing live to hand it to.
@@ -231,6 +246,7 @@ class SessionController:
             # call into and get RuntimeError from.
             with self._lock:
                 self._loop = self._task = self._agent = self._speaker = self._mic = None
+                self._guard = None
                 self._started_at = None  # the timer disappears with the session
             self._phase = ""  # the folder is written; there is nothing left to report
             self._closing = False
@@ -250,14 +266,17 @@ class SessionController:
             half = output_is_speaker(default_output_name(out_dev))
         speaker = Speaker(device=out_dev)
         speaker.volume = s.volume
-        guard = EchoGuard(loop, speaker, margin_db=s.barge_in_db) if half else None
+        # A guard for every session, headphones included: with barge-in switched off it is the
+        # thing that holds the mic shut until Cyclops has finished, and that switch is on the
+        # settings screen, which can be reached in the middle of a session. See cyclops.barge.
+        guard = EchoGuard(loop, speaker, half_duplex=half, margin_db=barge.margin_db(s))
         mic = Microphone(loop, guard=guard, device=in_dev)
         print(f"· mic: {mic.source or 'whatever PipeWire calls the default'}", flush=True)
         agent = VoiceAgent(replace(s, half_duplex=half), mic=mic, speaker=speaker, guard=guard)
-        if guard is not None:
-            guard.on_barge_in = agent.local_barge_in
+        guard.on_barge_in = agent.local_barge_in
         with self._lock:
             self._speaker, self._mic, self._agent = speaker, mic, agent
+            self._guard = guard
         self._phase = ""  # there is an agent now, and it narrates itself from here
         speaker.start()
         mic.start()

@@ -11,7 +11,7 @@ from dataclasses import replace
 from openai import OpenAIError
 from websockets.exceptions import WebSocketException
 
-from . import session
+from . import barge, session
 from .agent import SessionError, VoiceAgent
 from .audio import (
     EchoGuard,
@@ -120,25 +120,29 @@ async def _run(settings: Settings) -> None:
     settings = replace(settings, half_duplex=half_duplex)
     speaker = Speaker(device=out_dev)
     speaker.volume = settings.volume
-    guard = None
-    if half_duplex:
-        guard = EchoGuard(loop, speaker, margin_db=settings.barge_in_db)
-        if guard.barge_in_enabled:
-            print(
-                f"· speaker mode: mic muted while Cyclops talks — {why}.\n"
-                f"  Talk clearly over it to interrupt (needs to be {settings.barge_in_db:g} dB "
-                "above the echo; tune with CYCLOPS_BARGE_IN_DB, headphones give full duplex).",
-                flush=True,
-            )
-        else:
-            print(f"· half-duplex: mic muted while Cyclops talks, no barge-in — {why}.", flush=True)
+    # A guard for every session, headphones included: with barge-in switched off it is the
+    # thing that holds the mic shut until Cyclops has finished. See cyclops.barge.
+    margin = barge.margin_db(settings)
+    guard = EchoGuard(loop, speaker, half_duplex=half_duplex, margin_db=margin)
+    if not guard.barge_in_enabled:
+        print(
+            f"· barge-in off: the mic is shut until Cyclops finishes — {why}.\n"
+            "  Turn it back on from the panel's System screen, or with CYCLOPS_BARGE_IN_DB.",
+            flush=True,
+        )
+    elif half_duplex:
+        print(
+            f"· speaker mode: mic muted while Cyclops talks — {why}.\n"
+            f"  Talk clearly over it to interrupt (needs to be {margin:g} dB "
+            "above the echo; tune with CYCLOPS_BARGE_IN_DB, headphones give full duplex).",
+            flush=True,
+        )
     else:
         print(f"· full duplex with barge-in — {why}", flush=True)
     mic = Microphone(loop, guard=guard, device=in_dev)
     print(f"· mic: {mic.source or 'whatever PipeWire calls the default'}", flush=True)
     agent = VoiceAgent(settings, mic=mic, speaker=speaker, guard=guard)
-    if guard is not None:
-        guard.on_barge_in = agent.local_barge_in
+    guard.on_barge_in = agent.local_barge_in
 
     speaker.start()
     mic.start()

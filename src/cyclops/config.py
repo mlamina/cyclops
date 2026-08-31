@@ -39,6 +39,12 @@ DIAGRAM_SHOWN_FLAG = Path.home() / ".cache" / "cyclops" / "diagram-shown"
 # session to reach PipeWire through. The kiosk, which has both, reads this and applies it.
 VOLUME_FILE = Path.home() / ".cache" / "cyclops" / "volume"
 
+# And where it leaves the answer to "may I talk over you?". The same note-and-pick-up shape as
+# the volume, for a different reason: the page is not the process holding the microphone, and
+# the one that is may be halfway through a sentence. Absent means nobody has ever said, and
+# CYCLOPS_BARGE_IN_DB is left to decide - see :mod:`cyclops.barge`.
+BARGE_IN_FILE = Path.home() / ".cache" / "cyclops" / "barge-in"
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""

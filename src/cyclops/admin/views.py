@@ -24,7 +24,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import card, library, mixer, shelf, stats
+from .. import barge, card, library, mixer, shelf, stats
 from ..config import (
     BROWSER_CLOSE_FLAG,
     DIAGRAM_FILE,
@@ -143,6 +143,7 @@ def _payload(request: HttpRequest) -> dict:
         ),
         local=_is_local(request),
         volume=mixer.requested(),
+        barge_in=barge.enabled(_settings()),
         # Absolute, so "0 sessions" is self-diagnosing: the count is relative to the CWD the
         # service was started in (see WorkingDirectory in deploy/cyclops-admin.service).
         sessions_dir=str(_settings().sessions_dir.expanduser().resolve()),
@@ -301,6 +302,25 @@ def set_volume(request: HttpRequest) -> HttpResponse:
     except ValueError:
         return HttpResponseBadRequest("level must be a whole percent")
     return JsonResponse({"volume": mixer.request(wanted)})  # clamped; echo what actually landed
+
+
+@require_POST
+def set_barge_in(request: HttpRequest) -> HttpResponse:
+    """Say whether Cyclops may be talked over - see :mod:`cyclops.barge`.
+
+    Loopback only, like the volume, and for the plainer of that route's two reasons: everything
+    this page shows the LAN is a copy of what is on the card, and the screen that can change how
+    the box behaves is the one bolted to it.
+
+    The note is all this does. The kiosk reads it a couple of times a second and hands it to the
+    session holding the microphone, which is the only thing that can actually stop listening.
+    """
+    if not _is_local(request):
+        return HttpResponseForbidden("barge-in is set from the panel")
+    wanted = request.POST.get("on", "")
+    if wanted not in {"0", "1"}:
+        return HttpResponseBadRequest("on must be 0 or 1")
+    return JsonResponse({"barge_in": barge.request(wanted == "1")})
 
 
 # ------------------------------------------------------------------ what is on the card

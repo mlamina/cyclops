@@ -31,7 +31,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import diagram, mixer, session, sfx, webcam  # noqa: E402
+from . import barge, diagram, mixer, session, sfx, webcam  # noqa: E402
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import CameraSource  # noqa: E402
@@ -126,7 +126,7 @@ PANEL_RETAKE_S = (0.6, 2.4)
 # ~400 ms poll plus a JointJS layout, because the cost of being wrong is asymmetric: uncovering
 # early shows the dashboard for a moment, and never uncovering loses the diagram entirely.
 DIAGRAM_WAIT_S = 8.0
-VOLUME_POLL_S = 0.4  # how often we look for a volume the admin page left for us
+VOLUME_POLL_S = 0.4  # how often we look for a volume, or a barge-in switch, the page left us
 BROWSER_GRACE_S = 5.0  # how long Chromium gets to go quietly before it is killed
 # Its own profile, under ~/.cache rather than /tmp so the second open is a warm start rather
 # than a first-run.
@@ -265,6 +265,11 @@ class Kiosk:
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._volume: int | None = None  # the level we last put on the sink
         self._volume_at = 0.0  # when we last looked for a new one
+        # The switch's position as we last read it, so a session in progress is only told when
+        # it actually changes. Seeded from the note rather than from nothing: at boot the page
+        # and the session already agree, and there is nothing to say.
+        self._barge_margin = barge.margin_db(controller.settings)
+        self._barge_at = 0.0
         self._browser: subprocess.Popen | None = None  # the admin browser, kept warm from boot
         self._admin_busy = threading.Event()  # set from the tap until the page is done with
         # A second latch rather than reusing _admin_busy, which the tab row reads to decide
@@ -716,6 +721,26 @@ class Kiosk:
             self._volume = wanted
             print(f"· volume {wanted}%", flush=True)
 
+    # ---- barge-in ----
+
+    def _sync_barge_in(self) -> None:
+        """Follow the settings screen's answer to "may I talk over you?" into a live session.
+
+        Read here rather than in the session because a session is the wrong length of thing to
+        hold this: it can run for an hour, and the whole point of the switch is that you reach
+        for it in the middle of one, having just been cut off by your own voice.
+        """
+        now = time.monotonic()
+        if now - self._barge_at < VOLUME_POLL_S:
+            return
+        self._barge_at = now
+        margin = barge.margin_db(self.controller.settings)
+        if margin == self._barge_margin:
+            return
+        self._barge_margin = margin
+        self.controller.set_barge_in(margin)
+        print(f"· barge-in {'off' if margin is None else f'on at {margin:g} dB'}", flush=True)
+
     # ---- sleep ----
 
     def _sleeping(self, state: str) -> bool:
@@ -788,6 +813,7 @@ class Kiosk:
                 self._hidden = False
                 self._touched_at = time.monotonic()  # closing the page is a touch like any other
             self._sync_volume()  # the page sets the volume, so keep reading it while it is up
+            self._sync_barge_in()  # ...and whether it may be interrupted, on the same beat
             if self._hidden:
                 time.sleep(1.0 / ADMIN_FPS)  # nothing we draw now can be seen by anyone
                 continue
