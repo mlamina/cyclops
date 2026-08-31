@@ -332,6 +332,39 @@ def _glyph_hue(ov: overlay.Overlay, phase: float) -> str:
     return min(near, key=near.get)  # type: ignore[arg-type]
 
 
+def _word_colour(ov: overlay.Overlay, state: str, phase: float) -> np.ndarray:
+    """The WAKE UP / SLEEP word's own colour, normalised so brightness is out of the question."""
+    cell = ov._cells["wake"]
+    baseline = cell.bottom - round(23 * ov.scale)
+    box = np.s_[baseline - 10 : baseline + 10, cell.x + 20 : cell.right - 20]
+    shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+    _settle(ov, **shown)
+    crop = ov.render(phase=phase, **shown)[box].astype(float)
+    px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 250)][:, :3]
+    assert len(px), f"no word on the wake button in {state}"
+    return px.mean(axis=0) / px.mean(axis=0).sum()
+
+
+def _nearest(seen: np.ndarray, *options: tuple[str, tuple[int, int, int]]) -> str:
+    near = {n: float(np.abs(seen - np.array(c) / sum(c)).sum()) for n, c in options}
+    return min(near, key=near.get)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_the_button_wears_the_state_it_is_in(state: str) -> None:
+    # It is the only cell on the row carrying a state, so it is the only one that takes a colour
+    # - and it has to do it in every state, not only the ones somebody happened to look at.
+    # Asleep is the exception and the reason for it: green is the floor the glow lifts off.
+    ov = _panel()
+    seen = _word_colour(ov, state, phase=overlay.WAKE_PERIOD_S)
+    if state == overlay.IDLE:
+        assert _nearest(seen, ("resting", overlay.GREEN_MID), ("state", overlay.AQUA)) == "resting"
+    else:
+        assert _nearest(
+            seen, ("resting", overlay.GREEN_MID), ("state", overlay.HALOS[state])
+        ) == "state", f"the word stayed green in {state}"
+
+
 def test_the_glow_changes_colour_and_not_only_brightness() -> None:
     # It breathes towards the accent, which is a promise as well as a signal: the button wears
     # the colour the whole screen turns when you press it. Brightness alone was the complaint
@@ -341,25 +374,35 @@ def test_the_glow_changes_colour_and_not_only_brightness() -> None:
     assert _glyph_hue(ov, overlay.WAKE_PERIOD_S * 1.5) == "accent", "it only got brighter"
 
 
-def test_the_glow_does_not_grow_a_bar_along_the_top_of_the_cell() -> None:
-    # A lit top edge is how this panel says "selected", and it was too heavy a thing to say with:
-    # the swell is a wash over the whole cell, not a tab lighting up. So the top of the cell must
-    # not come up brighter than the rest of it - compared on a strip clear of the glyph and the
-    # word, at the very top of the breath, which is where a bar would be most obvious.
+@pytest.mark.parametrize("state", STATES)
+def test_no_bar_lights_up_along_the_top_of_the_wake_cell(state: str) -> None:
+    # A lit top edge was how this row said "selected", and it was the heaviest mark on the panel
+    # for the least it had to say. It went from the sleeping glow first and from the live cell
+    # second, which is why this is parametrised: the two are different code paths.
+    #
+    # Measured against SNAP rather than against the rest of the wake cell. The row's top rule
+    # blooms a few pixels down into both of them, which on its own reads as a bar to any
+    # threshold naive enough to look at one cell alone - so the control is the cell that can
+    # never have one.
     ov = _panel()
-    cell = ov._cells["wake"]
     inset = max(1, round(3 * ov.scale))
     edge = max(2, round(4 * ov.scale))
-    left, right = cell.x + inset + 4, cell.x + inset + 4 + round(60 * ov.scale)
-    frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None,
-                      phase=overlay.WAKE_PERIOD_S * 1.5).astype(float)
+    shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+    _settle(ov, **shown)
+    frame = ov.render(phase=overlay.WAKE_PERIOD_S * 1.5, **shown).astype(float)
 
-    def band(top: int) -> float:
-        strip = frame[top : top + edge, left:right]
-        return float((strip[:, :, :3].sum(axis=2) * strip[:, :, 3] / 255).mean())
+    def top_heaviness(cell: overlay.Rect) -> float:
+        left = cell.x + inset + 4, cell.x + inset + 4 + round(60 * ov.scale)
 
-    at_edge, below = band(cell.y + inset), band(cell.y + inset + edge + 6)
-    assert at_edge < 1.4 * below, f"there is a bar along the top ({at_edge:.0f} vs {below:.0f})"
+        def band(top: int) -> float:
+            strip = frame[top : top + edge, left[0] : left[1]]
+            return float((strip[:, :, :3].sum(axis=2) * strip[:, :, 3] / 255).mean())
+
+        return band(cell.y + inset) / max(1.0, band(cell.y + inset + edge + 6))
+
+    wake = top_heaviness(ov._cells["wake"])
+    snap = top_heaviness(ov._cells["shutter"])
+    assert wake < snap * 1.4, f"a bar along the top in {state} ({wake:.2f} against SNAP {snap:.2f})"
 
 
 def test_a_fault_does_not_beckon() -> None:
@@ -507,6 +550,21 @@ def test_the_accent_belongs_to_the_same_tube_as_the_phosphor() -> None:
 
     apart = abs(hue(overlay.AQUA) - hue(overlay.GREEN))
     assert 18 < apart < 40, f"the accent is {apart:.0f} degrees off the phosphor"
+
+
+def test_the_rec_tag_is_red() -> None:
+    # Red is what a record light is on every machine anybody has ever used, and that is worth
+    # more than the panel's preference for its own green.
+    ov = _panel()
+    shown = dict(state=overlay.LISTENING, level=0.0, elapsed=12.0, recording=True)
+    _settle(ov, **shown)
+    frame = ov.render(phase=10.0, **shown)
+    _, rec_right, _ = ov._readouts(True)
+    cy = ov.header.center[1]
+    box = frame[cy - 8 : cy + 8, int(rec_right - ov._rec_w) : int(rec_right)].astype(float)
+    px = box[box[:, :, 3] > 200][:, :3]
+    seen = px.mean(axis=0) / px.mean(axis=0).sum()
+    assert _nearest(seen, ("red", overlay.RED), ("green", overlay.GREEN)) == "red"
 
 
 def test_he_changes_colour_with_what_he_is_doing() -> None:

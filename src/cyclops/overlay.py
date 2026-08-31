@@ -115,9 +115,9 @@ INK = (3, 11, 7)  # text on a filled tab
 # The halo answers one question only from across a room - is the agent up? - and the state's
 # accent answers it in colour rather than in brightness, which is the only half of it that
 # survives the distance. Everything wearing this moves together: the border and its inward glow,
-# the mode word, the signal meter, the session clock, the caption's marker and the lit edge of
-# the tab that is holding the session open. The rest of the chrome stays green, because a panel
-# where everything is an accent has none.
+# the mode word, the signal meter, the session clock, the caption's marker, and the mic and word
+# on the button that is holding the session open. The rest of the chrome stays green, because a
+# panel where everything is an accent has none.
 HALOS = {
     IDLE: GREEN_DIM,
     STARTING: AMBER,
@@ -850,13 +850,16 @@ class Overlay:
         taping = self._taping(state, recording)
         _, rec_right, meter_right = self._readouts(taping)
         if taping:
-            # A filled tag rather than a red dot: the tube only has the one hue, so the way to
-            # shout on it is to invert.
+            # Red, and a filled tag rather than a dot. Red is what a record light is on every
+            # other machine anybody has ever used, which is worth more here than the panel's
+            # preference for its own green - and filling it rather than outlining it is how this
+            # tube shouts. The one thing on screen that is red without being a fault, which is
+            # exactly why it is a tag with a word in it and not a lamp.
             half = round(11 * self.scale)
             d.rounded_rectangle(
                 [rec_right - self._rec_w, cy - half, rec_right, cy + half],
                 radius=max(1, round(3 * self.scale)),
-                fill=(*GREEN, 255),
+                fill=(*RED, 255),
             )
             self._text(
                 d, rec_right - round(7 * self.scale), cy, "REC", self.font_micro, (*INK, 255),
@@ -979,19 +982,28 @@ class Overlay:
         """One cell of the tab row: a glyph, a tracked label, and the fill that says what it is.
 
         Three appearances, and they have to stay distinguishable: at rest it is chrome on the
-        dark strip; while a session is up the eye tab carries a lit edge and a tinted cell,
-        the way a selected tab does; and under a thumb any tab inverts completely, which is the
-        only feedback a touchscreen with no travel can give.
+        dark strip; while a session is up the wake tab carries a tinted cell and wears the
+        state's own colour; and under a thumb any tab inverts completely, which is the only
+        feedback a touchscreen with no travel can give.
+
+        A lit bar used to run along the top of the selected cell as well. It was the heaviest
+        mark on the row for the least it had to say, and the tint plus the colour say it.
         """
         live = name == "wake" and session_up(state)
+        # The wake cell is the only one carrying a state, so it is the only one that takes the
+        # state's colour - glyph and word together, in every state it has. Asleep it keeps the
+        # resting green, because that is the floor the glow lifts off; everywhere else it is
+        # amber, aqua or red along with the rest of the panel. SNAP and the eye's cell are
+        # furniture and stay phosphor whatever is going on.
+        ink = halo if name == "wake" and state != IDLE else GREEN_MID
         if pressed:
             fill, glyph, label = (*halo, 255), INK, INK
         elif live:
             # Translucent, unlike a press: the row is see-through now, and a selected tab that
             # blacked out a third of it would put back the bar this layout just took away.
-            fill, glyph, label = (*mix(SCREEN, halo, TAB_LIVE), TAB_LIVE_ALPHA), halo, GREEN
+            fill, glyph, label = (*mix(SCREEN, halo, TAB_LIVE), TAB_LIVE_ALPHA), ink, ink
         else:
-            fill, glyph, label = None, GREEN_MID, GREEN_MID
+            fill, glyph, label = None, ink, ink
 
         inset = max(1, round(3 * self.scale))
         if fill is not None:
@@ -1004,13 +1016,6 @@ class Overlay:
                 corners=(False, False, name == "wake", name == "shutter"),
                 fill=fill,
             )
-        if live and not pressed:  # the lit edge along the top of the selected tab
-            edge = max(2, round(4 * self.scale))
-            d.rectangle(
-                [cell.x + inset, cell.y + inset, cell.right - inset, cell.y + inset + edge],
-                fill=(*halo, 255),
-            )
-
         cx, gy, radius = self._glyph_at(cell)
         if name == "shutter":
             self._glyph_aperture(d, cx, gy, radius, glyph)

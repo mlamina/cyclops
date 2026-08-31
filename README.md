@@ -562,7 +562,7 @@ across the room, and while he is up it breathes. Hue rather than brightness, bec
 and bright green are the same colour to anyone more than a pace away; and the aqua is thirty
 degrees off the phosphor and no further, so it is plainly a different colour and still the same
 tube. The same accent goes on the handful of things that only mean something during a session:
-the signal meter, the session clock, the caption's `›`, the lit edge of the SLEEP tab, and him. Everything else — the brand, the rules, the ticks, SNAP, the caption's own words — stays
+the signal meter, the session clock, the caption's `›`, the WAKE UP / SLEEP button's mic and word, and him. Everything else — the brand, the rules, the ticks, SNAP, the caption's own words — stays
 phosphor green whatever he is doing, because a panel where everything is an accent has none.
 
 Asleep the whole screen is green and completely still, with one exception: the **WAKE UP** cell
