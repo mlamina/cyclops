@@ -47,6 +47,28 @@ IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
 # so without these the button looks dead for over two seconds after you press stop.
 STARTING, STOPPING = "starting", "stopping"
 
+
+def session_up(state: str) -> bool:
+    """Is there a session at all - from the tap that starts one to the last file it writes?
+
+    The panel's coarsest question, and the one the *words* answer to: the tab says SLEEP rather
+    than WAKE UP, the caption breathes, the border breathes. The kiosk asks it too, so that what
+    the button says and what the button does can never drift apart - see ``_toggle_session``.
+    """
+    return state not in (IDLE, ERROR)
+
+
+def awake(state: str) -> bool:
+    """Is Cyclops himself up - eye open, listening, able to answer?
+
+    Stricter than :func:`session_up` by exactly the teardown, which can run for a minute while
+    the video is muxed. Both are right about their own half: the eye shuts on the tap because
+    that is what you asked for, and the cell stays lit with the caption saying "saving the
+    video…" because that is what is still true.
+    """
+    return state not in (IDLE, ERROR, STOPPING)
+
+
 # Phosphor palette. A Pip-Boy screen is one hue, so the chrome is one hue: the only colour that
 # changes is the halo, because it is the only part answering "is the agent up?" from across a
 # room. Amber and red are the two the tube is allowed - a terminal warning and a terminal fault.
@@ -76,11 +98,16 @@ HALOS = {
 # What the strip calls each state. Kept here rather than taken from the controller's ``detail``
 # because two of these states are the kiosk's own invention and the controller has never heard
 # of them; the controller's sentence goes in the caption underneath instead.
+#
+# Asleep, waking, sleeping - because the button underneath says WAKE UP, and a box that is asked
+# to wake up does not answer STANDBY. The five states in the middle already read as a creature
+# doing something and are left alone, and so is FAULT: the metaphor does not get to swallow the
+# one word that has to be believed.
 LABELS = {
-    IDLE: "STANDBY",
-    STARTING: "LINKING",
-    STOPPING: "CLOSING",
-    CONNECTING: "LINKING",
+    IDLE: "ASLEEP",
+    STARTING: "WAKING",
+    STOPPING: "SLEEPING",
+    CONNECTING: "WAKING",
     LISTENING: "LISTENING",
     SPEAKING: "SPEAKING",
     LOOKING: "OPTICS",
@@ -93,10 +120,10 @@ LABELS = {
 # project is being opened, which step of the teardown is running - and that wins; this is what the
 # panel falls back on. Every state has one, so the line is never blank while a session is up.
 CAPTIONS = {
-    IDLE: "ready — tap SESSION to begin",
-    STARTING: "opening the link…",
-    STOPPING: "closing the link…",
-    CONNECTING: "opening the link…",
+    IDLE: "asleep — tap WAKE UP",
+    STARTING: "waking up…",
+    STOPPING: "going to sleep…",
+    CONNECTING: "waking up…",
     LISTENING: "listening — talk to me",
     SPEAKING: "speaking…",
     LOOKING: "looking…",
@@ -157,11 +184,24 @@ RING_MIX = 0.55  # the ring around the open eye
 TABS = ("shutter", "admin", "eye")  # left to right; shutter and eye keep the corners they had
 # "eye" and "admin" are the keys these tabs have always had, and what they open has not
 # changed - only what they are called and what they are drawn as. Renaming them would reach
-# into kiosk.py's press handling to buy nothing anybody can see.
+# into kiosk.py's press handling to buy nothing anybody can see. The eye's key outlived the eye
+# glyph once already and has now outlived the word SESSION too, which is the argument for keys
+# that name the thing rather than the label.
 # "SYSTEM" was honest when the page behind this tab was four numbers about the board. It now
 # opens everything the box has kept - the recordings, the photos, the drawings - and the four
 # numbers are one screen inside that. Named for what you go there for, not for what it was.
-TAB_LABELS = {"shutter": "SNAP", "admin": "HISTORY", "eye": "SESSION"}
+# "SESSION" was a noun and could sit there whatever the box was doing. These are imperatives -
+# they name what the tap will do - so the third one has to change when the answer does, or it is
+# offering to wake something that is already awake.
+TAB_LABELS = {"shutter": "SNAP", "admin": "HISTORY"}
+WAKE_LABEL, SLEEP_LABEL = "WAKE UP", "SLEEP"
+
+
+def tab_label(name: str, state: str) -> str:
+    """What a tab is called right now. Only the eye's changes, because only the eye is a toggle."""
+    if name != "eye":
+        return TAB_LABELS[name]
+    return SLEEP_LABEL if session_up(state) else WAKE_LABEL
 
 _FONT_CANDIDATES = (
     # A terminal is monospaced, so this list is monospaced faces first and only.
@@ -203,6 +243,16 @@ def _mix(base: tuple[int, int, int], other: tuple[int, int, int], amount: float)
     return tuple(round(b + (o - b) * amount) for b, o in zip(base, other, strict=True))
 
 
+def breath(phase: float, period: float) -> float:
+    """0 at the top of a cycle, 1 at the bottom, on a raised cosine.
+
+    The one shape everything alive on this panel moves with. A square wave here reads as a fault
+    light rather than as something breathing, which is why the caption needed it first and is no
+    longer the only thing that does - the border breathes on it, and so does the eye's lid.
+    """
+    return 0.5 - 0.5 * math.cos(2.0 * math.pi * (phase % period) / period)
+
+
 def caption_pulse(phase: float) -> tuple[float, int]:
     """How far the caption has sunk, and how many dots trail it, at monotonic time *phase*.
 
@@ -217,9 +267,8 @@ def caption_pulse(phase: float) -> tuple[float, int]:
     up, 5 while the admin page covers the panel, 4 asleep - and a dot per frame would gallop and
     stall along with it.
     """
-    breath = 0.5 - 0.5 * math.cos(2.0 * math.pi * (phase % BREATH_PERIOD_S) / BREATH_PERIOD_S)
     step = DOT_PERIOD_S / (CAPTION_DOTS + 1)
-    return BREATH_DEPTH * breath, int((phase % DOT_PERIOD_S) / step)
+    return BREATH_DEPTH * breath(phase, BREATH_PERIOD_S), int((phase % DOT_PERIOD_S) / step)
 
 
 @dataclass(frozen=True)
@@ -498,9 +547,9 @@ class Overlay:
         """Is a recording actually being made? Configured to record is not the same thing.
 
         ``recording`` only says the setting is on. The tag has to mean "tape is running", or a
-        panel sitting at STANDBY claims to be filming the room.
+        panel sitting at ASLEEP claims to be filming the room.
         """
-        return recording and state not in (IDLE, ERROR)
+        return recording and session_up(state)
 
     def _readouts(self, taping: bool) -> tuple[float, float, float]:
         """Right edges of the clock, the REC tag and the signal meter, laid out edge inwards."""
@@ -579,7 +628,7 @@ class Overlay:
 
         self._draw_readouts(d, halo, level, elapsed, self._taping(state, recording))
         self._draw_caption(d, state, halo, detail, phase)
-        if state not in (IDLE, ERROR, STOPPING):  # the eye is open and the ring is breathing
+        if awake(state):  # the ring is breathing
             self._draw_ring(d, _mix(_mix(SCREEN, halo, TAB_LIVE), halo, RING_MIX), level)
         if pressed is not None:
             # Redrawn over the tab the base has at rest: an inverted cell is the only feedback
@@ -587,7 +636,7 @@ class Overlay:
             cell = self._cells.get(pressed)
             if cell is not None:
                 self._draw_tab(d, cell, pressed, state, halo, pressed=True)
-                if pressed == "eye" and state not in (IDLE, ERROR, STOPPING):
+                if pressed == "eye" and awake(state):
                     self._draw_ring(d, _mix(halo, INK, RING_MIX), level)
         if flash > 0.0:
             # Green-white rather than white: a photo taken through a phosphor screen.
@@ -704,10 +753,15 @@ class Overlay:
         d.rectangle(
             [x, y - height / 2, x + width + inset * 2, y + height / 2], fill=(*SCREEN, PLATE_ALPHA)
         )
-        # The breath runs under every caption - it is what makes the line read as a live tube
-        # rather than a printed label - and the dots only under one about work in flight, where
-        # they mean the thing everybody already reads them to mean.
-        sunk, lit = caption_pulse(phase)
+        # The breath runs under every caption of a session that is up - it is what makes the line
+        # read as a live tube rather than a printed label - and the dots only under one about work
+        # in flight, where they mean the thing everybody already reads them to mean.
+        #
+        # With nothing running it stops, and that is the point rather than an economy: a sleeping
+        # creature's line does not breathe. It used to breathe unconditionally, which meant a
+        # panel with nothing on it was quietly pulsing 809 pixels of caption - and against that
+        # background an awake panel that pulses says nothing at all.
+        sunk, lit = caption_pulse(phase) if session_up(state) else (0.0, 0)
         colour = _mix(halo if state == ERROR else GREEN, SCREEN, sunk)
         used = self._text(d, x + inset, y, text, font, (*colour, CAPTION_ALPHA))
         if busy and lit:
@@ -729,11 +783,11 @@ class Overlay:
         """One cell of the tab row: a glyph, a tracked label, and the fill that says what it is.
 
         Three appearances, and they have to stay distinguishable: at rest it is chrome on the
-        dark strip; while a session is up the SESSION tab carries a lit edge and a tinted cell,
+        dark strip; while a session is up the eye tab carries a lit edge and a tinted cell,
         the way a selected tab does; and under a thumb any tab inverts completely, which is the
         only feedback a touchscreen with no travel can give.
         """
-        live = name == "eye" and state not in (IDLE, ERROR)
+        live = name == "eye" and session_up(state)
         if pressed:
             fill, glyph, label = (*halo, 255), INK, INK
         elif live:
@@ -772,7 +826,7 @@ class Overlay:
             d,
             cx,
             cell.bottom - round(23 * self.scale),
-            TAB_LABELS[name],
+            tab_label(name, state),
             self.font_tab,
             (*label, 255),
             align="c",
@@ -847,11 +901,15 @@ class Overlay:
         picture, and the panel behind all three is already a viewfinder. An eye over the word
         SESSION said the wrong one of the two things this box does.
 
+        The word says WAKE UP now, and the eye is back - but in the corner of the panel where it
+        can be a face rather than a control (see :meth:`_draw_eye`). This tab is still about the
+        conversation, so it is still a microphone.
+
         Filled is the whole state indicator, and it has to survive being 32 px on a panel seen
         from across a bench: an outline that gained a detail when live would read as neither.
         """
         stroke = max(2, round(3 * self.scale))
-        live = state not in (IDLE, ERROR, STOPPING)
+        live = awake(state)
 
         # Four parts, and they must not overlap. The first cut of this made the head 1.84 r tall,
         # which left the cradle and the stem drawn straight through it - at 32 px that reads as a

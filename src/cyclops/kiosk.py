@@ -53,6 +53,7 @@ from .overlay import (  # noqa: E402
     message,
     mirror,
     platform_font_note,
+    session_up,
 )
 from .ui import ERROR, SessionController  # noqa: E402
 from .webcam import WebcamError  # noqa: E402
@@ -649,7 +650,10 @@ class Kiosk:
     def _toggle_session(self) -> None:
         """Act on the tap and record what we asked for, so the UI can show it at once."""
         state = self.controller.status()["state"]
-        starting = state in (IDLE, ERROR)
+        # The same question the tab's own label asks, so what the button says and what the button
+        # does cannot drift: WAKE UP is an imperative, and one that stays put once it is no longer
+        # what the tap will do is a lie.
+        starting = not session_up(str(state))
         self._pending = "start" if starting else "stop"
         self._pending_at = time.monotonic()
         if starting:
@@ -757,7 +761,7 @@ class Kiosk:
         """
         now = time.monotonic()
         after = self.controller.settings.sleep_after_s
-        if state not in (IDLE, ERROR) or self._page_busy.is_set():
+        if session_up(state) or self._page_busy.is_set():
             self._touched_at = now
         elif after and not self._asleep and now - self._touched_at > after:
             self._sleep()
@@ -778,6 +782,11 @@ class Kiosk:
 
     def _wake(self) -> None:
         """Light the panel, reopen the camera, and start drawing again.
+
+        This wakes the *panel*; the WAKE UP tab wakes Cyclops. The two senses never contradict
+        each other on screen because they nest: :meth:`_sleeping` only ever blanks the glass
+        while the session is down, so the panel can only be dark when he is already asleep, and
+        the tap that lights it is spent doing that and fires no button underneath.
 
         highgui dispatches mouse callbacks from inside ``waitKey``, so this runs on the render
         thread, and starting the source no longer blocks on the device: it hands the reopen to
@@ -908,7 +917,7 @@ def main() -> None:
         camera.wait_for_frame()
     except WebcamError as exc:
         # A missing camera is a degraded panel, not a dead one. Everything else still works -
-        # SESSION starts a session, HISTORY opens the admin page, the light and the volume
+        # WAKE UP starts a session, HISTORY opens the admin page, the light and the volume
         # behave - and a Pi showing nothing at all reads as broken hardware, which sends
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
@@ -931,8 +940,8 @@ def main() -> None:
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     found = f"on camera {camera.index}" if camera.connected else "still looking for a camera"
     idle_note = (
-        f"  after {settings.sleep_after_s:g}s untouched the light goes off and the camera is"
-        " released\n  any tap wakes it\n"
+        f"  after {settings.sleep_after_s:g}s untouched the panel's light goes off and the"
+        " camera is released\n  any tap lights it again\n"
         if settings.sleep_after_s
         else "  idle blanking is OFF (CYCLOPS_SLEEP_AFTER_S=0) - the panel stays lit\n"
     )
@@ -942,8 +951,9 @@ def main() -> None:
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
-        "  the tab row along the bottom: SNAP shows Cyclops a photo · SESSION starts and stops\n"
-        "  HISTORY opens the recordings and pictures, and is where the volume lives\n"
+        "  the tab row along the bottom: SNAP shows Cyclops a photo · WAKE UP wakes him\n"
+        "  (it says SLEEP while he is up) · HISTORY opens the recordings and pictures, and is\n"
+        "  where the volume lives\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,

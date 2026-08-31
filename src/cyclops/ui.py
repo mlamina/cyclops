@@ -100,7 +100,7 @@ class SessionController:
             if self._running:
                 return
             self._error = ""
-            self._phase = "opening the link…"  # said on the tap; the thread does not exist yet
+            self._phase = "waking up…"  # said on the tap; the thread does not exist yet
             self._closing = False
             self._started_at = time.monotonic()  # the clock starts on the tap, not on connect
             self._thread = threading.Thread(target=self._run, name="cyclops-session", daemon=True)
@@ -114,8 +114,8 @@ class SessionController:
         # On the tap, like the closing cue in the kiosk, and for a reason beyond symmetry: for
         # the couple of seconds it takes the task to notice it was cancelled this controller
         # still honestly reports LISTENING, so without a phrase here the caption would sit
-        # saying "listening - talk to me" underneath a strip that already says CLOSING.
-        self._phase = "closing the link…"
+        # saying "listening - talk to me" underneath a strip that already says SLEEPING.
+        self._phase = "going to sleep…"
         self._closing = True
         try:
             loop.call_soon_threadsafe(task.cancel)
@@ -252,7 +252,7 @@ class SessionController:
             self._closing = False
             loop.close()
             # Now it is over: the folder is written and the panel is about to go back to
-            # STANDBY. This cuts off the closing ticks the kiosk started on the tap, however
+            # ASLEEP. This cuts off the closing ticks the kiosk started on the tap, however
             # long or short the teardown turned out to be.
             self._cues.play("ended")
 

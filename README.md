@@ -411,8 +411,8 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_PROJECTS`     | `1`            | Keep `projects/` up to date, and offer Cyclops the `open_project` / `track_project` tools; `0` turns the whole feature off. |
 | `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
 | `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them; `0` withholds both drawing tools. |
-| `CYCLOPS_SOUNDS`       | `1`            | Cues for the link opening and closing, and the shutter; `0` disables. |
-| `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. |
+| `CYCLOPS_SOUNDS`       | `1`            | Cues for waking and going to sleep, and the shutter; `0` disables. |
+| `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_RECORD`       | `1`            | Record the camera into the session folder; `0` disables. |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
@@ -553,7 +553,7 @@ row of three tabs along the bottom sized for a thumb in a glove:
 | --- | --- |
 | **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
 | **HISTORY** | opens the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
-| **SESSION** | starts and stops the conversation; the tab stays lit while one is up |
+| **WAKE UP** | wakes Cyclops and starts the conversation; it says **SLEEP** while he is up, and the tab stays lit |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
 from it — dim green idle, amber connecting, bright green live, red on a fault — so the state
