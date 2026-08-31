@@ -339,7 +339,7 @@ The temperature tile is colour-coded on the Pi 5's own limits: green below 70 °
 70, red from **80 °C**, where the firmware starts capping the clock. A permanently red tile is
 not a bug in the page; it means the board wants better cooling.
 
-On the kiosk, the **HISTORY tab** opens the same page fullscreen in Chromium on the panel — same
+On the kiosk, **tapping Cyclops' eye** opens the same page fullscreen in Chromium on the panel — same
 green terminal chrome, so it reads as the next screen of the same device — and the page grows a
 volume slider, an INTERRUPT switch and a full-width **Close** bar to get you back to the camera.
 All three appear only for the Pi's own browser: from a laptop there is nothing to close,
@@ -418,7 +418,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
 | `CYCLOPS_RECORD_WIDTH` | `640`          | Recorded video is fit to this width, never upscaled. |
 | `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |
-| `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. The kiosk's HISTORY tab opens the same port. |
+| `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. Tapping the eye on the panel opens the same port. |
 
 Variables already exported in your shell take precedence over `.env`. List audio devices with `uv run cyclops-devices`.
 
@@ -546,14 +546,14 @@ CYCLOPS_HALF_DUPLEX=1
 
 **The panel.** `cyclops-kiosk` is the whole front-end and needs no browser: it opens the camera,
 draws the live picture fullscreen, and lays a green terminal bezel over it — a readout strip
-along the top (mode, signal meter, `REC`, session clock), Cyclops' own square let into the
-top-right corner, the picture through the middle, and a row of three tabs along the bottom sized
-for a thumb in a glove:
+along the top (mode, signal meter, `REC`, session clock), the picture through the middle, and a
+row of three tabs along the bottom sized for a thumb in a glove, with Cyclops himself standing in
+the middle of them:
 
 | Tab | What it does |
 | --- | --- |
 | **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
-| **HISTORY** | opens the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
+| **the eye** | Cyclops, in the middle of the row. Tap him for the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
 | **WAKE UP** | wakes Cyclops and starts the conversation; it says **SLEEP** while he is up, and the tab stays lit |
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
@@ -561,12 +561,29 @@ from it — dim green asleep, amber waking, bright green awake, red on a fault �
 reads from across the room, and while he is up it breathes. The line under the picture spells it
 out for anyone close enough to read it, including what an error actually said.
 
-**The corner is Cyclops.** It is the one thing on the panel that is a face rather than a readout,
-and it is what lets the rest stay this terse: a glance answers *is he there*, so the strip is
-free to say only what he is doing. His eye is shut while he is asleep, heavy-lidded while he is
-coming round, and open while he is up — where it blinks every few seconds, never quite on the
-beat, and its pupil widens with your voice. It costs 2.4% of the picture, because it spends the
-strip's empty right-hand end before it spends any of the camera.
+**The middle of the row is Cyclops.** It is the one thing on the panel that is a face rather than
+a readout, and it is what lets the rest stay this terse: a glance answers *is he there, and what
+is he up to*, so the strip is free to spell it out only for whoever is close enough to read it.
+He is the boot mark brought to life — the splash's iris inside concentric HUD rings, with the
+rings turning, the iris breathing and a highlight sweeping the rim when he is hunting for
+something. The bar's top rule runs in from both sides, lifts over his head and comes down the
+other side; that shoulder is what makes him part of the row rather than a badge sitting on it.
+
+Everything he does is a **mood** — nine numbers and a colour, one row per state in
+`overlay.MOODS`, with `cyclops/eye.py` as the mechanism underneath. Asleep he is a shut iris in
+dim green and completely still. Waking, he is amber, half open, rings running fast with a
+scanning arc. Listening, he is green and calm, blinking every few seconds and never quite on the
+beat, and his iris opens to your voice. Speaking, he breathes faster and wider. Searching, he
+narrows to a point and the rings tear round. A fault is red and does not move at all. He
+crossfades between them rather than snapping, because a face that jumped colour between two
+frames would read as a different creature.
+
+These are meant to be pushed around rather than argued about:
+
+```bash
+uv run python tools/eye_sheet.py --seconds 8 --level 1.0   # every mood, over a strip of time
+uv run python tools/eye_sheet.py --state searching --frames 16 --scale 2
+```
 
 And while he is asleep **nothing on the panel moves at all** — not the eye, not the border, not
 the caption, which used to breathe whatever was happening. Two frames of a resting panel are
@@ -585,7 +602,7 @@ cd /home/<you>/cyclops && .venv/bin/cyclops-kiosk >/tmp/kiosk_live.log 2>&1 &
 ```
 
 Set an initial speaker level with `CYCLOPS_VOLUME` (percent); after that the volume — and the
-INTERRUPT switch — lives on the admin page, behind the HISTORY tab. Nothing leaves the Pi except the audio and vision the agent
+INTERRUPT switch — lives on the admin page, behind his eye. Nothing leaves the Pi except the audio and vision the agent
 sends to OpenAI.
 
 `q` or `ESC` quits, `f` toggles fullscreen, and `--windowed` / `--size=WxH` are there for

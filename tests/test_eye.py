@@ -1,0 +1,430 @@
+"""Cyclops' eye: how it moves, how it changes its mind, and where it sits in the tab row.
+
+Five failures live here, and none of them raises. A button whose word stops matching what the tap
+does is a lie nobody notices until they press it. A blink on a fixed period is a status LED and
+reads as a fault rather than as a face, and one shorter than a few frames is indistinguishable
+from a dropped frame - neither shows up in any assertion about *whether* it blinks. A mood table
+that gains a state without a row falls back to the sleeping face, so a whole state of the machine
+quietly stops being on the panel. A resting caption that keeps breathing turns "asleep" into
+"asleep, sort of", which is the design lost quietly. And an eye grown a few pixels too big walks
+into the word underneath it on a screen nobody tested on.
+
+Everything here is pure: no camera, no key, no window. `Overlay` is PIL and numpy only.
+"""
+
+from __future__ import annotations
+
+from dataclasses import replace
+
+import numpy as np
+import pytest
+
+from cyclops import eye, overlay
+
+STATES = (
+    overlay.IDLE,
+    overlay.STARTING,
+    overlay.STOPPING,
+    overlay.CONNECTING,
+    overlay.LISTENING,
+    overlay.SPEAKING,
+    overlay.LOOKING,
+    overlay.SEARCHING,
+    overlay.DRAWING,
+    overlay.ERROR,
+)
+SIZES = ((800, 480), (480, 320), (1280, 720))
+AWAKE = dict(state=overlay.LISTENING, level=0.0, elapsed=12.0)
+
+
+def _panel(width: int = 800, height: int = 480) -> overlay.Overlay:
+    return overlay.Overlay(width, height)
+
+
+def _settle(ov: overlay.Overlay, **shown: object) -> None:
+    """Run the crossfade into this mood out, so what follows is the mood and not the journey.
+
+    Two renders at *different* phases, which is the whole trick: the engine starts its clock on
+    the frame the state changes and moves on the ones after it, so settling with the same phase
+    twice settles nothing.
+    """
+    ov.render(phase=0.0, **shown)  # type: ignore[arg-type]
+    ov.render(phase=eye.MOOD_EASE_S * 4, **shown)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------- the words
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_the_button_says_what_the_tap_will_do(state: str) -> None:
+    want = overlay.SLEEP_LABEL if overlay.session_up(state) else overlay.WAKE_LABEL
+    assert overlay.tab_label("wake", state) == want
+    # ...and the same question the kiosk asks before deciding to start or stop, so the word on
+    # the button and the action behind it cannot drift apart.
+    assert overlay.session_up(state) == (state not in (overlay.IDLE, overlay.ERROR))
+
+
+@pytest.mark.parametrize("name", ("shutter", "eye"))
+def test_the_other_two_tabs_do_not_change_under_you(name: str) -> None:
+    assert len({overlay.tab_label(name, state) for state in STATES}) == 1
+
+
+def test_the_resting_caption_names_a_button_that_is_actually_there() -> None:
+    # One line, and exactly the bug this invites: the caption said "tap SESSION to begin" for as
+    # long as the tab said SESSION, and would have gone on saying it afterwards.
+    assert overlay.tab_label("wake", overlay.IDLE) in overlay.CAPTIONS[overlay.IDLE]
+
+
+@pytest.mark.parametrize("state", STATES)
+def test_every_state_has_a_word_a_sentence_and_a_face(state: str) -> None:
+    # The fourth table is the one that fails silently: a state missing from MOODS does not raise,
+    # it falls back to the sleeping face, and the panel simply stops saying anything about it.
+    assert overlay.LABELS[state]
+    assert state in overlay.MOODS, "no mood for this state - the eye would go to sleep in it"
+    assert state == overlay.ERROR or state in overlay.CAPTIONS
+
+
+# ---------------------------------------------------------------- the moods
+
+
+def test_only_the_sleeping_and_broken_faces_hold_still() -> None:
+    # The invariant the whole design rests on, stated on the table rather than on the pixels:
+    # every mood that is not asleep or faulted has something about it that moves.
+    for state, mood in overlay.MOODS.items():
+        moves = bool(mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice)
+        assert moves == (state not in (overlay.IDLE, overlay.ERROR)), state
+
+
+def test_the_states_do_not_all_look_the_same() -> None:
+    # A table of nine identical rows would pass every other test in this file.
+    assert len({tuple(vars(m).values()) for m in overlay.MOODS.values()}) >= 6
+    assert len({m.tint for m in overlay.MOODS.values()}) >= 3, "the eye should change colour"
+
+
+def test_only_the_listening_face_opens_to_your_voice() -> None:
+    # SPEAKING hears its own output on the meter, so it may lean on level a little; nothing that
+    # is not listening to a room should react to one at all.
+    for state, mood in overlay.MOODS.items():
+        if state not in (overlay.LISTENING, overlay.SPEAKING):
+            assert mood.voice == 0.0, f"{state} opens its iris at a noise it is not listening to"
+    assert overlay.MOODS[overlay.LISTENING].voice > overlay.MOODS[overlay.SPEAKING].voice
+
+
+def test_a_mood_travels_to_the_next_one_rather_than_snapping() -> None:
+    a, b = overlay.MOODS[overlay.IDLE], overlay.MOODS[overlay.LISTENING]
+    assert a.lerp(b, 0.0) == a
+    assert a.lerp(b, 1.0) == b
+    half = a.lerp(b, 0.5)
+    assert a.aperture < half.aperture < b.aperture
+    for i in range(3):  # the colour travels too, or waking reads as a different creature
+        assert min(a.tint[i], b.tint[i]) <= half.tint[i] <= max(a.tint[i], b.tint[i])
+    assert half.tint not in (a.tint, b.tint)
+
+
+def test_the_eye_eases_between_moods_over_the_clock_it_is_given() -> None:
+    engine = eye.EyeEngine(50, 2, overlay.SCREEN, overlay.MOODS[overlay.IDLE])
+    engine.look(overlay.IDLE, overlay.MOODS[overlay.IDLE], 0.0)
+    listening = overlay.MOODS[overlay.LISTENING]
+    assert engine.look(overlay.LISTENING, listening, 0.0) == overlay.MOODS[overlay.IDLE], (
+        "the frame the state changes on is still the old mood - the clock starts there"
+    )
+    part = engine.look(overlay.LISTENING, listening, eye.MOOD_EASE_S / 2)
+    assert part != listening, "it arrived in one frame"
+    assert part.aperture > overlay.MOODS[overlay.IDLE].aperture, "...and it did not set off"
+    assert engine.look(overlay.LISTENING, listening, eye.MOOD_EASE_S * 2) == listening
+
+
+# ---------------------------------------------------------------- the blink
+
+
+def _blinks(every: float, seconds: float, step: float = 1 / 200) -> list[float]:
+    return [i * step for i in range(int(seconds / step)) if eye.blink(i * step, every) < 0.5]
+
+
+def _starts(every: float, seconds: float, step: float = 1 / 200) -> list[float]:
+    shut = [eye.blink(i * step, every) < 0.5 for i in range(int(seconds / step))]
+    return [i * step for i, (a, b) in enumerate(zip(shut, shut[1:], strict=False)) if b and not a]
+
+
+def test_a_mood_with_no_blink_never_blinks() -> None:
+    assert all(eye.blink(i / 50, 0.0) == 1.0 for i in range(5000))
+
+
+def test_a_blink_shuts_the_eye_and_travels_rather_than_snapping() -> None:
+    sweep = [eye.blink(i / 500, 4.4) for i in range(500 * 30)]
+    assert min(sweep) == pytest.approx(0.0, abs=1e-3)
+    assert max(sweep) == 1.0
+    # A raised cosine, not a square wave - a lid that switched between two pictures would read
+    # as a dropped frame rather than as a blink.
+    assert any(0.05 < v < 0.95 for v in sweep)
+
+
+def test_he_blinks_often_enough_to_be_alive_and_seldom_enough_not_to_nag() -> None:
+    blinks = len(_starts(4.4, 60.0))
+    assert 8 <= blinks <= 20, f"{blinks} blinks a minute is not a face"
+
+
+def test_a_blink_survives_a_panel_running_at_25_fps() -> None:
+    frames = [eye.blink(i / 25.0, 4.4) for i in range(25 * 30)]
+    runs, run = [], 0
+    for v in frames:
+        run = run + 1 if v < 0.5 else 0
+        runs.append(run)
+    assert max(runs) >= 3, "a blink that lands on fewer than three frames will not be seen"
+
+
+def test_the_blinks_are_not_a_metronome() -> None:
+    at = _starts(4.4, 300.0)
+    gaps = [round(b - a, 2) for a, b in zip(at, at[1:], strict=False)]
+    assert len(set(gaps)) > 1, "every gap is the same length"
+    assert min(gaps) > 1.5, f"two blinks {min(gaps)}s apart is a twitch"
+    assert len(set(gaps[:8])) > 2, "the gaps merely alternate between two values"
+
+
+def test_no_blink_is_clipped_by_the_edge_of_its_own_window() -> None:
+    # A blink that ran past its window would be cut off half shut and the eye would jump back
+    # open. Asserted through the function rather than against the constants, and for a mood far
+    # faster than any in the table, because the clamp inside blink() is what has to hold.
+    for every in (0.6, 1.4, 4.4, 9.0):
+        for window in range(60):
+            start = window * every
+            n = max(4, int(every * 500))
+            inside = [eye.blink(start + i / 500, every) for i in range(n)]
+            assert min(inside) == pytest.approx(0.0, abs=2e-3), f"{every}s window {window}"
+            assert inside[0] == 1.0, f"{every}s window {window} starts mid-blink"
+
+
+def test_the_eye_never_stalls_however_long_the_panel_has_been_up() -> None:
+    # A Pi's monotonic clock is its uptime and this panel is left running for weeks - long enough
+    # that a float64 losing its last digits would quietly freeze the lid open. What has to hold
+    # is not a particular count, which the drift varies by one deliberately, but that he is still
+    # blinking at a living rate and still all the way shut.
+    for base in (0.0, 86_400.0, 1_000_000.0, 5_000_000.0):
+        sweep = [eye.blink(base + i / 200, 4.4) for i in range(60 * 200)]
+        shut = [v < 0.5 for v in sweep]
+        blinks = sum(1 for a, b in zip(shut, shut[1:], strict=False) if b and not a)
+        assert 8 <= blinks <= 20, f"{blinks} blinks a minute at {base:,.0f}s of uptime"
+        assert min(sweep) == pytest.approx(0.0, abs=1e-3), f"it stopped closing at {base}"
+
+
+# ---------------------------------------------------------------- the iris
+
+
+def test_the_iris_never_leaves_its_range_whatever_the_mood_asks_for() -> None:
+    engine = eye.EyeEngine(50, 2, overlay.SCREEN, overlay.MOODS[overlay.IDLE])
+    absurd = eye.Mood(tint=overlay.GREEN, aperture=0.9, swell=0.9, breath_s=0.7, voice=0.9)
+    for mood in (*overlay.MOODS.values(), absurd):
+        for i in range(200):
+            for level in (0.0, 0.5, 1.0, 4.0, -1.0):
+                assert 0.0 <= engine.aperture(mood, i / 7, level) <= 1.0
+
+
+def test_your_voice_opens_the_listening_iris() -> None:
+    engine = eye.EyeEngine(50, 2, overlay.SCREEN, overlay.MOODS[overlay.IDLE])
+    mood = overlay.MOODS[overlay.LISTENING]
+    quiet = engine.aperture(mood, 2.0, 0.0)
+    assert engine.aperture(mood, 2.0, 1.0) > quiet + 0.1
+
+
+def test_the_breath_comes_back_round_and_stays_inside_its_swell() -> None:
+    # No blink in this one: a blink would shut the iris mid-sweep and swamp the swell it is
+    # measuring. What the blink does is asserted on its own, above.
+    mood = replace(overlay.MOODS[overlay.SPEAKING], blink_s=0.0)
+    engine = eye.EyeEngine(50, 2, overlay.SCREEN, mood)
+    sweep = [engine.aperture(mood, i * mood.breath_s / 64, 0.0) for i in range(64)]
+    assert max(sweep) - min(sweep) == pytest.approx(mood.swell, abs=1e-2)
+    for t in (0.15, 1.9, 86_400.15):
+        assert eye.breath(t + mood.breath_s, mood.breath_s) == pytest.approx(
+            eye.breath(t, mood.breath_s), abs=1e-6
+        )
+
+
+def test_a_mood_with_no_breath_does_not_divide_by_it() -> None:
+    assert eye.breath(3.7, 0.0) == 0.0
+
+
+# ---------------------------------------------------------------- on the panel
+
+
+def _face(ov: overlay.Overlay, frame: np.ndarray) -> np.ndarray:
+    """Just him, cropped square out of a rendered frame."""
+    cx, cy = ov.eye
+    r = ov.eye_r
+    return frame[cy - r : cy + r, cx - r : cx + r]
+
+
+def _lit(crop: np.ndarray) -> int:
+    """Opaque phosphor in a crop. The alpha test is not optional: the chrome layer carries a
+    green RGB under fully transparent pixels, so counting colour alone counts the whole sky."""
+    return int(((crop[:, :, :3].astype(int).sum(axis=2) > 300) & (crop[:, :, 3] > 150)).sum())
+
+
+def test_nothing_moves_while_he_is_asleep() -> None:
+    # The headline. Every animation on this panel has to be gated on there being a session, and
+    # this is the one assertion that notices when a new one is not - including the caption's
+    # breath, which used to run at IDLE and made a resting panel quietly pulse.
+    ov = _panel()
+    for state, detail in ((overlay.IDLE, ""), (overlay.ERROR, "OpenAI rejected the API key")):
+        shown = dict(state=state, level=0.0, detail=detail, elapsed=None)
+        _settle(ov, **shown)  # the eye is *meant* to travel between moods, and then hold
+        frames = [ov.render(phase=100.0 + i * 0.73, **shown) for i in range(40)]
+        moved = [i for i, f in enumerate(frames) if not np.array_equal(f, frames[0])]
+        assert not moved, f"{state} moved at phases {moved[:5]}"
+
+
+def test_the_rings_turn_while_he_is_awake() -> None:
+    # A whole breath apart, so the iris is in exactly the same place in both frames and the only
+    # thing left that can differ is the rotation. Comparing two arbitrary phases would pass on
+    # the breath alone and say nothing at all about the rings.
+    ov = _panel()
+    mood = overlay.MOODS[overlay.LISTENING]
+    first, second = 10.0, 10.0 + mood.breath_s
+    assert ov.engine.aperture(mood, first, 0.0) == pytest.approx(
+        ov.engine.aperture(mood, second, 0.0)
+    ), "pick two phases a whole breath apart, or this test is about the iris"
+    _settle(ov, **AWAKE)
+    a = _face(ov, ov.render(phase=first, **AWAKE))
+    b = _face(ov, ov.render(phase=second, **AWAKE))
+    assert not np.array_equal(a, b), "the ring set held still"
+
+
+def test_the_rings_do_not_all_turn_together() -> None:
+    # Rings that agree read as one printed disc. The counter-rotations are the whole reason it
+    # reads as a mechanism, so they are stated here rather than left to whoever tunes them.
+    rates = (eye.TICK_SPIN, eye.BRACKET_SPIN, eye.DOT_SPIN)
+    assert len(set(rates)) == len(rates)
+    assert min(rates) < 0 < max(rates), "nothing counter-rotates"
+
+
+def test_the_scan_arc_sweeps_the_rim_while_he_is_hunting() -> None:
+    # The one part of him that shouts. It is mixed towards white so it reads over a rim already
+    # at full tint, which is also what makes it findable here: nothing else on his face is pale.
+    ov = _panel()
+    hunting = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0)
+    _settle(ov, **hunting)
+
+    def where(phase: float) -> float:
+        crop = _face(ov, ov.render(phase=phase, **hunting)).astype(int)
+        pale = np.argwhere((crop[:, :, 2] > 175) & (crop[:, :, 3] > 150))
+        assert len(pale), "no scan arc on a face that is supposed to be searching"
+        y, x = pale.mean(axis=0) - ov.eye_r
+        return float(np.degrees(np.arctan2(y, x)) % 360)
+
+    # A quarter of a second, not a whole one: at this mood's spin the highlight goes round very
+    # nearly once a second, so sampling a second apart would find it back where it started and
+    # call that "still".
+    moved = (where(10.25) - where(10.0)) % 360
+    assert 15 < moved < 345, f"the highlight sat still ({moved:.0f} degrees in a quarter second)"
+
+
+def test_the_iris_is_shut_asleep_and_open_awake() -> None:
+    ov = _panel()
+    asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
+    _settle(ov, **asleep)
+    shut = _face(ov, ov.render(phase=10.0, **asleep))
+    _settle(ov, **AWAKE)
+    open_ = _face(ov, ov.render(phase=10.0, **AWAKE))
+    assert _lit(open_) > _lit(shut), "an open iris is not brighter than a shut one"
+
+
+def test_the_pupil_widens_with_your_voice() -> None:
+    ov = _panel()
+    _settle(ov, **AWAKE)
+    shown = dict(state=overlay.LISTENING, elapsed=12.0, phase=10.0)
+    quiet = _lit(_face(ov, ov.render(level=0.0, **shown)))
+    loud = _lit(_face(ov, ov.render(level=1.0, **shown)))
+    assert loud > quiet
+
+
+def test_he_changes_colour_with_what_he_is_doing() -> None:
+    ov = _panel()
+
+    def hue(state: str) -> tuple[float, float]:
+        shown = dict(state=state, level=0.0, elapsed=12.0)
+        _settle(ov, **shown)
+        crop = _face(ov, ov.render(phase=10.0, **shown)).astype(float)
+        px = crop[(crop[:, :, :3].sum(axis=2) > 200) & (crop[:, :, 3] > 150)]
+        return float(px[:, 0].mean()), float(px[:, 2].mean())  # red and blue against the green
+
+    green, amber, red = hue(overlay.LISTENING), hue(overlay.CONNECTING), hue(overlay.ERROR)
+    assert amber[0] > green[0] and red[0] > green[0], "waking and faulted are not warmer"
+    assert red[1] < amber[1], "a fault does not read as redder than a wake-up"
+
+
+def test_he_acknowledges_a_tap_without_going_photographic_negative() -> None:
+    # The other two tabs invert under a thumb. His cell must not: half of him is over the picture
+    # where there is no cell to invert, and a face in negative is not the same face.
+    ov = _panel()
+    _settle(ov, **AWAKE)
+    rest = _face(ov, ov.render(phase=10.0, **AWAKE))
+    held = _face(ov, ov.render(phase=10.0, pressed="eye", **AWAKE))
+    assert not np.array_equal(rest, held), "a tap on his face changed nothing"
+    assert _lit(held) > _lit(rest), "...and it should brighten him, not invert him"
+
+
+def test_the_border_breathes_while_he_is_up() -> None:
+    ov = _panel()
+    top = lambda p: ov.render(phase=p, **AWAKE)[0]  # noqa: E731
+    bright, sunk = top(0.0), top(overlay.RIM_PERIOD_S / 2)
+    assert not np.array_equal(bright, sunk), "the rim held still"
+    # It dims and never goes dark, and it never brightens past what _base already drew.
+    lit = bright[:, :3].astype(int).sum(axis=1)
+    dim = sunk[:, :3].astype(int).sum(axis=1)
+    assert (dim <= lit).all(), "the breath brightened the border past its own state colour"
+    assert dim[bright[:, 3] > 200].min() > 0
+
+
+# ---------------------------------------------------------------- the room he takes up
+
+
+@pytest.mark.parametrize(("width", "height"), SIZES)
+def test_he_stands_clear_of_the_word_underneath_him(width: int, height: int) -> None:
+    ov = overlay.Overlay(width, height)
+    cell = ov._cells["eye"]
+    label_top = cell.bottom - round(23 * ov.scale) - ov.font_tab.size / 2
+    assert ov.eye[1] + ov.eye_r < label_top, f"his chin is on the label at {width}x{height}"
+
+
+@pytest.mark.parametrize(("width", "height"), SIZES)
+def test_he_fits_his_own_cell_and_stays_out_of_the_caption(width: int, height: int) -> None:
+    ov = overlay.Overlay(width, height)
+    cell = ov._cells["eye"]
+    assert cell.x < ov.eye[0] - ov.shoulder and ov.eye[0] + ov.shoulder < cell.right
+    caption_right = ov.viewport.x + ov.pad + round(34 * ov.scale) + ov._dots_w
+    assert ov.eye[0] - ov.eye_r > caption_right
+
+
+@pytest.mark.parametrize(("width", "height"), SIZES)
+def test_the_face_is_tappable_where_the_face_is(width: int, height: int) -> None:
+    # Half of him stands proud of the row. People tap what they can see.
+    ov = overlay.Overlay(width, height)
+    cx, cy = ov.eye
+    assert ov.hitboxes.eye.contains(cx, cy)
+    assert ov.hitboxes.eye.contains(cx, cy - ov.eye_r + 1)
+    for other in (ov.hitboxes.shutter, ov.hitboxes.wake):
+        assert not other.contains(cx, cy), "his face overlaps another tab's target"
+
+
+@pytest.mark.parametrize(("width", "height"), SIZES)
+def test_every_tab_label_fits_its_cell(width: int, height: int) -> None:
+    # The Mac and the Pi pick different faces, so this is a test and not a measurement.
+    ov = overlay.Overlay(width, height)
+    tracking = max(1.0, 2.4 * ov.scale)
+    for name in overlay.TABS:
+        for state in STATES:
+            text = overlay.tab_label(name, state)
+            room = ov._cells[name].w - 2 * max(1, round(3 * ov.scale))
+            assert ov._width(text, ov.font_tab, tracking) <= room, f"{text} at {width}x{height}"
+
+
+@pytest.mark.parametrize(("width", "height"), SIZES)
+def test_the_mode_word_clears_the_readouts(width: int, height: int) -> None:
+    ov = overlay.Overlay(width, height)
+    track = max(1.0, 2.0 * ov.scale)
+    start = ov.pad + ov._width("CYCLOPS", ov.font_brand, track) + round(11 * ov.scale) * 2
+    for taping in (False, True):
+        _, _, meter_right = ov._readouts(taping)
+        sig = ov._meter_x(meter_right) - round(9 * ov.scale) - ov._width("SIG", ov.font_micro, 0)
+        for word in set(overlay.LABELS.values()):
+            end = start + ov._width(word, ov.font_mode, track * 0.7)
+            assert end < sig, f"{word} runs into SIG at {width}x{height} (taping={taping})"

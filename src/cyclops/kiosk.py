@@ -274,8 +274,8 @@ class Kiosk:
         self._browser: subprocess.Popen | None = None  # the admin browser, kept warm from boot
         self._admin_busy = threading.Event()  # set from the tap until the page is done with
         # A second latch rather than reusing _admin_busy, which the tab row reads to decide
-        # whether HISTORY is lit (see _pressed_now). A diagram is not that page, and a
-        # panel that lights HISTORY whenever Cyclops draws would be telling the truth about the
+        # whether the eye is lit (see _pressed_now). A diagram is not that page, and a
+        # panel that lights the eye whenever Cyclops draws would be telling the truth about the
         # browser and a lie about what you are looking at. Both still gate _open_admin, so the
         # two can never be up at once.
         self._page_busy = threading.Event()  # any page has the panel: the admin one or a diagram
@@ -369,25 +369,28 @@ class Kiosk:
             self._press("shutter")
             self._snap()
         elif boxes.eye.contains(x, y):
+            # His face, and what it opens: everything the box has kept. The eye moved into the
+            # middle of the row and took the gear's job with it, which is the right way round -
+            # you tap him to ask what he remembers.
             self._press("eye")
-            self._toggle_session()
-        elif boxes.admin.contains(x, y):
-            self._press("admin")
             self._open_admin()
+        elif boxes.wake.contains(x, y):
+            self._press("wake")
+            self._toggle_session()
 
     def _press(self, button: str) -> None:
         self._pressed = button
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
-        """Which tab to draw as held. The HISTORY tab stays lit while its page is up.
+        """Which tab to draw as held. The eye's cell stays lit while its page is up.
 
         Uncovering a warm browser is immediate, so this is normally seen for a frame or two.
         It still earns its place on the one tap that has to start a browser: without it the
         tab goes dark 180 ms in and a panel that is busy looks like a panel that ignored you.
         """
         if self._admin_busy.is_set():
-            return "admin"
+            return "eye"
         return self._pressed if time.monotonic() < self._press_until else None
 
     def _snap(self) -> None:
@@ -443,7 +446,7 @@ class Kiosk:
     def _admin_url(self) -> str:
         """The page, opened on the sessions list rather than on the four numbers.
 
-        The tab says HISTORY, so it had better land on some. The hash is what the page routes on
+        His cell says HISTORY, so it had better land on some. The hash is what the page routes on
         and it never navigates, so this only decides which screen the warm browser is holding when
         it is uncovered - the numbers are still one tap away, on the third tab.
         """
@@ -917,7 +920,7 @@ def main() -> None:
         camera.wait_for_frame()
     except WebcamError as exc:
         # A missing camera is a degraded panel, not a dead one. Everything else still works -
-        # WAKE UP starts a session, HISTORY opens the admin page, the light and the volume
+        # WAKE UP starts a session, the eye opens the admin page, the light and the volume
         # behave - and a Pi showing nothing at all reads as broken hardware, which sends
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
@@ -951,9 +954,9 @@ def main() -> None:
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
-        "  the tab row along the bottom: SNAP shows Cyclops a photo · WAKE UP wakes him\n"
-        "  (it says SLEEP while he is up) · HISTORY opens the recordings and pictures, and is\n"
-        "  where the volume lives\n"
+        "  the tab row along the bottom: SNAP shows Cyclops a photo · tap his eye in the\n"
+        "  middle for the recordings and pictures, and for the volume · WAKE UP wakes him,\n"
+        "  and says SLEEP while he is up\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,
