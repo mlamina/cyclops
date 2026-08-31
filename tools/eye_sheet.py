@@ -55,9 +55,9 @@ def main() -> None:
         d.text((8, top + cell // 2 + 8), f"{state}", fill=overlay.GREEN_DIM)
         for col in range(args.frames):
             phase = col * args.seconds / max(1, args.frames)
-            tile = Image.new("RGB", (cell, cell), overlay.SCREEN)
-            engine.draw(ImageDraw.Draw(tile), cell // 2, cell // 2, mood, phase, args.level)
-            sheet.paste(tile, (LABEL + col * cell, top))
+            tile = Image.new("RGBA", (cell, cell), (*overlay.SCREEN, 255))
+            engine.paint(tile, cell // 2, cell // 2, mood, phase, args.level)
+            sheet.paste(tile.convert("RGB"), (LABEL + col * cell, top))
             ImageDraw.Draw(sheet).text(
                 (LABEL + col * cell + 4, top + cell - 12),
                 f"{engine.aperture(mood, phase, args.level):.2f}",

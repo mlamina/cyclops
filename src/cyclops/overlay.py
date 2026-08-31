@@ -49,7 +49,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from .eye import EyeEngine, Mood, breath, mix
+from .eye import EyeEngine, Mood, at, breath, linear, mix, smoothed, wide
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
     "idle",
@@ -596,7 +596,7 @@ class Overlay:
                fill=(*GREEN_MID, 230), width=w)
         d.line([f.x + pad * 3, self.header.bottom + gap, f.right - pad * 3,
                 self.header.bottom + gap], fill=(*GREEN_DIM, 220), width=max(1, w // 2))
-        self._draw_eye_shoulder(d, gap)
+        self._draw_eye_shoulder(layer, gap)
         for index in range(1, len(TABS)):  # the two dividers between the three tabs
             x = self._tab(index).x
             d.line(
@@ -616,7 +616,7 @@ class Overlay:
         glow.putalpha(mask.point(lambda v: int(v * GLOW_ALPHA)))
         return Image.alpha_composite(glow, layer)
 
-    def _draw_eye_shoulder(self, d: ImageDraw.ImageDraw, gap: int) -> None:
+    def _draw_eye_shoulder(self, layer: Image.Image, gap: int) -> None:
         """The tab row's top rule, which runs in from both sides and arcs over the eye.
 
         The doubled divider everywhere else on this panel is two straight lines a few pixels
@@ -626,28 +626,56 @@ class Overlay:
 
         Chrome, not his own colour. His rim ring is drawn per frame just inside this and is free
         to go as dim as the mood wants; the line that has to stay unbroken is this one.
+
+        The straight runs are stroked onto the chrome as they are, because a horizontal line on a
+        whole pixel is already the line it wants to be; the two arcs go through
+        :func:`~cyclops.eye.smoothed`, because his rim is now smooth and a stepped collar half a
+        millimetre outside a smooth head is more conspicuous than two stepped arcs ever were. It
+        costs nothing at a frame: the chrome layer is built once per window size and kept.
         """
+        d = ImageDraw.Draw(layer)
         f, pad, w = self.frame, self.pad, self.line
         cx, cy = self.eye
         thin = max(1, w // 2)
-        for radius, y, colour, stroke, inset in (
-            (self.shoulder, self.footer.y, (*GREEN_MID, 230), w, pad),
-            (self.shoulder + gap, self.footer.y - gap, (*GREEN_DIM, 220), thin, pad * 3),
+        arcs = []
+        for radius, y, rgb, alpha, stroke, inset in (
+            (self.shoulder, self.footer.y, GREEN_MID, 230, w, pad),
+            (self.shoulder + gap, self.footer.y - gap, GREEN_DIM, 220, thin, pad * 3),
         ):
             # Where the arc meets the straight run. His centre is above the rule, so the two
             # touch off to either side rather than at the widest point of the circle - and the
             # arc has to start and end on exactly those points or the join shows as a step.
             sin = (y - cy) / radius
             if abs(sin) >= 1.0:  # a window too short for him to stand proud of the row at all
-                d.line([f.x + inset, y, f.right - inset, y], fill=colour, width=stroke)
+                d.line([f.x + inset, y, f.right - inset, y], fill=(*rgb, alpha), width=stroke)
                 continue
             a = math.degrees(math.asin(sin))
             reach = radius * math.cos(math.radians(a))
-            d.line([f.x + inset, y, cx - reach, y], fill=colour, width=stroke)
-            d.line([cx + reach, y, f.right - inset, y], fill=colour, width=stroke)
-            # 180 - a to 360 + a, which is the way round that goes over the top of his head.
-            d.arc([cx - radius, cy - radius, cx + radius, cy + radius],
-                  start=180 - a, end=360 + a, fill=colour, width=stroke)
+            d.line([f.x + inset, y, cx - reach, y], fill=(*rgb, alpha), width=stroke)
+            d.line([cx + reach, y, f.right - inset, y], fill=(*rgb, alpha), width=stroke)
+            arcs.append((radius, a, rgb, alpha, stroke))
+        if not arcs:
+            return
+        # One tile for both arcs, cut round the outer one and the stroke that stands outside it.
+        # Square and centred on him though only the top half of it is ever drawn in, because a
+        # tile that is his own bounding box is the one that cannot put an arc off his centre.
+        span = self.shoulder + gap + w
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            middle = at(span)
+            for radius, a, rgb, alpha, stroke in arcs:
+                # The box comes off a centre and a radius, never off its own corners: the two
+                # map differently into the tile, and a corner mapped as a centre is a ring drawn
+                # a third of a pixel small.
+                reach = at(radius)
+                # 180 - a to 360 + a, which is the way round that goes over the top of his head.
+                t.arc(
+                    [middle - reach, middle - reach, middle + reach, middle + reach],
+                    start=180 - a, end=360 + a, fill=linear(rgb, alpha),
+                    width=round(wide(stroke)),
+                )
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
 
     def _draw_ticks(self, d: ImageDraw.ImageDraw) -> None:
         """Corner ticks around the picture, so the live area reads as a framed feed."""
@@ -826,7 +854,7 @@ class Overlay:
             # and it is the one gesture that reads the same from every mood - including asleep,
             # where you have just tapped a shut eye and it has opened to look at you.
             mood = replace(mood, tint=GREEN, rings=1.0, aperture=1.0, swell=0.0, voice=0.0)
-        self.engine.draw(d, *self.eye, mood, phase, level)
+        self.engine.paint(layer, *self.eye, mood, phase, level)
         if session_up(state):
             # The teardown breathes too. He is not listening any more - the eye is already shut -
             # but the box is still working, and a panel that went stone still the moment you

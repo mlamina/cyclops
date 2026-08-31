@@ -19,9 +19,27 @@ state table lives in :mod:`cyclops.overlay` where the phosphor colours are.
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
-from PIL import ImageDraw
+import numpy as np
+from PIL import Image, ImageDraw
+
+SUPERSAMPLE = 4  # how many times over-size he is drawn before being averaged onto the panel.
+# PIL will not anti-alias anything, and he is nothing but curves: every arc, tick and blade in
+# here is a hard-edged run of pixels, which on a circle 120 px across reads as a staircase rather
+# than as a ring. Drawing him four times over and shrinking is the whole fix. Four is where the
+# stairs stop showing at this size; eight costs four times as much and looks the same from a
+# bench, and one puts back exactly the pixels this drew before any of it existed.
+
+GAMMA = 2.2  # the panel's, and the reason the shrink happens in light rather than in numbers.
+# Averaging two 8-bit values does not average two brightnesses. A pixel half covered by a bright
+# line, averaged as numbers, comes out at half its value - which is under a quarter of its light
+# - so a ring made mostly of half-covered pixels goes grey and the smoothing reads as a fade. The
+# tile is drawn in linear light and converted back on the way out instead, which is what keeps a
+# smoothed hairline as bright as the jagged one it replaces.
+LINEAR = tuple(round(255 * (v / 255) ** GAMMA) for v in range(256))
+SRGB = np.array([round(255 * (v / 255) ** (1 / GAMMA)) for v in range(256)], dtype=np.uint8)
 
 # The ring set, as fractions of the eye's radius, outside in. Four rings and an iris is as much
 # structure as survives being 110 px across on a panel seen from a bench; the splash mark has
@@ -152,6 +170,75 @@ class Mood:
         )
 
 
+def at(p: float) -> float:
+    """A panel coordinate - or a radius, which maps the same way - in the oversampled tile.
+
+    A pixel at *p* covers the run from ``p * SUPERSAMPLE`` to ``p * SUPERSAMPLE + SUPERSAMPLE-1``
+    over there, and PIL's boxes are inclusive of both ends, so the middle of that run is half a
+    sample short of the far edge. Getting this wrong by that half-sample is not a rounding error
+    you can ignore: it moves every ring off the centre the tile was cut around.
+
+    Centres and radii, then, and not corners - a bounding box is built out of the two, because a
+    corner put through here comes out a third of a pixel wide of where it belongs.
+    """
+    return p * SUPERSAMPLE + (SUPERSAMPLE - 1) / 2.0
+
+
+def wide(stroke: float) -> float:
+    """A stroke width over there, which is the plain multiple - a width has no ends to be off."""
+    return max(1.0, stroke * SUPERSAMPLE)
+
+
+def linear(colour: tuple[int, int, int], alpha: int = 255) -> tuple:
+    """A colour in the form the tile wants it: linear light, multiplied by its own coverage.
+
+    Both halves are undone by :func:`_straighten` on the way out, and both are there for the same
+    reason - an average is only meaningful over numbers that mean something added together.
+    Brightness in the panel's gamma does not (see :data:`GAMMA`), and neither does a colour
+    holding out on how much of the pixel it actually covers.
+    """
+    return (*(LINEAR[c] * alpha // 255 for c in colour), alpha)
+
+
+def smoothed(size: int, paint: Callable[[ImageDraw.ImageDraw], None]) -> Image.Image:
+    """*paint* drawn into a tile ``SUPERSAMPLE`` times *size*, handed back at *size*, unstepped.
+
+    The whole of the anti-aliasing on this panel, in four lines. What *paint* draws must be laid
+    out through :func:`at` and :func:`wide` and coloured through :func:`linear`; everything else
+    about it is ordinary PIL.
+
+    The ground is black at nothing, and that is load-bearing rather than tidy: the shrink averages
+    the empty pixels in with the drawn ones, so what comes out is already multiplied by its own
+    coverage - the form a composite wants, and the only one that does not leave a dark fringe down
+    the outside of every curve.
+    """
+    tile = Image.new("RGBA", (size * SUPERSAMPLE, size * SUPERSAMPLE), (0, 0, 0, 0))
+    paint(ImageDraw.Draw(tile))
+    # reduce() rather than resize(): the same box average, told up front that the ratio is a whole
+    # number, and half the time for it on the Pi.
+    return _straighten(tile.reduce(SUPERSAMPLE))
+
+
+def _straighten(tile: Image.Image) -> Image.Image:
+    """Divide the shrunken tile back out by its own coverage, and return it to the panel's gamma.
+
+    The second half of the trick in :meth:`EyeEngine.paint`, and the reason it runs *after* the
+    shrink rather than before it: fifty-odd thousand numbers on the tile as it lands instead of a
+    million on the tile as it was drawn, which is the difference between a rounding error in the
+    frame budget and a dropped frame.
+
+    Where nothing was drawn there is nothing to divide by, and those pixels stay at zero - fully
+    transparent, so what they carry never reaches the panel anyway.
+    """
+    px = np.asarray(tile)
+    alpha = px[..., 3]
+    scale = np.divide(255.0, alpha, out=np.zeros(alpha.shape, np.float32), where=alpha > 0)
+    rgb = (px[..., :3] * scale[..., None]).clip(0.0, 255.0).astype(np.uint8)
+    # The alpha band rides through untouched: it is a coverage, not a brightness, and has no
+    # gamma to be in.
+    return Image.fromarray(np.dstack((SRGB[rgb], alpha)), "RGBA")
+
+
 class EyeEngine:
     """Draws the eye at one size, and remembers which mood it is on its way to.
 
@@ -171,6 +258,14 @@ class EyeEngine:
         self._from = resting  # ...what it was before that, and when it changed
         self._at = 0.0
         self._key = ""
+        # His tile is his bounding box and not a pixel more - 121 px square as it lands on the
+        # 800x480 panel - which is what makes drawing him four times over affordable inside a
+        # 40 ms frame. His centre in it is also the rim's radius, the rim being the tile drawn
+        # edge to edge, and the strokes are worked out here because none of them ever changes.
+        self._size = 2 * radius + 1
+        self._c = at(radius)
+        self._stroke = round(wide(self.stroke))
+        self._thin = round(wide(self.thin))
 
     # ---- the mood ----
 
@@ -204,22 +299,40 @@ class EyeEngine:
         open_ += mood.voice * max(0.0, min(1.0, level))
         return max(0.0, min(1.0, open_)) * blink(phase, mood.blink_s)
 
-    def draw(
-        self, d: ImageDraw.ImageDraw, cx: int, cy: int, mood: Mood, phase: float, level: float
+    def paint(
+        self, img: Image.Image, cx: int, cy: int, mood: Mood, phase: float, level: float
     ) -> None:
-        """The whole eye, outside in."""
-        r, tint = self.r, mood.tint
+        """The whole eye, onto *img* with its centre at *cx, cy*.
+
+        Drawn into a tile of its own and shrunk onto the panel rather than stroked straight onto
+        it, because PIL will not anti-alias and he is nothing but curves. Everything about the
+        drawing is the same either way - :data:`SUPERSAMPLE` of 1 puts back the pixels this used
+        to put down - so the smoothing is a property of how he lands, not of how he is drawn.
+
+        The tile is opaque only where he is, so what shows between the rings is still his plate
+        and the room through it.
+        """
+        tile = smoothed(self._size, lambda d: self._draw(d, mood, phase, level))
+        img.alpha_composite(tile, (cx - self.r, cy - self.r))
+
+    def _draw(self, d: ImageDraw.ImageDraw, mood: Mood, phase: float, level: float) -> None:
+        """The whole eye, outside in, at the centre of its own oversampled tile."""
+        cx = cy = r = self._c
+        tint = mood.tint
         turn = mood.spin * phase
         lit = max(0.0, min(1.0, mood.rings))
+        stroke, thin = self._stroke, self._thin
 
         def shade(strength: float) -> tuple:
-            return (*mix(self.screen, tint, strength * lit), 255)
+            # Mixed in the panel's own gamma, because that is where the palette was chosen and
+            # where every other cell on the screen mixes, then handed over in the tile's terms.
+            return linear(mix(self.screen, tint, strength * lit))
 
         # The rim. Also the thing the tab row's rule runs into, so it is normally the brightest
         # ring: it is doing structural work as well as saying how he feels. The exception is a
         # mood that sweeps - see below.
         scanning = mood.scan > 0.0
-        self._circle(d, cx, cy, r, shade(RIM_LIT * (SCAN_DIM if scanning else 1.0)), self.stroke)
+        self._circle(d, cx, cy, r, shade(RIM_LIT * (SCAN_DIM if scanning else 1.0)), stroke)
         if scanning:
             # A radar sweep, and built the way one is: the trace is bright and the ring under it
             # is faint. The highlight used to be mixed towards white over a rim at full, which
@@ -228,7 +341,7 @@ class EyeEngine:
             # instead needs no headroom above the tint and cannot be defeated by any of it.
             start = (SCAN_SPIN * turn) % 360.0
             d.arc(self._box(cx, cy, r), start=start, end=start + mood.scan,
-                  fill=shade(RIM_LIT), width=self.stroke + self.thin)
+                  fill=shade(RIM_LIT), width=stroke + thin)
 
         tick = shade(TICK_LIT)
         inner, outer = r * (TICKS - TICK_LEN), r * TICKS
@@ -237,16 +350,16 @@ class EyeEngine:
             d.line(
                 [cx + inner * math.cos(a), cy + inner * math.sin(a),
                  cx + outer * math.cos(a), cy + outer * math.sin(a)],
-                fill=tick, width=self.thin,
+                fill=tick, width=thin,
             )
 
         bracket, box = shade(BRACKET_LIT), self._box(cx, cy, r * BRACKETS)
         for i in range(BRACKET_N):
             start = turn * BRACKET_SPIN + i * 360.0 / BRACKET_N
-            d.arc(box, start=start, end=start + BRACKET_ARC, fill=bracket, width=self.thin)
+            d.arc(box, start=start, end=start + BRACKET_ARC, fill=bracket, width=thin)
 
         dot, ring = shade(DOT_LIT), r * DOTS
-        size = max(1, self.thin)
+        size = max(1, thin)
         for i in range(DOT_N):
             a = math.radians(turn * DOT_SPIN + i * 360.0 / DOT_N)
             x, y = cx + ring * math.cos(a), cy + ring * math.sin(a)
@@ -257,7 +370,7 @@ class EyeEngine:
         open_ = self.aperture(mood, phase, level)
         iris = r * IRIS
         hole = iris * (HOLE_MIN + (HOLE_MAX - HOLE_MIN) * open_)
-        self._circle(d, cx, cy, iris, shade(IRIS_LIT), self.thin)
+        self._circle(d, cx, cy, iris, shade(IRIS_LIT), thin)
         blade = shade(BLADE_LIT)
         for i in range(BLADE_N):
             a = math.radians(turn * TICK_SPIN + i * 360.0 / BLADE_N)
@@ -265,16 +378,18 @@ class EyeEngine:
             d.line(
                 [cx + iris * math.cos(a), cy + iris * math.sin(a),
                  cx + hole * math.cos(b), cy + hole * math.sin(b)],
-                fill=blade, width=self.thin,
+                fill=blade, width=thin,
             )
-        if hole >= 2.0 and open_ > 0.08:
+        if hole >= 2.0 * SUPERSAMPLE and open_ > 0.08:
             d.ellipse(self._box(cx, cy, hole), fill=shade(PUPIL_LIT))
 
     # ---- primitives ----
 
     @staticmethod
-    def _box(cx: int, cy: int, r: float) -> list[float]:
+    def _box(cx: float, cy: float, r: float) -> list[float]:
         return [cx - r, cy - r, cx + r, cy + r]
 
-    def _circle(self, d: ImageDraw.ImageDraw, cx: int, cy: int, r: float, c: tuple, w: int) -> None:
+    def _circle(
+        self, d: ImageDraw.ImageDraw, cx: float, cy: float, r: float, c: tuple, w: int
+    ) -> None:
         d.ellipse(self._box(cx, cy, r), outline=c, width=w)
