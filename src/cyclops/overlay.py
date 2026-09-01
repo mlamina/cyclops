@@ -153,6 +153,19 @@ LABELS = {
     DRAWING: "DRAWING",
     ERROR: "FAULT",
 }
+# The heat lamp, which is the one thing on the strip that is not about the session at all. It is
+# the board's temperature, and it is here rather than only on the admin page because by the time
+# it matters the panel is already misbehaving - a throttled Pi drops camera frames and misses
+# audio deadlines - and the person watching that happen deserves to be told why rather than left
+# to guess. Amber where the clock starts being capped, red where it is capped in earnest; the
+# word does not change, because on this panel colour is what carries severity.
+#
+# Filled, like REC, because a tag with a word in it is how this tube shouts and an outline is how
+# it murmurs. Unlike REC it is not red at the first step: red is the fault colour here, and a warm
+# Pi is not yet a broken one.
+HEAT_LAMP = {"hot": AMBER, "throttled": RED}
+HEAT_WORD = "HOT"
+
 # ... and the resting line underneath: what is true about a state when nothing finer is known.
 # The controller sends a better sentence whenever it has one - what is being searched for, which
 # project is being opened, which step of the teardown is running - and that wins; this is what the
@@ -510,7 +523,10 @@ class Overlay:
         # One engine per window size: it owns the geometry, and it remembers which mood it is
         # easing out of, which is why it is built here and not per frame.
         self.engine = EyeEngine(self.eye_r, self.line, SCREEN, MOODS[IDLE])
-        self._bases: dict[tuple[str, bool], Image.Image] = {}
+        # Keyed on the heat lamp as well as the state: the lamp is baked with the rest of the
+        # left-hand group, and it changes about once an hour, so it costs three cached layers on
+        # a hot box and nothing at all on a cool one.
+        self._bases: dict[tuple[str, bool, str], Image.Image] = {}
         # The readout strip's right-hand group is laid out from the frame edge inwards, and in a
         # monospaced face every width in it is a constant, so it is worked out here rather than
         # per frame - and, more to the point, the baked half and the drawn half then agree.
@@ -687,7 +703,7 @@ class Overlay:
                 d.line([x, y, x + arm * dx, y], fill=(*GREEN_MID, 200), width=self.line)
                 d.line([x, y, x, y + arm * dy], fill=(*GREEN_MID, 200), width=self.line)
 
-    def _base(self, state: str, recording: bool) -> Image.Image:
+    def _base(self, state: str, recording: bool, heat: str = "") -> Image.Image:
         """Everything that holds still while the state does, built once and copied per frame.
 
         The state light goes on last, after the words, and falls inwards from the border. It
@@ -700,7 +716,7 @@ class Overlay:
         frame down to a meter, a clock, a caption and a ring: drawing all of it every time cost
         10 ms of the Pi's 40 ms budget, against 2.8 ms for the chrome this design replaced.
         """
-        cached = self._bases.get((state, recording))
+        cached = self._bases.get((state, recording, heat))
         if cached is not None:
             return cached
         halo = HALOS.get(state, GREEN_DIM)
@@ -712,7 +728,7 @@ class Overlay:
         image = Image.alpha_composite(image, self._chrome)
 
         d = ImageDraw.Draw(image)
-        self._bake_header(d, state, halo, recording)
+        self._bake_header(d, state, halo, recording, heat)
         for index, name in enumerate(TABS):
             self._draw_tab(d, self._tab(index), name, state, halo, pressed=False)
 
@@ -730,7 +746,7 @@ class Overlay:
             outline=(*halo, 255),
             width=self.line,
         )
-        self._bases[(state, recording)] = image
+        self._bases[(state, recording, heat)] = image
         return image
 
     # ---- where the readouts sit ----
@@ -807,6 +823,7 @@ class Overlay:
         pressed: str | None = None,
         detail: str = "",
         phase: float = 0.0,
+        heat: str = "",
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -821,7 +838,7 @@ class Overlay:
         doing, an awake one that pulses says nothing.
         """
         halo = HALOS.get(state, GREEN_DIM)
-        layer = self._base(state, recording).copy()
+        layer = self._base(state, recording, heat).copy()
         d = ImageDraw.Draw(layer)
 
         self._draw_readouts(d, halo, level, elapsed, self._taping(state, recording))
@@ -868,7 +885,12 @@ class Overlay:
         return np.asarray(layer)
 
     def _bake_header(
-        self, d: ImageDraw.ImageDraw, state: str, halo: tuple[int, int, int], recording: bool
+        self,
+        d: ImageDraw.ImageDraw,
+        state: str,
+        halo: tuple[int, int, int],
+        recording: bool,
+        heat: str = "",
     ) -> None:
         """The half of the readout strip that only moves when the state does.
 
@@ -885,9 +907,18 @@ class Overlay:
         rule = round(9 * self.scale)
         d.line([x, cy - rule, x, cy + rule], fill=(*GREEN_DIM, 255), width=max(1, self.line // 2))
         x += round(11 * self.scale)
-        self._text(
+        x += self._text(
             d, x, cy, LABELS.get(state, "—"), self.font_mode, (*halo, 255), tracking=track * 0.7
         )
+
+        # The heat lamp sits after the mode word rather than in the right-hand group, which is
+        # laid out from the frame edge inwards and would have to shuffle SIG, REC and the clock
+        # along to make room for it. Here it costs nobody anything: the left group already runs
+        # out into empty strip, and a warning beside the word for what he is doing is exactly
+        # where somebody wondering why he is doing it badly will already be looking.
+        colour = HEAT_LAMP.get(heat)
+        if colour is not None:
+            self._tag(d, x + self._gap, cy, HEAT_WORD, colour)
 
         taping = self._taping(state, recording)
         _, rec_right, meter_right = self._readouts(taping)
@@ -897,16 +928,7 @@ class Overlay:
             # preference for its own green - and filling it rather than outlining it is how this
             # tube shouts. The one thing on screen that is red without being a fault, which is
             # exactly why it is a tag with a word in it and not a lamp.
-            half = round(11 * self.scale)
-            d.rounded_rectangle(
-                [rec_right - self._rec_w, cy - half, rec_right, cy + half],
-                radius=max(1, round(3 * self.scale)),
-                fill=(*RED, 255),
-            )
-            self._text(
-                d, rec_right - round(7 * self.scale), cy, "REC", self.font_micro, (*INK, 255),
-                align="r",
-            )
+            self._tag(d, rec_right - self._rec_w, cy, "REC", RED)
         self._text(
             d,
             self._meter_x(meter_right) - round(9 * self.scale),
@@ -916,6 +938,27 @@ class Overlay:
             (*GREEN_DIM, 255),
             align="r",
         )
+
+    def _tag(
+        self, d: ImageDraw.ImageDraw, x: float, cy: float, word: str, colour: tuple[int, int, int]
+    ) -> float:
+        """A filled rounded slab with a word knocked out of it, left edge at *x*. Returns width.
+
+        The panel's way of shouting, and there are two things that do it: REC and the heat lamp.
+        They were one shape typed out twice for exactly as long as it took to add the second, so
+        they are one method now - which also means :attr:`_rec_w`, the width the right-hand group
+        is laid out against, is measured the same way the thing is drawn.
+        """
+        half = round(11 * self.scale)
+        pad = round(7 * self.scale)
+        width = self.font_micro.getlength(word) + pad * 2
+        d.rounded_rectangle(
+            [x, cy - half, x + width, cy + half],
+            radius=max(1, round(3 * self.scale)),
+            fill=(*colour, 255),
+        )
+        self._text(d, x + pad, cy, word, self.font_micro, (*INK, 255))
+        return width
 
     def _draw_readouts(
         self,

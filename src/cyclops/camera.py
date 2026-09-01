@@ -31,7 +31,6 @@ import cv2
 from .webcam import WebcamError, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
-READ_ERROR_GRACE = 30  # consecutive failed reads tolerated before calling the device gone
 RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
 HISTORY = 12  # frames kept for the sharpest-of-recent pick (~0.5 s at 25 fps)
 SHARP_WINDOW_S = 0.7  # only frames this fresh compete; older ones may show a different scene
@@ -205,18 +204,36 @@ class CameraSource:
         self.last_pick = None
 
     def _read_loop(self, cap, token: int) -> None:
-        failures = 0
+        """Read frames until the device stops giving them, then return so it is opened again.
+
+        The grace is a *duration*, and deliberately the same one the panel calls a frame stale
+        after: the moment what is on screen stops being a picture of the room is the moment this
+        stops believing the handle it is holding. It was a count of thirty failed reads once,
+        which sounds equivalent and is not - a V4L2 read of a camera that has stalled blocks for
+        ten seconds before it fails, so thirty of them is five minutes of a frozen panel with
+        nothing to say it was frozen. That is not a hypothetical: a C920 stalled mid-session on
+        2026-08-31 and the preview showed one frame for the rest of the session.
+
+        Timed from *before* the read for the same reason. The ten seconds a stalled read spends
+        waiting are ten seconds with no frame, and starting the clock when it returns would cost
+        a second timeout to notice the first.
+        """
+        failing_since = 0.0
         while not self._stop.is_set() and self._generation == token:
+            attempted = time.monotonic()
             ok, frame = cap.read()
             if not ok or frame is None or frame.size == 0:
-                failures += 1
-                if failures > READ_ERROR_GRACE:
+                failing_since = failing_since or attempted
+                if time.monotonic() - failing_since > STALE_AFTER_S:
                     self._error = f"camera {self._index} stopped delivering frames"
-                    print(f"· camera {self._index} unplugged - looking for it again", flush=True)
+                    print(
+                        f"· camera {self._index} stopped delivering - looking for it again",
+                        flush=True,
+                    )
                     return
                 time.sleep(0.02)
                 continue
-            failures = 0
+            failing_since = 0.0
             score = focus_score(frame)
             now = time.monotonic()
             with self._lock:

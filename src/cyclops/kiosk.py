@@ -31,10 +31,10 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import barge, diagram, filming, mixer, session, sfx, webcam  # noqa: E402
+from . import barge, diagram, filming, mixer, session, sfx, stats, webcam  # noqa: E402
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
-from .camera import CameraSource  # noqa: E402
+from .camera import STALE_AFTER_S, CameraSource  # noqa: E402
 from .config import (  # noqa: E402
     BROWSER_CLOSE_FLAG,
     DIAGRAM_FILE,
@@ -100,7 +100,15 @@ TARGET_FPS = 25
 # one to take a size from. The panel is 800x480; this fits it and looks deliberate on anything
 # larger, which is the point - a black window with no explanation reads as a crashed Pi.
 NO_CAMERA = "No camera found"
+# ...and what it says when there *is* one and it has stopped talking. Worth its own words rather
+# than falling back to NO_CAMERA: the device is still open and still enumerated, so "no camera
+# found" would send someone off checking cables that are fine. This is the state a stalled USB
+# camera leaves the panel in, and until it had a message the panel simply went on showing the
+# last frame it got - a picture of a minute ago, presented as the room.
+CAMERA_STALLED = "Camera stopped responding"
 NO_CAMERA_SIZE = (800, 480)
+TEMP_POLL_S = 5.0  # how often the heat lamp re-reads sysfs; a board warms up over minutes
+NOTICE_S = 4.0  # how long one of the kiosk's own lines holds the caption
 FLASH_SECONDS = 0.45
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
@@ -272,6 +280,13 @@ class Kiosk:
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
+        self._heat = ""  # stats.heat_alarm(), re-read on TEMP_POLL_S; drives the lamp on the strip
+        self._heat_at = 0.0
+        # The kiosk's own voice in the caption, for the things that happen to it rather than to
+        # the session - a shutter that could not take a photo being the one that matters. The
+        # controller owns that line the rest of the time and knows nothing about any of this.
+        self._notice = ""
+        self._notice_until = 0.0
         self._volume: int | None = None  # the level we last put on the sink
         self._volume_at = 0.0  # when we last looked for a new one
         # The switch's position as we last read it, so a session in progress is only told when
@@ -406,6 +421,15 @@ class Kiosk:
             return "eye"
         return self._pressed if time.monotonic() < self._press_until else None
 
+    def _say(self, message: str) -> None:
+        """Put one of the kiosk's own lines in the caption for a few seconds. Any thread."""
+        self._notice = message
+        self._notice_until = time.monotonic() + NOTICE_S
+
+    def _saying(self) -> str:
+        """That line while it is still current, else "" - and then the controller's own wins."""
+        return self._notice if time.monotonic() < self._notice_until else ""
+
     def _snap(self) -> None:
         """Take a photo straight away, off-thread, and flash the screen as the shutter.
 
@@ -435,6 +459,12 @@ class Kiosk:
                 settings.camera_index, save_dir=save_dir, keep_as=keep_as
             )
         except WebcamError as exc:
+            # On the panel, not only on a log nobody is reading. This is the failure the shutter
+            # can actually have in normal use - the camera stalled, so there is no recent frame
+            # to photograph - and it used to be completely silent: the screen flashed, the
+            # shutter clicked, and no photo existed. A flash that means "taken" has to be able
+            # to mean "not taken" too.
+            self._say(CAMERA_STALLED if self.camera.connected else NO_CAMERA)
             print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
         else:
             # The whole point of the button: the photo goes to Cyclops, which answers out loud.
@@ -863,13 +893,30 @@ class Kiosk:
             state = self._effective(str(status["state"]))
             asleep = self._sleeping(state)
 
+            # Two sysfs reads, five seconds apart, on a board that takes minutes to change
+            # temperature. Cheap enough to do while the panel is dark, which is worth it: the
+            # lamp is then already right on the first frame after a tap rather than five
+            # seconds into it.
+            if started - self._heat_at >= TEMP_POLL_S:
+                self._heat_at = started
+                self._heat = stats.heat_alarm(stats.cpu_temp_c())
+
             frame = None  # nothing to draw: the camera is off, absent, or still coming back
+            stalled = False  # ...or open, enumerated, and no longer delivering anything
             if not asleep:
                 got = self.camera.latest()
                 # A reopened device keeps handing back the frame it stopped on, and that is
                 # last minute's room. Anything older than the reopen is not shown.
                 if got is not None and got[1] >= self._camera_on_at:
-                    frame = got[0]
+                    # Nor is anything older than STALE_AFTER_S, whoever produced it. A USB
+                    # camera that stalls stays open and stays enumerated while delivering
+                    # nothing at all, so the last frame it managed goes on being the newest one
+                    # for as long as that lasts - and drawing it is the panel telling a lie it
+                    # has no way to catch itself in. Past that age, say so instead.
+                    if started - got[1] <= STALE_AFTER_S:
+                        frame = got[0]
+                    else:
+                        stalled = True
 
             fallback = self._size if frame is None else (frame.shape[1], frame.shape[0])
             width, height = self._window_size(fallback)
@@ -884,6 +931,8 @@ class Kiosk:
                 # while the camera is still opening behind them.
                 if frame is not None:
                     canvas = fit_to_window(mirror(frame), width, height)
+                elif stalled:
+                    canvas = message(width, height, CAMERA_STALLED)
                 elif self.camera.connected:
                     canvas = _black(width, height)  # open; the first frame is along shortly
                 else:
@@ -901,11 +950,16 @@ class Kiosk:
                     # project is being opened, how far the teardown has got, and - the one it
                     # was added for - what went wrong, which the old chrome could only render
                     # as a red rim. Empty whenever the state alone says it all.
-                    detail=str(status["detail"]),
+                    # The kiosk's own line wins while it is current, because the things it has
+                    # to say are about the panel in front of you rather than about the session -
+                    # a shutter that took no photo is worth interrupting "listening — talk to
+                    # me" for, and it has four seconds to do it in.
+                    detail=self._saying() or str(status["detail"]),
                     # One instant for the whole frame, taken at the top of the loop. The caption
                     # breathes and counts its dots off this rather than off a clock of its own,
                     # so the animation cannot drift between elements or with the frame rate.
                     phase=started,
+                    heat=self._heat,
                 )
                 self._paint(composite(canvas, chrome), width, height)
 

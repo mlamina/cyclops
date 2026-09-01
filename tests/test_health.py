@@ -1,0 +1,225 @@
+"""What the panel does when the box, or its camera, is the thing that is wrong.
+
+Three failures met on 2026-08-31, in one session, all of which the panel reported as "listening
+— talk to me" on a picture of the room:
+
+* a C920 stalled, and the preview went on showing the frame it stalled on for the rest of the
+  session, because the reader needed thirty failed reads to give up and a stalled V4L2 read
+  takes ten seconds to fail - five minutes of a frozen panel;
+* the shutter could not photograph a stale frame, refused, and said so only to a log file;
+* the Pi was at 85 C and capping its own clock, which is why the first two happened, and the
+  panel had no way at all to mention it.
+
+Everything here is pure: no camera, no key, no window.
+"""
+
+from __future__ import annotations
+
+import threading
+import time
+
+import numpy as np
+import pytest
+
+from cyclops import camera, overlay, stats
+
+AWAKE = dict(state=overlay.LISTENING, level=0.4, elapsed=12.0, recording=False, phase=10.0)
+TOLERANCE = 24  # how far a drawn pixel may sit from the colour it was asked for
+
+
+# ---------------------------------------------------------------- how hot is too hot
+
+
+@pytest.mark.parametrize(
+    ("temp_c", "want"),
+    [
+        (None, ""),  # not Linux, or no thermal zone: no lamp, not a broken one
+        (20.0, ""),
+        (stats.WARN_C, ""),  # the admin tile goes amber here; the panel is not interrupting yet
+        (stats.HOT_C - 0.1, ""),
+        (stats.HOT_C, "hot"),  # the board starts capping its clock
+        (stats.THROTTLE_C - 0.1, "hot"),
+        (stats.THROTTLE_C, "throttled"),
+        (91.0, "throttled"),
+    ],
+)
+def test_the_lamp_lights_where_the_board_starts_taking_something_away(
+    temp_c: float | None, want: str
+) -> None:
+    assert stats.heat_alarm(temp_c) == want
+
+
+def test_the_panel_is_stricter_than_the_page() -> None:
+    """A gauge someone went to look at may cry wolf; a lamp that interrupts them may not.
+
+    WARN_C is a temperature a Pi 5 reaches doing ordinary work, so a panel lamp that started
+    there would be lit most of the time and would mean nothing by the time it mattered.
+    """
+    assert stats.temp_band(stats.WARN_C) == "warn", "the page still warns early, on purpose"
+    assert stats.heat_alarm(stats.WARN_C) == "", "and the panel deliberately does not"
+
+
+# ---------------------------------------------------------------- the lamp on the strip
+
+
+def _strip(frame: np.ndarray, ov: overlay.Overlay) -> np.ndarray:
+    return frame[: ov.header.bottom]
+
+
+def _painted(band: np.ndarray, colour: tuple[int, int, int]) -> int:
+    """Opaque pixels of the strip drawn in (near enough) *colour*."""
+    rgb, alpha = band[..., :3].astype(int), band[..., 3]
+    near = np.abs(rgb - np.array(colour)).max(axis=2) <= TOLERANCE
+    return int((near & (alpha > 200)).sum())
+
+
+def test_a_cool_box_gets_no_lamp() -> None:
+    ov = overlay.Overlay(800, 480)
+    band = _strip(ov.render(heat="", **AWAKE), ov)
+    assert _painted(band, overlay.AMBER) == 0
+    assert _painted(band, overlay.RED) == 0, "and nothing red either - red here means FAULT"
+
+
+@pytest.mark.parametrize(
+    ("heat", "colour", "other"),
+    [("hot", overlay.AMBER, overlay.RED), ("throttled", overlay.RED, overlay.AMBER)],
+)
+def test_the_lamp_says_which_kind_of_hot_in_colour(
+    heat: str, colour: tuple[int, int, int], other: tuple[int, int, int]
+) -> None:
+    """Amber where the clock is being capped, red where it is being capped in earnest.
+
+    LISTENING is the state under test precisely because neither colour belongs to it: its halo
+    is the tube's white and it is not recording, so there is no REC tag. Anything amber or red
+    on this strip is the lamp.
+    """
+    ov = overlay.Overlay(800, 480)
+    band = _strip(ov.render(heat=heat, **AWAKE), ov)
+    lit = _painted(band, colour)
+    assert lit > 100, f"the {heat} lamp is not on the strip ({lit} px of it)"
+    assert _painted(band, other) == 0, "and it is wearing the wrong colour"
+
+
+def test_the_lamp_never_shoves_the_readouts_along() -> None:
+    """SIG, REC and the session clock are laid out from the frame edge inwards.
+
+    Putting the lamp in that group would mean the clock moved whenever the board got warm, which
+    is the sort of thing that makes a panel feel unreliable while it is telling you the truth.
+    It goes after the mode word instead, and this is what says it stayed there.
+    """
+    ov = overlay.Overlay(800, 480)
+    cool = _strip(ov.render(heat="", **AWAKE), ov)
+    hot = _strip(ov.render(heat="throttled", **AWAKE), ov)
+    right = slice(cool.shape[1] // 2, None)
+    assert np.array_equal(cool[:, right], hot[:, right]), "the right-hand readouts moved"
+    assert not np.array_equal(cool, hot), "...and nothing was drawn on the left"
+
+
+def test_the_lamp_costs_one_baked_layer_per_temperature() -> None:
+    """The strip is baked and cached, so the lamp has to be part of the cache key.
+
+    Left out of it, the first frame after the box warmed up would keep the layer that was baked
+    while it was cool and the lamp would never appear at all.
+    """
+    ov = overlay.Overlay(800, 480)
+    for heat in ("", "hot", "throttled", "hot", ""):
+        ov.render(heat=heat, **AWAKE)
+    keys = {key[2] for key in ov._bases}
+    assert keys == {"", "hot", "throttled"}
+
+
+# ---------------------------------------------------------------- a camera that stops
+
+
+class _Stalling:
+    """One frame, and then the way a USB camera fails: slowly.
+
+    The detail this whole test rests on is that a stalled V4L2 read does not return an error
+    promptly. It sits in ``select()`` for the driver's timeout - ten seconds on the Pi, which is
+    what ``cap_v4l.cpp: select() timeout`` in the kiosk log is - and only then says no.
+    """
+
+    def __init__(self, block_s: float) -> None:
+        self.block_s = block_s
+        self.reads = 0
+
+    def read(self) -> tuple[bool, np.ndarray | None]:
+        self.reads += 1
+        if self.reads == 1:
+            return True, np.zeros((48, 64, 3), dtype=np.uint8)
+        time.sleep(self.block_s)
+        return False, None
+
+    def release(self) -> None:
+        pass
+
+
+class _Hiccup:
+    """A device that is still there and drops a run of frames, failing at once each time."""
+
+    def __init__(self, stop: threading.Event, bad: int) -> None:
+        self._stop = stop
+        self._bad = bad
+        self.reads = 0
+
+    def read(self) -> tuple[bool, np.ndarray | None]:
+        self.reads += 1
+        if self.reads <= self._bad:
+            return False, None
+        self._stop.set()  # recovered - end the loop so the test finishes
+        return True, np.zeros((48, 64, 3), dtype=np.uint8)
+
+    def release(self) -> None:
+        pass
+
+
+def test_one_blocked_read_is_enough_to_stop_believing_the_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """This used to be thirty failed reads, which is five minutes at ten seconds each.
+
+    Five minutes is not a recovery, it is an outage: the preview holds one frame the whole time
+    and the shutter refuses every tap. One read that spent longer than the panel's own staleness
+    limit getting nowhere is all the evidence there is to be had.
+    """
+    monkeypatch.setattr(camera, "STALE_AFTER_S", 0.2)
+    cap = _Stalling(block_s=0.35)
+    source = camera.CameraSource()
+
+    source._read_loop(cap, source._generation)
+
+    assert cap.reads == 2, "a good frame and one stalled read should have settled it"
+    assert "stopped delivering" in source.error
+
+
+def test_the_clock_starts_when_the_read_did_not_when_it_gave_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ten seconds a stalled read spends waiting are ten seconds with no frame.
+
+    Timing the grace from when the read *returned* would throw those away and cost a second
+    full timeout to notice the first - which on the Pi is another ten seconds of frozen panel.
+    """
+    monkeypatch.setattr(camera, "STALE_AFTER_S", 0.2)
+    cap = _Stalling(block_s=0.35)
+    source = camera.CameraSource()
+
+    started = time.monotonic()
+    source._read_loop(cap, source._generation)
+
+    assert time.monotonic() - started < 1.0, "it waited out a second timeout to be sure"
+
+
+def test_a_run_of_dropped_frames_is_not_an_unplugged_camera() -> None:
+    """Failing fast is the device saying "not that one", not the device going away.
+
+    The grace is a duration exactly so these two are told apart: twenty instant failures cost a
+    fraction of a second and must not throw away a camera that is about to hand over a frame.
+    """
+    source = camera.CameraSource()
+    cap = _Hiccup(source._stop, bad=20)
+
+    source._read_loop(cap, source._generation)
+
+    assert source.error == "", "a hiccup cost us the device"
+    assert source.latest() is not None, "and the frame that arrived after it was dropped"

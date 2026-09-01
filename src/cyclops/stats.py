@@ -23,6 +23,7 @@ UPTIME = Path("/proc/uptime")
 # Those are the board's own numbers, not taste, so they are what the tile colours off.
 WARN_C = 70.0
 HOT_C = 80.0
+THROTTLE_C = 85.0  # where the board stops being polite about it
 
 
 @dataclass(frozen=True)
@@ -80,6 +81,26 @@ def temp_band(temp_c: float | None) -> str:
     if temp_c >= WARN_C:
         return "warn"
     return "ok"
+
+
+def heat_alarm(temp_c: float | None) -> str:
+    """What the panel's heat lamp should show: ``""``, ``"hot"`` or ``"throttled"``.
+
+    A second reading of the same number as :func:`temp_band`, and deliberately a stricter one.
+    The admin page's tile is a gauge someone chose to go and look at, so it can afford to go
+    amber at WARN_C - a temperature a Pi 5 reaches doing ordinary work. A lamp on the panel is
+    a different promise: it interrupts you whether or not you asked, so it is only worth
+    lighting once the board is actually taking something away. That is HOT_C, where the clock
+    starts being capped, and THROTTLE_C, where it is capped in earnest and the camera and the
+    audio devices start missing their deadlines.
+    """
+    if temp_c is None:
+        return ""
+    if temp_c >= THROTTLE_C:
+        return "throttled"
+    if temp_c >= HOT_C:
+        return "hot"
+    return ""
 
 
 def memory() -> tuple[int, int] | None:

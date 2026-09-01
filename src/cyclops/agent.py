@@ -36,6 +36,21 @@ if TYPE_CHECKING:  # the projects package pulls in pydantic_ai; the tools import
     from .projects.store import Project
 
 BARGE_IN_CONFIRM_S = 1.5  # server must report speech within this long of a local barge-in
+# How often the websocket has to prove the link is still there, and how long a ping may go
+# unanswered before the socket is declared dead. A realtime connection can black-hole: the TCP
+# session stays open, we go on writing audio into it, and nothing whatsoever comes back. With no
+# ping there is nothing to notice it - `async for event in conn` simply waits, forever, while the
+# panel goes on saying "listening — talk to me". That is not hypothetical: on 2026-08-31 a session
+# took forty seconds of speech into a dead socket and answered none of it. Fifteen seconds each
+# way puts a fault on the panel inside half a minute, which is about as long as anyone will keep
+# talking to a box that has stopped answering.
+KEEPALIVE_S = 15.0
+# ...and no silent reconnect underneath us. The SDK will transparently redial a dropped socket,
+# but a redial is a *new* realtime session: it arrives with none of our session.update config -
+# no voice, no tools, no transcription - and none of the conversation. A Cyclops that quietly
+# comes back as a different, emptier Cyclops while the panel stays green is a worse lie than the
+# one being fixed here. Let it surface instead; the panel has a red state and a line to say why.
+RECONNECT_ATTEMPTS = 0
 TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
@@ -735,7 +750,14 @@ class VoiceAgent:
             # looking like a network that never came up.
             self._start_doing("connecting to OpenAI…")
             client = AsyncOpenAI(api_key=self.settings.api_key)
-            async with client.realtime.connect(model=self.settings.model) as conn:
+            async with client.realtime.connect(
+                model=self.settings.model,
+                websocket_connection_options={
+                    "ping_interval": KEEPALIVE_S,
+                    "ping_timeout": KEEPALIVE_S,
+                },
+                max_retries=RECONNECT_ATTEMPTS,
+            ) as conn:
                 self._conn = conn
                 await conn.session.update(session=self.session_config())
                 self._start_doing("waiting for the model…")
