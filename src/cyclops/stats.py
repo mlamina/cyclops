@@ -24,6 +24,12 @@ UPTIME = Path("/proc/uptime")
 WARN_C = 70.0
 HOT_C = 80.0
 THROTTLE_C = 85.0  # where the board stops being polite about it
+# How far back down the board has to come before the panel's lamp lets a step go. A Pi being
+# throttled does not cross its limit briskly and carry on past it - it is *held* there, and the
+# reading wanders a degree either side of the line while it is (84.2 to 85.3, measured on this
+# one). Without this the lamp changes colour every time it is read, which looks like a fault in
+# the lamp rather than a fact about the board.
+HYSTERESIS_C = 1.5
 
 
 @dataclass(frozen=True)
@@ -83,7 +89,7 @@ def temp_band(temp_c: float | None) -> str:
     return "ok"
 
 
-def heat_alarm(temp_c: float | None) -> str:
+def heat_alarm(temp_c: float | None, was: str = "") -> str:
     """What the panel's heat lamp should show: ``""``, ``"hot"`` or ``"throttled"``.
 
     A second reading of the same number as :func:`temp_band`, and deliberately a stricter one.
@@ -93,12 +99,19 @@ def heat_alarm(temp_c: float | None) -> str:
     lighting once the board is actually taking something away. That is HOT_C, where the clock
     starts being capped, and THROTTLE_C, where it is capped in earnest and the camera and the
     audio devices start missing their deadlines.
+
+    ``was`` is what the lamp is showing now, and it is what makes the answer stable: a step only
+    releases once the board is HYSTERESIS_C below the line it went up on. Pass it and the lamp
+    holds; leave it out and this is a plain comparison, which is right for a one-off reading and
+    wrong for anything watching. See :data:`HYSTERESIS_C`.
     """
     if temp_c is None:
         return ""
-    if temp_c >= THROTTLE_C:
+    hot = HOT_C - HYSTERESIS_C if was in ("hot", "throttled") else HOT_C
+    throttled = THROTTLE_C - HYSTERESIS_C if was == "throttled" else THROTTLE_C
+    if temp_c >= throttled:
         return "throttled"
-    if temp_c >= HOT_C:
+    if temp_c >= hot:
         return "hot"
     return ""
 

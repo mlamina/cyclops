@@ -899,7 +899,7 @@ class Kiosk:
             # seconds into it.
             if started - self._heat_at >= TEMP_POLL_S:
                 self._heat_at = started
-                self._heat = stats.heat_alarm(stats.cpu_temp_c())
+                self._heat = stats.heat_alarm(stats.cpu_temp_c(), self._heat)
 
             frame = None  # nothing to draw: the camera is off, absent, or still coming back
             stalled = False  # ...or open, enumerated, and no longer delivering anything

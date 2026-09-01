@@ -49,6 +49,34 @@ def test_the_lamp_lights_where_the_board_starts_taking_something_away(
     assert stats.heat_alarm(temp_c) == want
 
 
+def test_the_lamp_holds_its_step_while_the_board_sits_on_the_line() -> None:
+    """A throttled Pi is held at its limit, not carried past it, and the reading wanders.
+
+    Measured on this one while it was being throttled: 84.2, 85.3, 84.8, 84.8, 84.2, 85.3 - six
+    readings, straddling THROTTLE_C, ten seconds apart. Compared plainly that is a lamp changing
+    colour every time the kiosk looks at it, which reads as a broken lamp rather than as a hot
+    board. It goes up on the line and comes down HYSTERESIS_C under it.
+    """
+    wandering = [84.2, 85.3, 84.8, 84.8, 84.8, 84.2, 84.8, 84.2, 84.8, 85.3, 85.3, 84.8]
+    shown, alarm = [], ""
+    for reading in wandering:
+        alarm = stats.heat_alarm(reading, alarm)
+        shown.append(alarm)
+    changes = [b for a, b in zip(shown, shown[1:], strict=False) if a != b]
+    assert changes == ["throttled"], f"the lamp did not settle: {shown}"
+    assert shown[-1] == "throttled", "and it must still be on at the end of the wander"
+
+
+def test_the_lamp_does_come_back_down_when_the_board_really_cools() -> None:
+    """Sticky is not stuck. A fan, or an idle hour, has to be able to put it out."""
+    alarm = stats.heat_alarm(86.0)
+    assert alarm == "throttled"
+    alarm = stats.heat_alarm(stats.THROTTLE_C - stats.HYSTERESIS_C - 0.1, alarm)
+    assert alarm == "hot", "it should step down one rung, not go dark"
+    alarm = stats.heat_alarm(stats.HOT_C - stats.HYSTERESIS_C - 0.1, alarm)
+    assert alarm == "", "and out once the board is properly cool again"
+
+
 def test_the_panel_is_stricter_than_the_page() -> None:
     """A gauge someone went to look at may cry wolf; a lamp that interrupts them may not.
 
