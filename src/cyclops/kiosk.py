@@ -31,7 +31,7 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import barge, diagram, filming, mixer, session, sfx, stats, webcam  # noqa: E402
+from . import barge, diagram, filming, mixer, power, session, sfx, stats, webcam  # noqa: E402
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .camera import STALE_AFTER_S, CameraSource  # noqa: E402
@@ -44,7 +44,9 @@ from .config import (  # noqa: E402
     load_settings,
 )
 from .overlay import (  # noqa: E402
+    CANCEL,
     IDLE,
+    POWER_OFF,
     STARTING,
     STOPPING,
     Overlay,
@@ -111,6 +113,17 @@ TEMP_POLL_S = 5.0  # how often the heat lamp re-reads sysfs; a board warms up ov
 NOTICE_S = 4.0  # how long one of the kiosk's own lines holds the caption
 FLASH_SECONDS = 0.45
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
+# How long his face has to be held to open the power menu. Long enough that no tap can arrive
+# there by accident - this is the one control on the panel that ends the session you are in the
+# middle of - and short enough that a finger held on a button that is not answering gets there
+# before anybody concludes it is broken. Phones use half a second; this asks for a little more
+# because there is no way back from one of the two things it offers.
+LONG_PRESS_S = 0.7
+MENU_TIMEOUT_S = 20.0  # a menu nobody chose from gives the panel back rather than holding it
+# What the panel says while it finishes the session and goes. Not a caption: this is the last
+# thing the screen does, and everything else on it has stopped being true.
+POWER_SAYS = {power.POWEROFF: "Shutting down…", power.REBOOT: "Restarting…"}
+
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
 SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
 SHUTDOWN_JOIN_S = 20.0  # on exit, a stopping session may still be muxing and naming itself
@@ -267,6 +280,17 @@ class Kiosk:
         self._flash_until = 0.0
         self._press_until = 0.0
         self._pressed: str | None = None  # which button is still showing its tap
+        # His face is the one control that carries two things - a tap for what the box has kept,
+        # a hold for the power menu - so it is the one that has to wait for your finger to come
+        # off before it knows which you meant. None when nothing is being held down.
+        self._eye_down_at: float | None = None
+        self._menu = False  # the power menu has the panel; nothing behind it is live
+        self._menu_until = 0.0
+        # What was chosen, honoured after the whole teardown below has run: the session's video
+        # is still being muxed while the panel says goodbye, and systemd starts killing units the
+        # moment the command underneath this returns. See main().
+        self.power: str | None = None
+        self._power_at = 0.0  # ...but not before the row you pressed has been seen to invert
         self._pending: str | None = None  # "start"/"stop" until the session catches up
         self._pending_at = 0.0
         self._snap_busy = threading.Event()  # one shutter at a time; see _snap
@@ -381,16 +405,35 @@ class Kiosk:
     # ---- input ----
 
     def _on_mouse(self, event: int, x: int, y: int, flags: int, _param: object) -> None:
-        """Touchscreen taps arrive here as ordinary mouse events via XWayland."""
+        """Touchscreen taps arrive here as ordinary mouse events via XWayland.
+
+        Two of the three tabs act on the press, which is what a screen with no travel should do:
+        the flash and the shutter belong to the moment your finger lands. His face is the one
+        exception, because it now carries two things - a tap for what the box has kept, a hold
+        for the power menu - and the release is the only event that can tell them apart. That is
+        the bargain every phone makes, and it costs the eye nothing anybody can feel: what the
+        tap does is uncover a browser that has been warm since boot.
+        """
         if self.overlay is None:
+            return
+        if event == cv2.EVENT_LBUTTONUP:
+            self._lifted(x, y)
             return
         if event != cv2.EVENT_LBUTTONDOWN:
             return
         self._touched_at = time.monotonic()
+        # Whatever was being held, this is not it any more. A press whose release never arrived
+        # would otherwise sit there and turn the next tap into a hold that was already half done.
+        self._eye_down_at = None
         if self._asleep:
             # The tap that wakes the panel is spent waking it. With the preview dark you cannot
             # see what you are aiming at, so it must not also fire whatever sits underneath.
             self._wake()
+            return
+        if self._menu:
+            # Modal, and it has to be: two of its three rows end the box. Nothing behind the
+            # card can be reached while it is up, and anywhere off the card is a way out.
+            self._choose(self.overlay.menu_hit(x, y))
             return
         boxes = self.overlay.hitboxes
         if boxes.shutter.contains(x, y):
@@ -399,25 +442,99 @@ class Kiosk:
         elif boxes.eye.contains(x, y):
             # His face, and what it opens: everything the box has kept. The eye moved into the
             # middle of the row and took the gear's job with it, which is the right way round -
-            # you tap him to ask what he remembers.
+            # you tap him to ask what he remembers. Held rather than tapped, it opens the power
+            # menu instead; both are decided in _lifted and _holding.
             self._press("eye")
-            self._open_admin()
+            self._eye_down_at = self._touched_at
         elif boxes.wake.contains(x, y):
             self._press("wake")
             self._toggle_session()
+
+    def _lifted(self, x: int, y: int) -> None:
+        """A finger coming off the glass. Only his face has anything left to do here."""
+        down_at, self._eye_down_at = self._eye_down_at, None
+        if down_at is None or self.overlay is None:
+            return  # nothing was being held, or the hold already landed and opened the menu
+        # Lifted somewhere else: the tap was taken back, which is what sliding off a button has
+        # meant since the first one.
+        if self.overlay.hitboxes.eye.contains(x, y):
+            self._open_admin()
+
+    def _holding(self) -> float:
+        """How far a press on his face has got towards the power menu, 0 to 1.
+
+        0 whenever nothing is being held, which is what the panel draws no collar for.
+        """
+        down_at = self._eye_down_at
+        if down_at is None:
+            return 0.0
+        return min(1.0, (time.monotonic() - down_at) / LONG_PRESS_S)
+
+    # ---- the power menu ----
+
+    def _open_menu(self) -> None:
+        """The hold has landed: put the menu up."""
+        self._eye_down_at = None
+        self._pressed = None  # he stops being held: the menu itself is the acknowledgement
+        self._menu = True
+        self._menu_until = time.monotonic() + MENU_TIMEOUT_S
+        # A sound, because the menu opens under the very finger that is covering the eye: the
+        # panel's answer to the hold is the one piece of feedback a hand can be in the way of.
+        self._cues.play("menu")
+        print("· power menu", flush=True)
+
+    def _close_menu(self) -> None:
+        self._menu = False
+        self._touched_at = time.monotonic()  # putting it away is a touch like any other
+
+    def _choose(self, key: str | None) -> None:
+        """Act on a tap while the menu is up. Its rows act on the press, as every tab does.
+
+        Pointedly *not* on the release: the menu opens under a finger that is still down on his
+        face, and a row that acted on a lift would be chosen by the very press that asked for the
+        menu - most likely SHUT DOWN, which is the row his face is behind.
+        """
+        if key is None or self.power is not None:
+            return  # a tap on the card but on no row, or a choice already made and under way
+        self._menu_until = time.monotonic() + MENU_TIMEOUT_S
+        if key == CANCEL:
+            self._close_menu()
+            return
+        self._press(key)
+        self.power = power.POWEROFF if key == POWER_OFF else power.REBOOT
+        self._power_at = time.monotonic() + PRESS_SECONDS  # let the row be seen to invert
+        print(f"· {self.power} asked for from the panel", flush=True)
+
+    def _farewell(self) -> None:
+        """Say what is happening and stop drawing. The rest is main()'s teardown, then the box.
+
+        The message stays on the panel for the whole of that teardown - a session being muxed
+        and named can take a good few seconds - so what a box being shut down looks like is a
+        screen saying so, rather than a picture that froze.
+        """
+        width, height = self._size if all(self._size) else NO_CAMERA_SIZE
+        self._menu = False
+        self._paint(message(width, height, POWER_SAYS[self.power]), width, height)
+        cv2.waitKey(1)  # highgui only puts a frame up from inside one of these
+        self.running = False
 
     def _press(self, button: str) -> None:
         self._pressed = button
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
-        """Which tab to draw as held. The eye's cell stays lit while its page is up.
+        """Which control to draw as held - a tab, or a row of the power menu.
 
-        Uncovering a warm browser is immediate, so this is normally seen for a frame or two.
-        It still earns its place on the one tap that has to start a browser: without it the
-        tab goes dark 180 ms in and a panel that is busy looks like a panel that ignored you.
+        His cell stays lit while its page is up, and for as long as a finger is on him: a hold
+        that is going somewhere should look held for all of the second it takes, not for the
+        180 ms a tap gets.
+
+        Uncovering a warm browser is immediate, so the page half of this is normally seen for a
+        frame or two. It still earns its place on the one tap that has to start a browser:
+        without it the tab goes dark 180 ms in and a panel that is busy looks like a panel that
+        ignored you.
         """
-        if self._admin_busy.is_set():
+        if self._admin_busy.is_set() or self._eye_down_at is not None:
             return "eye"
         return self._pressed if time.monotonic() < self._press_until else None
 
@@ -807,8 +924,9 @@ class Kiosk:
 
         A live session counts as company even when nobody is touching the glass - the halo and
         the timer are a conversation's only feedback, and blanking them mid-sentence would read
-        as a crash - and so does an open admin page, which is covering the panel itself. Only an
-        idle kiosk goes dark, and only a tap brings it back (see :meth:`_on_mouse`).
+        as a crash - and so does an open admin page, which is covering the panel itself, and so
+        does the power menu, which is a question waiting for an answer. Only an idle kiosk goes
+        dark, and only a tap brings it back (see :meth:`_on_mouse`).
 
         ``CYCLOPS_SLEEP_AFTER_S=0`` turns the blanking off altogether and the panel simply stays
         lit. Watching the camera come and go is the obvious case: the thing you are trying to
@@ -816,7 +934,7 @@ class Kiosk:
         """
         now = time.monotonic()
         after = self.controller.settings.sleep_after_s
-        if session_up(state) or self._page_busy.is_set():
+        if session_up(state) or self._page_busy.is_set() or self._menu:
             self._touched_at = now
         elif after and not self._asleep and now - self._touched_at > after:
             self._sleep()
@@ -889,6 +1007,15 @@ class Kiosk:
                 time.sleep(1.0 / ADMIN_FPS)  # nothing we draw now can be seen by anyone
                 continue
 
+            # The one gesture on this panel that is not a tap, resolved here rather than in the
+            # callback: a finger held still sends no events at all, so the moment a hold becomes
+            # a hold can only be noticed by a clock that is already running.
+            hold = self._holding()
+            if hold >= 1.0:
+                self._open_menu()
+            if self._menu and started > self._menu_until:
+                self._close_menu()  # nobody chose; the panel is not the menu's to keep
+
             status = self.controller.status()
             state = self._effective(str(status["state"]))
             asleep = self._sleeping(state)
@@ -960,8 +1087,17 @@ class Kiosk:
                     # so the animation cannot drift between elements or with the frame rate.
                     phase=started,
                     heat=self._heat,
+                    hold=hold,
+                    menu=self._menu,
                 )
                 self._paint(composite(canvas, chrome), width, height)
+
+            # Last of all, so the row that was pressed has had its frame on the glass: the panel
+            # says what it is doing and the loop ends. Everything after this is main()'s
+            # teardown, which finishes the session before the box is taken down.
+            if self.power is not None and time.monotonic() >= self._power_at:
+                self._farewell()
+                break
 
             spent = time.monotonic() - started
             # A tap that has to start a browser is compositing frames against a cold start it
@@ -1042,6 +1178,7 @@ def main() -> None:
         "  the tab row along the bottom: SNAP shows Cyclops a photo · tap his eye in the\n"
         "  middle for the recordings and pictures, and for the volume · WAKE UP wakes him,\n"
         "  and says GO TO SLEEP while he is up\n"
+        f"  hold his eye for {LONG_PRESS_S:g}s to shut the box down or restart it\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,
@@ -1061,6 +1198,15 @@ def main() -> None:
         camera.stop()
         cv2.destroyAllWindows()
         cv2.waitKey(1)  # let highgui actually tear the window down
+
+    # Last of everything, and only if the panel asked for it: the session is on the card by now,
+    # the video is muxed and the camera is back. systemd starts killing units the moment this
+    # returns, which is exactly why it is here and not in the tap that chose it.
+    if kiosk.power is not None:
+        print(f"· {kiosk.power}", flush=True)
+        if not power.take_down(kiosk.power):
+            print(f"· {kiosk.power} was refused; the box is still up", file=sys.stderr,
+                  flush=True)
 
 
 if __name__ == "__main__":

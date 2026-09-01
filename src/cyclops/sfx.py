@@ -118,6 +118,15 @@ CUES: dict[str, Callable[[int], np.ndarray]] = {
     # has gone quiet. Distinct in register from both the falling pair and the ticks above it,
     # because its whole job is to be recognised as the end rather than as more of the middle.
     "ended": lambda rate: join(tone(247, 300, rate=rate, amp=PEAK * 0.7, fade_ms=90)),
+    # The long press landing on his face, and the only cue here that answers a finger rather
+    # than the session. It has to exist because of where the gesture happens: the power menu
+    # opens under the very hand that is holding the eye down, so the panel is behind a palm at
+    # the exact moment it has something to say. Two short steps up and quieter than the shutter -
+    # a latch lifting, not an alarm, because what it opens can still be walked away from.
+    "menu": lambda rate: join(
+        tone(587, 45, rate=rate, amp=PEAK * 0.7),
+        tone(880, 70, rate=rate, amp=PEAK * 0.7),
+    ),
     # Click-clack, the second knock softer, the way a mechanical shutter actually sounds. It
     # is the flash the kiosk paints at the same moment (cyclops.kiosk._snap), said out loud.
     "shutter": lambda rate: join(

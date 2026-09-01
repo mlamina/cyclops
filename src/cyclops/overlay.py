@@ -308,6 +308,34 @@ TABS = ("shutter", "eye", "wake")  # left to right
 TAB_LABELS = {"shutter": "SNAP", "eye": ""}
 WAKE_LABEL, SLEEP_LABEL = "WAKE UP", "GO TO SLEEP"
 
+# ---- the power menu ----
+#
+# What a long press on his face opens: the two things a box with no keyboard and one button
+# cannot otherwise be asked for. It is the shape of every power menu anybody has ever held a
+# phone's side button down for - press and hold, choose, or tap away from it to think again -
+# because nobody should have to be taught this one, and because the gesture is deliberate enough
+# that it cannot be arrived at by a thumb landing on the wrong third of the panel.
+#
+# Why it is a menu drawn here rather than a screen on the admin page: the page is a browser that
+# has to be uncovered, and the one moment you most want to shut a box down is the moment it is
+# behaving badly enough that you would rather not ask Chromium for anything first.
+POWER_OFF, RESTART, CANCEL = "poweroff", "restart", "cancel"
+MENU_ROWS = ((POWER_OFF, "SHUT DOWN"), (RESTART, "RESTART"), (CANCEL, "CANCEL"))
+MENU_TITLE = "POWER"
+# The one line that keeps this apart from the tab a finger's width underneath it. GO TO SLEEP
+# ends the *session*; these two end the *box*, and in English those are near enough the same
+# sentence that the menu says which it means rather than trusting the words to.
+MENU_NOTE = "the whole box, not the session"
+
+MENU_W = 0.80  # of the panel height, like every other fraction here
+MENU_ROW_H = 0.13  # 62 px at 480 - a target for a thumb that is not being looked at
+MENU_HEAD_H = 0.09  # the title line above the rows
+MENU_PAD = 0.021
+MENU_SCRIM = 168  # how far the panel behind the card is put out. Not all the way: the picture
+# and the border keep saying what the box is doing underneath a question about turning it off.
+MENU_GLYPH_R = 0.030  # the power and restart marks, which are the half of a row that is read
+# from further away than its word
+
 
 def tab_label(name: str, state: str) -> str:
     """What a tab is called right now. Only the last one changes, because only it is a toggle."""
@@ -480,6 +508,10 @@ class Overlay:
         self.eye_r = max(10, round(EYE_R * height))
         self.eye = (self.frame.x + width // 2, self.footer.y)
         self.shoulder = self.eye_r + max(2, round(EYE_SHOULDER * height))
+        # How far the thin companion rule sits off its partner, everywhere on this panel. An
+        # attribute rather than a local because the long-press arc fills the outer shoulder in,
+        # and a fill that is drawn a couple of pixels off the line it is filling is a smudge.
+        self.rule_gap = max(2, round(4 * scale))
         # The status line's fixed edges. It hangs off the right and grows leftwards, so only its
         # right edge and its rows are layout; its left edge is however long the sentence is. Up
         # here rather than inside the drawing because it is geometry, and because everything that
@@ -539,6 +571,8 @@ class Overlay:
         self._gap = max(4, round(18 * scale))
         self._seg = (max(3, round(9 * scale)), max(6, round(18 * scale)), max(2, round(5 * scale)))
         self.hitboxes = self._layout()
+        self.menu_card, self.menu_cells = self._menu_layout()
+        self._scrim: Image.Image | None = None  # built on the first long press, then kept
 
     # ---- layout ----
 
@@ -572,6 +606,48 @@ class Overlay:
             wake=self._cells["wake"],
         )
 
+    def _menu_layout(self) -> tuple[Rect, dict[str, Rect]]:
+        """The power menu's card and its rows, sized off the panel like everything else here.
+
+        It is centred in the band between the readout strip and *the top of his head*, not in the
+        panel: he is what you pressed to get here, and a card that covered his face would leave
+        the gesture and its answer with nothing to do with each other. On the 7" panel that puts
+        it a comfortable 16 px clear of him.
+
+        Laid out once, in the constructor, because a hit test has to agree with a drawing and the
+        cheapest way to make sure of that is for there to be only one of them.
+        """
+        width = max(160, round(MENU_W * self.height))
+        row_h = max(22, round(MENU_ROW_H * self.height))
+        head_h = max(14, round(MENU_HEAD_H * self.height))
+        pad = max(3, round(MENU_PAD * self.height))
+        height = head_h + row_h * len(MENU_ROWS) + pad * 2
+        top, bottom = self.header.bottom, self.eye[1] - self.eye_r
+        # max() rather than a plain centring: on a window too short for the band to hold it, the
+        # card starts under the strip and takes the room it needs, which puts it over his head
+        # rather than off the bottom of the screen.
+        y = top + max(0, (bottom - top - height) // 2)
+        card = Rect(self.frame.x + (self.width - width) // 2, y, width, height)
+        cells = {}
+        row_y = card.y + pad + head_h
+        for key, _ in MENU_ROWS:
+            cells[key] = Rect(card.x + pad, row_y, card.w - pad * 2, row_h)
+            row_y += row_h
+        return card, cells
+
+    def menu_hit(self, px: int, py: int) -> str | None:
+        """Which row of the power menu a tap landed on, if the menu is up.
+
+        Anywhere off the card is :data:`CANCEL`, which is what tapping outside a dialog has meant
+        on every machine since the mouse. Anywhere on it that is not a row - the title line, the
+        few pixels between the border and the first row - is nothing at all: a card you can
+        dismiss by missing the thing you were aiming at is a card that answers for you.
+        """
+        for key, cell in self.menu_cells.items():
+            if cell.contains(px, py):
+                return key
+        return None if self.menu_card.contains(px, py) else CANCEL
+
     # ---- the cached backdrop ----
 
     def _build_plate(self) -> Image.Image:
@@ -603,7 +679,7 @@ class Overlay:
         layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
         d = ImageDraw.Draw(layer)
         f, pad, w = self.frame, self.pad, self.line
-        gap = max(2, round(4 * self.scale))
+        gap = self.rule_gap
         # A rule with a thinner companion a few pixels off it, top and bottom - the doubled
         # divider is most of what makes a green terminal read as a terminal rather than a form.
         # Along the top it crosses the whole panel; along the bottom it lifts into the eye, which
@@ -824,6 +900,8 @@ class Overlay:
         detail: str = "",
         phase: float = 0.0,
         heat: str = "",
+        hold: float = 0.0,
+        menu: bool = False,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -836,6 +914,11 @@ class Overlay:
         eye is shut, the border holds still, the caption stops breathing, and two frames of an
         idle panel are byte-identical. Against a panel that was quietly pulsing whatever it was
         doing, an awake one that pulses says nothing.
+
+        ``hold`` is how far a finger is through the long press on his face, 0 to 1, and ``menu``
+        is whether that press has landed - the power menu, over everything else. The two are the
+        one gesture on this panel that is not a tap, so they are the one thing here drawn from a
+        clock the kiosk is holding rather than from the state.
         """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording, heat).copy()
@@ -872,6 +955,8 @@ class Overlay:
             # where you have just tapped a shut eye and it has opened to look at you.
             mood = replace(mood, tint=GREEN, rings=1.0, aperture=1.0, swell=0.0, voice=0.0)
         self.engine.paint(layer, *self.eye, mood, phase, level)
+        if hold > 0.0:
+            self._draw_hold(layer, hold)
         if session_up(state):
             # The teardown breathes too. He is not listening any more - the eye is already shut -
             # but the box is still working, and a panel that went stone still the moment you
@@ -879,6 +964,10 @@ class Overlay:
             self._draw_rim(d, halo, phase)
         elif state == IDLE and pressed != "wake":
             self._draw_invite(d, phase)
+        if menu:
+            # Last of everything, because it is the only thing here that is asked a question
+            # rather than told one: nothing behind it is live while it is up.
+            self._draw_menu(layer, d, pressed)
         if flash > 0.0:
             # Green-white rather than white: a photo taken through a phosphor screen.
             d.rectangle([0, 0, self.width, self.height], fill=(214, 255, 228, int(190 * flash)))
@@ -1249,6 +1338,180 @@ class Overlay:
         # The foot is what stops it reading as a pill hung on a hook.
         foot, base = round(r * 0.38), cy + round(r * 0.88)
         d.line([cx - foot, base, cx + foot, base], fill=(*c, 255), width=stroke)
+
+    # ---- the long press, and what it opens ----
+
+    def _draw_hold(self, layer: Image.Image, hold: float) -> None:
+        """Fill his collar in, left to right, as a finger holds his face down.
+
+        The one gesture on this panel that is not a tap, so it is the one thing that has to say
+        so while it is happening: without this, a long press is a second of a panel doing nothing
+        followed by a menu, which reads as a fault that resolved itself.
+
+        It is drawn *on the shoulder rule that is already there* rather than beside it - the same
+        radius, in ink instead of chrome - so nothing new appears on the screen while you hold
+        him. A line you already stopped seeing lights up from one end, and when it reaches the
+        far side the menu is open. That also keeps it out of the picture: this panel has no room
+        for a progress bar, and a ring drawn further out would cross the two rules running away
+        to either edge.
+        """
+        radius = self.shoulder + self.rule_gap
+        cx, cy = self.eye
+        sin = (self.footer.y - self.rule_gap - cy) / radius
+        if abs(sin) >= 1.0:  # a window too short for him to stand proud of the row at all
+            return
+        a = math.degrees(math.asin(sin))
+        start, sweep = 180 - a, (180 + 2 * a) * max(0.0, min(1.0, hold))
+        # Heavier than the rule it lands on. Ink over chrome: the same line, filled in, and at
+        # the panel's own stroke it was a brightness change on two pixels - which from a bench is
+        # no change at all.
+        stroke = max(2, round(self.line * 1.6))
+        span = round(radius) + stroke
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            middle, reach = at(span), at(radius)
+            t.arc(
+                [middle - reach, middle - reach, middle + reach, middle + reach],
+                start=start, end=start + sweep, fill=linear(GREEN), width=round(wide(stroke)),
+            )
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
+
+    def _draw_menu(self, layer: Image.Image, d: ImageDraw.ImageDraw, pressed: str | None) -> None:
+        """The power menu: a scrim over the whole panel, and a card of rows on top of it.
+
+        The scrim is composited rather than drawn, which is the difference between putting the
+        panel out and punching a hole in it - see :func:`_mix`. Everything on the card is opaque
+        for the same reason: this is the one thing on this screen you are asked to read before
+        you touch it, and it does not get to be a window onto the room.
+        """
+        layer.alpha_composite(self._scrimmed())
+        card = self.menu_card
+        d.rounded_rectangle(
+            [card.x, card.y, card.right - 1, card.bottom - 1],
+            radius=self.radius,
+            fill=(*SCREEN, 255),
+            outline=(*GREEN_MID, 255),
+            width=self.line,
+        )
+        pad = max(3, round(MENU_PAD * self.height))
+        inset = card.x + pad * 2
+        first = self.menu_cells[MENU_ROWS[0][0]]
+        head = (card.y + pad + first.y) / 2
+        self._text(
+            d, inset, head, MENU_TITLE, self.font_tab, (*GREEN_DIM, 255),
+            tracking=max(1.0, 2.4 * self.scale),
+        )
+        # The note is the half of this header that is actually load-bearing; the title only says
+        # which menu you are in, and the note says which of the two sleeps this one means.
+        self._text(d, card.right - pad * 2, head, MENU_NOTE, self.font_micro,
+                   (*GREEN_DIM, 255), align="r")
+        for key, label in MENU_ROWS:
+            self._draw_menu_row(layer, d, key, label, pressed == key)
+
+    def _draw_menu_row(
+        self,
+        layer: Image.Image,
+        d: ImageDraw.ImageDraw,
+        key: str,
+        label: str,
+        pressed: bool,
+    ) -> None:
+        """One row: a rule over it, a mark, a word, and the inversion that answers a thumb.
+
+        The two that do something wear a glyph and full phosphor; CANCEL is centred, dimmer and
+        under a rule of its own, because the way out of a menu is not one of its choices. Pressed
+        inverts exactly as a tab does - it is the only feedback a screen with no travel has, and
+        it should not have to be learnt twice on one panel.
+        """
+        cell = self.menu_cells[key]
+        d.line([cell.x, cell.y, cell.right, cell.y], fill=(*GREEN_DIM, 200),
+               width=max(1, self.line // 2))
+        edge = max(1, round(2 * self.scale))
+        if pressed:
+            d.rounded_rectangle(
+                [cell.x + edge, cell.y + edge, cell.right - edge, cell.bottom - edge],
+                radius=max(0, self.radius - edge),
+                fill=(*GREEN, 255),
+            )
+        ink = INK if pressed else GREEN_MID if key == CANCEL else GREEN
+        tracking = max(1.0, 2.0 * self.scale)
+        _, cy = cell.center
+        if key == CANCEL:
+            self._text(d, cell.center[0], cy, label, self.font_read, (*ink, 255),
+                       align="c", tracking=tracking)
+            return
+        r = max(6, round(MENU_GLYPH_R * self.height))
+        gap = max(6, round(14 * self.scale))
+        x = cell.x + gap
+        mark = self._glyph_power if key == POWER_OFF else self._glyph_restart
+        mark(layer, x + r, cy, r, ink)
+        self._text(d, x + 2 * r + gap, cy, label, self.font_read, (*ink, 255), tracking=tracking)
+
+    def _scrimmed(self) -> Image.Image:
+        """The wash that puts the panel out behind the card. Built once, then kept."""
+        if self._scrim is None:
+            self._scrim = Image.new("RGBA", (self.width, self.height), (*SCREEN, MENU_SCRIM))
+        return self._scrim
+
+    def _glyph_power(
+        self, layer: Image.Image, cx: int, cy: int, r: int, colour: tuple[int, int, int]
+    ) -> None:
+        """IEC 5009, the mark on every power button ever made: a broken ring, a bar in the gap.
+
+        Smoothed like the eye rather than stroked flat like the tab glyphs. Those are 32 px of
+        straight lines and one circle; this is a ring with a gap in the top of it, and a stepped
+        gap reads as a broken ring rather than as a deliberate one.
+        """
+        span = round(r * 1.15) + max(2, round(3 * self.scale))
+        stroke = max(2, round(3 * self.scale))
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            middle, reach = at(span), at(r)
+            t.arc(
+                [middle - reach, middle - reach, middle + reach, middle + reach],
+                start=-62, end=242, fill=linear(colour), width=round(wide(stroke)),
+            )
+            t.line(
+                [middle, at(span - r * 1.12), middle, at(span - r * 0.12)],
+                fill=linear(colour), width=round(wide(stroke)),
+            )
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
+
+    def _glyph_restart(
+        self, layer: Image.Image, cx: int, cy: int, r: int, colour: tuple[int, int, int]
+    ) -> None:
+        """A ring with a head on it, going round again - the refresh mark, which is what a
+        restart is: the same box, from the top."""
+        span = round(r * 1.15) + max(2, round(3 * self.scale))
+        stroke = max(2, round(3 * self.scale))
+        end = math.radians(232)  # where the arc stops, up and to the left, and where the head is
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            middle, reach = at(span), at(r)
+            t.arc(
+                [middle - reach, middle - reach, middle + reach, middle + reach],
+                start=-48, end=232, fill=linear(colour), width=round(wide(stroke)),
+            )
+            # The head sits on the end of the sweep and points along it. Its tangent, on a
+            # screen whose y runs downwards, is (-sin, cos) - which is the direction the arc was
+            # travelling when it stopped, and the reason this reads as motion rather than as a
+            # ring with a lump on it.
+            tip = (-math.sin(end), math.cos(end))
+            out = (math.cos(end), math.sin(end))
+            point = (r * out[0], r * out[1])
+            head = r * 0.85
+            corners = [
+                (point[0] + tip[0] * head, point[1] + tip[1] * head),
+                (point[0] + out[0] * head * 0.6, point[1] + out[1] * head * 0.6),
+                (point[0] - out[0] * head * 0.6, point[1] - out[1] * head * 0.6),
+            ]
+            t.polygon(
+                [(at(span + x), at(span + y)) for x, y in corners], fill=linear(colour)
+            )
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
 
 
 def composite(frame_bgr: np.ndarray, rgba: np.ndarray) -> np.ndarray:

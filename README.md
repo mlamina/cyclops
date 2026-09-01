@@ -588,8 +588,25 @@ the middle of them:
 | Tab | What it does |
 | --- | --- |
 | **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
-| **the eye** | Cyclops, in the middle of the row, centred on the bar's own top rule. No label — he is a face, and you tap a face to ask what it remembers: the [admin page](#admin-page) fullscreen on the panel, on the sessions list |
+| **the eye** | Cyclops, in the middle of the row, centred on the bar's own top rule. No label — he is a face, and you tap a face to ask what it remembers: the [admin page](#admin-page) fullscreen on the panel, on the sessions list. **Hold him** and you get the power menu instead — see below |
 | **WAKE UP** | wakes Cyclops and starts the conversation; it says **GO TO SLEEP** while he is up, and the tab stays lit |
+
+**Holding his eye shuts the box down.** Press and hold him for 0.7 s and a power menu comes up
+over the picture: **SHUT DOWN**, **RESTART**, **CANCEL**, with anywhere off the card being a
+cancel too. It is the gesture every phone's side button already has, and it is behind a hold for
+the same reason theirs is: it is the one control here you cannot take back. While you hold, the
+rule that arcs over his head fills in from the left — when it reaches the far side the menu is
+open, and the panel blips, because the menu appears under the very finger that is covering it.
+The card sits above his face rather than over it, and says *the whole box, not the session*,
+because **GO TO SLEEP** on the tab beside it means the other thing.
+
+Choosing does not cut the power there and then. The panel says `Shutting down…`, the kiosk tears
+itself down exactly as `q` would — the session is finished, the video muxed, the folder named and
+the camera released — and only then does `systemctl poweroff` (or `reboot`) run. So the box goes
+down the way it would have if you had shut it down over ssh, which is the whole point: an
+unplugged Pi loses the conversation it was in the middle of. It goes through `sudo -n systemctl`
+first and bare `systemctl` after it, so it works whether the kiosk was started by the desktop at
+boot or by `deploy/push.sh` over ssh.
 
 The border runs along the panel's own edge, carries the state in its colour and glows inwards
 from it — **green asleep, amber waking, white awake, red on a fault** — so the state reads from
