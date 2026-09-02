@@ -139,12 +139,18 @@ ADMIN_PROBE_S = 1.0  # how long the admin service gets to answer before we refus
 PREWARM_TRIES = 30  # the admin service is a systemd unit and may still be coming up at boot
 PREWARM_RETRY_S = 2.0  # gap between those tries - a minute of patience, then the slow path
 PAGE_WAIT_S = 30.0  # how long the browser gets to fetch the page; a cold start eats 9 s of it
-# When to take the panel back after the warm-up's window maps on top of ours. Twice, because
-# the stacking order cannot be read back: labwc raises whatever mapped last and no always-on-top
-# hint survives that (measured), so the first retake covers the usual case and the second, later
-# one covers a map slow enough to have landed after it - the failure it prevents is a panel left
-# showing the dashboard with nobody having asked for it.
-PANEL_RETAKE_S = (0.6, 2.4)
+# When to take the panel back after the warm-up's window maps on top of ours: gaps between
+# retakes, so the last one lands about 38 s after the page was served. The stacking order cannot
+# be read back - labwc raises whatever mapped last and no always-on-top hint survives that
+# (measured) - so this is a schedule rather than a check, and it has to outlast Chromium rather
+# than guess at it. Chromium does not map once: measured on a warm restart, its window appears
+# 0.5 s after the page is served and then raises itself *again* at 3.1 s, and at boot - cold
+# binary, contended box - that whole sequence stretches by an order of magnitude. The old
+# schedule was two shots, at 0.6 s and 3.0 s, and a boot whose second raise landed after 3.0 s
+# left the panel showing the dashboard until somebody sshed in: every tap from then on went to
+# a page nothing was watching, Close included. A retake nothing was covering costs one window
+# rebuild carrying the frame it is about to show, which is invisible; the failure is total.
+PANEL_RETAKE_S = (0.6, 1.2, 2.4, 4.8, 9.6, 19.2)
 # How long the page gets to lay a drawing out before we uncover it anyway. Generously over the
 # ~400 ms poll plus a JointJS layout, because the cost of being wrong is asymmetric: uncovering
 # early shows the dashboard for a moment, and never uncovering loses the diagram entirely.
@@ -319,6 +325,8 @@ class Kiosk:
         self._barge_margin = barge.margin_db(controller.settings)
         self._barge_at = 0.0
         self._browser: subprocess.Popen | None = None  # the admin browser, kept warm from boot
+        self._warm_at = time.time()  # when it was launched, so a note older than it means nothing
+        self._close_at = 0.0  # when we last looked for a Close from a page nobody here put up
         self._admin_busy = threading.Event()  # set from the tap until the page is done with
         # A second latch rather than reusing _admin_busy, which the tab row reads to decide
         # whether the eye is lit (see _pressed_now). A diagram is not that page, and a
@@ -660,6 +668,7 @@ class Kiosk:
         if proc is None:
             return False
         self._browser = proc
+        self._warm_at = launched_at
         if not _wait_for_page(proc, launched_at, PAGE_WAIT_S):
             if proc.poll() is not None:
                 print(
@@ -884,6 +893,27 @@ class Kiosk:
         """The level currently on the sink, as far as we know."""
         return self._volume
 
+    def _sync_stranded(self) -> None:
+        """Answer the page's Close button even when nothing here uncovered it.
+
+        The warm browser is meant to sit behind the panel, and :data:`PANEL_RETAKE_S` is a
+        schedule rather than a certainty. When a retake loses the race, the panel is covered by a
+        page no thread of ours is watching - :meth:`_watch_page` only runs for a page this kiosk
+        put up - so every tap goes to the dashboard and its Close button writes a note nobody
+        reads. That is the state this exists for: honour the note here too, and the one gesture
+        somebody standing at the panel would try is also the one that works.
+        """
+        now = time.monotonic()
+        if now - self._close_at < ADMIN_POLL_S:
+            return
+        self._close_at = now
+        if self._page_busy.is_set():
+            return  # a page we put up: _watch_page owns the note, and the retake after it
+        if _noted_since(BROWSER_CLOSE_FLAG, self._warm_at):
+            BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
+            self._retake.set()
+            print("· panel taken back from the warm browser", flush=True)
+
     def _sync_volume(self) -> None:
         """Follow the level the page left for us. A few bytes, a couple of times a second."""
         now = time.monotonic()
@@ -1003,6 +1033,7 @@ class Kiosk:
                 self._touched_at = time.monotonic()  # closing the page is a touch like any other
             self._sync_volume()  # the page sets the volume, so keep reading it while it is up
             self._sync_barge_in()  # ...and whether it may be interrupted, on the same beat
+            self._sync_stranded()  # ...and whether the warm browser has ended up in front of us
             if self._hidden:
                 time.sleep(1.0 / ADMIN_FPS)  # nothing we draw now can be seen by anyone
                 continue
