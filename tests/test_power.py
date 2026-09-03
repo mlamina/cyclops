@@ -127,10 +127,14 @@ def test_the_collar_fills_as_the_press_goes_on() -> None:
 class Cues:
     def __init__(self) -> None:
         self.played: list[str] = []
+        self.stopped = 0
 
     def play(self, name: str, *, loop: bool = False) -> float:
         self.played.append(name)
         return 0.0
+
+    def stop(self) -> None:
+        self.stopped += 1
 
 
 def _panel(monkeypatch: pytest.MonkeyPatch) -> kiosk_module.Kiosk:
@@ -174,6 +178,35 @@ def test_a_finger_that_slides_off_takes_the_tap_back(monkeypatch: pytest.MonkeyP
     kiosk._on_mouse(DOWN, *kiosk.overlay.hitboxes.eye.center, 0, None)
     kiosk._on_mouse(UP, *kiosk.overlay.hitboxes.shutter.center, 0, None)
     assert kiosk.opened == []
+    assert kiosk._cues.stopped == 1, "the sound is the press, so it ends wherever the finger did"
+
+
+def test_his_face_sounds_for_as_long_as_it_is_held(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cue tracks the finger: down starts it, up ends it. Every other control on this panel
+    fires and forgets, because every other one is over before you have finished pressing it."""
+    kiosk = _panel(monkeypatch)
+    x, y = kiosk.overlay.hitboxes.eye.center
+    kiosk._on_mouse(DOWN, x, y, 0, None)
+    assert kiosk._cues.played == ["pressed"] and kiosk._cues.stopped == 0
+    kiosk._on_mouse(UP, x, y, 0, None)
+    assert kiosk._cues.stopped == 1
+
+
+def test_lifting_off_a_menu_that_already_opened_does_not_cut_its_cue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one way "stop on the lift" could go wrong: the hold has already sounded "menu" and
+    the finger is still down, so an unconditional stop on the way up would cut the menu off a
+    beat after it opened - which is the one moment the panel is behind a palm and the sound is
+    all there is. _open_menu clears the hold, so _lifted returns before it can."""
+    kiosk = _panel(monkeypatch)
+    x, y = kiosk.overlay.hitboxes.eye.center
+    kiosk._on_mouse(DOWN, x, y, 0, None)
+    kiosk._eye_down_at -= kiosk_module.LONG_PRESS_S
+    kiosk._open_menu()
+    kiosk._on_mouse(UP, x, y, 0, None)  # the finger that asked for it, coming off
+    assert kiosk._cues.played == ["pressed", "menu"]
+    assert kiosk._cues.stopped == 0
 
 
 def test_holding_his_face_opens_the_power_menu(monkeypatch: pytest.MonkeyPatch) -> None:

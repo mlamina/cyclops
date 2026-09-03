@@ -528,10 +528,10 @@ class Kiosk:
             # you tap him to ask what he remembers. Held rather than tapped, it opens the power
             # menu instead; both are decided in _lifted and _holding.
             self._press("eye")
-            # On the press, the way _snap sounds the shutter: it answers the finger, not what
-            # the finger turns out to have asked for. A press that goes on to become a hold has
-            # this cut off at LONG_PRESS_S by "menu" - which is right, because by then the menu
-            # is the answer and this was only ever the acknowledgement.
+            # It sounds for exactly as long as he is held, so the cue is his face answering
+            # under the finger rather than a notification about it: _lifted ends it. Nothing
+            # else on this panel works that way because nothing else is held - the shutter is
+            # over before you have finished pressing it.
             self._cues.play("pressed")
             self._eye_down_at = self._touched_at
         elif boxes.wake.contains(x, y):
@@ -543,6 +543,11 @@ class Kiosk:
         down_at, self._eye_down_at = self._eye_down_at, None
         if down_at is None or self.overlay is None:
             return  # nothing was being held, or the hold already landed and opened the menu
+        # The finger is off him, so his answer stops with it - wherever it came off, because
+        # what ended is the press and not the tap. Safe to be unconditional only because of the
+        # guard above: a hold that already opened the menu left `_eye_down_at` at None and
+        # returned up there, so this can never cut "menu" off half a beat after sounding it.
+        self._cues.stop()
         # Lifted somewhere else: the tap was taken back, which is what sliding off a button has
         # meant since the first one.
         if self.overlay.hitboxes.eye.contains(x, y):
