@@ -27,9 +27,16 @@ SHIPPED = sorted(sfx.SAMPLES)
 EVERY = SYNTH + SHIPPED
 
 # The loudest 50 ms of the busiest synthesized cue measures 0.176 of full scale, and that is the
-# bar the shipped ones are cut to sit on (they land 0.155-0.206). The window is the point: it is
-# what "as loud as the beep beside it" means for broadband material, where a peak is not.
-LOUD_FS = (0.10, 0.25)
+# bar the shipped ones are cut to sit on. The window is the point: it is what "as loud as the
+# beep beside it" means for broadband material, where a peak is not.
+#
+# Two bands rather than one, because the five files are two shapes. The four that sound for a
+# second or more land at 0.155-0.206 here; the shutter is a 0.53 s transient and reads 0.083,
+# not because it is quiet - it peaks higher than any of them - but because averaging a click
+# over 50 ms is what a short window does to it. So the RMS floor only has to catch a cue nobody
+# would hear at all, and the peak band catches both a cue with no presence and a slammed one.
+LOUD_FS = (0.05, 0.25)
+PEAK_FS = (0.25, 0.90)
 
 
 def pcm_of(name: str) -> np.ndarray:
@@ -84,7 +91,8 @@ def test_every_shipped_cue_sits_where_the_beeps_do(name: str) -> None:
     pcm = sfx.load(name)
     loud = loudest_50ms(pcm)
     assert LOUD_FS[0] <= loud <= LOUD_FS[1], f"{name} is {loud:.3f} of full scale, off the bar"
-    assert np.abs(pcm.astype(np.int32)).max() < int(0.9 * 32767), f"{name} is close to clipping"
+    peak = float(np.abs(pcm.astype(np.int32)).max()) / 32767
+    assert PEAK_FS[0] <= peak <= PEAK_FS[1], f"{name} peaks at {peak:.3f}, outside its headroom"
 
 
 @pytest.mark.parametrize("name", EVERY)

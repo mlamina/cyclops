@@ -33,6 +33,13 @@ ssh "$TARGET" "sudo install -m 644 $DEST/deploy/cyclops-*.service /etc/systemd/s
 ssh "$TARGET" "sudo install -m 644 $DEST/deploy/99-useeplus-camera.rules /etc/udev/rules.d/ \
   && sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb" || true
 
+# The boot fanfare is a *user* unit: it plays through PipeWire, which lives in the user session
+# and which a system unit cannot reach. Same argument as above for refreshing it on every push -
+# and a different directory, which is also why deploy/user/ exists rather than one more name in
+# deploy/. Enabling it stays with install-boot-sound.sh.
+ssh "$TARGET" "sudo install -m 644 $DEST/deploy/user/cyclops-*.service /etc/systemd/user/ \
+  && XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload" || true
+
 ssh "$TARGET" "sudo systemctl restart cyclops-admin || true"
 
 # Restart the kiosk too, and do not merely suggest it. Everything else here either re-reads the

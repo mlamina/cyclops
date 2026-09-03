@@ -75,19 +75,6 @@ def silence(ms: float, *, rate: int) -> np.ndarray:
     return np.zeros(int(rate * ms / 1000), dtype=np.float32)
 
 
-def knock(ms: float, *, rate: int, amp: float = PEAK, seed: int = 7) -> np.ndarray:
-    """A noise burst under a fast decay: a mechanical click, which no sine can be.
-
-    The seed is fixed, so a cue built from this renders identically on every machine and every
-    run - it is cached and compared like any other, and a shutter that came out differently
-    each time would be a strange thing to own.
-    """
-    n = int(rate * ms / 1000)
-    grain = np.random.default_rng(seed).standard_normal(n).astype(np.float32)
-    decay = np.exp(-np.linspace(0.0, 6.0, n, dtype=np.float32))
-    return np.clip(grain * decay, -1.0, 1.0) * amp * _envelope(n, rate)
-
-
 def join(*parts: np.ndarray) -> np.ndarray:
     return np.concatenate(parts) if parts else np.zeros(0, dtype=np.float32)
 
@@ -136,13 +123,6 @@ CUES: dict[str, Callable[[int], np.ndarray]] = {
         tone(587, 45, rate=rate, amp=PEAK * 0.7),
         tone(880, 70, rate=rate, amp=PEAK * 0.7),
     ),
-    # Click-clack, the second knock softer, the way a mechanical shutter actually sounds. It
-    # is the flash the kiosk paints at the same moment (cyclops.kiosk._snap), said out loud.
-    "shutter": lambda rate: join(
-        knock(16, rate=rate),
-        silence(38, rate=rate),
-        knock(26, rate=rate, amp=PEAK * 0.6, seed=11),
-    ),
 }
 
 # The shipped half. A recording arrives at its own fixed rate rather than being built at the
@@ -152,11 +132,12 @@ SAMPLE_HZ = 48_000  # what the Pi's PipeWire sink runs at, so nothing converts o
 SOUNDS = Path(__file__).resolve().parent / "assets" / "sounds"
 
 SAMPLES: dict[str, str] = {
-    # The Linux box is up. Fourteen seconds, which is not an oversight: it is a bed under
-    # however long the kiosk then takes to get a window onto the glass, and "started" is what
-    # ends it. See cyclops.kiosk.main.
+    # The Linux box is up. Sounded by :mod:`cyclops.boot` from a systemd user unit rather than
+    # by the kiosk, because the kiosk is the last thing on this box to start and by the time it
+    # could say this nobody is still waiting to be told - see that module.
     "booted": "cyclops_system_boot_finished.wav",
-    # ...and that: the first frame is on the panel, so the tab row can be pressed.
+    # ...and the other end of starting up: the first frame is on the panel, so the tab row can
+    # be pressed. This one is the kiosk's, because the kiosk is the only thing that knows.
     "started": "cyclops_boot_sequence_finished.wav",
     # His face, answering the finger that landed on it.
     "pressed": "cyclops_eye_pressed.wav",
@@ -164,6 +145,12 @@ SAMPLES: dict[str, str] = {
     # tool: the ones worth saying out loud he says out loud, and this is for the ones you have
     # to look up at.
     "shown": "cyclops_action_done.wav",
+    # A camera, said out loud, at the moment the kiosk paints its white flash
+    # (cyclops.kiosk._snap). This was two noise bursts under a decay for a while, and a real
+    # shutter turns out to be the one sound here that everybody already knows by heart - which
+    # is exactly the kind a synthesized approximation of gets heard as wrong rather than as
+    # stylised.
+    "shutter": "cyclops_camera_shutter.wav",
 }
 
 SILENCE = np.zeros(0, dtype=np.int16)  # what a cue that would not load amounts to

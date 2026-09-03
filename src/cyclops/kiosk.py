@@ -124,10 +124,6 @@ PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 # because there is no way back from one of the two things it offers.
 LONG_PRESS_S = 0.7
 MENU_TIMEOUT_S = 20.0  # a menu nobody chose from gives the panel back rather than holding it
-# How young the box has to be for this process starting to count as the box starting. deploy's
-# push.sh restarts the kiosk several times an hour, and a fourteen-second fanfare per push is a
-# fanfare nobody hears as one. 0 turns it off; CYCLOPS_SOUNDS=0 turns off every cue there is.
-BOOT_FANFARE_S = 180.0
 # What the panel says while it finishes the session and goes. Not a caption: this is the last
 # thing the screen does, and everything else on it has stopped being true.
 POWER_SAYS = {power.POWEROFF: "Shutting down…", power.REBOOT: "Restarting…"}
@@ -1108,9 +1104,9 @@ class Kiosk:
         self.open_window(first, min(w, 1280), min(h, 720))
         # The first frame is on the glass and the tab row can be pressed, which is the only
         # thing anybody was waiting for. Here rather than inside open_window, which is called
-        # again for every retake of the panel from the browser. One cue at a time means this
-        # also *ends* the fanfare main() started: that one is a bed under however long getting
-        # here took, and this is the note that resolves it.
+        # again for every retake of the panel from the browser. The other half of the pair -
+        # "booted", for Linux itself - is sounded much earlier and from another process
+        # entirely (cyclops.boot), so by the time this lands that one has long finished.
         self._cues.play("started")
 
         while self.running:
@@ -1276,17 +1272,6 @@ def main() -> None:
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
-
-    # The box is up. This process starting *is* the desktop session being up, because labwc
-    # autostarts it, so this is the first moment anything on the Pi can make a noise - and on a
-    # power-on that is exactly what it is. It plays under everything below until run() gets a
-    # window onto the glass and cuts it off with "started". Only on a real power-on, though:
-    # see BOOT_FANFARE_S. /proc/uptime is the whole test, and it is None off Linux, so a Mac
-    # never hears this. sfx.play rather than a Cues because this makes one noise, once, before
-    # there is a Kiosk to own it.
-    up = stats.uptime_s()
-    if settings.sounds and up is not None and up < BOOT_FANFARE_S:
-        sfx.play("booted", rate=SAMPLE_RATE, device=resolve_device(settings.output_device))
 
     camera = CameraSource(settings.camera_index)
     camera.start()  # returns at once; the device may only be plugged in a minute from now

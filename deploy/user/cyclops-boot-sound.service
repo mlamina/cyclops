@@ -1,0 +1,19 @@
+# The fanfare that says the box is up. A *user* unit, not a system one, and that is the whole
+# point of it: the sound has to go through PipeWire, which lives in the user session and which a
+# system unit cannot reach. Installed to /etc/systemd/user by deploy/push.sh; enabled once by
+# deploy/install-boot-sound.sh.
+[Unit]
+Description=Cyclops: say the box is up
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+# Not oneshot: default.target waits for those to finish, and this one deliberately lasts as long
+# as the sound does - fifteen seconds of held-up desktop to play a fanfare would be a poor trade.
+Type=simple
+# So find_dotenv(usecwd=True) finds the Pi's own .env, which is where CYCLOPS_SOUNDS lives.
+WorkingDirectory=/home/cyclops/cyclops
+ExecStart=/home/cyclops/cyclops/.venv/bin/cyclops-boot-sound
+
+[Install]
+WantedBy=default.target
