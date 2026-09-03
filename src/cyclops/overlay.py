@@ -1514,12 +1514,43 @@ class Overlay:
         layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
 
 
+# How many rows of the panel one pass of :func:`composite` blends. The whole frame at once is
+# the obvious way to write it and it is the slow way: at 800 wide, a full-height 16-bit
+# intermediate is 2.3 MB and every one of the six passes over it streams in from memory, while a
+# 24-row strip is 115 KB and stays in the Pi 5's L2 between them. Measured on the panel, whole
+# frame against strips: 8.4 ms and 4.9 ms. The floor is broad - anything from 16 to 48 rows is
+# within noise of the best - so this is a plateau to sit on rather than a number to tune.
+COMPOSITE_STRIP = 24
+
+
 def composite(frame_bgr: np.ndarray, rgba: np.ndarray) -> np.ndarray:
-    """Alpha-blend an RGBA overlay onto a BGR frame, in place-ish, without touching PIL again."""
-    alpha = rgba[:, :, 3:4].astype(np.float32) / 255.0
-    rgb = rgba[:, :, :3][:, :, ::-1].astype(np.float32)  # RGB -> BGR to match the frame
-    blended = frame_bgr.astype(np.float32) * (1.0 - alpha) + rgb * alpha
-    return blended.astype(np.uint8)
+    """Alpha-blend an RGBA overlay onto a BGR frame, in place-ish, without touching PIL again.
+
+    The arithmetic is 16-bit fixed point, not float. ``frame + ((over - frame) * a) >> 7`` with
+    the alpha halved to 0-128 is the widest form that cannot overflow an int16 (255 * 128 fits,
+    255 * 255 does not), which matters because the float version's temporaries are twice the
+    width and there are more of them: 19.5 ms a frame against 4.9 ms, measured on the Pi with a
+    real overlay, and this runs 25 times a second. Seven bits of alpha rather than eight costs
+    at most one level on about 6% of pixels, on chrome drawn in three flat greens.
+
+    Still allocates - see :meth:`cyclops.record.PanelSource.publish`, which hands the returned
+    frame to an encoder on another thread and needs it to be nobody else's buffer.
+    """
+    import cv2  # local import keeps this module importable without a camera stack
+
+    out = np.empty_like(frame_bgr)
+    for y in range(0, frame_bgr.shape[0], COMPOSITE_STRIP):
+        band = rgba[y : y + COMPOSITE_STRIP]
+        under = frame_bgr[y : y + COMPOSITE_STRIP]
+        over = cv2.cvtColor(band, cv2.COLOR_RGBA2BGR)  # RGB -> BGR to match the frame
+        weight = ((band[:, :, 3].astype(np.int16) + 1) >> 1)[:, :, None]
+        blended = over.astype(np.int16)
+        blended -= under
+        blended *= weight
+        blended >>= 7
+        blended += under  # back within 0-255: the result never leaves the two ends it is between
+        out[y : y + COMPOSITE_STRIP] = blended
+    return out
 
 
 # Unsharp masking, for a camera that cannot be asked to do better. The endoscope streams
