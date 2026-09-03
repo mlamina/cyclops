@@ -1146,6 +1146,14 @@ class Kiosk:
                 budget = 1.0 / ADMIN_FPS
             else:
                 budget = frame_budget
+            # Handing waitKey the whole rest of the slot looks like a place to save a core and
+            # is not: it blocks. Measured in the loop itself at 30 fps, a frame is 16.6 ms of
+            # work in a 33 ms slot - 13.3 ms drawing it, 3.3 ms in here presenting it - and the
+            # render thread sits at 44% of a core. Pumping with waitKey(1) and sleeping the
+            # remainder was tried and measured identical, for the price of a tap waiting a frame
+            # for the next pump, so it was taken back out. The number that makes this look like
+            # a spin is the *process* at 74%, which is not this thread: the camera's four MJPEG
+            # decode threads are the other 30%, and they are where to go looking next.
             wait_ms = max(1, int((budget - spent) * 1000))
             key = cv2.waitKey(wait_ms) & 0xFF
             if key in (27, ord("q")):  # ESC or q
