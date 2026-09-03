@@ -241,11 +241,22 @@ class SessionLog:
             if _live is self:
                 _live = None
         self._agent.on_event = None
-        namer = self._start_naming()  # its round trip hides behind the mux below
+        # Both round trips go out now and hide behind the mux below. They are two calls rather
+        # than one because they are two jobs: what this session was, and what this session taught
+        # us about the person. Nothing has to agree between them, which is the only reason the
+        # naming call gets to stay the tidy single round trip it is.
+        namer = self._start_naming()
+        rememberer = self._start_remembering()
         self._stop_recorder()  # says "saving the video" for itself, when there is one
-        if namer is not None:
+        # One budget across both, not one each: they run at the same time, so two calls must not
+        # be able to cost twice what one did. A shutdown that takes twelve seconds is a shutdown
+        # somebody waits through; twenty-four is one they pull the plug on.
+        if namer is not None or rememberer is not None:
             self._say("summarising…")
-            namer.join(SLUG_JOIN_S)
+            deadline = time.monotonic() + SLUG_JOIN_S
+            for worker in (namer, rememberer):
+                if worker is not None:
+                    worker.join(max(0.0, deadline - time.monotonic()))
         reason = _reason(exc_type)
         fields: dict[str, Any] = {
             "reason": reason,
@@ -335,6 +346,46 @@ class SessionLog:
         described = describe_session(text, self.settings)
         self.slug = described.slug
         self.summary = described.page
+
+    def _start_remembering(self) -> threading.Thread | None:
+        """Ask a small model what this conversation said about the person, off-thread.
+
+        Shaped like :meth:`_start_naming` and started beside it. A failed session is skipped for
+        the same reason it is skipped there: a folder we could not write is not evidence about
+        anybody.
+        """
+        if self.failed or not self.settings.remember:
+            return None
+        text = transcript_text(self._records)
+        if not text:
+            return None
+        thread = threading.Thread(
+            target=self._remember, name="session-about", args=(text,), daemon=True
+        )
+        thread.start()
+        return thread
+
+    def _remember(self, text: str) -> None:
+        """Update ``about-you.md``, in the thread, on its own.
+
+        The one derived file this class does not write in :meth:`__exit__` alongside the others,
+        and deliberately: it lives outside the session folder, so it sits outside the
+        summary-then-page-then-rename-then-receipt ordering that everything in there is built
+        around. Giving it a ``_write_`` step would enrol it in an invariant it has no part in and
+        invite the next reader to wonder what it means for the folder. It means nothing for the
+        folder.
+
+        An empty answer is the normal outcome of most conversations and means leave the list
+        alone - see :mod:`cyclops.about`.
+        """
+        from .about import read, remember, write  # here, like slug: a keyless box still imports
+
+        known = read(self.settings)
+        facts = remember(text, known, self.settings)
+        if not facts or facts == known:
+            return
+        write(self.settings, facts)
+        print(f"· remembered: {len(facts)} thing(s) about you (was {len(known)})", flush=True)
 
     def _rename(self) -> None:
         """Append the slug. Atomic within a filesystem, so nothing sees a half-named folder."""

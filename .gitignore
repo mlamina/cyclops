@@ -21,6 +21,8 @@ recordings/
 # src/cyclops/projects/ is a real package. Without the leading slash git silently ignores
 # the whole thing, exactly as rsync did in deploy/push.sh.
 /projects/
+# Same argument, and the same anchor: what it knows about you is yours, not the repo's.
+/about-you.md
 
 # OS
 .DS_Store

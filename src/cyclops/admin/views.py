@@ -24,7 +24,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import barge, card, filming, library, mixer, shelf, stats
+from .. import about, barge, card, filming, library, mixer, shelf, stats
 from ..config import (
     BROWSER_CLOSE_FLAG,
     DIAGRAM_FILE,
@@ -336,8 +336,15 @@ def _entries() -> list[library.Entry]:
 
 
 def sessions(request: HttpRequest) -> JsonResponse:
-    """Every session on the card, newest first. Fetched when a view opens, not on a poll."""
-    return JsonResponse({"sessions": library.as_dicts(_entries())})
+    """Every session on the card, newest first, and what it knows about you over them.
+
+    The facts ride along with the listing rather than with the five-second status poll for the
+    plainest reason: they change once a session, and this is the one request the screen that
+    shows them already makes. Fetched when a view opens, not on a poll.
+    """
+    return JsonResponse(
+        {"sessions": library.as_dicts(_entries()), "facts": about.read(_settings())}
+    )
 
 
 def session(request: HttpRequest, name: str) -> JsonResponse:

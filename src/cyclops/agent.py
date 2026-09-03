@@ -500,6 +500,43 @@ WHEN THEY CUT IN
   repeat - do NOT take another photo and do NOT guess.
 """
 
+# Introduces the list of standing facts about whoever is on the other side of the bench - see
+# :mod:`cyclops.about`. Knowing somebody is worth having and easy to hold wrong, so the header
+# spends its lines on the three ways it goes wrong: reading the list out, treating it as more
+# current than the person in front of you, and telling them there is a file.
+ABOUT_HEADER = """\
+WHO YOU ARE TALKING TO
+These are standing facts about them, written down at the end of earlier sessions and true until
+they say otherwise. Use them the way you use knowing somebody: call them by their name, pitch
+what you say to what they already know, and remember what they said they wanted help with. Do
+not recite the list back, do not congratulate yourself on remembering, and never mention that
+any of this is written down anywhere. If something they say today contradicts a line here, they
+are right and the line is out of date.
+"""
+
+# And what stands in its place on a box that has never been told anything. It is an instruction
+# to ask, and it needs to be a careful one: BASE_INSTRUCTIONS already says they set the agenda
+# and that curiosity is one good question rather than more words, and the fastest way to ruin
+# this whole feature is a machine that opens by interviewing somebody who came to fix a tap.
+ABOUT_UNKNOWN = """\
+YOU HAVE NOT MET THEM YET
+Nothing has ever been written down about the person you work with - not their name, not what
+they do, not what they came to you for. Somewhere in this session, once, when they are not
+mid-cut, mid-measurement or waiting on an answer from you, ask them one open question about
+themselves. What they do, what they are into, what they would want something like you for. One
+question, and then let it go: if they brush it off or answer thinly, do not ask again today and
+do not work round to it. Never open with it. The job in front of them still comes first, and
+what you learn this way you keep.
+"""
+
+# A backstop on the block as a whole, as RECAP_MAX_CHARS is on the recap - and, like that one,
+# sized so it never actually bites: the header is about 490 characters and MAX_FACTS lines at
+# MAX_FACT_CHARS each are 1692 more, so the worst case a full card can produce still fits under
+# it. A cap that trims in ordinary use is not a backstop, it is a budget nobody wrote down, and
+# what it would trim here is the end of a sentence about somebody.
+ABOUT_MAX_CHARS = 2400
+
+
 # Introduces the recap below it. Its job is to stop the two failure modes a memory invites:
 # opening with a recital of last week, and quietly assuming today is a continuation of it.
 RECAP_HEADER = """\
@@ -520,6 +557,30 @@ Call open_project with one of these names to read what is in it.
 """
 PROJECTS_LISTED = 20
 PROJECT_LINE_CHARS = 380
+
+
+def _about_block(settings: Settings) -> str:
+    """What it knows about them, or the instruction to go and find out.
+
+    Read at connect time off the card, like the recap and the project list, and for the same
+    reason: what it learned about somebody in the session that ended a minute ago has to be
+    there in this one.
+
+    Unlike those two this never returns "" while the feature is on. An empty list is not nothing
+    to say - it is the one case worth spending words on, because a machine that does not know
+    who it is talking to and is not told so will simply carry on as though it did.
+    """
+    if not settings.remember:
+        return ""
+    from . import about  # local, like the projects import below, so a keyless box still builds
+
+    facts = about.read(settings)
+    if not facts:
+        print("· about you: nothing yet - it will ask once", flush=True)
+        return ABOUT_UNKNOWN
+    listed = "\n".join(f"- {fact}" for fact in facts)
+    print(f"· about you: {len(facts)} thing(s) known", flush=True)
+    return f"{ABOUT_HEADER}\n{listed}\n"[:ABOUT_MAX_CHARS]
 
 
 def _projects_block(settings: Settings) -> str:
@@ -562,6 +623,10 @@ def build_instructions(settings: Settings) -> str:
     recap = session.recent_context(settings)
     print(f"· continuity: {recap.note}", flush=True)
     blocks = [BASE_INSTRUCTIONS]
+    # Who, then what happened, then what is being kept - which is the order somebody walking up
+    # to the bench would want them in.
+    if about_block := _about_block(settings):
+        blocks.append(about_block)
     if recap:
         blocks.append(f"{RECAP_HEADER}\n{recap.text}\n")
     if projects_block := _projects_block(settings):

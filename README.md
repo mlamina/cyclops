@@ -199,6 +199,87 @@ Photos taken with no session running land in `captures/`, which keeps only the l
 `latest.jpg`. Nothing sees those — with no session there is no model to show them to — and the
 session page says so. A session's own photos are never pruned.
 
+## What it knows about you
+
+Continuity is what *happened*; projects are what is being *built*. Neither of them is about the
+person on the other side of the bench, and without that a machine that has talked to you for a
+month still opens on a stranger — no name, no idea what you do, no memory that you said last
+week you wanted to get better at dovetails.
+
+So there is a third kind of memory, and it is one file at the root of the card:
+
+```markdown
+# About you
+
+- Goes by Priya.
+- Restores furniture at weekends; ten years at it.
+- Has a small garage shop: bandsaw, thicknesser, no lathe.
+- Wants to get better at hand-cut dovetails.
+- Deaf in the left ear, so say things once, clearly.
+```
+
+That is the whole format, and it is a file rather than a database for the same reason
+`Project Data.xlsx` is a spreadsheet: **if a line is wrong you open it and fix it.** Delete a
+line and it stays deleted unless Cyclops hears the same thing again; delete the file and it
+starts over knowing nobody. The prose at the top is written by the code and is never read back,
+so what you edit is only ever the list.
+
+**A line earns its place by changing how Cyclops talks to you** — your name, what you do and how
+practised you are at this kind of work, what tools and machines and software you have, what
+kind of work you want to get better at, and how you want to be spoken to: which language, which units,
+anything about hearing or sight or handedness that changes what help looks like. It is told just
+as firmly what does not belong: anything about *today* rather than about *you* (the bore is
+12.7 mm, and that goes in the sheet), anything you did not say about yourself, and anything
+private you did not offer as a standing fact — health, money, who you live with, where you live.
+Held up against a session that mentioned chemotherapy, an address and a tight month, it wrote
+down two lines: *works as a nurse, not an experienced builder* and *has a hammer drill and a
+spirit level*.
+
+**The list is rewritten, not added to.** When a session ends, a model gets the list as it stands
+plus the transcript and answers with the whole list back, so *uses Fusion 360* becomes *uses
+OnShape* in place rather than sitting on the card next to its own contradiction — which is what
+an append-only list gives you after a month. It is a second call beside the naming one and goes
+out at the same moment, so the two share one twelve-second budget and a shutdown costs what it
+always did.
+
+It is `gpt-5.6-terra` rather than the `gpt-5.4-nano` that names the session, and that is the one
+place these two calls genuinely differ. Naming is a transcription — read a conversation, say what
+it was. This is a *reconciliation*: hold a list of sentences about a person against a new
+conversation and work out which of them it has just made untrue. Handed *uses Fusion 360* and a
+conversation about moving to OnShape, five times over, the small model got it clean four times
+and once left a spare line about sketching being quicker — a sentence about a week, in a list
+that is meant to be about a person. It is not even the cheaper trade it looks: over the 32 real
+sessions on the card the small model ran a median 1.4 s against 1.0 s, and a slowest 12.3 s
+against 5.3 s.
+
+Rewriting has one sharp edge, and the whole of `cyclops.about` is built around it: **an empty
+answer never empties the file.** No key, no network, a refusal, a timeout, a reply in the wrong
+shape, or a model that decided to say nothing — all of them mean *leave the list alone*, never
+*forget everything*. The only things that can shorten it are a well-formed shorter reply and
+you, with an editor.
+
+Most conversations teach it nothing about you, and that is the normal case: an identical answer
+is not written at all.
+
+**What it does when it knows nothing.** An empty list is not silence. Cyclops is told outright
+that nothing has ever been written down about you, and to ask — *one* open question, once,
+somewhere in the session, never as the opening line and never while you are mid-cut or waiting
+on an answer. If you brush it off it drops the subject for the day. That is the same "offer
+once" rule the project question already lives under, and for the same reason: the fastest way to
+ruin this would be a box that interviews someone who came in to fix a tap.
+
+What was handed over is printed when a session connects, beside the continuity line:
+
+```
+· about you: 6 thing(s) known
+· about you: nothing yet - it will ask once
+```
+
+You can also read it back on the **Sessions** screen of the admin page, above the list — which
+is the screen tapping his face opens, so what he remembers about you sits over what he remembers
+happening. `CYCLOPS_REMEMBER=0` turns the whole thing off: no call at the end of a session, and
+not a word about you in the instructions at the start of one.
+
 ## Projects
 
 A session is one conversation. A **project** is the thing you keep coming back to, and it gets a
@@ -383,7 +464,7 @@ kiosk opens it on **SESSIONS**, which is what its tab promises:
 | | |
 |---|---|
 | **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
-| **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
+| **SESSIONS** `#/sessions` | [What it knows about you](#what-it-knows-about-you), and under it every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
 | **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one for a plain file browser over its folder; open a file to read it. |
 | **MEDIA** `#/media` | Every photo and every drawing on the card as one stream, newest first. Tap one to fill the screen and flip through with the arrows, the arrow keys, or the columns down either side. |
 
@@ -488,6 +569,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_SESSIONS_DIR` | `sessions`     | Where session folders are written (relative to the CWD; `~` ok). |
 | `CYCLOPS_CAPTURES_DIR` | `captures`     | Where a photo goes when no session is running (relative to the CWD; `~` ok). |
 | `CYCLOPS_PROJECTS_DIR` | `projects`     | Where project folders are written (relative to the CWD; `~` ok). |
+| `CYCLOPS_ABOUT_FILE`   | `about-you.md` | Where the standing facts about you are kept (relative to the CWD; `~` ok). |
 | `CYCLOPS_PROJECTS`     | `1`            | Keep `projects/` up to date, and offer Cyclops the `open_project` / `track_project` tools; `0` turns the whole feature off. |
 | `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
 | `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them; `0` withholds both drawing tools. |
@@ -495,6 +577,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_SOUNDS`       | `1`            | Cues: the box booting, waking and going to sleep, the shutter; `0` disables. |
 | `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
+| `CYCLOPS_REMEMBER`     | `1`            | Keep `about-you.md` up to date from what you say, and hand it to Cyclops at the start of a session; `0` turns the whole feature off and writes nothing about you. |
 | `CYCLOPS_RECORD`       | `1`            | Record the session into its folder; `0` disables. |
 | `CYCLOPS_RECORD_SOURCE`| `screen`       | What a session's video is of: `screen` for the panel, chrome and all, or `camera` for the raw picture. The switch on the settings screen wins over this; it only decides on a box where nobody has ever touched it. |
 | `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
