@@ -503,32 +503,6 @@ every device on the network is exactly the sprawl this replaced.
   .rowsub.broke { color: var(--red); }
   .rowsum { display: none; }
 
-  /* ---- what it knows about you ---- */
-  /* Over the list rather than on the System screen, because this screen is already the answer to
-     "what do you remember" - it is where tapping his face lands - and what he remembers about
-     you belongs over what he remembers happening. It scrolls away with the list, so it costs the
-     panel no standing height on the screen somebody opens most. */
-  .about {
-    background: var(--screen);
-    border: calc(1 * var(--u)) solid var(--dim);
-    padding: calc(10 * var(--u)) calc(12 * var(--u));
-    margin-bottom: calc(8 * var(--u));
-  }
-  .abouthead {
-    display: block; color: var(--dim); font-size: calc(11 * var(--u));
-    letter-spacing: .2em; text-transform: uppercase;
-  }
-  .abouts { margin: calc(7 * var(--u)) 0 0; padding: 0; list-style: none; }
-  .abouts li {
-    position: relative; padding-left: calc(13 * var(--u));
-    color: var(--green); font-size: calc(13 * var(--u)); line-height: 1.5;
-  }
-  /* The bullet is the one the console lines use, and the same dim as the caption: the sentence
-     is the thing to read and the mark in front of it is punctuation, not a second colour. */
-  .abouts li::before { content: "\00b7"; position: absolute; left: 0; color: var(--dim); }
-  .aboutnone { color: var(--dim); font-size: calc(13 * var(--u)); line-height: 1.5;
-               margin-top: calc(7 * var(--u)); }
-
   /* ---- the picture stream ---- */
   .grid {
     display: grid;
@@ -1267,7 +1241,7 @@ every device on the network is exactly the sprawl this replaced.
   let held = null, heldAt = 0;
   async function listing() {
     if (held && Date.now() - heldAt < FRESH) return held;
-    held = await grab('/api/sessions');
+    held = (await grab('/api/sessions')).sessions;
     heldAt = Date.now();
     return held;
   }
@@ -1310,23 +1284,12 @@ every device on the network is exactly the sprawl this replaced.
       '</button>';
   }
 
-  // What it knows about whoever it works with, read off about-you.md. Always drawn, even empty:
-  // "it has not been told anything about you yet" is the one state worth a line, because a box
-  // that knows nothing and says nothing looks exactly like one that knows something.
-  function aboutBlock(facts) {
-    const said = (facts || []).length
-      ? '<ul class="abouts">' + facts.map((f) => '<li>' + esc(f) + '</li>').join('') + '</ul>'
-      : '<div class="aboutnone">Nothing yet - it will ask you about yourself.</div>';
-    return '<section class="about"><span class="abouthead">About you</span>' + said + '</section>';
-  }
-
   async function showSessions() {
     try {
       const found = await listing();
-      const rows = found.sessions.length
-        ? found.sessions.map(sessionRow).join('')
+      vSessions.innerHTML = found.length
+        ? found.map(sessionRow).join('')
         : '<div class="empty">nothing recorded yet</div>';
-      vSessions.innerHTML = aboutBlock(found.facts) + rows;
       for (const el of vSessions.querySelectorAll('video.thumb')) watching.observe(el);
     } catch (e) {
       vSessions.innerHTML = '<div class="empty">could not read the card</div>';

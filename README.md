@@ -275,10 +275,14 @@ What was handed over is printed when a session connects, beside the continuity l
 · about you: nothing yet - it will ask once
 ```
 
-You can also read it back on the **Sessions** screen of the admin page, above the list — which
-is the screen tapping his face opens, so what he remembers about you sits over what he remembers
-happening. `CYCLOPS_REMEMBER=0` turns the whole thing off: no call at the end of a session, and
-not a word about you in the instructions at the start of one.
+The list itself is not on the admin page. It was, above the session list, and it earned its
+place there for about a day: the screen you open to find a recording is not the screen you open
+to audit a memory, and a block standing over every visit to the first in order to serve the rare
+second is the wrong trade on a 480 px panel. The file is the interface — `about-you.md`, in any
+editor, which is also where you correct it.
+
+`CYCLOPS_REMEMBER=0` turns the whole thing off: no call at the end of a session, and not a word
+about you in the instructions at the start of one.
 
 ## Projects
 
@@ -464,7 +468,7 @@ kiosk opens it on **SESSIONS**, which is what its tab promises:
 | | |
 |---|---|
 | **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
-| **SESSIONS** `#/sessions` | [What it knows about you](#what-it-knows-about-you), and under it every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
+| **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
 | **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one for a plain file browser over its folder; open a file to read it. |
 | **MEDIA** `#/media` | Every photo and every drawing on the card as one stream, newest first. Tap one to fill the screen and flip through with the arrows, the arrow keys, or the columns down either side. |
 
