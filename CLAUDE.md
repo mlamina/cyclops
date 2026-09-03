@@ -1,6 +1,6 @@
 This is cyclops, a physical AI project that serves as an assistant for side projects.
 It has a camera, a screen and a microphone and the main mode of interaction is via voice.
-This project is supposed to run on a raspberry pi, which you can access via ssh at 'cyclops@cyclops'.
+This project is supposed to run on a raspberry pi, which you can access via ssh at 'cyclops@cyclops.local'.
 Once the pi is booted, the user "wakes" cyclops by pressing a button on the screen,
 which opens a new session with OpenAI's realtime API.
 
