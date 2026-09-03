@@ -97,7 +97,12 @@ def _parse_size(argv: list[str]) -> tuple[int, int] | None:
 
 
 WINDOW = "cyclops"
-TARGET_FPS = 25
+# 30 rather than 25, which the box has the room for: a frame costs 13.3 ms to draw on this Pi
+# (render 6.4, composite 4.5, fit_to_window 2.3, mirror 0.1), so the loop still finishes one in
+# well under the 33 ms it now has. The camera is slower than this and the picture is no smoother
+# for it - what gets smoother is everything drawn rather than photographed, which is the eye, the
+# ring, the caption and the rim, and which is most of what anyone watches on an idle panel.
+TARGET_FPS = 30
 # What the picture area says when there is no camera, and how big the window comes up without
 # one to take a size from. The panel is 800x480; this fits it and looks deliberate on anything
 # larger, which is the point - a black window with no explanation reads as a crashed Pi.

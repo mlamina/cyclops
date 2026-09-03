@@ -7,3 +7,4 @@ Don't over-engineer this. It's a proof-of-concept. What matters is speed of iter
 Design principles that matter for this project:
 - Reduce cognitive load - Cyclops helps users focus on the task at hand, not the tool.
 - Embrace familarity - Where possible, adopt well-established conventions and patterns to reduce the learning curve.
+- CPU matters - The Pi heats quickly in its case. 
