@@ -491,7 +491,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
 | `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them; `0` withholds both drawing tools. |
 | `CYCLOPS_IMAGINE`      | `1`            | Let Cyclops redraw the last photo with a change and show it on the panel; `0` withholds `edit_photo`. |
-| `CYCLOPS_SOUNDS`       | `1`            | Cues for waking and going to sleep, and the shutter; `0` disables. |
+| `CYCLOPS_SOUNDS`       | `1`            | Cues: the box booting, waking and going to sleep, the shutter; `0` disables. |
 | `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_RECORD`       | `1`            | Record the session into its folder; `0` disables. |

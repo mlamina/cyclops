@@ -183,7 +183,10 @@ def test_holding_his_face_opens_the_power_menu(monkeypatch: pytest.MonkeyPatch) 
     assert kiosk._holding() >= 1.0
     kiosk._open_menu()
     assert kiosk._menu
-    assert kiosk._cues.played == ["menu"], "the panel is behind a palm; it says so out loud too"
+    # Both, in that order: his face answers the finger the moment it lands, and the menu cue
+    # cuts that off at LONG_PRESS_S. The panel is behind a palm by then, so the sound is the
+    # only thing left that can say what just opened.
+    assert kiosk._cues.played == ["pressed", "menu"]
     assert kiosk.opened == []
 
 

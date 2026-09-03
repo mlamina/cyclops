@@ -1,4 +1,4 @@
-"""Synthesized sound cues: the audio half of the kiosk's chrome.
+"""Sound cues: the audio half of the kiosk's chrome.
 
 The panel says what the session is doing in colour - amber while the link opens, green once it
 is up, a white flash for the shutter (:mod:`cyclops.overlay`) - which is no use at all to
@@ -7,9 +7,16 @@ we connect, a chime when the agent is listening, a click on the shutter, and for
 session a falling pair on the press, ticks while it winds down, and one low note when it is
 really over.
 
-The cues are generated rather than shipped as ``.wav`` files. A few lines of numpy beats binary
-assets in the repo, needs no path to resolve on the Pi, and lets a cue be retuned by editing a
-number. Adding one is a single entry in :data:`CUES`.
+Most cues are generated rather than shipped as ``.wav`` files. A few lines of numpy beats a
+binary asset in the repo, needs no path to resolve on the Pi, and lets a cue be retuned by
+editing a number. Adding one is a single entry in :data:`CUES`.
+
+The four that answer the box itself - it booted, the panel is up, his face was pressed, a thing
+was drawn - are recordings instead, because none of them is a beep: they are the sound of a
+machine, which no oscillator here was going to be talked into. They sit in ``assets/sounds`` as
+48 kHz mono 16-bit WAVs, cut to that on a Mac because nothing on the Pi should be resampling,
+and they are listed in :data:`SAMPLES`. A name is in exactly one of the two tables, and nothing
+downstream - :class:`Cues`, the panel, the callers - can tell which kind it just played.
 
 They play on their own output stream rather than through :class:`cyclops.audio.Speaker`, which
 is the whole reason this module is short. That buffer is entangled with four other things: the
@@ -30,8 +37,10 @@ right way round - a recording of the conversation is worth more than a recording
 from __future__ import annotations
 
 import sys
+import wave
 from collections.abc import Callable
 from functools import cache
+from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -136,6 +145,70 @@ CUES: dict[str, Callable[[int], np.ndarray]] = {
     ),
 }
 
+# The shipped half. A recording arrives at its own fixed rate rather than being built at the
+# speaker's, and ``sd.play`` takes a rate per call - which is the whole reason the two kinds can
+# share one namespace of cues without anything here owning a resampler.
+SAMPLE_HZ = 48_000  # what the Pi's PipeWire sink runs at, so nothing converts on the way out
+SOUNDS = Path(__file__).resolve().parent / "assets" / "sounds"
+
+SAMPLES: dict[str, str] = {
+    # The Linux box is up. Fourteen seconds, which is not an oversight: it is a bed under
+    # however long the kiosk then takes to get a window onto the glass, and "started" is what
+    # ends it. See cyclops.kiosk.main.
+    "booted": "cyclops_system_boot_finished.wav",
+    # ...and that: the first frame is on the panel, so the tab row can be pressed.
+    "started": "cyclops_boot_sequence_finished.wav",
+    # His face, answering the finger that landed on it.
+    "pressed": "cyclops_eye_pressed.wav",
+    # Something was made and is on the panel now - a diagram, or a photo he imagined. Not every
+    # tool: the ones worth saying out loud he says out loud, and this is for the ones you have
+    # to look up at.
+    "shown": "cyclops_action_done.wav",
+}
+
+SILENCE = np.zeros(0, dtype=np.int16)  # what a cue that would not load amounts to
+SILENCE.setflags(write=False)
+
+
+@cache
+def load(name: str) -> np.ndarray:
+    """A shipped cue as int16 mono at :data:`SAMPLE_HZ`, read once per process.
+
+    Lazily rather than at import, because the fanfare alone is 1.4 MB and every process that
+    reads a Settings imports this module while only the kiosk ever plays one of these.
+
+    They are converted before they are committed (the ffmpeg line is in ``assets/sounds``), so
+    this is not a decoder - it is a check that the conversion happened, and then a cast. A file
+    that is missing, or one dropped in at 96 kHz, is a missing beep rather than a dead kiosk:
+    the same bargain :func:`play` already makes with PortAudio.
+    """
+    path = SOUNDS / SAMPLES[name]  # a name in neither table is a typo, and still raises
+    try:
+        with wave.open(str(path), "rb") as wav:
+            cut = (wav.getnchannels(), wav.getsampwidth(), wav.getframerate())
+            if cut != (1, 2, SAMPLE_HZ):
+                raise ValueError(
+                    f"{path.name} is {cut[0]}ch/{8 * cut[1]}-bit/{cut[2]} Hz;"
+                    f" cues are mono 16-bit {SAMPLE_HZ} Hz"
+                )
+            pcm = np.frombuffer(wav.readframes(wav.getnframes()), dtype="<i2")
+    except (OSError, wave.Error, ValueError) as exc:
+        print(f"[sfx] {name}: {exc}", file=sys.stderr, flush=True)
+        return SILENCE
+    return pcm  # frombuffer is already read-only, which is the promise render() buys explicitly
+
+
+def cue(name: str, rate: int) -> tuple[np.ndarray, int]:
+    """A cue's samples, and the rate they are meant to be played at.
+
+    A synthesized cue is built at whatever rate the speaker is using; a shipped one is already a
+    file at :data:`SAMPLE_HZ` and is played at that instead. This is the only place that knows
+    there are two kinds.
+    """
+    if name in SAMPLES:
+        return load(name), SAMPLE_HZ
+    return render(name, rate), rate
+
 
 @cache
 def render(name: str, rate: int) -> np.ndarray:
@@ -155,17 +228,21 @@ def play(name: str, *, rate: int, device: int | str | None = None, loop: bool = 
     """Sound a cue on its own stream. Returns how long it will sound, in seconds.
 
     ``sd.play`` stops whatever it was playing first, so a one-shot also ends a looping cue -
-    "stop the ping and sound the chime" is this call and nothing else. A cue that cannot play
-    is not worth taking a session down for, so a device that refuses is reported and shrugged
-    off; the caller reads that as zero seconds of sound.
+    "stop the ping and sound the chime" is this call and nothing else, and a long cue is cut
+    dead by the next one, which the boot pair uses on purpose. A cue that cannot play is not
+    worth taking a session down for, so a device that refuses is reported and shrugged off; the
+    caller reads that as zero seconds of sound.
+
+    *rate* is the speaker's, and is what a synthesized cue is built at. A shipped one brings its
+    own and is played at that instead - see :func:`cue`.
     """
-    pcm = render(name, rate)
+    pcm, hz = cue(name, rate)  # an unknown name is a bug, and still raises from here
     try:
-        sd.play(pcm, samplerate=rate, device=device, loop=loop)
+        sd.play(pcm, samplerate=hz, device=device, loop=loop)
     except Exception as exc:  # noqa: BLE001 - any PortAudio trouble here is a missing beep
         print(f"[sfx] {name} did not play: {exc}", file=sys.stderr, flush=True)
         return 0.0
-    return len(pcm) / rate
+    return len(pcm) / hz
 
 
 def stop() -> None:
