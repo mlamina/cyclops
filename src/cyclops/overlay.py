@@ -1568,10 +1568,20 @@ SHARPEN_KERNEL = (5, 5)  # ...over a kernel stated rather than derived - see sha
 SHARPEN_AMOUNT = 0.8  # how much of the detail layer goes back on top
 SHARPEN_FLOOR = 4  # ...but only where the detail is at least this strong
 SHARPEN_CEILING = 12  # ...and no pixel may move further than this
+# Off for now. It is the second-largest thing the render loop does - about 6 ms of every 40 ms
+# frame, a seventh of a core at 25 fps - and turning it off is the cheapest way to look at the
+# panel without it and decide whether the detail was worth the cost. Everything below is intact;
+# flip this back to True to have it again. Note this is the switch for the *function*, so it
+# also takes the sharpening off the photos handed to the model (see cyclops.webcam.for_model),
+# not only off the preview.
+SHARPEN = False
 
 
 def sharpen(frame_bgr: np.ndarray) -> np.ndarray:
     """Unsharp-mask a frame, gated so it does not amplify what the JPEG encoder invented.
+
+    A no-op while :data:`SHARPEN` is off, in which case the frame is handed straight back - both
+    callers pass the result to a resize that allocates, so nobody is left holding an alias.
 
     Built from OpenCV primitives rather than the obvious numpy, because this runs on every
     preview frame inside the kiosk's 40 ms budget: the numpy version of the same arithmetic is
@@ -1585,6 +1595,9 @@ def sharpen(frame_bgr: np.ndarray) -> np.ndarray:
     8 ms to 30 ms. :func:`mirror` and :func:`fit_to_window` are what guarantee that.
     """
     import cv2  # local import keeps this module importable without a camera stack
+
+    if not SHARPEN:
+        return frame_bgr
 
     blur = cv2.GaussianBlur(frame_bgr, SHARPEN_KERNEL, SHARPEN_RADIUS)
     edges = cv2.threshold(

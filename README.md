@@ -544,7 +544,9 @@ encoder can carry.
 
 So the only lever left is downstream, and cyclops pulls it. `overlay.sharpen()` is a threshold-
 and-ceiling-gated unsharp mask applied to the preview before it is enlarged onto the panel, and
-to every photo before it is encoded for the model. On a real frame it takes the Laplacian
+to every photo before it is encoded for the model. **It is switched off at the moment** —
+`overlay.SHARPEN` is `False`, which makes the function a no-op on both paths; the rest of this
+section describes what turning it back on does. On a real frame it takes the Laplacian
 variance from 18.5 to 50.1 — 2.7× the detail — while the noise floor in flat areas moves 2.10 to
 2.20. The gates are what make that trade good: the floor leaves detail weaker than the encoder's
 own blocking alone, and the ceiling caps how far any pixel may travel, which is what stops a face
