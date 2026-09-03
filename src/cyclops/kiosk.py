@@ -37,7 +37,6 @@ from .backlight import Backlight  # noqa: E402
 from .camera import STALE_AFTER_S, CameraSource  # noqa: E402
 from .config import (  # noqa: E402
     BROWSER_CLOSE_FLAG,
-    DIAGRAM_FILE,
     DIAGRAM_SHOWN_FLAG,
     PAGE_SERVED_FLAG,
     ConfigError,
@@ -161,6 +160,10 @@ PANEL_RETAKE_S = (0.6, 1.2, 2.4, 4.8, 9.6, 19.2)
 # early shows the dashboard for a moment, and never uncovering loses the diagram entirely.
 DIAGRAM_WAIT_S = 8.0
 VOLUME_POLL_S = 0.4  # how often we look for a volume, or a barge-in switch, the page left us
+# ...and how often we check that the window still fills the panel. See _keep_fullscreen: this is
+# a compositor's answer being verified rather than a value being read, so it can be lazy.
+FULLSCREEN_POLL_S = 0.5
+FULLSCREEN_COMPLAINTS = 3  # say it a few times and then stop; the fix is silent after that
 BROWSER_GRACE_S = 5.0  # how long Chromium gets to go quietly before it is killed
 # Its own profile, under ~/.cache rather than /tmp so the second open is a warm start rather
 # than a first-run.
@@ -183,6 +186,21 @@ CHROME_FLAGS = (
 def _black(width: int, height: int) -> np.ndarray:
     """A blank frame - for the dark panel, and for the moment the camera is still coming back."""
     return np.zeros((height, width, 3), dtype=np.uint8)
+
+
+def lost_fullscreen(shown: tuple[int, int], screen: tuple[int, int] | None) -> bool:
+    """Did the last image land somewhere other than the whole panel?
+
+    A fullscreen window on an 800x480 panel shows an 800x480 picture at 800x480, because that is
+    what :meth:`Kiosk._window_size` renders for it. Anything else means the window is not
+    actually fullscreen, whatever we last asked for - see :meth:`Kiosk._keep_fullscreen`. The
+    measured shape of the fault this was written for is 696x418 on an 800x480 panel: the picture
+    fitted, aspect intact, into the client area of a window that came back decorated.
+    """
+    if screen is None:
+        return False
+    width, height = shown
+    return width > 0 and height > 0 and (width, height) != screen
 
 
 def _admin_reachable(url: str) -> bool:
@@ -343,6 +361,11 @@ class Kiosk:
         self._retake = threading.Event()  # ... and to take the panel back off it
         self._hidden = False  # the admin page has the panel; nothing we draw can be seen
         self._window_up = False  # whether highgui currently has a window for us
+        # Deliberately "now" rather than zero, so the first check happens one interval in - by
+        # which time run() has painted a panel-sized frame over open_window's camera-sized one,
+        # and the rect being read is one worth reading.
+        self._fullscreen_at = time.monotonic()
+        self._fullscreen_fixes = 0
         self._size = (0, 0)
         self.screen = screen
 
@@ -397,6 +420,49 @@ class Kiosk:
             cv2.WINDOW_FULLSCREEN if self.fullscreen else cv2.WINDOW_NORMAL,
         )
         cv2.waitKey(1)  # let the compositor finish the resize before we draw again
+
+    def _keep_fullscreen(self, now: float) -> None:
+        """Make sure the window still fills the panel, and ask again when it does not.
+
+        Fullscreen is a request to the compositor, not a fact. Under XWayland one made before
+        the surface is mapped is dropped in silence - which is why :meth:`open_window` shows a
+        frame before asking - and the window is left decorated instead: an 800x480 outer frame
+        with an 800x418 client area, into which highgui fits the 800x480 picture at 87% with
+        black around it. That is what somebody sees as "the panel got smaller and grew a black
+        bar along the bottom".
+
+        Nothing recovers from that on its own, which is the reason this exists rather than a
+        longer wait in ``open_window``. The render size comes from ``self.screen``, so it stays
+        right while only the window is wrong, and every later frame is fitted into the same
+        too-small client area. It is wrong until the kiosk is restarted.
+
+        Taking the panel back from a page is when it happens: we destroy and rebuild our window
+        in the same instant the browser behind us is tearing down whatever it was showing, and
+        the busier that is - a megapixel photo rather than a diagram - the likelier the request
+        lands too early. So it is checked rather than assumed. ``getWindowImageRect`` reports
+        where the last image actually landed, which is exactly the question being asked; it is
+        useless for *discovering* the panel size, for the reason :meth:`_window_size` gives, and
+        ideal for confirming one we already know.
+        """
+        if not (self.fullscreen and self._window_up and self.screen is not None):
+            return
+        if now - self._fullscreen_at < FULLSCREEN_POLL_S:
+            return
+        self._fullscreen_at = now
+        try:
+            _, _, width, height = cv2.getWindowImageRect(WINDOW)
+        except cv2.error:
+            return  # no window to ask about; the next paint builds one
+        if not lost_fullscreen((width, height), self.screen):
+            return
+        self._fullscreen_fixes += 1
+        if self._fullscreen_fixes <= FULLSCREEN_COMPLAINTS:
+            print(
+                f"· the window came back {width}x{height} on a"
+                f" {self.screen[0]}x{self.screen[1]} panel; asking for fullscreen again",
+                flush=True,
+            )
+        self._apply_fullscreen()
 
     def _window_size(self, fallback: tuple[int, int]) -> tuple[int, int]:
         """The size to render at: the panel when fullscreen, else whatever the window is.
@@ -735,6 +801,12 @@ class Kiosk:
                 return
             if not self._ensure_browser(url):
                 return
+            # The eye promises the dashboard, so make sure that is what is behind our window.
+            # The warm browser shows whatever was last offered to the panel, and an offer that
+            # was never shown - a crashed session, a diagram whose show() lost the race with
+            # this tap - would otherwise be what the tap uncovers. The two can never legitimately
+            # be up at once: _page_busy gates both.
+            diagram.withdraw()
             BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)  # a stale note must not close this one
             shown_at = time.time()
@@ -809,7 +881,7 @@ class Kiosk:
         finally:
             # The drawing goes before the panel comes back, so the page has already switched
             # itself off the diagram by the time it is visible again behind the window.
-            DIAGRAM_FILE.unlink(missing_ok=True)
+            diagram.withdraw()
             if shown:
                 self._retake.set()
                 print("· diagram closed", flush=True)
@@ -1042,6 +1114,9 @@ class Kiosk:
             if self._hidden:
                 time.sleep(1.0 / ADMIN_FPS)  # nothing we draw now can be seen by anyone
                 continue
+            # Only once the panel is ours again: while a page has it there is no window of ours
+            # to measure, and the retake is the very thing this is here to catch.
+            self._keep_fullscreen(started)
 
             # The one gesture on this panel that is not a tap, resolved here rather than in the
             # callback: a finger held still sends no events at all, so the moment a hold becomes
@@ -1197,6 +1272,9 @@ def main() -> None:
     controller = SessionController(settings, frames=camera, entrypoint="kiosk")
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     diagram.set_panel(kiosk)  # so a finished diagram can find a panel to appear on
+    # Nothing can be waiting for a panel that has only just come up, so anything here is a
+    # leftover from a process that is gone - and the browser prewarmed below would paint it.
+    diagram.withdraw()
     kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
     kiosk.adopt_volume()
     # Get the admin browser up now rather than on the tap that wants it. It comes up in front
@@ -1235,7 +1313,7 @@ def main() -> None:
         kiosk.close_browser()
         kiosk.backlight.on()  # never leave the panel dark behind us
         diagram.set_panel(None)
-        DIAGRAM_FILE.unlink(missing_ok=True)  # nothing should be waiting for a panel that is gone
+        diagram.withdraw()  # nothing should be waiting for a panel that is gone
         webcam.set_live_source(None)
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away

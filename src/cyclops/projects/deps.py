@@ -38,16 +38,24 @@ class PhotoLine:
     """
 
     file: str  # "photos/16-48-48_cyclops.jpg", as the record spells it
-    by: str  # "cyclops" | "you"
+    by: str  # "cyclops" | "you" | "edit"
     at: float
-    focus: str
+    focus: str  # what it is about in words: what cyclops was asked to look at, or to change
     said: str
 
     def line(self) -> str:
-        who = "Cyclops took it" if self.by == "cyclops" else "you pressed the shutter"
-        bits = [self.file, who]
-        if self.focus:
-            bits.append(f"asked to look at: {self.focus}")
+        if self.by == "edit":
+            # Worth keeping like any other picture - it was asked for out loud and looked at -
+            # but the curator has to know what it is, because it looks exactly like a photograph
+            # of the bench and is not one. Nothing in it was measured.
+            bits = [self.file, "Cyclops redrew an earlier photo: an illustration, not a record"]
+            if self.focus:
+                bits.append(f"the change asked for: {self.focus}")
+        else:
+            who = "Cyclops took it" if self.by == "cyclops" else "you pressed the shutter"
+            bits = [self.file, who]
+            if self.focus:
+                bits.append(f"asked to look at: {self.focus}")
         if self.said:
             bits.append(f'said around then: "{self.said}"')
         return " | ".join(bits)
@@ -132,7 +140,7 @@ def read_session(folder: Path) -> SessionFolder:
             file=str(r.get("file", "")),
             by=str(r.get("by", "")),
             at=float(r.get("t") or 0.0),
-            focus=" ".join(str(r.get("focus", "")).split())[:MAX_SAID_CHARS],
+            focus=" ".join(str(r.get("focus") or r.get("request", "")).split())[:MAX_SAID_CHARS],
             said=_said_near(records, float(r.get("t") or 0.0)),
         )
         for r in records

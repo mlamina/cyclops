@@ -25,7 +25,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import diagram, session, sfx
+from . import diagram, imagine, session, sfx
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -148,6 +148,46 @@ FIND_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
             }
         },
         "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "edit_photo",
+    "description": (
+        "Redraw the last photo they took with a change made to it, and put it on the "
+        "touchscreen. Use it when the answer is 'like this' about the actual thing in front of "
+        "them and saying it would take a paragraph: a colour or a finish, a part moved or taken "
+        "away, a shelf on that wall, the half-built thing shown finished, that corner tidied. "
+        "It works on the last photo they took, so if that is not the picture you want, ask them "
+        "to hit SNAP first. It takes up to a minute and fills the panel when it lands, so say "
+        "one short sentence out loud first and then keep talking. You are shown the result when "
+        "it lands, but so are they: do not narrate it back at them unprompted. Volunteer "
+        "something only if it did not do what they asked or there is something worth flagging - "
+        "but answer whatever they do ask about it, directly, because you can see it. "
+        "What comes back is an illustration, never evidence. The whole picture is redrawn, so "
+        "nothing in it is measured and nothing in it is a fact about their hardware. So do NOT "
+        "use it for connections, wiring, which way round a part goes, the order to assemble "
+        "something, or anything they would act on - draw_diagram is for those and it is checked "
+        "against a schema. Do not use it to read a label or a plate: look at the photo you "
+        "already have. Never call it to show them what something 'really' looks like."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "request": {
+                "type": "string",
+                "description": (
+                    "What to change, as an instruction to whoever is holding the picture: "
+                    "'paint the cabinet doors matt black, leave the worktop alone', 'show the "
+                    "bracket moved to the left end of the rail'. Name what to change AND what "
+                    "to leave alone. Whoever edits it sees the photo and this sentence and "
+                    "nothing of your conversation, so it has to stand alone."
+                ),
+            }
+        },
+        "required": ["request"],
         "additionalProperties": False,
     },
 }
@@ -412,6 +452,10 @@ SHOWING THEM SOMETHING
 - You have the screen they are looking at, and you can draw on it. When the answer is a set of
   connections or a layout, draw it rather than saying it - see draw_diagram for what it can and
   cannot draw. Say one short sentence first, because it takes a few seconds to appear.
+- When the answer is what something would LOOK like - a colour, a finish, a part moved, a thing
+  that is not there yet - edit their last photo rather than describing it; see edit_photo. It can
+  take a minute, so say what you are doing and carry on talking. What comes back is a drawing of
+  their photo and not a photograph: never treat it as evidence and never measure anything off it.
 - Once it is up, stop describing it. They can see it. Answer what they ask about it.
 
 THE PROJECTS YOU KEEP
@@ -576,7 +620,14 @@ class VoiceAgent:
         self.guard = guard
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
-        self.drawing_active = False  # True while a diagram is being drawn (UI 'drawing')
+        self.drawing_active = False  # True while a picture is being made (UI 'drawing')
+        # The last photo the model has actually been shown, which is what edit_photo works on.
+        # Kept here rather than found by scanning photos/ for the newest file, because those two
+        # are not the same thing: a shutter pressed before the session was ready writes a jpg
+        # nothing ever saw, and editing a picture the model cannot reason about is worse than
+        # asking for another. Edits never pass through add_photo, so this is always a real
+        # photograph - which is also the rule that stops a second change compounding a first.
+        self._last_photo: Capture | None = None
         # ...and, beside those three, the sentence the panel says underneath. The flags answer
         # "what mode is this?", which colours the border and picks the word on the strip, and
         # they stay a closed set of three. This answers "what is it doing?", which is open-ended
@@ -724,6 +775,7 @@ class VoiceAgent:
             "tools": [
                 WEB_SEARCH_TOOL,
                 *_diagram_tools(self.settings),
+                *_imagine_tools(self.settings),
                 *_project_tools(self.settings),
             ],
             "tool_choice": "auto",
@@ -836,6 +888,7 @@ class VoiceAgent:
                     ],
                 }
             )
+            self._last_photo = capture  # only now: this means "shown", not "taken"
             await self._request_response()
         finally:
             self.tool_active = False
@@ -844,6 +897,49 @@ class VoiceAgent:
             f"[photo] {capture.width}x{capture.height}, "
             f"{capture.jpeg_bytes // 1024} KB → {capture.path}"
         )
+
+    async def add_edit(self, jpeg: bytes, request: str) -> None:
+        """Show the model the picture it just had made. No response is asked for here.
+
+        Deliberately not :meth:`add_photo`, for two reasons that both matter. It must not touch
+        ``_last_photo`` - that is the last thing the *camera* saw, and it is what keeps a second
+        change starting from the real picture rather than compounding the first. And it must not
+        ask for a response of its own: this rides inside a tool call whose output is still to be
+        sent, and ``_run_edit_photo`` issues the one ``response.create`` for the pair.
+
+        The label is flat and unquotable for the reason :meth:`add_photo`'s is - a caption
+        written as speech comes back out of the speaker verbatim - and it says twice over what
+        the picture is, because this is the nearest text to an image that otherwise looks exactly
+        like a photograph of the user's own bench.
+        """
+        if not self.connected:
+            return
+        await self._send_item(
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "[The picture you just had made, now on their screen. It is an "
+                            f"illustration of their last photo with this change applied: "
+                            f"{request}. Every pixel of it was drawn, including the parts that "
+                            "look untouched, so nothing in it is a measurement or a fact about "
+                            "their hardware. They are looking at it too, so do not narrate it "
+                            "unprompted - but answer what they ask about it.]"
+                        ),
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/jpeg;base64,"
+                        + base64.b64encode(jpeg).decode("ascii"),
+                        "detail": "auto",
+                    },
+                ],
+            }
+        )
+        self._log(f"[edit] showed the model {len(jpeg) // 1024} KB")
 
     # ---------------------------------------------------------------- audio up
 
@@ -1063,6 +1159,9 @@ class VoiceAgent:
         if call.name == "find_diagram":
             await self._run_find_diagram(call)
             return
+        if call.name == "edit_photo":
+            await self._run_edit_photo(call)
+            return
         # Every name still gets an output. A tool the model invents, or one it remembers from a
         # session config that has since changed, must be answered or it waits for it forever.
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
@@ -1245,6 +1344,131 @@ class VoiceAgent:
             "shown": shown,
             "others": [d.title for d in found[1:3]],
         }
+
+    # ---- imagined pictures ----
+
+    async def _run_edit_photo(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Redraw the last photo with a change, keep it, and put it on the panel.
+
+        The same lifecycle as :meth:`_run_draw_diagram` - the module does the work, this does the
+        bookkeeping - with one thing added that the diagram does not need. An edit can take a
+        minute where a drawing takes ten seconds, which is long enough for the user to have moved
+        on entirely, so it borrows :meth:`_run_web_search`'s staleness check: if they have spoken
+        since this started, the model is told so and told not to launch into it.
+
+        Like the diagram, the model is not told what the picture contains. Unlike the diagram it
+        is told, out loud in the result, that it has not seen it - because this one *looks* like
+        a photograph of their bench, and a model that forgets it is a drawing will start
+        answering questions off it.
+        """
+        request = _tool_string(call.arguments, "request", imagine.MAX_REQUEST_CHARS)
+        self._log(f"[tool] edit_photo {request!r}")
+        if not request:
+            await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing described"})
+            await self._request_response()
+            return
+        shot = self._last_photo
+        if shot is None:
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": "no photo to edit",
+                "note": (
+                    "They have not shown you a photo yet. Ask them to hit SNAP, in a few words."
+                ),
+            })
+            await self._request_response()
+            return
+
+        turn = self._turn_serial  # if this moves while we render, they have moved on
+        started = time.monotonic()
+        self.drawing_active = True
+        try:
+            # Inside the try rather than an else, for the reason _run_draw_diagram's comment
+            # gives: a failure in the bookkeeping must not leave the model waiting for a result.
+            jpeg = await imagine.edit(shot.path, request, self.settings)
+            output, seen = await asyncio.to_thread(self._keep_and_show_edit, jpeg, request)
+            self._log(f"[tool] edit: {len(jpeg) // 1024} KB in {time.monotonic() - started:.1f}s")
+        except imagine.ImagineError as exc:
+            session.note("photo", by="edit", request=request[:80], error=str(exc))
+            self._log(f"[tool] edit failed: {exc}", stream=sys.stderr)
+            output, seen = {"ok": False, "error": str(exc)}, None
+        except Exception as exc:  # never leave the model waiting for a tool result
+            session.note("photo", by="edit", request=request[:80], error=f"{type(exc).__name__}")
+            self._log(f"[tool] edit failed: {exc!r}", stream=sys.stderr)
+            output, seen = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None
+        finally:
+            self.drawing_active = False
+
+        if output.get("ok") and self._turn_serial != turn:
+            output["stale"] = True
+            output["note"] = (
+                "They have spoken since this started, so it may no longer be what they want. "
+                "The picture is on the panel: mention it in a few words if it still fits, and "
+                "do not launch into it."
+            )
+        await self._send_tool_output(call.call_id, output)
+        # The output first, so the call it answers is closed before anything else joins the
+        # conversation, and the picture after it - an image cannot ride in a function_call_output,
+        # so it has to be an item of its own. One response.create covers both.
+        if seen is not None:
+            await self.add_edit(seen, request)
+        await self._request_response()
+
+    def _keep_and_show_edit(self, jpeg: bytes, request: str) -> tuple[dict[str, Any], bytes]:
+        """Write the picture down, ask for the panel, and hand back the copy to be shown.
+
+        Written before it is shown, and shown whether or not writing worked - the same order and
+        the same argument as :meth:`_keep_and_show`. The downscaled copy is made once and does
+        two jobs: it is what travels to the panel, and it is what the model is shown. Both want
+        the same thing - no more than 1024 on the long edge - and 1024 is exactly what
+        ``webcam.MAX_EDGE`` hands the model for a real photograph, so the model sees an edit at
+        the size it sees everything else.
+        """
+        live = session.current()
+        kept: imagine.Edit | None = None
+        if live is not None:
+            try:
+                kept = imagine.write(jpeg, request, live.photos_dir)
+            except OSError as exc:
+                self._log(f"[tool] could not keep the edit: {exc}", stream=sys.stderr)
+
+        small = imagine.for_panel(jpeg)
+        shown = diagram.offer_image(small, request) and diagram.show()
+        if kept is not None and kept.path is not None:
+            # type "photo" and not a kind of its own: it is a jpg of their bench in the session's
+            # photos/, so the transcript, the picture stream, the Media view and the projects
+            # sweep all take it as read. `by` is the slot that already says who made a picture.
+            session.note(
+                "photo",
+                by="edit",
+                request=kept.request,
+                file=f"{session.PHOTOS}/{kept.path.name}",
+                bytes=kept.bytes,
+                # Whether it reached the *panel*. Not `shown`, which on a photo record answers
+                # the other question - whether Cyclops was shown it - and for an edit that is
+                # always yes, panel or no panel.
+                panel=shown,
+            )
+        # It is a drawing of their photo, not a photograph: that line is in the tool description,
+        # in the item the picture arrives in, and here, because this is the one output in the
+        # codebase where believing otherwise would have Cyclops reading measurements off fiction.
+        if shown:
+            note = (
+                "It is on the panel and you are being shown it too. They are looking at the same "
+                "picture, so do not narrate it unprompted - but you can see it perfectly well, "
+                "so answer anything they ask about it, directly. Volunteer something only if it "
+                "did not do what they asked, or if there is something in it worth flagging. It "
+                "is a drawing of their photo, so never read a measurement off it or treat "
+                "anything in it as a fact about their hardware."
+            )
+        else:
+            note = (
+                "You are being shown it, but there is no panel free to put it on, so they "
+                "cannot see it. Say that, then describe it briefly - this is the one case where "
+                "they have nothing to look at. It is a drawing of their photo, so never read a "
+                "measurement off it or treat anything in it as a fact about their hardware."
+            )
+        return {"ok": True, "request": request, "shown": shown, "note": note}, small
 
     async def _run_project_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Open a project's notes, or start keeping some. Both are reads and writes of the card.
@@ -1508,6 +1732,17 @@ def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [DRAW_DIAGRAM_TOOL, FIND_DIAGRAM_TOOL] if settings.diagrams else []
 
 
+def _imagine_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The one editing tool, or none. A flag of its own rather than a ride on ``diagrams``.
+
+    They look like the same feature from the panel - something appears on the screen - but they
+    are a different model at a materially different price per call, and "drawings yes, generated
+    pictures no" is a position somebody may well hold. It is also the switch to reach for if the
+    model ever starts answering wiring questions with a picture of a loom.
+    """
+    return [EDIT_PHOTO_TOOL] if settings.imagine else []
+
+
 def _project_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The five project tools, or none of them. ``CYCLOPS_PROJECTS=0`` leaves them out entirely.
 
@@ -1634,6 +1869,11 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
     if call.name == "find_diagram":
         return _phrase("looking for a drawing of", _tool_data_query(args), "looking for a drawing")
+    if call.name == "edit_photo":
+        return _phrase(
+            "editing your photo to", _tool_string(args, "request", MAX_QUERY_CHARS),
+            "editing your photo",
+        )
     if call.name == "open_project":
         return _phrase("opening", _tool_name(args), "opening a project")
     if call.name == "track_project":

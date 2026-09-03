@@ -2,7 +2,7 @@
 
 Three silent failures live here, and none of them raises. A tool that reaches the panel through
 no phrase at all is simply never mentioned - which is the bug this whole line was built to fix,
-so a ninth tool added without one has to fail something. A job that finishes in five milliseconds
+so a tenth tool added without one has to fail something. A job that finishes in five milliseconds
 under a job that has not finished takes the caption down with it if the hand-back is wrong, and
 the panel goes blank mid-search. And dots that are drawn without their width being reserved make
 the slab behind them breathe in and out four times a second, which no unit test would notice and
@@ -82,10 +82,11 @@ def test_every_tool_the_model_is_offered_has_something_to_say() -> None:
         for tool in [
             agent.WEB_SEARCH_TOOL,
             *agent._diagram_tools(settings),
+            *agent._imagine_tools(settings),
             *agent._project_tools(settings),
         ]
     }
-    assert len(offered) == 8, "the tool list changed; the caption table probably needs to as well"
+    assert len(offered) == 9, "the tool list changed; the caption table probably needs to as well"
     for name in sorted(offered):
         line = agent._activity_line(Call(name, "{}"))
         assert line != "working…", f"{name} falls through to the line meant for invented tools"
@@ -100,6 +101,10 @@ def test_every_tool_the_model_is_offered_has_something_to_say() -> None:
         (
             Call("find_diagram", '{"query": "the fuse box"}'),
             "looking for a drawing of the fuse box…",
+        ),
+        (
+            Call("edit_photo", '{"request": "paint the doors matt black"}'),
+            "editing your photo to paint the doors matt black…",
         ),
         (Call("open_project", '{"name": "Kitchen Tap"}'), "opening Kitchen Tap…"),
         (Call("track_project", '{"name": "Kitchen Tap"}'), "starting to track Kitchen Tap…"),

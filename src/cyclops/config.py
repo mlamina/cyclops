@@ -21,11 +21,13 @@ BROWSER_CLOSE_FLAG = Path.home() / ".cache" / "cyclops" / "browser-close"
 # announces nothing, and nothing can be asked what is currently on the panel.
 PAGE_SERVED_FLAG = Path.home() / ".cache" / "cyclops" / "page-served"
 
-# And where a finished diagram waits for the panel to notice it. This one holds the drawing
-# itself rather than being an empty note, because the page has to render it and the two processes
-# share no memory - and because a diagram drawn with no session running is never written to the
-# card, so a path would have nothing to point at. Written by whoever drew it, read by the admin
-# service, removed by the kiosk when it takes the panel back: absent means "show the dashboard".
+# And where whatever the panel is being asked to show waits for it to notice. A diagram was the
+# first kind and gave the file its name; an imagined picture (cyclops.imagine) is the second, and
+# rides in the same payload under "image". This one holds the thing itself rather than being an
+# empty note, because the page has to render it and the two processes share no memory - and
+# because something made with no session running is never written to the card, so a path would
+# have nothing to point at. Written by whoever made it, read by the admin service, removed by the
+# kiosk when it takes the panel back: absent means "show the dashboard".
 DIAGRAM_FILE = Path.home() / ".cache" / "cyclops" / "diagram.json"
 
 # And where the page says it has actually painted that diagram. The kiosk waits for this before
@@ -76,6 +78,7 @@ class Settings:
     slug: bool = True  # name each finished session from its transcript (cyclops.slug)
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
     diagrams: bool = True  # offer the drawing tools, and keep what they draw (cyclops.diagram)
+    imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the session to its folder (needs a camera, or a panel)
     record_source: str = "screen"  # "screen": the panel, UI and all; "camera": the raw picture
@@ -209,6 +212,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         slug=_flag("CYCLOPS_SLUG", Settings.slug),
         projects=_flag("CYCLOPS_PROJECTS", Settings.projects),
         diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
+        imagine=_flag("CYCLOPS_IMAGINE", Settings.imagine),
         project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_source=_record_source("CYCLOPS_RECORD_SOURCE"),

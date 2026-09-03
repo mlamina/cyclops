@@ -334,12 +334,23 @@ every device on the network is exactly the sprawl this replaced.
   }
   body.drawing .close .word { display: none; }
 
+  /* ...and a picture has no button at all, because pressing it anywhere puts it away. A drawing
+     keeps its square: it is a thing you read, and you point at a pin while you talk about it.
+     A picture of your own bench is a thing you look at and are then done with, so the whole
+     800x480 is the way out rather than 1.5% of it in a corner. */
+  body.photo .close { display: none; }
+
   /* ---- diagrams ---- */
   /* The second thing this page can be. Not a second page: the browser behind the panel is warm
      and pointed here, and navigating it would mean waiting for a load at the one moment somebody
      is watching. So both screens live in one document and the body class picks. */
   .stage { position: relative; min-height: 0; overflow: hidden; display: none; }
   .stage svg { display: block; }
+
+  /* The other thing the stage can hold: a photo of theirs, redrawn - see cyclops/imagine.py.
+     contain and not cover, because cropping a picture somebody asked to see is a small lie, and
+     the letterbox is the screen's own colour rather than a second one. */
+  .stage .shot { display: block; width: 100%; height: 100%; object-fit: contain; }
 
   /* A diagram gets the whole panel. Everything the dashboard needs around it - the header, the
      volume, the full-width way out - is chrome for a page of numbers, and a wiring diagram at
@@ -1046,7 +1057,12 @@ every device on the network is exactly the sprawl this replaced.
 
   const close = document.getElementById('close');
   const closeword = document.getElementById('closeword');
-  if (close) close.addEventListener('click', async () => {
+  // Named and hung on window, because the panel has a second way out: a picture is put away by
+  // pressing it anywhere at all (see the diagram script below, which is a script of its own and
+  // cannot see a const in this one). Both have to make the same journey - leave the kiosk its
+  // note, put the button back, reset the hash - so there is one of it rather than two.
+  async function leave() {
+    if (!close || close.disabled) return;  // a second press while the first is in flight
     close.disabled = true;
     // The word only, never the whole button: over a diagram the word is hidden and the glyph is
     // the entire control, and replacing the button's text used to take the glyph with it.
@@ -1064,7 +1080,9 @@ every device on the network is exactly the sprawl this replaced.
       // kiosk points the browser at boot, not wherever this was left three days ago.
       location.hash = '#/sessions';
     }
-  });
+  }
+  window.__leave = leave;
+  if (close) close.addEventListener('click', leave);
 
   // kiosk hardening: no context menu, no pinch/double-tap zoom, and nothing is draggable.
   // A native drag is a scroll that did not happen - the finger picks a picture up off the grid
@@ -1249,6 +1267,13 @@ every device on the network is exactly the sprawl this replaced.
              ' → ' + (record.hits ? record.hits + ' found' : 'nothing written down');
     }
     if (kind === 'photo') {
+      // A picture Cyclops drew from an earlier one, not one anybody took. Same record type
+      // because it is a jpg in photos/ like any other; `by` is what tells them apart.
+      if (record.by === 'edit') {
+        const what = '"' + esc(record.request || '') + '"';
+        if (record.error) return 'Tried to imagine a change — ' + what + ' → failed';
+        return 'Imagined a change — ' + what;
+      }
       const seen = record.shown ? 'Cyclops looked at it.' : 'Cyclops never saw this one.';
       return 'You took a photo — the shutter button. ' + seen;
     }
@@ -1938,6 +1963,16 @@ only thing between it and the panel is the layout.
 
   const stage = document.getElementById('stage');
   const dtitle = document.getElementById('dtitle');
+
+  // Any press on a picture puts it away. On the press and not the click, because that is what
+  // the kiosk's own tab row does and a screen with no travel has nothing else to answer with;
+  // and on the stage rather than the document because the stage IS the panel while it is up -
+  // body.drawing collapses the grid to one row and gives it the whole 800x480.
+  stage.addEventListener('pointerdown', (event) => {
+    if (!document.body.classList.contains('photo')) return;  // a drawing keeps its corner square
+    event.preventDefault();  // no synthetic click behind it, and no double-tap zoom
+    window.__leave();
+  });
   const PANEL_EVERY = 400;   // one stat() on the server; the drawing must not wait on a poll
   let showing = null;
 
@@ -1946,10 +1981,26 @@ only thing between it and the panel is the layout.
     if (!r.ok) return;
     const found = await r.json();
     dtitle.textContent = found.title || '';
+    // Cleared before it is decided, so a drawing arriving after a picture gets its button back.
+    document.body.classList.remove('photo');
     // The class first: a stage that is still display:none has no size, and fitting a drawing to
     // a box of zero by zero puts it nowhere at all.
     window.__drawing(true);
     stage.innerHTML = '<div class="laying-out">drawing…</div>';
+    if (found.image) {
+      document.body.classList.add('photo');  // no corner button; the whole stage is the way out
+      // A picture rather than a spec, so there is nothing to lay out - but it still has to be
+      // decoded before we say we have painted it, or the kiosk uncovers onto an empty stage.
+      const img = new Image();
+      img.className = 'shot';
+      img.alt = '';
+      img.src = found.image;
+      try { await img.decode(); } catch (e) { /* show it anyway: a slow decode beats nothing */ }
+      stage.textContent = '';
+      stage.appendChild(img);
+      try { await fetch('/diagram/shown', { method: 'POST', body: '' }); } catch (e) {}
+      return;
+    }
     let svg = null;
     try {
       build(found.spec, stage);
@@ -1980,6 +2031,7 @@ only thing between it and the panel is the layout.
         // will ever want this memory.
         showing = null;
         window.__drawing(false);
+        document.body.classList.remove('photo');
         stage.textContent = '';
         dtitle.textContent = '';
       }

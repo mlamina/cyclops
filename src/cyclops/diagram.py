@@ -33,6 +33,7 @@ left, an unknown wire kind loses its colour. A diagram that is right except that
 
 from __future__ import annotations
 
+import base64
 import json
 import sys
 import uuid
@@ -423,10 +424,6 @@ def offer(spec: dict[str, Any], kept: Diagram | None = None) -> bool:
     The drawing travels in the file rather than a path to one, because the page is served by the
     admin process and a diagram drawn with no session running was never written to the card at
     all - there would be nothing for a path to point at.
-
-    The id is fresh every time rather than the diagram's own name. All it has to do is differ
-    from whatever the page last drew, and a stable id would make showing the same diagram twice
-    in a row silently do nothing the second time.
     """
     # Where the page should send the picture back to, if anywhere. Only for a diagram that has
     # just been written and has no picture yet: re-showing an old one would spend a megabyte of
@@ -434,16 +431,62 @@ def offer(spec: dict[str, Any], kept: Diagram | None = None) -> bool:
     # rather than inline, because str(None) is "None" and would have the page writing a picture
     # to a file of that name.
     target = _svg_for(kept) if kept is not None else None
-    payload = {
-        "id": uuid.uuid4().hex[:12],
+    return _leave({
         "title": spec.get("title", ""),
         SPEC_NAME: spec,
         "svg": str(target) if target is not None else None,
-    }
+    })
+
+
+def offer_image(jpeg: bytes, title: str) -> bool:
+    """Leave a picture where the panel's page will find it, in place of a drawing.
+
+    The same file and the same handshake as :func:`offer`, because a diagram was only ever the
+    first thing the panel could be asked to show - see :mod:`cyclops.imagine` for the second.
+    It rides in the payload as base64 for the reason :func:`offer` already gives about the spec:
+    the page is served by the admin process, which shares no memory with whoever made this, and
+    a picture made with no session running was never written to the card at all.
+
+    Downscale it first. The caller does that, because the caller knows what the full-size copy is
+    for - see :func:`cyclops.imagine.for_panel`.
+    """
+    url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
+    return _leave({"title": title, SPEC_NAME: None, "image": url, "svg": None})
+
+
+def withdraw() -> None:
+    """Take back whatever was last offered, so the page falls back to the dashboard.
+
+    The panel's browser is warm and polling, so an offer left lying about is not inert: the page
+    paints it and keeps it up, behind our window, until something says otherwise. Anything that
+    is about to hand the panel to that browser for some *other* reason therefore has to clear
+    this first, or it uncovers onto a picture from an hour ago - which is exactly what tapping
+    the eye did on 2026-09-02, after a throwaway script offered a picture to a panel that was
+    never going to show it and exited without tidying up.
+
+    Never raises. A payload that cannot be removed is not a reason to refuse a tap.
+    """
     try:
-        card.write_text(DIAGRAM_FILE, json.dumps(payload))
+        DIAGRAM_FILE.unlink(missing_ok=True)
     except OSError as exc:
-        print(f"· could not offer the diagram to the panel ({exc})", file=sys.stderr, flush=True)
+        print(
+            f"· could not take the panel's last picture back ({exc})",
+            file=sys.stderr,
+            flush=True,
+        )
+
+
+def _leave(payload: dict[str, Any]) -> bool:
+    """One thing for the panel to show, written where the page is looking. False if it could not.
+
+    The id is minted here rather than by the caller: all it has to do is differ from whatever the
+    page last drew, and a stable one would make showing the same thing twice in a row silently do
+    nothing the second time.
+    """
+    try:
+        card.write_text(DIAGRAM_FILE, json.dumps({"id": uuid.uuid4().hex[:12], **payload}))
+    except OSError as exc:
+        print(f"· could not offer the panel something to show ({exc})", file=sys.stderr, flush=True)
         return False
     return True
 

@@ -163,6 +163,37 @@ def test_a_diagram_the_panel_never_drew_still_says_so(log):
     assert "![" not in page.split("Relay wiring")[1], "no broken image for a picture we lack"
 
 
+def test_an_edit_reads_as_a_change_imagined_rather_than_a_photo_taken(log):
+    """The record cyclops.imagine writes: a photo record, but nobody took it."""
+    with log:
+        session.note(
+            "photo",
+            by="edit",
+            request="paint the cabinet doors matt black",
+            file="photos/14-33-05_edit.jpg",
+            bytes=91234,
+            panel=True,
+        )
+        session.note("photo", by="edit", request="a face on it", error="the edit failed")
+
+    page = (log.dir / card.PAGE_NAME).read_text()
+    assert "Imagined a change" in page and "matt black" in page
+    assert "![Imagined, 14:33:05](photos/14-33-05_edit.jpg)" in page
+    assert "shutter button" not in page, "nobody pressed anything to make this"
+    assert "Tried to imagine a change" in page and "the edit failed" in page
+    assert "![" not in page.split("a face on it")[1], "a failed edit has no picture to show"
+
+
+def test_a_failed_edit_is_not_counted_as_a_photo_on_the_card(log):
+    """The end record's count has to agree with the files in photos/, or triage disagrees."""
+    with log:
+        session.note("photo", by="edit", file="photos/14-33-05_edit.jpg", request="black")
+        session.note("photo", by="edit", request="a face on it", error="the edit failed")
+
+    end = [r for r in card.read_log(log.dir / card.LOG_NAME)[0] if r.get("type") == "end"]
+    assert end and end[0]["photos"] == 1
+
+
 def test_no_call_site_anywhere_passes_a_kind_field():
     """The test above proves the rule; this one enforces it across the source.
 

@@ -251,7 +251,11 @@ class SessionLog:
             "reason": reason,
             "seconds": self._elapsed(),
             "slug": self.slug,  # in the file too, so the folder name is always reconstructible
-            "photos": sum(1 for r in self._records if r.get("type") == "photo"),
+            # Only the ones that landed, so this agrees with card.triage counting files in
+            # photos/: an edit that failed leaves a record saying so and no picture.
+            "photos": sum(
+                1 for r in self._records if r.get("type") == "photo" and r.get("file")
+            ),
         }
         if reason == "error" and exc is not None:
             fields["error"] = f"{type(exc).__name__}: {exc}"
@@ -848,7 +852,16 @@ def _render_diagram(record: dict, at: str) -> str:
 
 def _render_photo(record: dict, at: str) -> str:
     file = str(record.get("file", ""))
-    if record.get("by") == "cyclops":
+    if record.get("by") == "edit":
+        # A picture cyclops.imagine made from an earlier one. It is a photo record because it is
+        # a jpg in photos/ like any other, and it says what was asked for rather than who shot
+        # it, because nobody shot it. A failed edit has no file and renders as the line alone.
+        request = record.get("request", "")
+        if record.get("error"):
+            return f'*Tried to imagine a change* ({at}) — "{request}" → failed: {record["error"]}'
+        line = f'*Imagined a change* ({at}) — "{request}"'
+        label = "Imagined"
+    elif record.get("by") == "cyclops":
         # Historical: Cyclops used to hold its own shutter. Kept because --fix re-renders old
         # logs, and a card full of them would otherwise lose half its pictures' captions.
         line = f"*Cyclops took a photo* ({at})"

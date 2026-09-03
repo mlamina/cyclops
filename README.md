@@ -68,6 +68,7 @@ sessions/
     video.mp4         the recording - the panel, or the camera (kiosk only)
     photos/
       14-33-12_you.jpg
+      14-33-05_edit.jpg      one of those redrawn with a change - see Imagining a change
       14-32-40_cyclops.jpg   (only on older cards - Cyclops used to hold its own shutter)
     diagrams/
       14-35-01_relay-driven-from-gpio.svg    the picture, embedded in session.md
@@ -321,6 +322,53 @@ preferred to drawing it twice: a redraw would come back subtly different.
 The three vendored bundles under `src/cyclops/admin/static/` are served from the Pi, never a CDN
 (see `NOTICE.md` there). Nothing about the panel needs the internet.
 
+## Imagining a change
+
+Some answers are not a picture of connections but a picture of the thing itself, changed. Press
+SNAP at the cabinet and ask *"what would those doors look like painted matt black?"* and a minute
+later the photo you just took is back on the panel with the doors black and everything else where
+it was. **Press it anywhere to put it away.** A drawing keeps its corner button because it is a
+thing you read and point at while you talk about it; a picture of your own bench is a thing you
+look at and are then done with, so the whole panel is the way out rather than a square in the
+corner of it.
+
+`edit_photo` sends the last photo *you* were shown holding to `gpt-image-2` on OpenAI's image
+edits endpoint, along with one sentence saying what to change. It always works on the last real
+photo and never on a previous edit, so a second change — *"now make it darker"* — starts from
+what the camera actually saw rather than compounding the first.
+
+**What comes back is an illustration, and never evidence.** An edit with no mask redraws the
+whole frame, so every pixel in the result is the model's, including the ones that look untouched.
+Nothing in it is measured and nothing in it is a fact about your hardware. That is why colour,
+finish, a part moved, a thing that is not there yet and *shown finished* are what it is for, and
+why connections, orientation and the order to assemble something are not: those are
+`draw_diagram`, whose output is checked against a schema we own before it is drawn.
+
+**Cyclops is shown the result the moment it lands**, so it can tell you when the edit did not do
+what you asked rather than leaving you to notice. It is told not to describe it back — you are
+looking at the same picture — so it stays quiet unless there is something to say. It is told
+three times over, in the tool, in the result and in the item the picture arrives in, that what it
+is looking at is a drawing: never a measurement, and never a fact about your hardware. The one
+time it will describe the picture is when there was no free panel to put it on, because then you
+have nothing to look at.
+
+The size is taken from your photo rather than from a menu, snapped to what the model will accept,
+so the edit keeps the framing you were looking at — a crop would change the subject, which is the
+one thing an edit of your own photo must not do. It renders at `low` quality on purpose: the
+panel is 800×480 and the picture is halved on the way there, so what that setting costs is mostly
+invisible and what it buys is twenty seconds instead of sixty.
+
+**Edits are kept like photos, because that is what they are on the card**: one jpg in the
+session's own `photos/`, named `14-33-05_edit.jpg` where a shutter press would be
+`14-32-40_you.jpg`. So an edit is in `session.md` under *Imagined a change*, in the MEDIA tab, in
+the lightbox, and eligible to be filed into a project like any other picture — the curator is
+told plainly that it redrew an earlier photo, so it never files one believing it is a record of
+the bench.
+
+While it is up the panel belongs to it, which means a `screen` recording goes black for as long
+as you leave it there — the same as a diagram, and for the same reason. `CYCLOPS_IMAGINE=0`
+withholds the tool entirely.
+
 ## Admin page
 
 `cyclops-admin` serves a small Django page on **port 80**, so from anywhere on your network you
@@ -442,6 +490,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_PROJECTS`     | `1`            | Keep `projects/` up to date, and offer Cyclops the `open_project` / `track_project` tools; `0` turns the whole feature off. |
 | `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
 | `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them; `0` withholds both drawing tools. |
+| `CYCLOPS_IMAGINE`      | `1`            | Let Cyclops redraw the last photo with a change and show it on the panel; `0` withholds `edit_photo`. |
 | `CYCLOPS_SOUNDS`       | `1`            | Cues for waking and going to sleep, and the shutter; `0` disables. |
 | `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |

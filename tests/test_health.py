@@ -10,6 +10,10 @@ Three failures met on 2026-08-31, in one session, all of which the panel reporte
 * the Pi was at 85 C and capping its own clock, which is why the first two happened, and the
   panel had no way at all to mention it.
 
+And a fourth, met on 2026-09-02: taking the panel back from a page left the window decorated
+rather than fullscreen, so every later frame was fitted into an 800x418 client area on an
+800x480 panel and nothing ever noticed.
+
 Everything here is pure: no camera, no key, no window.
 """
 
@@ -251,3 +255,29 @@ def test_a_run_of_dropped_frames_is_not_an_unplugged_camera() -> None:
 
     assert source.error == "", "a hiccup cost us the device"
     assert source.latest() is not None, "and the frame that arrived after it was dropped"
+
+
+# ---------------------------------------------------------------- the window that shrank
+
+
+@pytest.mark.parametrize(
+    ("shown", "screen", "lost"),
+    [
+        ((800, 480), (800, 480), False),  # fullscreen, and the picture fills it
+        ((696, 418), (800, 480), True),  # measured: a decorated window, the picture fitted into it
+        ((800, 450), (800, 480), True),  # a 16:9 frame in a 5:3 window, which is the same fault
+        ((0, 0), (800, 480), False),  # nothing has landed yet; there is nothing to conclude
+        ((696, 418), None, False),  # --windowed: no panel to fill, so nothing to be wrong about
+    ],
+)
+def test_a_window_that_stopped_filling_the_panel_is_noticed(shown, screen, lost) -> None:
+    """The rule behind Kiosk._keep_fullscreen.
+
+    Fullscreen is a request to a compositor, and under XWayland one made a moment too early is
+    dropped without a word. The render size goes on coming from the screen, so the panel stays
+    wrong until somebody restarts the kiosk - which is why this is checked every half second
+    rather than asked for once and believed.
+    """
+    from cyclops import kiosk
+
+    assert kiosk.lost_fullscreen(shown, screen) is lost
