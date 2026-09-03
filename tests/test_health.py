@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import threading
 import time
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -281,3 +282,63 @@ def test_a_window_that_stopped_filling_the_panel_is_noticed(shown, screen, lost)
     from cyclops import kiosk
 
     assert kiosk.lost_fullscreen(shown, screen) is lost
+
+
+# ---------------------------------------------------------------- how hot, and how busy, on a bar
+
+
+def _proc_stat(tmp_path: Path, name: str, busy: int, idle: int, iowait: int) -> Path:
+    """A /proc/stat whose aggregate line is known. user nice system idle iowait irq softirq steal."""
+    path = tmp_path / name
+    path.write_text(f"cpu  {busy} 0 0 {idle} {iowait} 0 0 0 0 0\ncpu0 1 2 3 4 5 6 7 8\nintr 0\n")
+    return path
+
+
+def test_the_temperature_bar_turns_amber_where_the_tile_did() -> None:
+    """73% is written into the page's own gradient by hand. This is what stops the two drifting.
+
+    See ``.mtrack`` in cyclops/admin/templates/cyclops/dashboard.html: the amber stop sits at 73%
+    because that is where WARN_C lands on this scale, so the bar changes colour at the same
+    reading temp_band() does. Move COOL_C or THROTTLE_C without moving the stop and the bar goes
+    on looking right while quietly warning at the wrong temperature.
+    """
+    assert stats.temp_percent(stats.COOL_C) == 0
+    assert stats.temp_percent(stats.THROTTLE_C) == 100
+    assert stats.temp_percent(stats.WARN_C) == 73, "the .mtrack gradient's amber stop"
+    assert stats.temp_percent(stats.HOT_C) == 91, "well into the red by the time the clock is capped"
+    assert stats.temp_percent(4.0) == 0, "a bar cannot be less than empty"
+    assert stats.temp_percent(120.0) == 100, "or more than full"
+    assert stats.temp_percent(None) is None
+
+
+def test_the_first_cpu_reading_is_a_dash_and_not_a_guess(monkeypatch, tmp_path) -> None:
+    """One read of a counter climbing since boot is not a rate. Say nothing rather than divide."""
+    monkeypatch.setattr(stats, "_cpu_sample", None)  # monkeypatch puts the global back afterwards
+    monkeypatch.setattr(stats, "STAT", _proc_stat(tmp_path, "a", 100, 900, 0))
+    assert stats.cpu_percent() is None
+
+
+def test_cpu_is_the_work_done_between_two_polls(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(stats, "_cpu_sample", None)
+    monkeypatch.setattr(stats, "STAT", _proc_stat(tmp_path, "a", 100, 900, 0))
+    stats.cpu_percent()
+    monkeypatch.setattr(stats, "STAT", _proc_stat(tmp_path, "b", 130, 970, 0))
+    assert stats.cpu_percent() == 30, "30 busy jiffies out of the 100 that passed"
+
+
+def test_waiting_on_the_card_is_not_the_cpu_working(monkeypatch, tmp_path) -> None:
+    """iowait counted as busy would show this box at 100% every time it wrote a frame."""
+    monkeypatch.setattr(stats, "_cpu_sample", None)
+    monkeypatch.setattr(stats, "STAT", _proc_stat(tmp_path, "a", 100, 900, 0))
+    stats.cpu_percent()
+    monkeypatch.setattr(stats, "STAT", _proc_stat(tmp_path, "b", 100, 900, 100))
+    assert stats.cpu_percent() == 0
+
+
+def test_a_sample_from_last_time_the_page_was_open_is_thrown_away(monkeypatch, tmp_path) -> None:
+    """Otherwise the first bar after a quiet hour is the average over that hour, labelled "now"."""
+    monkeypatch.setattr(stats, "_cpu_sample", (time.monotonic() - stats.CPU_SAMPLE_MAX_AGE_S - 1, 0, 0))
+    monkeypatch.setattr(stats, "STAT", _proc_stat(tmp_path, "a", 5000, 5000, 0))
+    assert stats.cpu_percent() is None, "stale: nothing to subtract from"
+    monkeypatch.setattr(stats, "STAT", _proc_stat(tmp_path, "b", 5050, 5050, 0))
+    assert stats.cpu_percent() == 50, "and the poll after it is a real reading again"

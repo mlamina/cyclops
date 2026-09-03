@@ -99,20 +99,6 @@ def _gib(value: int | None) -> str:
     return "—" if value is None else f"{value / GIB:.1f}"
 
 
-def _duration(seconds: float | None) -> str:
-    """A rough, readable uptime: days and hours, or hours and minutes, or just minutes."""
-    if seconds is None:
-        return "—"
-    minutes = int(seconds // 60)
-    hours, minutes = divmod(minutes, 60)
-    days, hours = divmod(hours, 24)
-    if days:
-        return f"up {days}d {hours}h"
-    if hours:
-        return f"up {hours}h {minutes}m"
-    return f"up {minutes}m"
-
-
 def _payload(request: HttpRequest) -> dict:
     """Every number the page shows, raw and pre-formatted, in one dict."""
     sample = stats.collect(_settings())
@@ -127,20 +113,18 @@ def _payload(request: HttpRequest) -> dict:
 
     data = asdict(sample)
     data.update(
+        # Each bar's own 0-100. Three of these are percentages already; a temperature is not, and
+        # the scale it goes on is the board's, so stats.py decides it rather than this page.
         mem_percent=mem_percent,
         disk_percent=disk_percent,
+        temp_percent=stats.temp_percent(sample.temp_c),
+        # The word beside each bar says what the bar cannot. For memory and disk that is the
+        # figure in bytes - the bar is already the percentage, and printing it twice says nothing
+        # the second time. cpu_percent itself rides along in asdict(sample).
         temp_text="—" if sample.temp_c is None else f"{sample.temp_c:.1f}°",
-        temp_detail="—" if sample.load1 is None else f"load {sample.load1:.2f}",
-        mem_text="—" if mem_percent is None else f"{mem_percent}%",
-        mem_detail=f"{_gib(sample.mem_used)} / {_gib(sample.mem_total)} GB",
-        disk_text="—" if disk_percent is None else f"{disk_percent}%",
-        disk_detail=f"{_gib(sample.disk_free)} GB free",
-        sessions_text=str(sample.sessions),
-        sessions_detail=(
-            f"{sample.sessions_in_progress} in progress"
-            if sample.sessions_in_progress
-            else _duration(sample.uptime_s)
-        ),
+        cpu_text="—" if sample.cpu_percent is None else f"{sample.cpu_percent}%",
+        mem_text=f"{_gib(sample.mem_used)} / {_gib(sample.mem_total)} GB",
+        disk_text=f"{_gib(sample.disk_free)} GB free",
         local=_is_local(request),
         volume=mixer.requested(),
         barge_in=barge.enabled(_settings()),
@@ -153,7 +137,7 @@ def _payload(request: HttpRequest) -> dict:
 
 
 def dashboard(request: HttpRequest) -> HttpResponse:
-    """The whole interface: four tiles and, on the kiosk only, a volume bar and a close bar."""
+    """The whole interface: four readings and, on the kiosk only, the settings and a way out."""
     page = render(request, "cyclops/dashboard.html", _payload(request))
     if _is_local(request):
         _note_served()

@@ -1,4 +1,4 @@
-"""The numbers the admin page shows: temperature, memory, disk, recorded sessions.
+"""The numbers the admin page shows: temperature, CPU, memory, disk.
 
 Stdlib only - no ``psutil``. Everything here is a read of ``/proc``, ``/sys`` or ``statvfs``,
 so a poll costs microseconds and never writes to the card. On macOS the Linux-only reads return
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from .config import Settings
 THERMAL = Path("/sys/class/thermal")
 MEMINFO = Path("/proc/meminfo")
 UPTIME = Path("/proc/uptime")
+STAT = Path("/proc/stat")
 
 # A Pi 5 starts capping its clock at 80 C (the "soft temperature limit") and gets serious at 85.
 # Those are the board's own numbers, not taste, so they are what the tile colours off.
@@ -31,13 +33,36 @@ THROTTLE_C = 85.0  # where the board stops being polite about it
 # the lamp rather than a fact about the board.
 HYSTERESIS_C = 1.5
 
+# The bottom of the temperature bar on the panel, and the only number here that is not the
+# board's own. A bar that started at 0 C would spend its first third on temperatures a Pi in a
+# case never reaches, and would still be green at the point the clock is being capped. Against 30
+# the readings spread over the whole bar and land on the board's own lines: WARN_C at 73 per cent,
+# HOT_C at 91, THROTTLE_C at the end. See :func:`temp_percent`.
+COOL_C = 30.0
+
+# How stale a CPU sample may be before it is thrown away rather than subtracted from. The page
+# polls every five seconds while somebody is looking at it and then stops; a sample left over from
+# the last time it was open would average the CPU over the hours in between and call that "now".
+CPU_SAMPLE_MAX_AGE_S = 12.0
+
+# The last /proc/stat reading: (taken at, busy, total). A CPU percentage is a *rate*, and one read
+# of a counter that has been climbing since boot is not one, so something has to remember. This is
+# the only state in an otherwise stateless module, and it is here rather than threaded through
+# because collect() has exactly one caller - the admin page, once per render and once per poll.
+#
+# Note the service runs two gunicorn workers (cyclops.admin.server): each keeps its own sample and
+# subtracts from its own, so a worker sees roughly every other poll and reports a ten-second
+# average rather than a five-second one. That is a longer window, not a wrong one.
+_cpu_sample: tuple[float, int, int] | None = None
+
 
 @dataclass(frozen=True)
 class SystemStats:
     """One sample of how the box is doing. ``None`` means "this platform can't tell us"."""
 
     temp_c: float | None
-    temp_band: str  # "ok" | "warn" | "hot" | "unknown" - drives the tile colour
+    temp_band: str  # "ok" | "warn" | "hot" | "unknown" - drives the reading's colour
+    cpu_percent: int | None  # work done since the *last sample*, not since boot - see cpu_percent()
     mem_used: int | None
     mem_total: int | None
     disk_used: int | None
@@ -87,6 +112,24 @@ def temp_band(temp_c: float | None) -> str:
     if temp_c >= WARN_C:
         return "warn"
     return "ok"
+
+
+def temp_percent(temp_c: float | None) -> int | None:
+    """Where this reading sits on the panel's bar, 0-100, or None where there is no reading.
+
+    COOL_C is empty and THROTTLE_C is full. Deliberately not degrees-as-percent: a Pi 5 idles
+    near 50 C and stops being polite at 85, so a literal scale leaves the bottom third unused and
+    the top fifth unreachable - a bar that only ever moves through its middle, which is the one
+    thing a bar is for.
+
+    The scale is chosen so the bar changes colour where :func:`temp_band` does. WARN_C lands on
+    73 per cent, which is where the page's gradient turns amber; HOT_C lands on 91, which is where
+    it has gone red. The two agree because they are given the same numbers, not because somebody
+    is keeping two thresholds in step by hand.
+    """
+    if temp_c is None:
+        return None
+    return max(0, min(100, round(100 * (temp_c - COOL_C) / (THROTTLE_C - COOL_C))))
 
 
 def heat_alarm(temp_c: float | None, was: str = "") -> str:
@@ -211,6 +254,52 @@ def load1() -> float | None:
         return None
 
 
+def _cpu_times() -> tuple[int, int] | None:
+    """``(busy, total)`` jiffies since boot off /proc/stat's aggregate line, or None off Linux."""
+    try:
+        first = STAT.read_text().split("\n", 1)[0].split()
+    except OSError:
+        return None
+    if len(first) < 6 or first[0] != "cpu":
+        return None
+    try:
+        fields = [int(value) for value in first[1:]]
+    except ValueError:
+        return None
+    # user nice system idle iowait irq softirq steal ... - idle and iowait are both "not working".
+    # Counting iowait as busy would show this box at 100% every time it wrote a frame to the card,
+    # which is most of a session, and the bar would be pinned red for a reason that is not heat.
+    return sum(fields) - (fields[3] + fields[4]), sum(fields)
+
+
+def cpu_percent() -> int | None:
+    """How busy the CPU has been *since the last call*, 0-100, or None off Linux.
+
+    Deliberately not the usual read, sleep, read: that is a tenth of a second of the very thing it
+    measures, once per poll, spent inside a request handler on a board that throttles at 85 C.
+    This subtracts from whatever the previous caller left behind instead, so the window is however
+    long ago that was - five seconds on the page's own poll, which is the better window anyway. It
+    reports what the box has been doing rather than what it happened to be doing in the instant
+    somebody looked.
+
+    None until there are two readings close enough together to subtract. The first call after a
+    restart has nothing behind it, and a sample older than CPU_SAMPLE_MAX_AGE_S is thrown away
+    rather than used: the page shows a dash for one poll and the truth after it, which beats
+    showing the average since boot and calling it "now".
+    """
+    global _cpu_sample
+    now = _cpu_times()
+    if now is None:
+        return None
+    was, _cpu_sample = _cpu_sample, (time.monotonic(), *now)
+    if was is None or time.monotonic() - was[0] > CPU_SAMPLE_MAX_AGE_S:
+        return None
+    busy, total = now[0] - was[1], now[1] - was[2]
+    if total <= 0:  # two reads inside one jiffy: there is nothing to divide by yet
+        return None
+    return max(0, min(100, round(100 * busy / total)))
+
+
 def collect(settings: Settings) -> SystemStats:
     """One sample of everything, for a page render or an API poll."""
     temp = cpu_temp_c()
@@ -220,6 +309,7 @@ def collect(settings: Settings) -> SystemStats:
     return SystemStats(
         temp_c=None if temp is None else round(temp, 1),
         temp_band=temp_band(temp),
+        cpu_percent=cpu_percent(),
         mem_used=mem_used,
         mem_total=mem_total,
         disk_used=disk_used,

@@ -4,7 +4,7 @@ The whole admin interface: one self-contained file, no external assets, laid out
 - same phosphor palette, same bezel, same monospaced readouts - because on the panel it is not
 a different application, it is the next screen of the same one.
 
-The volume bar, the interrupt switch and the close bar exist only for the kiosk's own browser:
+The volume bar, the two switches and the close bar exist only for the kiosk's own browser:
 a laptop on the LAN has nothing to close, everything else here is a read-only copy of what is on
 the card, and the panel is meant to be the one place the box is set - a slider and a switch on
 every device on the network is exactly the sprawl this replaced.
@@ -58,7 +58,7 @@ every device on the network is exactly the sprawl this replaced.
        thing it is. */
     padding: calc(17 * var(--u));
     display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;   /* header / the view / the way out */
     gap: calc(6 * var(--u));
     transition: opacity .3s;
   }
@@ -122,89 +122,136 @@ every device on the network is exactly the sprawl this replaced.
   body.offline .link { color: var(--amber); }
   body.offline .link::after { content: "NO LINK"; }
 
-  /* ---- the four readouts ---- */
-  .tiles {
-    grid-template-columns: 1fr 1fr;
-    grid-template-rows: 1fr 1fr;
-    gap: calc(12 * var(--u));
+  /* ---- the System screen ---- */
+  /* Half and half, down the middle. The settings on the left because they are what somebody came
+     to this screen to change; the readings on the right because they are what you look at while
+     you are here. Both halves used to be stacked: 2x2 boxes of 58 u numbers across the whole
+     width, and the three settings crushed into two rows underneath them. */
+  .system {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    /* No gap. The two halves are exactly half the panel each and what separates them is the
+       padding either side of the rule - which is what 50/50 has to mean on a screen read from
+       across a bench. */
+    gap: 0;
     padding: calc(8 * var(--u)) calc(4 * var(--u)) 0;
     min-height: 0;    /* grid children default to min-height:auto and refuse to shrink */
   }
-  /* Each one is a labelled box in the terminal manner: the caption sits on the top rule with
-     the background punched out behind it, so the frame reads as drawn around the number. */
-  .tile {
-    position: relative;
-    background: var(--screen);
-    border: calc(1 * var(--u)) solid var(--dim);
+  /* A laptop on the LAN never renders the settings at all - they are inside the local-only block
+     - so the readings take the whole width rather than half of it and a column of nothing.
+     body.kiosk is exactly that same flag, which is why one selector settles it at every size. */
+  body:not(.kiosk) .system { grid-template-columns: minmax(0, 1fr); }
+  body:not(.kiosk) .meters { padding-left: 0; }
+
+  /* ---- the three things this screen can change ---- */
+  /* One to a row now. They were a 52 u volume bar and a single row holding *both* switches,
+     because 480 px had nothing left to give: a second full-height switch row took the readouts'
+     numbers from 45 px of their 58 px line to 19 px, which is not a smaller number but a broken
+     one. The readouts are 16 u bars today and have handed most of that height back. */
+  .controls {
     display: grid;
-    align-content: center;
-    justify-items: center;
-    padding: calc(6 * var(--u)) calc(10 * var(--u));
-    min-width: 0;
+    grid-template-rows: repeat(3, auto);
+    /* space-between rather than three equal thirds, so the top of VOL sits level with the top of
+       CPU and the bottom of INTERRUPT with the bottom of the disk bar. Two alignments across the
+       rule for nothing, and they are the two anybody actually sees. */
+    align-content: space-between;
+    gap: calc(14 * var(--u));
+    /* The rule down the middle *is* the split. On this column's own border rather than between
+       the two, so it leaves when the settings do: a laptop must never be left with a line down
+       an empty half. */
+    border-right: calc(1 * var(--u)) solid var(--dim);
+    padding-right: calc(24 * var(--u));
     min-height: 0;
   }
-  .label {
-    position: absolute;
-    top: calc(-8 * var(--u));
-    left: calc(14 * var(--u));
-    padding: 0 calc(7 * var(--u));
-    background: #000;
-    font-size: calc(13 * var(--u));
-    letter-spacing: .22em;
-    text-transform: uppercase;
-    color: var(--mid);
+  .ctl { display: grid; gap: calc(6 * var(--u)); min-width: 0; }
+  .ctl > * { min-width: 0; }
+
+  /* ---- the four readings ---- */
+  /* Bars, not big numbers. A number says 71% and leaves you to remember whether 71 is a lot; a
+     bar says where 71 sits between empty and the thing you are afraid of, and four of them
+     stacked can be read in one glance instead of four. */
+  .meters {
+    display: grid;
+    grid-template-rows: repeat(4, auto);
+    align-content: space-between;
+    gap: calc(10 * var(--u));
+    padding-left: calc(24 * var(--u));
+    min-height: 0;
   }
-  .value {
-    font-size: calc(58 * var(--u));
-    line-height: 1;
-    letter-spacing: -.01em;
-    font-variant-numeric: tabular-nums;
+  .meter { display: grid; min-width: 0; }
+  /* Fat, with the words inside. A 16 u rail with a caption above it is what a slider looks like,
+     and there is a real one across the rule three inches away - two things that look the same and
+     do opposite things (one you drag, one you read) is the whole confusion. So a reading is a
+     slab you cannot grab, tall enough to put its own name in.
+     52 u is the height the volume *row* used to be, which is the one measurement on this screen
+     everybody already has an eye for. */
+  .mtrack {
+    position: relative;
+    height: calc(52 * var(--u));
+    border: calc(1 * var(--u)) solid var(--dim);
+    overflow: hidden;
+    /* Two hard-stop layers, no child element. The bottom is the whole green-to-red scale drawn
+       across the *full* width of the slab; the top is transparent up to --pct and the empty
+       colour after it, so it uncovers exactly the filled part of the scale. The colour at the
+       bar's tip is therefore the colour of the reading. Paint the gradient across the fill
+       instead and a bar a fifth full is red at a fifth, which is a lie told in the most alarming
+       way available.
+
+       The amber sits at 73%, and that is (WARN_C - COOL_C) / (THROTTLE_C - COOL_C) exactly: the
+       temperature bar turns amber at 70 C, the temperature a Pi 5 reaches doing ordinary work
+       and the one the old tile went amber at. On the three bars that are percentages already it
+       lands on three-quarters full, which is the same warning in the other unit. One gradient,
+       because it is one idea. See cyclops.stats.temp_percent. */
+    background:
+      linear-gradient(to right,
+        transparent calc(var(--pct, 0) * 1%), #0d2418 calc(var(--pct, 0) * 1%)),
+      linear-gradient(to right, var(--green) 0%, var(--amber) 73%, var(--red) 100%);
+  }
+  /* The words, twice. Once in phosphor for the empty part of the slab, once in ink clipped to
+     the filled part, so a caption the bar has reached is *knocked out* of it rather than sitting
+     green-on-green and disappearing. It is the panel's own idiom - the REC and HOT tags in
+     cyclops/overlay.py are a filled slab with the word punched out of it - and here it doubles as
+     a second reading of the level: how much of the line has inverted is where the bar is. */
+  .mrow {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: calc(10 * var(--u));
+    padding: 0 calc(15 * var(--u));
     color: var(--green);
   }
-  .detail { font-size: calc(13 * var(--u)); color: var(--dim); margin-top: calc(7 * var(--u)); }
-  /* The tile can no longer clip (the legend hangs outside it), so the text inside does. */
-  .value, .detail { max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .mlit { color: var(--ink); clip-path: inset(0 calc(100% - var(--pct, 0) * 1%) 0 0); }
+  .mlabel {
+    font-size: calc(14 * var(--u)); line-height: 1; letter-spacing: .22em;
+    text-transform: uppercase; white-space: nowrap;
+  }
+  .mvalue {
+    font-size: calc(24 * var(--u)); line-height: 1; font-variant-numeric: tabular-nums;
+    text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* Temperature is the one reading with the board's own published limits behind it. The number
+     inside the slab is knocked out of the fill and cannot also carry a warning colour without
+     losing the contrast that makes it readable, so the band goes on the frame instead - which is
+     where it was on the tile this replaced. */
+  .meter[data-band="warn"] .mtrack { border-color: var(--amber); }
+  .meter[data-band="hot"]  .mtrack { border-color: var(--red); }
 
-  /* Temperature is the one number that earns a colour of its own: a Pi 5 starts capping its
-     clock at 80 C. Green, amber, red - the three a phosphor tube is allowed. */
-  .tile[data-band="ok"]   { --tint: var(--green); }
-  .tile[data-band="warn"] { --tint: var(--amber); }
-  .tile[data-band="hot"]  { --tint: var(--red); }
-  .tile[data-band="ok"], .tile[data-band="warn"], .tile[data-band="hot"] {
-    border-color: var(--tint);
-  }
-  /* The inner glow takes the band's own colour, so a throttling board reads red throughout
-     rather than red-bordered with an amber wash inside it. */
-  .tile[data-band="warn"], .tile[data-band="hot"] {
-    box-shadow: inset 0 0 calc(30 * var(--u)) color-mix(in srgb, var(--tint) 12%, transparent);
-  }
-  .tile[data-band="ok"] .value,
-  .tile[data-band="warn"] .value,
-  .tile[data-band="hot"] .value { color: var(--tint); }
-  .tile[data-band="warn"] .label,
-  .tile[data-band="hot"] .label { color: var(--tint); }
-
-  /* ---- volume ---- */
-  /* The one control on the page. Label and readout are fixed-width so the track never jumps
-     as the number goes 5 -> 100, and the thumb is 46 u - about 9 mm, a thumb with a glove on. */
-  .volume {
-    display: none;
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    align-items: center;
-    gap: calc(16 * var(--u));
-    padding: 0 calc(16 * var(--u));
-    height: calc(52 * var(--u));
-  }
+  /* ---- the volume ---- */
+  /* The label and the level on one line, the track under it - the same head-then-bar shape the
+     readings across the rule have, so the two halves are made of one thing. The readout no
+     longer needs a fixed width to stop the track jumping as the number goes 5 -> 100: it is at
+     the end of its own line now and there is no track beside it to push. The thumb stays 46 u,
+     about 9 mm, which is a thumb with a glove on. */
+  .chead { display: flex; align-items: center; justify-content: space-between;
+           gap: calc(10 * var(--u)); min-height: calc(46 * var(--u)); }
   .vlabel {
     font-size: calc(13 * var(--u));
+    line-height: 1;
     letter-spacing: .22em;
     color: var(--mid);
   }
-  .vvalue {
-    font-size: calc(24 * var(--u));
+  .cvalue {
+    font-size: calc(22 * var(--u));
+    line-height: 1;
     font-variant-numeric: tabular-nums;
-    min-width: calc(74 * var(--u));
-    text-align: right;
     color: var(--green);
   }
   .vslider {
@@ -243,50 +290,22 @@ every device on the network is exactly the sprawl this replaced.
   .vslider:active::-moz-range-thumb { background: #fff; }
 
   /* ---- the switches ---- */
-  /* Built to the volume row's measurements - same height, same label column, same gaps -
-     because they are the same kind of thing: the three ways this screen changes what the box
-     does rather than what it shows. The button is 46 u tall like the volume's thumb, which is
-     what a thumb is, and fixed in width so neither pair of words moves it. 96 u holds SCREEN
-     and CAMERA, the longest of them, with room to spare at this letter-spacing.
-
-     A word between them says what the setting means, because "INTERRUPT: OFF" does not, and
+  /* A word under each label says what the setting means, because "INTERRUPT: OFF" does not, and
      "RECORD: SCREEN" says even less: the one thing somebody wants to know at each is whether
-     they now have to wait, and what they will be watching afterwards. */
-  /* Both switches on one row, because the panel has no row to spare. 480 px holds the header,
-     the four readouts, the volume, this, and a way out - and the readouts are what gives when
-     anything else grows. A second full-height switch row took the big numbers from 45 px of
-     their 58 px line to 19 px, which is not a smaller number but a broken one. Sharing a row
-     costs each switch its width instead, which it can afford: the label goes above the hint
-     rather than beside it, and both keep every word. */
-  .switches {
-    display: none;
-    /* minmax(0, 1fr) and not 1fr: a bare 1fr is minmax(auto, 1fr) and refuses to go below its
-       min-content, which for the left half is a hint that never wraps - so it took more than
-       half the row and pushed its switch across the middle. */
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    /* Wider between the two settings than within either, so the row reads as two things and
-       not as one long one - the switch on the left would otherwise sit against the label on
-       the right with nothing to say they belong to different questions. */
-    gap: calc(30 * var(--u));
-    padding: 0 calc(16 * var(--u));
-    height: calc(52 * var(--u));
-  }
-  .setting {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: center;
-    gap: calc(12 * var(--u));
-  }
-  .stack { display: grid; align-content: center; gap: calc(2 * var(--u)); min-width: 0; }
-  .stack > * { min-width: 0; }  /* so the hint's own ellipsis can engage inside the stack */
+     they now have to wait, and what they will be watching afterwards.
+
+     The hint no longer has to be one line or nothing. It used to share a 52 u row with the other
+     switch and be cut off with an ellipsis at whatever fitted; down a half-width column it can
+     simply wrap, and a second line costs gap rather than anything anybody can see. */
   .shint {
     font-size: calc(13 * var(--u));
+    line-height: 1.25;
     color: var(--dim);
     min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
+  /* 96 u holds SCREEN and CAMERA, the longest of the words, with room to spare at this
+     letter-spacing; 46 u is about 9 mm, a thumb with a glove on, and the same height as the
+     volume's own thumb an inch above it. */
   .sw {
     width: calc(96 * var(--u));
     height: calc(46 * var(--u));
@@ -357,8 +376,7 @@ every device on the network is exactly the sprawl this replaced.
      arm's length wants the pixels more than it wants a title bar. So the grid collapses to one
      row and the two things still worth having float on top of the drawing. */
   body.drawing { grid-template-rows: minmax(0, 1fr); }
-  body.drawing header, body.drawing .tiles,
-  body.drawing .volume, body.drawing .switches { display: none; }
+  body.drawing header { display: none; }
   body.drawing .stage { display: block; }
 
   /* The drawing's own name, over the top-left of it. */
@@ -398,17 +416,16 @@ every device on the network is exactly the sprawl this replaced.
      2 ms this page costs (kiosk.py:112-116). So the hash picks a view and a body class shows it -
      exactly the trick body.drawing already plays, with three more players. */
   .view { display: none; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-  body.view-status   .tiles,
+  body.view-status   .system,
   body.view-sessions .sessions,
   body.view-session  .watch,
   body.view-projects .projects,
   body.view-browse   .browse,
   body.view-file     .file,
   body.view-media    .media { display: grid; }
-  /* The volume lives on the System screen. Carrying it into every view would cost the
-     panel 52 of its 480 px on every screen to hold a control nobody came to that screen to use. */
-  body.view-status:not(.drawing) .volume,
-  body.view-status:not(.drawing) .switches { display: grid; }
+  /* The volume used to need a rule here to keep it off the other six screens - it was a body
+     row, and a row costs its 52 px whether or not anybody came to that screen to use it. It is
+     inside the System view now, so it appears and disappears with the view it belongs to. */
   /* A drawing is Cyclops answering a question out loud. It outranks anything you were reading. */
   body.drawing .view, body.drawing .lightbox { display: none !important; }
 
@@ -785,9 +802,12 @@ every device on the network is exactly the sprawl this replaced.
   @media (min-width: 900px) and (min-aspect-ratio: 1/1) {
     :root { --u: 1.15px; }
     body { padding: calc(20 * var(--u)); }
-    /* Four numbers in a row, held to a strip. A 2x2 across a whole monitor is four billboards. */
-    .tiles { grid-template-columns: repeat(4, 1fr); grid-template-rows: calc(150 * var(--u));
-             align-content: start; }
+    /* Four bars in a row, held to a strip. A column of four across a whole monitor would be
+       four rules a yard long, which is the same mistake the 2x2 of tiles made here. A laptop is
+       never loopback, so there are no settings beside them and the split is already one column. */
+    .system { align-content: start; }
+    .meters { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto;
+              align-content: start; gap: calc(44 * var(--u)); }
     .sessions, .media { padding: calc(12 * var(--u)) calc(4 * var(--u)); }
     /* 176 wide against a 132 min-height is 4:3 to the pixel: uncropped as well as ungapped for
        a recording made from the camera, and trimmed down the sides for one made from the 5:3
@@ -828,11 +848,11 @@ every device on the network is exactly the sprawl this replaced.
     ::-webkit-scrollbar-thumb:hover { background: var(--mid); }
   }
 
-  /* Portrait only - a phone held upright. 2x2 stays the strongest shape in every landscape
-     aspect; four columns on a laptop would just be a lot of vertical nothing. */
+  /* Portrait only - a phone held upright. The System screen needs nothing here any more: how
+     many columns it has is decided by whether the settings exist at all (body.kiosk, above) and
+     not by the aspect ratio, so a phone is already one column of four stacked bars. */
   @media (max-aspect-ratio: 3/4) {
     :root { --u: clamp(0.7px, min(0.28vw, 0.115vh), 2px); }
-    .tiles { grid-template-columns: 1fr; grid-template-rows: repeat(4, 1fr); }
   }
 </style>
 </head>
@@ -851,27 +871,77 @@ every device on the network is exactly the sprawl this replaced.
   <!-- Outside the header on purpose: a diagram hides the header, and this has to outlive it. -->
   <span class="dtitle" id="dtitle"></span>
 
-  <main class="view tiles">
-    <section class="tile" id="temp" data-band="{{ temp_band }}">
-      <div class="label">Temperature</div>
-      <div class="value" data-field="temp_text">{{ temp_text }}</div>
-      <div class="detail" data-field="temp_detail">{{ temp_detail }}</div>
-    </section>
-    <section class="tile">
-      <div class="label">Memory</div>
-      <div class="value" data-field="mem_text">{{ mem_text }}</div>
-      <div class="detail" data-field="mem_detail">{{ mem_detail }}</div>
-    </section>
-    <section class="tile">
-      <div class="label">Disk</div>
-      <div class="value" data-field="disk_text">{{ disk_text }}</div>
-      <div class="detail" data-field="disk_detail">{{ disk_detail }}</div>
-    </section>
-    <section class="tile">
-      <div class="label">Sessions</div>
-      <div class="value" data-field="sessions_text">{{ sessions_text }}</div>
-      <div class="detail" data-field="sessions_detail">{{ sessions_detail }}</div>
-    </section>
+  <main class="view system">
+    {% if local %}
+    <!-- The three things this screen can change. Inside the view rather than beside it, which is
+         the whole of "the volume lives on the System screen": they show and hide with the view
+         they belong to, instead of with a rule that has to remember to. -->
+    <div class="controls">
+      <section class="ctl">
+        <div class="chead">
+          <span class="vlabel">VOL</span>
+          <output class="cvalue" id="volval">{{ volume|default:80 }}%</output>
+        </div>
+        <input class="vslider" id="vol" type="range" min="0" max="100" step="5" value="{{ volume|default:80 }}"
+               aria-label="Speaker volume">
+      </section>
+      <section class="ctl">
+        <div class="chead">
+          <span class="vlabel">RECORD</span>
+          <button class="sw" id="rec" type="button" role="switch"
+                  aria-label="Record the screen rather than the camera"
+                  aria-checked="{% if record_screen %}true{% else %}false{% endif %}">{% if record_screen %}SCREEN{% else %}CAMERA{% endif %}</button>
+        </div>
+        <span class="shint" id="rechint">{% if record_screen %}this screen, chrome and all{% else %}the camera alone, full size{% endif %}</span>
+      </section>
+      <section class="ctl">
+        <div class="chead">
+          <span class="vlabel">INTERRUPT</span>
+          <button class="sw" id="barge" type="button" role="switch"
+                  aria-label="Let me interrupt Cyclops"
+                  aria-checked="{% if barge_in %}true{% else %}false{% endif %}">{% if barge_in %}ON{% else %}OFF{% endif %}</button>
+        </div>
+        <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}wait for Cyclops to finish{% endif %}</span>
+      </section>
+    </div>
+    {% endif %}
+    <!-- data-meter names the payload key holding this bar's 0-100, data-field the one holding
+         its words. Two attributes because they are two mechanisms - one writes a style property,
+         the other writes text - and the poll below does each in its own loop.
+
+         Every caption and reading appears twice, phosphor then ink: see .mrow / .mlit above. The
+         poll's [data-field] loop writes to *every* element that matches, so the knocked-out copy
+         keeps itself in step and needs no JS of its own.
+
+         default_if_none and not default: a reading that is missing has to open the bar *empty*,
+         and None with no filter renders as the literal string "None", which would make --pct
+         invalid and leave the slab showing the full green-to-red scale. -->
+    <div class="meters">
+      <section class="meter">
+        <div class="mtrack" data-meter="cpu_percent" style="--pct:{{ cpu_percent|default_if_none:0 }}">
+          <div class="mrow"><span class="mlabel">CPU</span><span class="mvalue" data-field="cpu_text">{{ cpu_text }}</span></div>
+          <div class="mrow mlit" aria-hidden="true"><span class="mlabel">CPU</span><span class="mvalue" data-field="cpu_text">{{ cpu_text }}</span></div>
+        </div>
+      </section>
+      <section class="meter" id="temp" data-band="{{ temp_band }}">
+        <div class="mtrack" data-meter="temp_percent" style="--pct:{{ temp_percent|default_if_none:0 }}">
+          <div class="mrow"><span class="mlabel">Temp</span><span class="mvalue" data-field="temp_text">{{ temp_text }}</span></div>
+          <div class="mrow mlit" aria-hidden="true"><span class="mlabel">Temp</span><span class="mvalue" data-field="temp_text">{{ temp_text }}</span></div>
+        </div>
+      </section>
+      <section class="meter">
+        <div class="mtrack" data-meter="mem_percent" style="--pct:{{ mem_percent|default_if_none:0 }}">
+          <div class="mrow"><span class="mlabel">Memory</span><span class="mvalue" data-field="mem_text">{{ mem_text }}</span></div>
+          <div class="mrow mlit" aria-hidden="true"><span class="mlabel">Memory</span><span class="mvalue" data-field="mem_text">{{ mem_text }}</span></div>
+        </div>
+      </section>
+      <section class="meter">
+        <div class="mtrack" data-meter="disk_percent" style="--pct:{{ disk_percent|default_if_none:0 }}">
+          <div class="mrow"><span class="mlabel">Disk</span><span class="mvalue" data-field="disk_text">{{ disk_text }}</span></div>
+          <div class="mrow mlit" aria-hidden="true"><span class="mlabel">Disk</span><span class="mvalue" data-field="disk_text">{{ disk_text }}</span></div>
+        </div>
+      </section>
+    </div>
   </main>
 
   <main class="view sessions" id="v-sessions"></main>
@@ -930,38 +1000,13 @@ every device on the network is exactly the sprawl this replaced.
 
   {% if local %}
   <main class="stage" id="stage"></main>
-  <section class="volume">
-    <span class="vlabel">VOL</span>
-    <input class="vslider" id="vol" type="range" min="0" max="100" step="5" value="{{ volume|default:80 }}"
-           aria-label="Speaker volume">
-    <output class="vvalue" id="volval">{{ volume|default:80 }}%</output>
-  </section>
-  <div class="switches">
-    <section class="setting">
-      <span class="stack">
-        <span class="vlabel">RECORD</span>
-        <span class="shint" id="rechint">{% if record_screen %}this screen, chrome and all{% else %}the camera alone, full size{% endif %}</span>
-      </span>
-      <button class="sw" id="rec" type="button" role="switch"
-              aria-label="Record the screen rather than the camera"
-              aria-checked="{% if record_screen %}true{% else %}false{% endif %}">{% if record_screen %}SCREEN{% else %}CAMERA{% endif %}</button>
-    </section>
-    <section class="setting">
-      <span class="stack">
-        <span class="vlabel">INTERRUPT</span>
-        <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}wait for Cyclops to finish{% endif %}</span>
-      </span>
-      <button class="sw" id="barge" type="button" role="switch"
-              aria-label="Let me interrupt Cyclops"
-              aria-checked="{% if barge_in %}true{% else %}false{% endif %}">{% if barge_in %}ON{% else %}OFF{% endif %}</button>
-    </section>
-  </div><!-- .switches -->
   <button class="close" id="close" type="button"><span class="glyph">&#10005;</span><span
     class="word" id="closeword">&nbsp;Close</span></button>
   {% endif %}
 
 <script>
   const fields = document.querySelectorAll('[data-field]');
+  const meters = document.querySelectorAll('[data-meter]');
   const temp = document.getElementById('temp');
   const body = document.body;
   const EVERY = 5000, SLOW = 15000;   // nothing here moves fast; hidden tabs move slower still
@@ -973,6 +1018,14 @@ every device on the network is exactly the sprawl this replaced.
       for (const el of fields) {
         const v = s[el.dataset.field];
         if (v != null) el.textContent = v;
+      }
+      // The bars. A second loop and a second attribute because this writes a style property
+      // rather than text - and because a bar has to be told when its reading has gone away.
+      // Left where it was, a stale bar and a true one look identical, so a number that is no
+      // longer there draws an empty track instead of the last one this page happened to know.
+      for (const el of meters) {
+        const v = s[el.dataset.meter];
+        el.style.setProperty('--pct', v == null ? 0 : Math.max(0, Math.min(100, v)));
       }
       temp.dataset.band = s.temp_band;
       body.classList.remove('offline');
