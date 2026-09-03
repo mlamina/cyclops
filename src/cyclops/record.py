@@ -158,7 +158,7 @@ class PanelSource:
     newest frame it read. This is the same contract from the other side. Nothing here reads
     anything: the render loop hands over each finished frame as it paints it, and the recorder
     samples that on its own clock exactly as it sampled the camera. What lands in ``video.mp4``
-    is then the panel - mirrored preview, halo, timer, caption, tab row - rather than the raw
+    is then the panel - the preview, halo, timer, caption, tab row - rather than the raw
     frames the chrome was drawn over.
 
     One rebinding of one name, so no lock: see :meth:`publish`.

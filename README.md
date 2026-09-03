@@ -119,12 +119,13 @@ size, so a recording already running cannot be handed something else halfway thr
 
 | | what lands in `video.mp4` |
 | --- | --- |
-| **SCREEN** *(the default)* | The panel, 1:1 at 800×480 — the mirrored, sharpened preview with the halo, the timer, the caption, the REC tag and the tab row composited on it. Watching it back is watching the session happen: you can see when Cyclops was thinking, when you cut in, and where the shutter went off. Because it is mirrored, **text in the room reads backwards**. |
-| **CAMERA** | The sensor alone, at its own resolution, nothing drawn over it and nothing flipped. Text reads the right way round and no pixel is spent on chrome. The one to reach for when the recording is evidence rather than a memory — a part number, a wiring colour, a serial you will squint at later. |
+| **SCREEN** *(the default)* | The panel, 1:1 at 800×480 — the sharpened preview with the halo, the timer, the caption, the REC tag and the tab row composited on it, cropped to the panel's 5:3. Watching it back is watching the session happen: you can see when Cyclops was thinking, when you cut in, and where the shutter went off. |
+| **CAMERA** | The sensor alone, at its own resolution and its own shape, nothing drawn over it and nothing trimmed off the sides. No pixel is spent on chrome. The one to reach for when the recording is evidence rather than a memory — a part number, a wiring colour, a serial you will squint at later. |
 
 `CYCLOPS_RECORD_SOURCE` decides it on a box where nobody has ever touched the switch. The photos
 are unaffected either way: SNAP, the agent's look tool and everything in `photos/` come off the
-raw camera and are never mirrored.
+raw camera. Nothing on the box is mirrored — not the panel, not either recording, not the
+photos — so text held up to the lens reads the right way round wherever it turns up later.
 
 Two smaller consequences of recording the screen. A session started with **no camera** now still
 produces a video — the panel saying `No camera found`, with the chrome and the full stereo audio —
@@ -601,15 +602,14 @@ variance from 18.5 to 50.1 — 2.7× the detail — while the noise floor in fla
 own blocking alone, and the ceiling caps how far any pixel may travel, which is what stops a face
 against a bright window growing a white halo. A `camera` recording is untouched by it — the
 recorder samples raw frames straight from the device — but a `screen` one is not, and should not
-be: it is the glass, and the glass is sharpened. That is also the recording in which everything
-is mirrored, so this is the setting to move if what you replay a session for is reading a part
-number off it.
+be: it is the glass, and the glass is sharpened.
 
-It is free, as it turns out. The preview path costs 5.98 ms a frame against 5.42 ms before, on a
-25 fps loop with 40 ms to spend, because the same work found a much older waste: `mirror()` used
-to flip with `frame[:, ::-1]`, and a reversed slice is a negative-stride view that OpenCV copies
-into a contiguous buffer on *every* call downstream of it. Flipping properly with `cv2.flip` paid
-for the sharpening and the move from `INTER_LINEAR` to `INTER_CUBIC` besides.
+It was free when it was measured, at 5.98 ms a frame against 5.42 ms before, on a 25 fps loop
+with 40 ms to spend — because the same work found a much older waste. The panel used to be
+mirrored, and the flip was written `frame[:, ::-1]`: a reversed slice is a negative-stride view
+that OpenCV copies into a contiguous buffer on *every* call downstream of it. Doing it properly
+with `cv2.flip` paid for the sharpening and the move from `INTER_LINEAR` to `INTER_CUBIC`
+besides. The mirror is gone now, and `fit_to_window` is what keeps the buffer contiguous.
 
 **Pick audio devices.** A Pi has several and often no default mic, so set them explicitly:
 

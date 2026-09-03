@@ -1592,7 +1592,8 @@ def sharpen(frame_bgr: np.ndarray) -> np.ndarray:
     blur where 5x5 spends 1.7 ms - and at sigma 1.1 everything outside 5x5 is past 2.3 sigma and
     weighs nothing. And *frame_bgr must be contiguous*: this makes eight passes over it, and
     OpenCV copies a non-contiguous input on every one of them, which took the same function from
-    8 ms to 30 ms. :func:`mirror` and :func:`fit_to_window` are what guarantee that.
+    8 ms to 30 ms. :func:`fit_to_window` is what guarantees that, and the camera hands it a
+    contiguous frame to begin with.
     """
     import cv2  # local import keeps this module importable without a camera stack
 
@@ -1649,21 +1650,6 @@ def fit_to_window(frame_bgr: np.ndarray, width: int, height: int) -> np.ndarray:
     return cv2.resize(
         sharpen(np.ascontiguousarray(frame_bgr)), (width, height), interpolation=cv2.INTER_CUBIC
     )
-
-
-def mirror(frame_bgr: np.ndarray) -> np.ndarray:
-    """Flip horizontally so the preview behaves like a mirror, which is what people expect.
-
-    ``frame[:, ::-1]`` is the obvious way to write this and was how it was written. It is also
-    free only where it is written: a reversed slice is a view with a negative stride, and every
-    OpenCV call downstream of it silently copies the frame into a contiguous buffer before it can
-    do anything. That was costing the render loop 4.6 ms a frame on the resize alone, long before
-    anything else wanted the pixels. Flipping properly, once, hands the rest of the chain a
-    buffer it can work on directly.
-    """
-    import cv2  # local import keeps this module importable without a camera stack
-
-    return cv2.flip(frame_bgr, 1)
 
 
 def platform_font_note() -> str:

@@ -2,15 +2,17 @@
 
 There are two honest answers and the box cannot know which one you want.
 
-**SCREEN** records the panel: the frame the kiosk composited and put on the glass, mirrored and
-sharpened, with the halo, the timer, the caption, the REC tag and the tab row on it. Watching it
-back is watching the session happen - you can see when Cyclops was thinking, when you interrupted
-him, and where the shutter went off. It is the default because it is what you were looking at.
+**SCREEN** records the panel: the frame the kiosk composited and put on the glass, sharpened and
+cropped to the panel's 5:3, with the halo, the timer, the caption, the REC tag and the tab row on
+it. Watching it back is watching the session happen - you can see when Cyclops was thinking, when
+you interrupted him, and where the shutter went off. It is the default because it is what you
+were looking at.
 
-**CAMERA** records the sensor: what the lens saw, at its own resolution, with nothing drawn over
-it and nothing flipped. Text in the room reads the right way round, which the mirrored panel
-cannot offer, and no pixel is spent on chrome. It is the one to reach for when the recording is
-evidence rather than a memory - a part number, a wiring colour, a serial you will squint at later.
+**CAMERA** records the sensor: what the lens saw, at its own resolution and its own shape, with
+nothing drawn over it and nothing trimmed off the sides. Both read the right way round - the
+panel stopped mirroring - so what this one offers is the frame entire and every pixel of it spent
+on the room. It is the one to reach for when the recording is evidence rather than a memory - a
+part number, a wiring colour, a serial you will squint at later.
 
 Two halves, exactly like :mod:`cyclops.barge` and :mod:`cyclops.mixer`. The settings screen writes
 down what it wants; the process holding the camera and the panel picks it up. The page can no more
