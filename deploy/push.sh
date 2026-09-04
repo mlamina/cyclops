@@ -33,6 +33,14 @@ ssh "$TARGET" "sudo install -m 644 $DEST/deploy/cyclops-*.service /etc/systemd/s
 ssh "$TARGET" "sudo install -m 644 $DEST/deploy/99-useeplus-camera.rules /etc/udev/rules.d/ \
   && sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=usb" || true
 
+# The mono sink is the same shape of inert file - it does nothing until PipeWire reads it at
+# start - so it is refreshed here too rather than being remembered once per Pi. PipeWire is
+# deliberately *not* restarted: it holds the speaker, and bouncing it mid-conversation would cut
+# the assistant off in the middle of a word. An edited conf lands now and takes effect at the
+# next boot, which is soon enough for a file that changes about once a year.
+ssh "$TARGET" "install -d ~/.config/pipewire/pipewire.conf.d \
+  && install -m 644 $DEST/deploy/51-mono-speaker.conf ~/.config/pipewire/pipewire.conf.d/" || true
+
 # The boot fanfare is a *user* unit: it plays through PipeWire, which lives in the user session
 # and which a system unit cannot reach. Same argument as above for refreshing it on every push -
 # and a different directory, which is also why deploy/user/ exists rather than one more name in

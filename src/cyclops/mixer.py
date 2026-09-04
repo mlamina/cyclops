@@ -1,9 +1,10 @@
 """The speaker's one volume knob, and the note the admin page leaves about it.
 
-There is exactly one place the output volume lives: the sink's own control. On the Pi that is
-the USB speaker's hardware mixer, and PipeWire drives it directly rather than scaling samples
-on top of it - set it with ``amixer`` and ``pactl`` reports the new value, and vice versa. So
-this module never stacks a second gain of its own, and cyclops' per-buffer gain
+There is exactly one place the output volume lives: the sink's own control. Asking the sink
+rather than the card is what makes that true on either box - the Pi's I2S amplifier exposes no
+hardware mixer at all, so PipeWire scales the samples itself and ``amixer`` has nothing to show,
+while a device with a real hardware control is driven directly instead. Both answer ``pactl``.
+So this module never stacks a second gain of its own, and cyclops' per-buffer gain
 (:attr:`cyclops.config.Settings.volume`) stays at unity.
 
 Two halves, because two processes are involved. ``cyclops-admin`` serves the page but is

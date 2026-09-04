@@ -73,6 +73,11 @@ def mux_command(work_dir: Path, out_path: Path) -> list[str]:
     interrupted session with exactly the command the recorder would have run, rather than a
     second copy of it that quietly rots out of step.
 
+    The two voices go to opposite channels - user left, agent right - so they stay separable
+    afterwards. Do not "fix" that to mono for the Pi's benefit: its amplifier is mono and reads
+    one channel, but that is reconciled where it belongs, in the speaker's own sink
+    (``deploy/51-mono-speaker.conf``), rather than by flattening every recording ever made.
+
     ``-f mp4`` is not decoration. ffmpeg picks its muxer from the output's extension, and
     :func:`mux` deliberately writes to a scratch name ending ``.tmp`` - which ffmpeg cannot
     guess a container from, so it refuses the job before reading a single frame ("Unable to
