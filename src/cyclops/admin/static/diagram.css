@@ -1,0 +1,53 @@
+/* A drawing, on the panel. The stage it lands on, its name in the corner, and the two overlays
+   that get out of its way. The other half is static/diagram.js, which builds the SVG. */
+
+/* ---- diagrams ---- */
+/* The second thing this page can be. Not a second page: the browser behind the panel is warm
+   and pointed here, and navigating it would mean waiting for a load at the one moment somebody
+   is watching. So both screens live in one document and the body class picks. */
+.stage { position: relative; min-height: 0; overflow: hidden; display: none; }
+.stage svg { display: block; }
+
+/* The other thing the stage can hold: a photo of theirs, redrawn - see cyclops/imagine.py.
+   contain and not cover, because cropping a picture somebody asked to see is a small lie, and
+   the letterbox is the screen's own colour rather than a second one. */
+.stage .shot { display: block; width: 100%; height: 100%; object-fit: contain; }
+
+/* A diagram gets the whole panel. Everything the dashboard needs around it - the header, the
+   volume, the full-width way out - is chrome for a page of numbers, and a wiring diagram at
+   arm's length wants the pixels more than it wants a title bar. So the grid collapses to one
+   row and the two things still worth having float on top of the drawing. */
+body.drawing { grid-template-rows: minmax(0, 1fr); }
+body.drawing header { display: none; }
+body.drawing .stage { display: block; }
+
+/* The drawing's own name, over the top-left of it. */
+.dtitle {
+  display: none;
+  position: fixed;
+  top: calc(26 * var(--u));
+  left: calc(30 * var(--u));
+  z-index: 8;
+  font-size: calc(13 * var(--u));
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--mid);
+  max-width: calc(600 * var(--u));
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+body.drawing .dtitle { display: block; }
+/* Said while JointJS lays the drawing out. It is on screen for a frame or two on the panel,
+   and for longer than that on anything slower, which is the case it is here for. */
+.laying-out {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  font-size: calc(15 * var(--u));
+  letter-spacing: .28em;
+  text-transform: uppercase;
+  color: var(--dim);
+}

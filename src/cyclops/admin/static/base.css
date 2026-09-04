@@ -1,0 +1,115 @@
+/* The palette, the reset, the CRT chrome and the top bar - everything that is true on every
+   screen of this interface rather than on one of them.
+
+   The colours are cyclops/overlay.py's, to the byte. Two screens of one device that disagree
+   about what green is read as two devices, so if one moves the other moves with it.
+
+   --u is the unit the whole interface is measured in: 1u is one pixel of the 800x480 the panel
+   was drawn at. What it resolves to depends on who is looking - see the two declarations in
+   :root and body.kiosk below. */
+
+:root {
+  /* The kiosk overlay's palette, to the byte - see cyclops/overlay.py. Two screens of one
+     device that disagree about what green is read as two devices. */
+  --green: #56ff8c;   /* phosphor at full brightness */
+  --mid: #2eb064;     /* rules, labels */
+  --dim: #207646;     /* the faintest thing still legible on the panel */
+  --amber: #ffb83c;
+  --red: #ff5646;
+  --screen: #050f0a;  /* the green-black everything is drawn on */
+  --ink: #030b07;     /* text on a filled control */
+  --tint: var(--green);
+  /* 1u == 1px at 800x480, growing with whichever dimension is tighter - so a short, wide
+     window never overflows its rows the way a bare vw would. Same trick as the kiosk chrome,
+     which pins its own layout to a 480 px reference height. */
+  --u: clamp(0.7px, min(0.125vw, 0.2083vh), 2px);
+}
+* { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
+/* A finger on a picture is scrolling, not picking it up. Chromium makes every <img> draggable
+   by default, and on a touchscreen that drag swallows the pan: measured on the media grid, a
+   swipe starting on empty space moved 148 px and the same swipe starting on a photo moved 0.
+   There is nothing here to drag a picture *to*, so no image is ever a drag handle. Also kills
+   the long-press callout, which is the same gesture arriving a moment later. */
+img, video { -webkit-user-drag: none; user-drag: none; -webkit-touch-callout: none; }
+::-webkit-scrollbar { width: 0; height: 0; }
+html, body {
+  margin: 0;
+  height: 100vh;
+  height: 100dvh;   /* the pair, not dvh alone: an older engine drops what it cannot parse */
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+body {
+  background: #000;
+  color: var(--green);
+  font-family: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", Menlo, monospace;
+  font-size: calc(14 * var(--u));
+  /* Cleared of the border below, and of the glow that falls inwards from it - the kiosk's
+     own measurement, so tapping HISTORY changes what the screen says and not what kind of
+     thing it is. */
+  padding: calc(17 * var(--u));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;   /* header / the view / the way out */
+  gap: calc(6 * var(--u));
+  transition: opacity .3s;
+}
+body.kiosk { cursor: none; }
+
+/* The border and its glow. A ::before rather than a border on the body, so the rows above lay
+   out against the padding box and nothing has to subtract a border width from a percentage.
+
+   Hard against the panel's edge with the light falling inwards, exactly as the kiosk draws
+   it: a glow outside a border reads as light leaking off the device, not as a lit screen. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  border: calc(2 * var(--u)) solid var(--mid);
+  border-radius: calc(16 * var(--u));
+  box-shadow: inset 0 0 calc(26 * var(--u)) rgba(86, 255, 140, .22);
+  pointer-events: none;
+}
+/* Scanlines, over everything including the controls - the tube is in front of the screen,
+   not behind it. Every third row, which is a CRT at arm's length and not a zebra. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    to bottom, transparent 0 calc(2 * var(--u)), rgba(0, 0, 0, .17) calc(2 * var(--u)) calc(3 * var(--u)));
+  pointer-events: none;
+  z-index: 9;
+}
+
+/* - except over the thing you opened to look at. The scanlines and the glow are what makes
+   this a screen rather than a web page, and they earn that on the frame, the numbers and the
+   thumbnails. They do not earn it on a wiring diagram you are trying to read a pin label off,
+   or on a photo you took to check a part number: there the phosphor is between you and the
+   only reason the picture is on the card.
+
+   Two mechanisms, because there are two shapes of "looking at it". A picture that has taken
+   the whole screen - the lightbox, and a drawing on the panel - is the entire view, so both
+   overlays simply stop. A video or a photo sitting in a page that still has a header and a
+   transcript around it lifts itself over them instead, and leaves the rest of the page
+   wearing them. The border stays either way: that is the bezel, not a filter. */
+body.lit::after, body.drawing::after { content: none; }
+body.lit::before, body.drawing::before { box-shadow: none; }
+/* The server went away; what is on screen is stale, and says so up in the header. */
+body.offline { opacity: .5; }
+
+/* ---- header ---- */
+header {
+  display: flex;
+  align-items: center;
+  gap: calc(12 * var(--u));
+  padding: calc(4 * var(--u)) calc(16 * var(--u)) calc(10 * var(--u));
+  border-bottom: calc(2 * var(--u)) solid var(--mid);
+}
+.brand { color: var(--dim); font-size: calc(14 * var(--u)); letter-spacing: .3em; }
+.bar { width: calc(2 * var(--u)); height: calc(18 * var(--u)); background: var(--dim); }
+.page { font-size: calc(27 * var(--u)); letter-spacing: .12em; }
+.link { margin-left: auto; font-size: calc(14 * var(--u)); letter-spacing: .24em; color: var(--mid); }
+.link::after { content: "LINK OK"; }
+body.offline .link { color: var(--amber); }
+body.offline .link::after { content: "NO LINK"; }

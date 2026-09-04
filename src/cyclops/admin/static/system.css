@@ -1,0 +1,243 @@
+/* The System screen: the three things this box can be told, and the four things it will tell
+   you. The settings half only ever renders on the panel ({% if local %} in dashboard.html), so
+   the split down the middle leaves with it.
+
+   The .mtrack gradient's amber stop at 73% is (WARN_C - COOL_C) / (THROTTLE_C - COOL_C) exactly
+   - tests/test_health.py holds this file and cyclops/stats.py to that number together. */
+
+/* ---- the System screen ---- */
+/* Half and half, down the middle. The settings on the left because they are what somebody came
+   to this screen to change; the readings on the right because they are what you look at while
+   you are here. Both halves used to be stacked: 2x2 boxes of 58 u numbers across the whole
+   width, and the three settings crushed into two rows underneath them. */
+.system {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* No gap. The two halves are exactly half the panel each and what separates them is the
+     padding either side of the rule - which is what 50/50 has to mean on a screen read from
+     across a bench. */
+  gap: 0;
+  padding: calc(8 * var(--u)) calc(4 * var(--u)) 0;
+  min-height: 0;    /* grid children default to min-height:auto and refuse to shrink */
+}
+/* A laptop on the LAN never renders the settings at all - they are inside the local-only block
+   - so the readings take the whole width rather than half of it and a column of nothing.
+   body.kiosk is exactly that same flag, which is why one selector settles it at every size. */
+body:not(.kiosk) .system { grid-template-columns: minmax(0, 1fr); }
+body:not(.kiosk) .meters { padding-left: 0; }
+
+/* ---- the three things this screen can change ---- */
+/* One to a row now. They were a 52 u volume bar and a single row holding *both* switches,
+   because 480 px had nothing left to give: a second full-height switch row took the readouts'
+   numbers from 45 px of their 58 px line to 19 px, which is not a smaller number but a broken
+   one. The readouts are 16 u bars today and have handed most of that height back. */
+.controls {
+  display: grid;
+  grid-template-rows: repeat(3, auto);
+  /* space-between rather than three equal thirds, so the top of VOL sits level with the top of
+     CPU and the bottom of INTERRUPT with the bottom of the disk bar. Two alignments across the
+     rule for nothing, and they are the two anybody actually sees. */
+  align-content: space-between;
+  gap: calc(14 * var(--u));
+  /* The rule down the middle *is* the split. On this column's own border rather than between
+     the two, so it leaves when the settings do: a laptop must never be left with a line down
+     an empty half. */
+  border-right: calc(1 * var(--u)) solid var(--dim);
+  padding-right: calc(24 * var(--u));
+  min-height: 0;
+}
+.ctl { display: grid; gap: calc(6 * var(--u)); min-width: 0; }
+.ctl > * { min-width: 0; }
+
+/* ---- the four readings ---- */
+/* Bars, not big numbers. A number says 71% and leaves you to remember whether 71 is a lot; a
+   bar says where 71 sits between empty and the thing you are afraid of, and four of them
+   stacked can be read in one glance instead of four. */
+.meters {
+  display: grid;
+  grid-template-rows: repeat(4, auto);
+  align-content: space-between;
+  gap: calc(10 * var(--u));
+  padding-left: calc(24 * var(--u));
+  min-height: 0;
+}
+.meter { display: grid; min-width: 0; }
+/* Fat, with the words inside. A 16 u rail with a caption above it is what a slider looks like,
+   and there is a real one across the rule three inches away - two things that look the same and
+   do opposite things (one you drag, one you read) is the whole confusion. So a reading is a
+   slab you cannot grab, tall enough to put its own name in.
+   52 u is the height the volume *row* used to be, which is the one measurement on this screen
+   everybody already has an eye for. */
+.mtrack {
+  position: relative;
+  height: calc(52 * var(--u));
+  border: calc(1 * var(--u)) solid var(--dim);
+  overflow: hidden;
+  /* Two hard-stop layers, no child element. The bottom is the whole green-to-red scale drawn
+     across the *full* width of the slab; the top is transparent up to --pct and the empty
+     colour after it, so it uncovers exactly the filled part of the scale. The colour at the
+     bar's tip is therefore the colour of the reading. Paint the gradient across the fill
+     instead and a bar a fifth full is red at a fifth, which is a lie told in the most alarming
+     way available.
+
+     The amber sits at 73%, and that is (WARN_C - COOL_C) / (THROTTLE_C - COOL_C) exactly: the
+     temperature bar turns amber at 70 C, the temperature a Pi 5 reaches doing ordinary work
+     and the one the old tile went amber at. On the three bars that are percentages already it
+     lands on three-quarters full, which is the same warning in the other unit. One gradient,
+     because it is one idea. See cyclops.stats.temp_percent. */
+  background:
+    linear-gradient(to right,
+      transparent calc(var(--pct, 0) * 1%), #0d2418 calc(var(--pct, 0) * 1%)),
+    linear-gradient(to right, var(--green) 0%, var(--amber) 73%, var(--red) 100%);
+}
+/* The words, twice. Once in phosphor for the empty part of the slab, once in ink clipped to
+   the filled part, so a caption the bar has reached is *knocked out* of it rather than sitting
+   green-on-green and disappearing. It is the panel's own idiom - the REC and HOT tags in
+   cyclops/overlay.py are a filled slab with the word punched out of it - and here it doubles as
+   a second reading of the level: how much of the line has inverted is where the bar is. */
+.mrow {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: calc(10 * var(--u));
+  padding: 0 calc(15 * var(--u));
+  color: var(--green);
+}
+.mlit { color: var(--ink); clip-path: inset(0 calc(100% - var(--pct, 0) * 1%) 0 0); }
+.mlabel {
+  font-size: calc(14 * var(--u)); line-height: 1; letter-spacing: .22em;
+  text-transform: uppercase; white-space: nowrap;
+}
+.mvalue {
+  font-size: calc(24 * var(--u)); line-height: 1; font-variant-numeric: tabular-nums;
+  text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* Temperature is the one reading with the board's own published limits behind it. The number
+   inside the slab is knocked out of the fill and cannot also carry a warning colour without
+   losing the contrast that makes it readable, so the band goes on the frame instead - which is
+   where it was on the tile this replaced. */
+.meter[data-band="warn"] .mtrack { border-color: var(--amber); }
+.meter[data-band="hot"]  .mtrack { border-color: var(--red); }
+
+/* ---- the volume ---- */
+/* The label and the level on one line, the track under it - the same head-then-bar shape the
+   readings across the rule have, so the two halves are made of one thing. The readout no
+   longer needs a fixed width to stop the track jumping as the number goes 5 -> 100: it is at
+   the end of its own line now and there is no track beside it to push. The thumb stays 46 u,
+   about 9 mm, which is a thumb with a glove on. */
+.chead { display: flex; align-items: center; justify-content: space-between;
+         gap: calc(10 * var(--u)); min-height: calc(46 * var(--u)); }
+.vlabel {
+  font-size: calc(13 * var(--u));
+  line-height: 1;
+  letter-spacing: .22em;
+  color: var(--mid);
+}
+.cvalue {
+  font-size: calc(22 * var(--u));
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--green);
+}
+.vslider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: calc(46 * var(--u));
+  background: transparent;
+  touch-action: none;   /* the drag belongs to the slider, never to the page behind it */
+}
+/* The filled half is drawn from --v, which the script keeps in step with the value. A track
+   that does not fill is just a groove, and a groove says nothing about how loud it is. */
+.vslider::-webkit-slider-runnable-track {
+  height: calc(16 * var(--u));
+  background:
+    linear-gradient(to right, var(--green) calc(var(--v, 80) * 1%), #0d2418 calc(var(--v, 80) * 1%));
+  border: calc(1 * var(--u)) solid var(--dim);
+}
+.vslider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: calc(20 * var(--u));
+  height: calc(46 * var(--u));
+  margin-top: calc(-16 * var(--u));   /* centre the thumb on a 16 u track */
+  border: 0;
+  background: var(--green);
+}
+.vslider::-moz-range-track {
+  height: calc(16 * var(--u));
+  background: #0d2418;
+  border: calc(1 * var(--u)) solid var(--dim);
+}
+.vslider::-moz-range-progress { height: calc(16 * var(--u)); background: var(--green); }
+.vslider::-moz-range-thumb { width: calc(20 * var(--u)); height: calc(46 * var(--u)); border: 0; background: var(--green); }
+.vslider:active::-webkit-slider-thumb,
+.vslider:active::-moz-range-thumb { background: #fff; }
+
+/* ---- the switches ---- */
+/* A word under each label says what the setting means, because "INTERRUPT: OFF" does not, and
+   "RECORD: SCREEN" says even less: the one thing somebody wants to know at each is whether
+   they now have to wait, and what they will be watching afterwards.
+
+   The hint no longer has to be one line or nothing. It used to share a 52 u row with the other
+   switch and be cut off with an ellipsis at whatever fitted; down a half-width column it can
+   simply wrap, and a second line costs gap rather than anything anybody can see. */
+.shint {
+  font-size: calc(13 * var(--u));
+  line-height: 1.25;
+  color: var(--dim);
+  min-width: 0;
+}
+/* 96 u holds SCREEN and CAMERA, the longest of the words, with room to spare at this
+   letter-spacing; 46 u is about 9 mm, a thumb with a glove on, and the same height as the
+   volume's own thumb an inch above it. */
+.sw {
+  width: calc(96 * var(--u));
+  height: calc(46 * var(--u));
+  border: calc(1 * var(--u)) solid var(--mid);
+  background: var(--screen);
+  color: var(--mid);
+  font-family: inherit;
+  font-size: calc(15 * var(--u));
+  letter-spacing: .24em;
+}
+.sw[aria-checked="true"] { background: var(--green); color: var(--ink); border-color: var(--green); }
+.sw:active { border-color: var(--green); }
+
+/* ---- the way out ---- */
+/* The biggest target on the screen, and shaped like the kiosk's tab row so it is obvious it
+   goes back there: full width, 70 of the panel's 480 px, about 13.5 mm. */
+.close {
+  border: calc(1 * var(--u)) solid var(--mid);
+  width: 100%;
+  height: calc(70 * var(--u));
+  background: var(--screen);
+  color: var(--green);
+  font-family: inherit;
+  font-size: calc(20 * var(--u));
+  letter-spacing: .34em;
+  text-transform: uppercase;
+}
+.close:active, .close:disabled { background: var(--green); color: var(--ink); border-color: var(--green); }
+
+/* Over a diagram it is a square in the corner instead. Still 58 of the panel's 480 px - about
+   11 mm, a thumb in a glove - because the point was to give the drawing the other 700 px of
+   width, not to make the way out harder to hit. */
+body.drawing .close {
+  position: fixed;
+  top: calc(22 * var(--u));
+  right: calc(22 * var(--u));
+  z-index: 8;
+  width: calc(58 * var(--u));
+  height: calc(58 * var(--u));
+  margin: 0;
+  font-size: calc(24 * var(--u));
+  letter-spacing: 0;
+  /* The drawing runs underneath, so this cannot be see-through the way the tab row is. */
+  background: var(--screen);
+}
+body.drawing .close .word { display: none; }
+
+/* ...and a picture has no button at all, because pressing it anywhere puts it away. A drawing
+   keeps its square: it is a thing you read, and you point at a pin while you talk about it.
+   A picture of your own bench is a thing you look at and are then done with, so the whole
+   800x480 is the way out rather than 1.5% of it in a corner. */
+body.photo .close { display: none; }

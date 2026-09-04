@@ -6,6 +6,7 @@ JavaScript are looking at exactly the same fields and the formatting lives in on
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import re
@@ -40,14 +41,64 @@ LOOPBACK = {"127.0.0.1", "::1"}
 GIB = 1024**3  # what df -h means by "G", so the page and the shell agree
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-# The three vendored bundles, by the only names that will be served. A allow-list rather than a
-# path check because there is no argument to be had about what a suffixed, slashed or dotted name
-# resolves to if the set of legal answers is written out in full.
-STATIC_FILES = {
+# Everything that will ever be served from static/, by the only names that will be served. An
+# allow-list rather than a path check because there is no argument to be had about what a
+# suffixed, slashed or dotted name resolves to if the set of legal answers is written out in
+# full. Two dicts rather than one because the two halves want opposite caching (below).
+#
+# The vendored bundles. Bare URLs, no version: they change about twice a year, and hanging a
+# digest on them would re-download and re-parse 527 KB on the panel after every CSS tweak. The
+# price is that editing one *in place* would never reach a warm kiosk - so a new version of one
+# of these arrives under a new filename. See NOTICE.md.
+VENDORED = {
     "joint.min.js": "text/javascript",
     "dagre.min.js": "text/javascript",
     "directed-graph.min.js": "text/javascript",
 }
+# Ours, which change whenever anybody touches the page. charset on both: twenty-odd lines of the
+# JS carry an em-dash or a middot, and text/css is not optional at all - a standards-mode
+# document *rejects* a stylesheet served as anything else, and says so in one console line with
+# an unstyled page as the only other symptom.
+OURS = {
+    "base.css": "text/css; charset=utf-8",
+    "system.css": "text/css; charset=utf-8",
+    "diagram.css": "text/css; charset=utf-8",
+    "views.css": "text/css; charset=utf-8",
+    "lan.css": "text/css; charset=utf-8",
+    "status.js": "text/javascript; charset=utf-8",
+    "app.js": "text/javascript; charset=utf-8",
+    "diagram.js": "text/javascript; charset=utf-8",
+}
+STATIC_FILES = VENDORED | OURS
+
+
+def _asset_version() -> str:
+    """One short digest over our own CSS and JS, read once at import - the page's ``?v=``.
+
+    The kiosk starts Chromium against a profile on the card that no deploy clears
+    (``kiosk.py``), and ``--kiosk`` leaves nobody an address bar or a reload button. So an asset
+    handed out ``immutable`` at a fixed URL is handed out *for ever*, and the only cure is ssh.
+    Versioning by URL instead means an edited file is a different file as far as the browser is
+    concerned, while a deploy that changed nothing reuses everything already parsed on the panel
+    - no revalidation request, on a box where CPU is the scarce thing.
+
+    Contents and not mtimes: ``rsync -a`` carries whatever the laptop's clock said, to the
+    second, and two edits inside one second is a Tuesday.
+
+    Read at import, so the guarantee is *restart implies fresh* - which is the same contract
+    ``DEBUG = False`` already imposes on the template, and which ``deploy/push.sh`` honours by
+    restarting this service on every push.
+    """
+    digest = hashlib.sha256()
+    for name in sorted(OURS):
+        try:
+            digest.update((STATIC_DIR / name).read_bytes())
+        except OSError:  # a missing file is a 404 the page shouts about, not a dead service
+            digest.update(name.encode())
+    return digest.hexdigest()[:8]
+
+
+ASSET_VERSION = _asset_version()
 MAX_SVG_BYTES = 4 * 1024 * 1024  # a 40-pin pinout is ~90 KB; this is a ceiling, not a budget
 
 # What may come out of a session folder, and as what. An allow-list by suffix for the same reason
@@ -139,7 +190,14 @@ def _payload(request: HttpRequest) -> dict:
 
 def dashboard(request: HttpRequest) -> HttpResponse:
     """The whole interface: four readings and, on the kiosk only, the settings and a way out."""
-    page = render(request, "cyclops/dashboard.html", _payload(request))
+    # ASSET_VERSION rides beside the payload rather than inside it: _payload() is also
+    # /api/status, whose keys the page's [data-field] loop iterates and the README documents as
+    # something you can curl. A cache-busting token has no business in either.
+    page = render(request, "cyclops/dashboard.html", _payload(request) | {"v": ASSET_VERSION})
+    # The page is the one thing that must never be stale, because it is what names the versions
+    # of everything else - a cached copy would go on asking for last week's stylesheet for ever.
+    # It is fetched once per browser start, so this costs nothing.
+    page["Cache-Control"] = "no-store"
     if _is_local(request):
         _note_served()
     return page
@@ -275,11 +333,15 @@ def diagram_shown(request: HttpRequest) -> HttpResponse:
 
 
 def static_file(request: HttpRequest, name: str) -> HttpResponse:
-    """Serve one of the vendored bundles - see ``static/NOTICE.md``.
+    """Serve one of the files in ``static/`` - our own CSS and JS, and the vendored bundles.
 
-    There is no ``staticfiles`` app here and no INSTALLED_APPS to add one to, which for four
-    files is the smaller thing rather than the missing thing. They never change between deploys,
-    so they are handed out with a long cache lifetime and read straight off the card.
+    There is no ``staticfiles`` app here and no INSTALLED_APPS to add one to, which for eleven
+    files is the smaller thing rather than the missing thing.
+
+    Everything is handed out ``immutable``, ours included: our files are versioned in the query
+    string instead (see :func:`_asset_version`), and Django resolves the URL before the ``?``, so
+    ``/static/base.css?v=a1b2c3d4`` arrives here as ``base.css`` and the flat allow-list above
+    never has to think about it.
     """
     kind = STATIC_FILES.get(name)
     if kind is None:

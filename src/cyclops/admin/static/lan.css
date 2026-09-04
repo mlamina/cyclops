@@ -1,0 +1,74 @@
+/* Everything a phone, a tablet or a laptop gets that the panel does not.
+
+   Every selector in this file starts `body:not(.kiosk)` or sits in a media query the panel
+   cannot match. That is not a convention, it is the whole safety argument: the panel is the one
+   client with no scrollbar, no zoom and nobody watching it start, and a rule that cannot reach
+   it cannot break it. tests/layout_check.mjs holds the panel to a saved baseline and will fail
+   on any rule in here that leaks.
+
+   Loaded last, so it is also last in the cascade - though nothing here relies on that, because
+   `body:not(.kiosk) .thing` outweighs `.thing` on specificity alone. */
+
+/* ---- a laptop ---- */
+/* Landscape and wide. The string is repeated in the script, which must agree with it: the
+   transcript is not hidden here, it is never fetched. Keep the two in step.
+
+   --u is pinned rather than left to scale. Growing every glyph with the viewport is a panel
+   technique - it exists so a 480 px screen never overflows a row - and on a 27" monitor it
+   makes a billboard out of a page of small print. So the type stays the size it is on the
+   panel, near enough, and the extra room goes into columns instead. */
+@media (min-width: 900px) and (min-aspect-ratio: 1/1) {
+  :root { --u: 1.15px; }
+  body { padding: calc(20 * var(--u)); }
+  /* Four bars in a row, held to a strip. A column of four across a whole monitor would be
+     four rules a yard long, which is the same mistake the 2x2 of tiles made here. A laptop is
+     never loopback, so there are no settings beside them and the split is already one column. */
+  .system { align-content: start; }
+  .meters { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto;
+            align-content: start; gap: calc(44 * var(--u)); }
+  .sessions, .media { padding: calc(12 * var(--u)) calc(4 * var(--u)); }
+  /* 176 wide against a 132 min-height is 4:3 to the pixel: uncropped as well as ungapped for
+     a recording made from the camera, and trimmed down the sides for one made from the 5:3
+     screen. `cover` on .thumb is what makes a list of both look like one list. */
+  .row { grid-template-columns: calc(176 * var(--u)) minmax(0, 1fr);
+         min-height: calc(132 * var(--u)); }
+  .row:hover { border-color: var(--mid); }
+  .rowtext { padding: calc(14 * var(--u)) calc(16 * var(--u)); }
+  .rowsum {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    color: var(--dim); font-size: calc(13 * var(--u)); line-height: 1.4;
+    margin-top: calc(7 * var(--u)); padding-right: calc(96 * var(--u));
+  }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(calc(210 * var(--u)), 1fr));
+          gap: calc(10 * var(--u)); }
+  .cell:hover { border-color: var(--mid); }
+  /* Video left, conversation right, each scrolling on its own. */
+  .watch { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+           grid-template-rows: minmax(0, 1fr); gap: calc(18 * var(--u)); }
+  .playing { grid-template-rows: min-content min-content; align-content: start; overflow-y: auto; }
+  /* `auto` first, so the box takes the recording's own shape once the metadata lands and the
+     ratio after it is only what to hold before that. It has to be both: a session recorded
+     from the screen is 5:3 like the panel, one recorded from the camera is 4:3 like the
+     sensor, and the card holds a mix of the two forever. See cyclops.filming. */
+  .video { height: auto; max-height: 52vh; aspect-ratio: auto 5 / 3;
+           border: calc(1 * var(--u)) solid var(--dim); }
+  .stitle { font-size: calc(20 * var(--u)); -webkit-line-clamp: 3; }
+  .ssum { display: block; color: var(--dim); line-height: 1.5; margin-top: calc(10 * var(--u));
+          font-size: calc(13 * var(--u)); }
+  .talk { display: block; overflow-y: auto; min-height: 0;
+          border-left: calc(1 * var(--u)) solid var(--dim); padding-left: calc(14 * var(--u)); }
+  /* Sitting down, with a pointer: text is for reading and quoting, and a scrollbar is worth
+     its 8 px. Both are turned off everywhere else because a panel has neither a cursor nor a
+     reason to let a sleeve select half a screen. */
+  .said, .ssum, .stitle, .aside { -webkit-user-select: text; user-select: text; }
+  ::-webkit-scrollbar { width: calc(9 * var(--u)); height: calc(9 * var(--u)); }
+  ::-webkit-scrollbar-thumb { background: var(--dim); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--mid); }
+}
+
+/* Portrait only - a phone held upright. The System screen needs nothing here any more: how
+   many columns it has is decided by whether the settings exist at all (body.kiosk, above) and
+   not by the aspect ratio, so a phone is already one column of four stacked bars. */
+@media (max-aspect-ratio: 3/4) {
+  :root { --u: clamp(0.7px, min(0.28vw, 0.115vh), 2px); }
+}

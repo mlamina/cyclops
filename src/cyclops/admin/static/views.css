@@ -1,0 +1,386 @@
+/* The seven screens, and the way between them. One document, no navigation: the hash picks a
+   view and a body class shows it, because the kiosk's browser is warm and must never reload.
+
+   Everything here is driven by static/app.js, which fills the empty <main> shells in
+   dashboard.html and owns every class this file styles. */
+
+/* ---- four screens, one document ---- */
+/* The kiosk's browser must never navigate: it is warm, already pointed here, holding a parsed
+   527 KB of JointJS and a 400 ms watch on the panel, and spawning it costs 1.4 s against the
+   2 ms this page costs (kiosk.py:112-116). So the hash picks a view and a body class shows it -
+   exactly the trick body.drawing already plays, with three more players. */
+.view { display: none; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+body.view-status   .system,
+body.view-sessions .sessions,
+body.view-session  .watch,
+body.view-projects .projects,
+body.view-browse   .browse,
+body.view-file     .file,
+body.view-media    .media { display: grid; }
+/* The volume used to need a rule here to keep it off the other six screens - it was a body
+   row, and a row costs its 52 px whether or not anybody came to that screen to use it. It is
+   inside the System view now, so it appears and disappears with the view it belongs to. */
+/* A drawing is Cyclops answering a question out loud. It outranks anything you were reading. */
+body.drawing .view, body.drawing .lightbox { display: none !important; }
+
+/* ---- the tabs ---- */
+.nav { display: flex; gap: calc(4 * var(--u)); margin-left: calc(4 * var(--u)); }
+.tab {
+  appearance: none; -webkit-appearance: none;
+  border: calc(1 * var(--u)) solid transparent;
+  background: transparent; color: var(--dim); font: inherit;
+  font-size: calc(14 * var(--u)); letter-spacing: .2em; text-transform: uppercase;
+  /* 44u tall - about 8 mm on the panel. Smaller than the close bar, because this moves you
+     around inside one screen and that one gives the panel back to the camera. */
+  min-height: calc(44 * var(--u));
+  padding: 0 calc(14 * var(--u));
+}
+.tab[aria-current="true"] { background: var(--green); color: var(--ink); border-color: var(--green); }
+.tab:active { border-color: var(--green); }
+
+/* ---- the session list ---- */
+.sessions, .media { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+/* Two columns and no padding on the row itself - the gaps around the still *were* the padding.
+   The still is flush to three of the row's edges and stretches to whatever height the title
+   needs; the column is 4:3 against the min-height, which is a camera frame exactly and a
+   screen frame with a little off each side - `cover` settles whichever this one is, and the
+   card holds both. The text carries its own padding instead. */
+.row {
+  position: relative;
+  display: grid;
+  grid-template-columns: calc(132 * var(--u)) minmax(0, 1fr);
+  align-items: stretch;
+  min-height: calc(100 * var(--u));
+  width: 100%; text-align: left;
+  background: var(--screen); color: inherit; font: inherit;
+  border: calc(1 * var(--u)) solid var(--dim);
+  padding: 0;
+  margin-bottom: calc(8 * var(--u));
+  overflow: hidden;   /* the still is cut by the row's own edge rather than drawn past it */
+}
+.row:active, .row:focus-visible { border-color: var(--green); outline: none; }
+/* The still is the recording's own first seconds, asked for with a media fragment - see the
+   script. No poster file, no ffmpeg, nothing cached on the card. */
+.shot { position: relative; display: block; background: #000; min-width: 0; }
+.thumb {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  display: block; border: 0; object-fit: cover; background: #000;
+}
+.thumb.none {
+  display: grid; place-content: center; text-align: center; color: var(--dim);
+  font-size: calc(11 * var(--u)); letter-spacing: .2em;
+}
+/* How long it runs, where a video player puts it: on the picture, bottom left. It is a fact
+   about the recording, so it belongs on the recording and not in a line of prose beside it. */
+.len {
+  position: absolute; left: 0; bottom: 0; z-index: 2;
+  padding: calc(3 * var(--u)) calc(7 * var(--u));
+  background: rgba(0, 0, 0, .72); color: var(--green);
+  font-size: calc(12 * var(--u)); letter-spacing: .06em;
+  font-variant-numeric: tabular-nums;
+}
+.rowtext { padding: calc(10 * var(--u)) calc(12 * var(--u)); align-self: center; min-width: 0; }
+.rowtitle {
+  font-size: calc(16 * var(--u)); color: var(--green); line-height: 1.25;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  padding-right: calc(96 * var(--u));   /* keeps a long title out from under the date */
+}
+/* The corner, and only the corner: when it happened, stacked so it stays narrow. */
+.rowwhen {
+  position: absolute; top: calc(9 * var(--u)); right: calc(11 * var(--u)); z-index: 2;
+  text-align: right; white-space: nowrap;
+  font-size: calc(12 * var(--u)); color: var(--dim);
+  letter-spacing: .12em; text-transform: uppercase;
+}
+.rowtime, .rowsub { display: block; margin-top: calc(2 * var(--u)); }
+.rowsub.live { color: var(--amber); }
+.rowsub.broke { color: var(--red); }
+.rowsum { display: none; }
+
+/* ---- the picture stream ---- */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(150 * var(--u)), 1fr));
+  gap: calc(8 * var(--u));
+  align-content: start;
+}
+.cell {
+  appearance: none; padding: 0; font: inherit; color: inherit;
+  background: var(--screen); border: calc(1 * var(--u)) solid var(--dim);
+  display: block; width: 100%;
+}
+.cell:active, .cell:focus-visible { border-color: var(--green); outline: none; }
+/* contain, not cover: a drawing cropped to a tile is a drawing you cannot read, and a photo
+   off this camera is 4:3 already, so it loses nothing by it. */
+.cell img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; background: #000; }
+.cell .undrawn {
+  aspect-ratio: 4 / 3; display: grid; place-content: center; background: #000;
+  color: var(--dim); font-size: calc(11 * var(--u)); letter-spacing: .18em; text-align: center;
+  padding: 0 calc(8 * var(--u));
+}
+.cellcap {
+  font-size: calc(11 * var(--u)); color: var(--mid); letter-spacing: .1em;
+  padding: calc(5 * var(--u)) calc(6 * var(--u));
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ---- one session ---- */
+/* Narrow - the panel, and a phone - is the video and what it is called. Nothing else: you are
+   standing at a bench, and a transcript at arm's length is a wall of text you would have to
+   stop working to read. The whole conversation is on the laptop, where you are sitting down. */
+.watch { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+.playing { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; gap: calc(8 * var(--u)); }
+.video { width: 100%; height: 100%; min-height: 0; background: #000; display: block;
+         object-fit: contain; position: relative; z-index: 10; }
+.stitle {
+  font-size: calc(16 * var(--u)); color: var(--green); line-height: 1.3;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.smeta {
+  font-size: calc(12 * var(--u)); color: var(--dim); letter-spacing: .14em;
+  text-transform: uppercase; margin-top: calc(5 * var(--u));
+}
+.ssum { display: none; }
+.talk { display: none; }
+.line { display: grid; grid-template-columns: calc(44 * var(--u)) minmax(0, 1fr);
+        gap: calc(10 * var(--u)); padding: calc(7 * var(--u)) calc(6 * var(--u)); }
+.line[data-t] { cursor: pointer; }
+.line[data-t]:hover { background: #0d2418; }
+.at { color: var(--dim); font-size: calc(12 * var(--u)); font-variant-numeric: tabular-nums;
+      text-align: right; padding-top: calc(2 * var(--u)); }
+.who { display: block; color: var(--dim); font-size: calc(11 * var(--u));
+       letter-spacing: .24em; text-transform: uppercase; margin-bottom: calc(3 * var(--u)); }
+.said { color: var(--green); line-height: 1.45; }
+.line.you .said { color: var(--mid); }
+.aside { color: var(--dim); line-height: 1.4; font-style: italic; }
+.aside b { color: var(--mid); font-style: normal; font-weight: normal; }
+.line.bad .aside { color: var(--red); }
+.inline { margin-top: calc(8 * var(--u)); border: calc(1 * var(--u)) solid var(--dim);
+          background: #000; display: block; max-width: 100%;
+          position: relative; z-index: 10; }
+
+/* ---- a recording on the panel gets the panel ---- */
+/* The same bargain the drawing gets, and for the same reason. Measured on the panel before
+   this: the header, the caption line and the full-width way out took 221 of 480 rows - 46% of
+   the screen - and what was left showed the picture at 337x253, which is 22% of a 7" display
+   spent on the thing you opened the screen to look at. Dropping the chrome puts it at 595x446:
+   3.1x the area, and the biggest lever there is by a distance.
+
+   How much is left down the sides now depends on what was recorded, and both answers are fine
+   because nothing here is measured in advance: `fit()` reads the picture's real ratio off the
+   element and places everything from that. A session recorded from the camera is 640x480 on an
+   800x480 panel, so ~85 px of bar each side, and the controls sit in it. One recorded from the
+   screen is the panel's own 5:3 and fills it edge to edge, so the same controls sit *on* the
+   picture, which is where every phone puts them. Cropping to fill was never on the table for
+   the first case - it would lose a fifth of every frame, the wrong trade for footage you
+   replay to read a part number off - and in the second there is nothing to crop.
+
+   `solo` is set from the script rather than by a media query, because it is not only a width:
+   it also decides that the transcript is never fetched, and that the video wears our controls
+   instead of the browser's. One switch, one place. */
+body.solo header, body.solo .caption { display: none; }
+/* One row, like a drawing gets. Hidden children stop being grid items, so what is left lands in
+   the first `auto` track and the 1fr below it quietly keeps the space - 18 px of picture that
+   nothing was using and nothing was going to admit to. */
+body.solo { grid-template-rows: minmax(0, 1fr); }
+body.solo .playing { position: relative; grid-template-rows: minmax(0, 1fr); gap: 0; }
+
+/* Everything below is positioned from the script, which measures where the picture actually
+   landed inside the element - object-fit leaves letterboxing that CSS cannot see. */
+.vtitle, .scrub, .rig, .back { display: none; }
+
+.vtitle {
+  position: absolute; z-index: 11;
+  padding: calc(9 * var(--u)) calc(13 * var(--u));
+  background: linear-gradient(to bottom, rgba(0, 0, 0, .75), transparent);
+  color: var(--mid); font-size: calc(13 * var(--u)); letter-spacing: .06em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+body.solo .vtitle { display: block; }
+
+/* 40u of touch target for an 8u track: the bar you can hit is not the bar you can see, and on
+   a panel the first one has to be a thumb wide. */
+.scrub {
+  position: absolute; z-index: 11; height: calc(40 * var(--u));
+  display: grid; align-items: center; padding: 0 calc(12 * var(--u));
+  background: linear-gradient(to top, rgba(0, 0, 0, .75), transparent);
+  touch-action: none;
+}
+body.solo .scrub { display: grid; }
+.scrub-track {
+  height: calc(8 * var(--u)); background: #0d2418;
+  border: calc(1 * var(--u)) solid var(--dim);
+}
+.scrub-fill { height: 100%; width: 0; background: var(--green); }
+.scrub:active .scrub-fill { background: #fff; }
+
+body.solo .rig { display: grid; }
+.rig {
+  position: fixed; z-index: 11; justify-items: center; gap: calc(9 * var(--u));
+}
+.rig-play {
+  width: calc(76 * var(--u)); height: calc(76 * var(--u));
+  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
+  color: var(--green); padding: 0;
+}
+.rig-play:active { background: var(--green); color: var(--ink); }
+.pg { width: 60%; height: 60%; fill: currentColor; display: block; margin: 0 auto; }
+.rig-play .pg-pause, .rig-play[data-on] .pg-play { display: none; }
+.rig-play[data-on] .pg-pause { display: inline; }
+.rig-time {
+  font-size: calc(13 * var(--u)); text-align: center; line-height: 1.45;
+  font-variant-numeric: tabular-nums; color: var(--dim);
+}
+#vnow { display: block; color: var(--green); }
+
+/* Two ways out, at opposite ends of the same bar so neither is the other by accident: back up
+   one step to the list, and off the page entirely to the camera. */
+body.solo .back { display: block; }
+.back {
+  position: fixed; top: calc(22 * var(--u)); right: calc(22 * var(--u)); z-index: 11;
+  width: calc(58 * var(--u)); height: calc(58 * var(--u));
+  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
+  color: var(--green); font: inherit; font-size: calc(30 * var(--u)); line-height: 1;
+}
+.back:active { background: var(--green); color: var(--ink); }
+/* Written with :not(.drawing) rather than left to the cascade: the drawing's own corner rule is
+   further up this file, and a tie on specificity would hand the panel to whichever came last. */
+body.solo:not(.drawing) .close {
+  position: fixed; top: auto; left: auto;
+  bottom: calc(22 * var(--u)); right: calc(22 * var(--u)); z-index: 11;
+  width: calc(58 * var(--u)); height: calc(58 * var(--u));
+  margin: 0; font-size: calc(24 * var(--u)); letter-spacing: 0; background: var(--screen);
+}
+body.solo:not(.drawing) .close .word { display: none; }
+
+/* ---- flipping through ---- */
+.lightbox {
+  display: none; position: fixed; inset: 0; z-index: 12; background: #000;
+  grid-template-rows: minmax(0, 1fr) auto; padding: calc(20 * var(--u));
+}
+body.lit .lightbox { display: grid; }
+.lit-shot { min-height: 0; display: grid; place-items: center; }
+.lit-shot img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.lit-cap { color: var(--mid); font-size: calc(13 * var(--u)); letter-spacing: .1em;
+           text-align: center; padding-top: calc(10 * var(--u));
+           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Two thumb-wide columns down the sides of the picture, and a corner to leave by. Flipping
+   through is the verb here, so the targets for it are the size of the gesture, not of a glyph. */
+.lit-nav {
+  position: absolute; top: 0; bottom: 0; width: calc(96 * var(--u));
+  background: transparent; border: 0; color: var(--mid);
+  font: inherit; font-size: calc(34 * var(--u));
+}
+.lit-prev { left: 0; } .lit-next { right: 0; }
+.lit-nav:active { background: rgba(86, 255, 140, .12); color: var(--green); }
+.lit-close {
+  position: absolute; top: calc(14 * var(--u)); right: calc(14 * var(--u));
+  width: calc(58 * var(--u)); height: calc(58 * var(--u));
+  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
+  color: var(--green); font: inherit; font-size: calc(24 * var(--u));
+}
+
+.empty { color: var(--dim); letter-spacing: .2em; text-transform: uppercase;
+         padding: calc(30 * var(--u)); text-align: center; font-size: calc(13 * var(--u)); }
+
+/* ---- the projects ---- */
+/* The list is the session list: a project has a photo, a name and a sentence saying what it
+   is, which is the same row with the same target and nothing new to learn. */
+.projects { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+
+/* The browser and the reader are one shape twice: a bar saying where you are, and the thing
+   itself scrolling under it. Two rows rather than one scroller, because on the panel that bar
+   is the only way back and a way back that scrolls off the top is not one. */
+.browse, .file { grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+.crumbs {
+  display: flex; align-items: center; gap: calc(2 * var(--u));
+  border-bottom: calc(1 * var(--u)) solid var(--dim);
+  overflow-x: auto; white-space: nowrap;
+}
+.crumb {
+  appearance: none; -webkit-appearance: none; border: 0; background: transparent;
+  color: var(--mid); font: inherit; font-size: calc(13 * var(--u)); letter-spacing: .1em;
+  /* 40u, a shade under the tabs above it: this moves you around inside one screen too, and it
+     must not read as a second row of them. The line-height is what centres the text, and it is
+     here rather than on the flex row because the file you are reading is a <span> among
+     <button>s - a button centres its own label and a span left to itself sits at the top. */
+  min-height: calc(40 * var(--u)); line-height: calc(40 * var(--u));
+  padding: 0 calc(6 * var(--u));
+  max-width: calc(240 * var(--u)); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; text-align: left; flex: none;
+}
+.crumb.up { color: var(--green); font-size: calc(22 * var(--u)); padding: 0 calc(8 * var(--u)); }
+.crumb:active { color: var(--green); }
+.crumb.here { color: var(--green); }   /* the file you are reading: named, but not a way back */
+.sep { color: var(--dim); flex: none; }
+.files { overflow-y: auto; overscroll-behavior: contain;
+         padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+/* A file row is a project row with the still swapped for a mark. Same box, same border, same
+   target - the column is narrower because a glyph is not a photograph. */
+.files .row { grid-template-columns: calc(46 * var(--u)) minmax(0, 1fr);
+              min-height: calc(50 * var(--u)); }
+.mark {
+  display: grid; place-content: center; color: var(--mid);
+  font-size: calc(18 * var(--u)); background: var(--screen);
+  border-right: calc(1 * var(--u)) solid var(--dim);
+}
+.mark.dir { color: var(--green); }
+.files .rowtitle { font-size: calc(14 * var(--u)); -webkit-line-clamp: 1;
+                   padding-right: calc(70 * var(--u)); }
+.files .rowwhen { top: 50%; transform: translateY(-50%); }
+
+/* ---- a file, open ---- */
+/* The markdown arrives as HTML with its pictures already pointed at /project-media - see
+   shelf.py, which is also the only thing that ever put a tag in it. All that is left here is
+   to make a document look like it belongs on this screen rather than in a browser's defaults. */
+.doc {
+  overflow-y: auto; overscroll-behavior: contain;
+  padding: calc(12 * var(--u)) calc(14 * var(--u));
+  color: var(--mid); line-height: 1.5;
+}
+.doc h1, .doc h2, .doc h3 { color: var(--green); line-height: 1.25;
+                            margin: calc(14 * var(--u)) 0 calc(6 * var(--u)); }
+.doc h1 { font-size: calc(19 * var(--u)); letter-spacing: .04em; }
+.doc h2 { font-size: calc(13 * var(--u)); letter-spacing: .18em; text-transform: uppercase; }
+.doc h3 { font-size: calc(14 * var(--u)); letter-spacing: .08em; }
+.doc > :first-child { margin-top: 0; }
+.doc p, .doc ul, .doc ol, .doc blockquote { margin: calc(8 * var(--u)) 0; }
+.doc ul, .doc ol { padding-left: calc(18 * var(--u)); }
+.doc li { margin: calc(3 * var(--u)) 0; }
+.doc a { color: var(--green); }
+.doc code { color: var(--green); background: rgba(86, 255, 140, .08);
+            padding: 0 calc(3 * var(--u)); }
+.doc pre { border: calc(1 * var(--u)) solid var(--dim); padding: calc(8 * var(--u));
+           overflow-x: auto; }
+.doc pre code { background: none; padding: 0; }
+/* Plain words - a JSON spec, a CSV - kept as typed and wrapped, because the panel is 800 px
+   wide and a diagram spec is not. */
+.doc pre.raw { border: 0; padding: 0; white-space: pre-wrap; word-break: break-word;
+               font-size: calc(12 * var(--u)); }
+.doc hr { border: 0; border-top: calc(1 * var(--u)) solid var(--dim);
+          margin: calc(14 * var(--u)) 0; }
+.doc img { display: block; max-width: 100%; height: auto; margin: calc(10 * var(--u)) 0;
+           border: calc(1 * var(--u)) solid var(--dim); background: #000; }
+.doc table { border-collapse: collapse; width: 100%; font-size: calc(12 * var(--u)); }
+.doc th, .doc td { border: calc(1 * var(--u)) solid var(--dim);
+                   padding: calc(4 * var(--u)) calc(7 * var(--u)); text-align: left; }
+.doc th { color: var(--green); }
+.doc blockquote { border-left: calc(2 * var(--u)) solid var(--dim); padding-left: calc(10 * var(--u)); }
+/* One picture, or one recording, filling what the reader has. */
+.lone { display: block; width: 100%; max-height: 100%; object-fit: contain; background: #000; }
+
+/* ---- a workbook ---- */
+/* Project Data.xlsx is a list of remembered pairs under the tab they were written on (see
+   projects/data.py), so that is what it is shown as. A grid would spend the panel on ruling
+   and none of it on the value, which is the only thing anybody opened the file to read. */
+.pair {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0 calc(10 * var(--u)); align-items: baseline;
+  padding: calc(6 * var(--u)) 0;
+  border-bottom: calc(1 * var(--u)) solid rgba(32, 118, 70, .4);
+}
+.pkey { color: var(--mid); min-width: 0; overflow-wrap: anywhere; }
+.pval { color: var(--green); text-align: right; font-variant-numeric: tabular-nums; }
+.pnote { grid-column: 1 / -1; color: var(--dim); font-size: calc(11 * var(--u));
+         margin-top: calc(2 * var(--u)); }
