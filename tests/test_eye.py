@@ -123,10 +123,13 @@ def test_no_caption_names_a_button_that_is_not_there() -> None:
 
 
 @pytest.mark.parametrize("state", STATES)
-def test_every_state_has_a_word_a_sentence_and_a_face(state: str) -> None:
-    # The fourth table is the one that fails silently: a state missing from MOODS does not raise,
-    # it falls back to the sleeping face, and the panel simply stops saying anything about it.
-    assert overlay.LABELS[state]
+def test_every_state_has_a_sentence_and_a_face(state: str) -> None:
+    # There used to be a word for each of these as well, in a corner of its own, and dropping it
+    # is what makes the other two load-bearing rather than decorative: the sentence is now the
+    # only thing that *names* what he is doing, and the face is the only thing that shows it.
+    #
+    # MOODS is the one that fails silently: a state missing from it does not raise, it falls back
+    # to the sleeping face, and the panel simply stops saying anything about that state at all.
     assert state in overlay.MOODS, "no mood for this state - the eye would go to sleep in it"
     assert state == overlay.ERROR or state in overlay.CAPTIONS
 
@@ -1061,24 +1064,20 @@ def test_the_face_is_tappable_where_the_face_is(width: int, height: int) -> None
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
-def test_both_rows_of_the_top_bracket_stay_inside_it(width: int, height: int) -> None:
+def test_the_pod_is_centred_and_holds_its_worst_case(width: int, height: int) -> None:
     """The Mac and the Pi pick different faces, so this is a test and not a measurement.
 
-    Two groups grow towards each other inside one bracket: the state word and the tags rightwards
-    off the ramp, the meter and the clock inwards off the frame. Either one overrunning is a
-    readout with a rail drawn through it, and the bracket widens past the panel's midline when it
-    has to - so this also says that widening actually works.
+    Its plate is cut once per window size and the tags come and go per state, so it has to be
+    sized for the state that needs the most room - the tape running *and* the board throttled -
+    or a warning that is not lit leaves a hole in the chrome the shape of itself.
     """
     ov = overlay.Overlay(width, height)
-    track = max(1.0, 2.0 * ov.scale)
-    pad = round(12 * ov.scale)
-    word_left = ov._inside(ov.row_top + round(14 * ov.scale)) + pad
-    _, tags, meter_right = ov._readouts(False)
-    sig_left = ov._meter_x(meter_right) - round(9 * ov.scale) - ov._width("SIG", ov.font_micro, 0)
-    for word in set(overlay.LABELS.values()):
-        end = word_left + ov._width(word, ov.font_mode, track * 0.7)
-        assert end < sig_left, f"{word} runs into SIG at {width}x{height}"
-    # ...and the tag row under it, at its widest: the tape running *and* the board throttled.
-    assert tags > ov._inside(ov.row_bottom + round(11 * ov.scale)), f"the tags at {width}"
-    widest = tags + ov._rec_w + ov._gap + ov._rec_w
-    assert widest < meter_right - ov._clock_w - ov._gap, f"the tags reach the clock at {width}"
+    clock_right, tags, meter_right = ov._readouts(False)
+    assert ov.pod.center[0] in (width // 2, (width - 1) // 2), f"the pod is off centre at {width}"
+    assert tags + ov._width("SIG", ov.font_micro, 0) < ov._meter_x(meter_right), "SIG hits the bar"
+    widest = tags + ov._rec_w + ov._gap + ov._rec_w + ov._gap
+    assert widest <= clock_right - ov._clock_w, f"both tags reach the clock at {width}x{height}"
+    # ...and the whole of it is inside the flat the rail draws round it, at both rows.
+    left, right = ov.spines["pod"][3][0], ov.spines["pod"][2][0]
+    assert left + ov.rail_w / 2 < ov.pod.x and ov.pod.right < right - ov.rail_w / 2
+    assert ov.row_bottom + ov.font_read.size / 2 < ov.pod.bottom - ov.rail_w / 2, "on the rail"

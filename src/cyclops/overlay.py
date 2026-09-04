@@ -6,18 +6,20 @@ shapes, a numpy-built halo and scanline field - and handed to :mod:`cyclops.kios
 array to alpha-blend onto the frame. Geometry doubles as the hit-test map: every interactive
 element returns its rectangle, so a tap can be resolved without a second layout.
 
-The layout is four corner brackets and a picture. Each bracket's rail comes in square to one
-panel edge, ramps across the corner at 45 degrees and lands square on the other; the two top
-ones carry two rows of readout each, and the two bottom ones carry the controls. This replaced a
-readout strip and a three-cell tab row that between them covered 29% of the panel - the brackets
-cover about 14%, and the middle of the screen, which is what somebody holding a camera down a
-pipe is actually looking at, is now nothing but picture and a four-arc reticle on the lens axis.
+The layout is two corner mounts, a status pod and a picture. A mount's rail comes in square to
+one panel edge, ramps across the corner at 45 degrees and lands square on the other, and the two
+of them carry the three controls; the pod is that same shape turned inwards, hanging off the
+middle of the top edge with the readouts in it. This replaced a strip and a three-cell tab row
+that between them covered 29% of the panel - the chrome here covers about 17%, and the middle of
+the screen, which is what somebody holding a camera down a pipe is actually looking at, is
+nothing but picture and a four-arc reticle on the lens axis.
 
 What made that affordable was giving up the words. SNAP, WAKE UP and GO TO SLEEP were what
 forced the controls into a row across the bottom: a cell has to be as wide as its label. Two
 glyphs and a face need a disc each, and a disc can go in a corner. What the words used to say is
-said by the microphone filling in while he is up, by the state word in the opposite corner, and
-by the line under the picture.
+said by the microphone filling in while he is up, by the border's colour, and by the line under
+the picture - which can say "searching the web…" where a word could only say SEARCH. The state
+word went the same way and for the same reason: three things were already saying it better.
 
 A bracket is drawn to look like one. The rail is an extrusion rather than a stroke - a shadow
 cast inwards onto the plate, then a profile across its width: a lit chamfer on the outer lip, a
@@ -46,7 +48,7 @@ rather than the creature holding its breath. The switch breathes because it is t
 left to press, and a control nobody finds is worse than one that beckons.
 
 Everything that holds still while the state does - the halo, the brackets and their bolts, the
-reticle, the mode word, the switches at rest - is built once and cached, keyed on the state. A
+reticle, the pod's tags, the switches at rest - is built once and cached, keyed on the state. A
 Pi rendering this at 25 fps has 40 ms for the whole loop and the camera wants most of them; what
 is left for a frame here is a signal meter, a clock, a caption, one ring, the border line and the
 eye. Every part of the eye moves, so none of it is cached at all; measured on the Pi, he is 10.5
@@ -139,8 +141,8 @@ INK = (3, 11, 7)  # text on a filled tab
 # The halo answers one question only from across a room - is the agent up? - and the state's
 # accent answers it in colour rather than in brightness, which is the only half of it that
 # survives the distance. Everything wearing this moves together: the border and its inward glow,
-# the mode word, the signal meter, the session clock, the caption's marker, and the mic and word
-# on the button that is holding the session open. The rest of the chrome stays green, because a
+# the signal meter, the session clock, the caption's marker, and the microphone on the switch
+# that is holding the session open. The rest of the chrome stays green, because a
 # panel where everything is an accent has none.
 HALOS = {
     IDLE: GREEN_DIM,
@@ -154,27 +156,12 @@ HALOS = {
     DRAWING: WHITE,
     ERROR: RED,
 }
-# What the strip calls each state. Kept here rather than taken from the controller's ``detail``
-# because two of these states are the kiosk's own invention and the controller has never heard
-# of them; the controller's sentence goes in the caption underneath instead.
-#
-# Asleep, waking, sleeping - because the control in the other corner is a microphone you press to
-# wake him, and a box asked to wake up does not answer STANDBY. The five in the middle read as a
-# creature
-# doing something and are left alone, and so is FAULT: the metaphor does not get to swallow the
-# one word that has to be believed.
-LABELS = {
-    IDLE: "ASLEEP",
-    STARTING: "WAKING",
-    STOPPING: "SLEEPING",
-    CONNECTING: "WAKING",
-    LISTENING: "LISTENING",
-    SPEAKING: "SPEAKING",
-    LOOKING: "OPTICS",
-    SEARCHING: "SEARCH",
-    DRAWING: "DRAWING",
-    ERROR: "FAULT",
-}
+# There is no word for the state any more. There was one for a long time - ASLEEP, LISTENING,
+# OPTICS - in a corner of its own, and what finally argued it off the panel is that three other
+# things were already saying it better: the border's colour, which is readable across a workshop;
+# the eye's mood, which is a face rather than a label; and the line under the picture, which says
+# "searching the web…" where the word could only say SEARCH. A fourth voice saying the same thing
+# in fewer letters is not redundancy, it is noise.
 # The heat lamp, which is the one thing on the strip that is not about the session at all. It is
 # the board's temperature, and it is here rather than only on the admin page because by the time
 # it matters the panel is already misbehaving - a throttled Pi drops camera frames and misses
@@ -382,13 +369,19 @@ PLATE_WASH = 0.34  # how far a bracket's plate is put towards SCREEN. Not opaque
 # it, and a face wants room. The right one is a bracket with two switches bolted through it, and
 # every pixel it does not take is a pixel of the room somebody is holding a camera down a pipe
 # to look at.
-# There is one bracket along the top, not two. The left one carried the wordmark and the state
-# word, and the wordmark is decoration on a box with one screen - nobody has to be told which
-# machine they are standing in front of. What was worth keeping went into this one, which is why
-# it runs all the way in to the panel's midline instead of sitting in its corner: it is not a
-# corner label any more, it is the readout block, and it is the only one.
-TOP_H = 78.0  # its depth, and two lines of readout fit in it
-TOP_STEP = 26.0  # the square landing before the top edge
+# The status pod: a narrow module hanging off the middle of the top edge, and the one piece of
+# chrome here that is not a corner. It went corner, then half a corner, then this - and the
+# middle is where it belonged all along, because none of what it carries is *about* a corner.
+# What it says is the box's own vital signs: how loud the room is, how long this has been going
+# on, and whether anything is being recorded or running hot.
+#
+# The shape is the bracket language turned inwards: the rail drops square off the top edge,
+# splays out at 45 to the flat that carries the readouts, and goes back up the same way. So it
+# is a module rather than a mount - it has no corner to be bolted into - but it is plainly the
+# same metal, and both its ends land square on the frame like everything else does.
+POD_H = 76.0  # its depth, which is two rows of readout and the rail under them
+POD_STEP = 26.0  # the square drop off the top edge before the splay starts
+POD_PAD = 16.0  # inside the flat, either side of the readouts
 BOT_L = 250.0  # the bottom-left bracket's reach along both edges
 BOT_L_STEP = 38.0  # its square landings
 BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
@@ -549,7 +542,7 @@ class Bracket:
     has to answer a hit test every time a finger lands.
     """
 
-    def __init__(self, corner: tuple[int, int], spine: Sequence[tuple[int, int]],
+    def __init__(self, corner: tuple[int, int] | None, spine: Sequence[tuple[int, int]],
                  seats: Sequence[Seat] = ()) -> None:
         self.corner = corner
         self.spine = list(spine)
@@ -584,19 +577,29 @@ class Bracket:
 
     def path(self) -> list[tuple[float, float]]:
         """The rail's centreline: in from one edge, round whatever is seated on it, out to the
-        other."""
+        other.
+
+        Anything seated rides the ramp, which is always the segment between the first two knees -
+        the pod has four knees and nothing seated, the mounts have two and up to one.
+        """
+        if not self.seats:
+            return list(self.spine)
         points: list[tuple[float, float]] = [self.spine[0], self.spine[1]]
         for seat in self.seats:
             p0, p1, a0, a1 = self.shoulder(seat)
             points.append(p0)
             points += arc_points(*seat.centre, seat.swell, a0, a1)[1:-1]
             points.append(p1)
-        points += [self.spine[2], self.spine[3]]
+        points += list(self.spine[2:])
         return points
 
     def plate(self, d: ImageDraw.ImageDraw) -> None:
-        """Fill the bracket's footprint into a mask: the gusset, plus every seat's swell."""
-        d.polygon([self.corner, *self.spine], fill=255)
+        """Fill the footprint into a mask: the gusset or the pod, plus every seat's swell.
+
+        A module's spine starts and finishes on the same panel edge, so its polygon closes along
+        that edge on its own and there is no corner to close it against.
+        """
+        d.polygon([*([self.corner] if self.corner else []), *self.spine], fill=255)
         for seat in self.seats:
             (cx, cy), R = seat.centre, seat.swell
             d.ellipse([cx - R, cy - R, cx + R, cy + R], fill=255)
@@ -760,11 +763,10 @@ class Overlay:
         self.font_brand = _load_font(max(7, round(14 * scale)))
         self.font_micro = _load_font(max(7, round(12 * scale)))
         self.font_caption = _load_font(max(8, round(14 * scale)))
-        # Where the two rows of the top bracket sit. Centres rather than baselines, because
-        # _text centres on the y it is given.
-        self.row_top = round(25 * scale)
-        self.row_bottom = round(52 * scale)
-        self.read_pad = self.pad + round(10 * scale)
+        # Where the pod's two rows sit. Centres rather than baselines, because _text centres on
+        # the y it is given, and both have to finish above the rail along the pod's bottom edge.
+        self.row_top = round(24 * scale)
+        self.row_bottom = round(51 * scale)
         self._clock_w = self.font_read.getlength("00:00")
         self._rec_w = self.font_micro.getlength("REC") + round(7 * scale) * 2
         self._gap = max(4, round(18 * scale))
@@ -772,34 +774,30 @@ class Overlay:
         # The three spines. Each is [edge, knee, knee, edge], and the ramp between the knees is
         # built from its own start rather than from a second table entry, so it is a true 45
         # whatever the rounding does to the numbers either side of it.
-        top, step = max(10, px(TOP_H)), max(4, px(TOP_STEP))
-        ramp = top - step
+        depth, step = max(10, px(POD_H)), max(4, px(POD_STEP))
+        ramp = depth - step
         bot, bstep = max(12, px(BOT_L)), max(4, px(BOT_L_STEP))
         blegs = bot - bstep
         rout, rstep = max(12, px(BOT_R_OUT)), max(4, px(BOT_R_STEP))
         rlegs = rout - max(4, px(BOT_R_LAND))
-        # The top bracket's ramp ends on the panel's midline, which is the one place to put it
-        # that is a decision rather than a number: the readouts reach the middle of the screen
-        # and stop, and the half of the top edge they do not use is picture.
-        #
-        # ...unless the words will not fit in that, in which case it goes further and the layout
-        # says so rather than the state word running into SIG. On the 7" panel the midline wins
-        # by 25 px; on a small window the widest label is most of the bracket and this is what
-        # keeps the two from overlapping instead of a test noticing afterwards.
-        widest = max(
-            self._width(word, self.font_mode, max(1.0, 2.0 * scale) * 0.7)
-            for word in LABELS.values()
-        )
-        room = (
-            width - self.read_pad
-            - (METER_SEGMENTS * self._seg[0] + (METER_SEGMENTS - 1) * self._seg[2])
-            - round(9 * scale) - self.font_micro.getlength("SIG") - self._gap
-            - widest - round(12 * scale) - self.rail_w / 2
-            - max(0, self.row_top + round(14 * scale) - step)
-        )
-        middle = max(0, min(width // 2, int(room)))
+        # The pod is sized by what it carries and centred on the panel, and it is sized for its
+        # *worst* case rather than its usual one - both tags showing beside the clock. Its plate
+        # is cut once per window size and the tags come and go per state, so a pod that grew with
+        # them would be a hole in the chrome the shape of a warning that is not lit.
+        meter_w = METER_SEGMENTS * self._seg[0] + (METER_SEGMENTS - 1) * self._seg[2]
+        self.pod_w = round(max(
+            self.font_micro.getlength("SIG") + self._gap + meter_w,
+            self._rec_w * 2 + self._gap * 2 + self._clock_w,
+        ))
+        flat = self.pod_w + 2 * max(4, px(POD_PAD))
+        middle = width // 2
+        left, right = middle - flat // 2, middle - flat // 2 + flat
+        # Wound right to left, so that (dy, -dx) points out of the pod's own body - the same sign
+        # that means "away from the corner" on the three mounts, and what lets one rail routine
+        # light the correct side of all four.
         self.spines = {
-            "tr": [(width, top), (middle + ramp, top), (middle, step), (middle, 0)],
+            "pod": [(right + ramp, 0), (right + ramp, step), (right, depth),
+                    (left, depth), (left - ramp, step), (left - ramp, 0)],
             "bl": [(0, height - bot), (bstep, height - bot),
                    (bstep + blegs, height - bot + blegs), (bstep + blegs, height)],
             "br": [(width - rout, height), (width - rout, height - rstep),
@@ -807,9 +805,13 @@ class Overlay:
                    (width, height - rstep - rlegs)],
         }
         self.brackets = {
-            name: Bracket((0 if name[1] == "l" else width, 0 if name[0] == "t" else height), spine)
+            name: Bracket(
+                None if name == "pod" else (0 if name[1] == "l" else width, height), spine
+            )
             for name, spine in self.spines.items()
         }
+        # The readouts' own box inside the pod's flat: everything in there is placed off this.
+        self.pod = Rect(round(left + max(4, px(POD_PAD))), 0, self.pod_w, depth)
         self.reticle_r = max(8, round(RETICLE_R * height))
 
         # Him, riding the big bracket's ramp. Everything about where he is comes off that ramp,
@@ -887,17 +889,6 @@ class Overlay:
         self._scrim: Image.Image | None = None  # built on the first long press, then kept
 
     # ---- layout ----
-
-    def _inside(self, y: float) -> float:
-        """How far right the top bracket's rail reaches at row *y*, rail included.
-
-        It narrows as it climbs, which a straight strip never did: below the knee the boundary is
-        the ramp and above it the square landing. Every readout in that bracket is placed off
-        this rather than off a margin, so nothing can be laid out into the diagonal.
-        """
-        _, _, knee, _ = self.spines["tr"]
-        reach = knee[0] if y <= knee[1] else knee[0] + (y - knee[1])
-        return reach + self.rail_w / 2
 
     def _disc(self, centre: tuple[float, float], radius: float) -> Rect:
         """The bounding box of a round control, which is what a hit test gets to work with."""
@@ -998,7 +989,7 @@ class Overlay:
         """The tube filter - a wash, corner shading and scanlines - inside the brackets only.
 
         It used to be laid over a strip and a tab row that between them covered 29% of the panel.
-        Four corner brackets cover about 14%, and the picture runs edge to edge behind all of it:
+        Two mounts and a pod cover about 17%, and the picture runs edge to edge behind them:
         this is what the chrome is *made of* rather than something sitting under an opaque bar.
         The plate is darker than it was, though, because a bracket is a thing rather than a tint -
         see PLATE_WASH, which is as far towards SCREEN as it goes and no further.
@@ -1035,7 +1026,7 @@ class Overlay:
         return layer
 
     def _build_chrome(self) -> Image.Image:
-        """The four brackets and the reticle, on transparency.
+        """The two mounts, the status pod and the reticle, on transparency.
 
         Drawn once and kept: nothing in here depends on the state, only on the window size. The
         border around the outside is not in here - it carries the state colour, so it belongs to
@@ -1126,11 +1117,13 @@ class Overlay:
 
         The ribs go down first and stay near the corner. Run them out towards the rail and they
         stop reading as webbing inside a bracket and start reading as stripes laid over the room,
-        which is the one thing this layout is spending its corners to avoid.
+        which is the one thing this layout is spending its corners to avoid. The pod has none:
+        webbing braces a corner against a load, and a module hanging off the middle of an edge
+        has no corner and nothing to brace.
         """
         d = ImageDraw.Draw(layer)
         corner, a, b = bracket.corner, bracket.spine[0], bracket.spine[-1]
-        for i in range(RIB_N):
+        for i in range(RIB_N if corner else 0):
             t = 0.15 + 0.075 * i
             d.line(
                 [(corner[0] + (a[0] - corner[0]) * t, corner[1] + (a[1] - corner[1]) * t),
@@ -1139,7 +1132,8 @@ class Overlay:
             )
         self._draw_rail(layer, bracket.path())
         d = ImageDraw.Draw(layer)
-        for knee in bracket.spine[1:3]:
+        # Every place the rail turns: two knees on a mount, four on the pod.
+        for knee in bracket.spine[1:-1]:
             self._draw_bolt(d, *knee)
         # ...and where the rail leaves the straight to go round a face, which is the one join on
         # this panel that is carrying anything.
@@ -1186,9 +1180,9 @@ class Overlay:
         from inside. A tube blooms in front of what it is showing, so this one does too.
 
         Keyed on the state rather than on the halo colour, because the words change with it too.
-        Baking the brand, the mode, the REC tag and both switches in here is what keeps a frame
-        down to a meter, a clock, a caption and a ring: drawing all of it every time cost 10 ms of
-        the Pi's 40 ms budget, against 2.8 ms for the chrome the tab row replaced.
+        Baking the pod's label, its tags and both switches in here is what keeps a frame down to
+        a meter, a clock, a caption and a ring: drawing all of it every time cost 10 ms of the
+        Pi's 40 ms budget, against 2.8 ms for the chrome the tab row replaced.
         """
         cached = self._bases.get((state, recording, heat))
         if cached is not None:
@@ -1202,7 +1196,7 @@ class Overlay:
         image = Image.alpha_composite(image, self._chrome)
 
         d = ImageDraw.Draw(image)
-        self._bake_header(d, state, halo, recording, heat)
+        self._bake_header(d, state, recording, heat)
         for name in SWITCHES:
             self._draw_switch(d, name, state, halo, pressed=False)
 
@@ -1237,17 +1231,15 @@ class Overlay:
     def _readouts(self, taping: bool) -> tuple[float, float, float]:
         """The clock's right edge, the tags' left edge, and the meter's right edge.
 
-        Two rows rather than one line, and the two halves are laid out from opposite ends: the
-        meter and the clock inwards from the frame, the state word and the tags rightwards from
-        the ramp. Nothing crosses, so nothing shoves anything else along - a lamp appearing on a
-        warm board moves no digit.
+        Two rows inside the pod, and each is laid out from both ends at once: the meter and the
+        clock right-aligned so their edges line up under one another, the tags left-aligned so
+        neither of them can shove a digit along. A lamp appearing on a warm board moves nothing.
 
-        ``taping`` is still an argument because the tag row's free edge depends on it, and both
-        the baked half and the drawn half have to agree about where that is.
+        ``taping`` is unused and kept, because every caller asks the same question a line earlier
+        and dropping the argument would only move that question into three of them.
         """
-        right = self.frame.right - self.read_pad
-        tags = self._inside(self.row_bottom + round(11 * self.scale)) + round(12 * self.scale)
-        return right, tags, right
+        del taping
+        return self.pod.right, self.pod.x, self.pod.right
 
     def _meter_x(self, right: float) -> float:
         seg_w, _, gap = self._seg
@@ -1412,42 +1404,24 @@ class Overlay:
         return np.asarray(layer)
 
     def _bake_header(
-        self,
-        d: ImageDraw.ImageDraw,
-        state: str,
-        halo: tuple[int, int, int],
-        recording: bool,
-        heat: str = "",
+        self, d: ImageDraw.ImageDraw, state: str, recording: bool, heat: str = ""
     ) -> None:
-        """The half of the top bracket that only moves when the state does.
+        """The half of the pod that only moves when the state does: the SIG label and the tags.
 
-        The state word on the top row and the tags under it, both laid out from the ramp
-        rightwards; the meter and the clock right-aligned against the frame. Two rows because
-        that is what lets a readout block reach only halfway across a panel instead of all the
-        way across it - one line of all four would need the full width and would be a strip
-        again, which is the thing this layout exists to stop being.
+        Two rows, each laid out from both ends: the label and the tags hold the left edge, the
+        meter and the clock hold the right. Nothing here is centred on its row, and that is the
+        point - the meter and the clock never change width, so their right edges line up under
+        one another and stay there, while the tags come and go into the slack on the left. A
+        centred row would move the clock 17 px sideways the moment the board got warm, which is
+        the sort of thing that makes a panel feel unreliable while it is telling you the truth.
 
-        No wordmark. It was the first thing on the panel and the least: a box with one screen
-        does not have to say which box it is, and the space it wanted is now picture.
+        No state word. It had a corner of its own for a long time and three other things were
+        already saying it better - the border's colour, the eye's mood, and the line under the
+        picture, which can say "searching the web…" where a word could only say SEARCH.
 
         All of it is letter-spaced, which PIL can only do a character at a time, which is
         precisely why it is baked rather than redrawn 25 times a second.
         """
-        track = max(1.0, 2.0 * self.scale)
-        pad = round(12 * self.scale)
-        # Off the ramp at the *lowest* point each row's ink reaches, not off the row's centre: the
-        # boundary is a diagonal, so a word placed by its middle has its own descenders outside
-        # the bracket.
-        self._text(
-            d,
-            self._inside(self.row_top + round(14 * self.scale)) + pad,
-            self.row_top,
-            LABELS.get(state, "—"),
-            self.font_mode,
-            (*halo, 255),
-            tracking=track * 0.7,
-        )
-
         taping = self._taping(state, recording)
         _, tags, meter_right = self._readouts(taping)
         if taping:
@@ -1456,24 +1430,17 @@ class Overlay:
             # preference for its own green - and filling it rather than outlining it is how this
             # tube shouts. The one thing on screen that is red without being a fault, which is
             # exactly why it is a tag with a word in it and not a lamp.
-            tags += self._tag(d, tags, self.row_bottom, "REC", RED) + self._gap
-        # The heat lamp beside it, and under the state word rather than out in the right-hand
-        # group: that group is laid out from the frame edge inwards, so a lamp in it would shove
-        # the clock along whenever the board got warm, which makes a panel feel unreliable while
-        # it is telling you the truth.
+            lamp = tags + self._tag(d, tags, self.row_bottom, "REC", RED) + self._gap
+        else:
+            lamp = tags
         colour = HEAT_LAMP.get(heat)
         if colour is not None:
-            self._tag(d, tags, self.row_bottom, HEAT_WORD, colour)
+            self._tag(d, lamp, self.row_bottom, HEAT_WORD, colour)
 
-        self._text(
-            d,
-            self._meter_x(meter_right) - round(9 * self.scale),
-            self.row_top,
-            "SIG",
-            self.font_micro,
-            (*GREEN_DIM, 255),
-            align="r",
-        )
+        # Hard against the pod's left edge rather than tucked beside the meter, so the top row
+        # spans the box the way the bottom one does when both tags are lit. A pod whose every
+        # readout huddles at one end reads as a pod that is the wrong size.
+        self._text(d, tags, self.row_top, "SIG", self.font_micro, (*GREEN_DIM, 255))
 
     def _tag(
         self, d: ImageDraw.ImageDraw, x: float, cy: float, word: str, colour: tuple[int, int, int]

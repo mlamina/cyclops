@@ -96,8 +96,8 @@ def test_the_panel_is_stricter_than_the_page() -> None:
 
 
 def _strip(frame: np.ndarray, ov: overlay.Overlay) -> np.ndarray:
-    """The top bracket, which is where every readout on this panel lives."""
-    return frame[: ov.spines["tr"][0][1] + ov.rail_w]
+    """The status pod, which is where every readout on this panel lives."""
+    return frame[: ov.pod.bottom + ov.rail_w]
 
 
 def _painted(band: np.ndarray, colour: tuple[int, int, int]) -> int:
@@ -139,18 +139,19 @@ def test_the_lamp_never_shoves_the_readouts_along() -> None:
 
     Putting the lamp in that group would mean the clock moved whenever the board got warm, which
     is the sort of thing that makes a panel feel unreliable while it is telling you the truth.
-    It sits under the state word instead, at the other end of the same bracket, laid out from the
-    ramp rightwards while the meter and the clock are laid out from the frame inwards. The two
-    groups grow towards each other and neither pushes the other, which is what this says.
+    It hangs off the left of the pod's bottom row instead, beside REC, while the clock holds the
+    right edge of that same row. The two ends are laid out independently and grow towards each
+    other, so neither can push the other along - which is what this says.
 
-    Split at the meter's own left edge rather than at the middle of the strip: the bracket only
-    covers half the panel now, so "the right-hand half" would have been the picture.
+    Split at the clock's own left edge rather than at the middle of the frame: the pod is a
+    narrow module in the middle of the top edge now, so "the right-hand half" would have been
+    picture.
     """
     ov = overlay.Overlay(800, 480)
     cool = _strip(ov.render(heat="", **AWAKE), ov)
     hot = _strip(ov.render(heat="throttled", **AWAKE), ov)
-    _, _, meter_right = ov._readouts(False)
-    right = slice(int(ov._meter_x(meter_right)) - ov._gap, None)
+    clock_right, _, _ = ov._readouts(False)
+    right = slice(int(clock_right - ov._clock_w) - ov._gap, None)
     assert np.array_equal(cool[:, right], hot[:, right]), "the right-hand readouts moved"
     assert not np.array_equal(cool, hot), "...and nothing was drawn at all"
 
