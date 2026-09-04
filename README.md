@@ -802,6 +802,29 @@ in `~/.config/labwc/autostart`:
 cd /home/<you>/cyclops && .venv/bin/cyclops-kiosk >/tmp/kiosk_live.log 2>&1 &
 ```
 
+**What a boot looks like, and why nothing flickers.** The panel is one OpenCV window and the
+admin page is a Chromium kept warm behind it, and a compositor puts whichever mapped last on
+top — so the browser is started *before* this kiosk has a window at all, with the panel's light
+switched off. Chromium's white first frame, the dashboard painting and its habit of raising its
+own window a second time all happen in the dark, and the window opened afterwards maps last and
+stays. The light, the first camera frame and the "ready" cue then arrive together, which is what
+makes that cue worth anything: when you hear it, the box is up and the eye is instant.
+
+The kiosk prints a timed line per phase to its log, so a slow boot can be read off it:
+
+```
+· +  1.8s  settings loaded; opening the camera
+· +  2.8s  camera settled
+· +  2.9s  panel dark; warming the browser behind it
+· +  6.7s  browser has the page; waiting for it to run
+· +  8.7s  browser warm; taking the panel
+· +  8.9s  panel up
+```
+
+Everything the panel shows before that last line is the desktop underneath, which for those
+seconds *is* the interface — so `deploy/install-panel-look.sh` makes it the same boot splash
+plymouth is already showing and takes the LXDE taskbar out of the session. Run it once per Pi.
+
 Set an initial speaker level with `CYCLOPS_VOLUME` (percent); after that the volume — and the
 INTERRUPT switch — lives on the admin page, behind his eye. Nothing leaves the Pi except the audio and vision the agent
 sends to OpenAI.

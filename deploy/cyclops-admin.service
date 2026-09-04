@@ -23,6 +23,15 @@ ExecStart=/home/cyclops/cyclops/.venv/bin/cyclops-admin
 Environment=PYTHONUNBUFFERED=1
 Environment=DJANGO_SETTINGS_MODULE=cyclops.admin.settings
 
+# Ask it for the page once, here, so that whoever asks next is not the one paying for it. Django
+# imports itself lazily on the first request and that costs three seconds on this box - three
+# seconds the kiosk used to spend at boot with the panel already dark, waiting for a service that
+# was listening and simply had not woken up yet. Retries because Type=exec returns as soon as the
+# process is exec'd, which is a moment before gunicorn is accepting. Leading "-" and a timeout:
+# nothing here is worth failing the unit over, least of all a warm-up.
+ExecStartPost=-/usr/bin/curl -s -o /dev/null --max-time 30 \
+    --retry 10 --retry-delay 1 --retry-connrefused http://127.0.0.1:80/
+
 # --- port 80 without running as root ---
 # Ambient capabilities survive execve and are compatible with NoNewPrivileges: that blocks
 # *gaining* privilege via setuid, while these are handed over by systemd before the exec.

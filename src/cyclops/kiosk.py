@@ -21,6 +21,11 @@ import urllib.request
 from pathlib import Path
 from typing import BinaryIO
 
+# Before cv2, deliberately: importing it and the OpenAI client is most of what a cold start on
+# this box costs, and a clock started after them would report a boot that took forty seconds as
+# having taken four. See _phase.
+_BEGAN = time.monotonic()
+
 # The opencv-python wheel bundles Qt but no fonts, so Qt prints a five-line QFontDatabase
 # complaint on every window. Only the blanket rule silences it - the narrower
 # `qt.qpa.fonts.warning=false` and `QT_QPA_FONTDIR` were both measured to have no effect.
@@ -38,6 +43,7 @@ from .camera import STALE_AFTER_S, CameraSource  # noqa: E402
 from .config import (  # noqa: E402
     BROWSER_CLOSE_FLAG,
     DIAGRAM_SHOWN_FLAG,
+    PAGE_ALIVE_FLAG,
     PAGE_SERVED_FLAG,
     ConfigError,
     load_settings,
@@ -138,22 +144,34 @@ ADMIN_PROBE_S = 1.0  # how long the admin service gets to answer before we refus
 # The browser is started once, at boot, and afterwards only uncovered, because starting one is
 # not something a button press can wait for: measured on this Pi, spawn to first pixels is 1.4 s
 # with Chromium's 254 MB of binary warm in the page cache and 8.8 s with it cold, against 2 ms
-# for the page itself. Below is what the warm-up needs to get there and stay out of the way.
-PREWARM_TRIES = 30  # the admin service is a systemd unit and may still be coming up at boot
-PREWARM_RETRY_S = 2.0  # gap between those tries - a minute of patience, then the slow path
+# for the page itself.
+#
+# It is started *before this kiosk has a window at all*, with the panel's light off, and that
+# ordering is the whole trick. labwc raises whatever mapped last and no always-on-top hint
+# survives that, and the stacking order cannot be read back (both measured) - so the only way to
+# be reliably on top of Chromium is to map after it has finished mapping. Chromium does not map
+# once: on a warm restart its window appears 0.5 s after the page is served and raises itself
+# again at 3.1 s, and at boot that stretches by an order of magnitude.
+#
+# The previous arrangement started it *behind* an existing window and then destroyed and rebuilt
+# that window six times on a blind schedule to claw the panel back, on the theory that a retake
+# covering nothing is invisible. On a cold boot it is not: it is six unmap/map round-trips with
+# the dashboard showing through each gap, which is what "the UI flickers for a while" was.
+# Gap between asks while the admin service is still coming up. Short, because this runs inside
+# the dark stretch: the service is up from boot on this box and a probe only misses when
+# gunicorn is busy answering its first request, which is over in well under a second. A two
+# second gap spent three of them waiting for a service that was already listening.
+ADMIN_RETRY_S = 0.5
 PAGE_WAIT_S = 30.0  # how long the browser gets to fetch the page; a cold start eats 9 s of it
-# When to take the panel back after the warm-up's window maps on top of ours: gaps between
-# retakes, so the last one lands about 38 s after the page was served. The stacking order cannot
-# be read back - labwc raises whatever mapped last and no always-on-top hint survives that
-# (measured) - so this is a schedule rather than a check, and it has to outlast Chromium rather
-# than guess at it. Chromium does not map once: measured on a warm restart, its window appears
-# 0.5 s after the page is served and then raises itself *again* at 3.1 s, and at boot - cold
-# binary, contended box - that whole sequence stretches by an order of magnitude. The old
-# schedule was two shots, at 0.6 s and 3.0 s, and a boot whose second raise landed after 3.0 s
-# left the panel showing the dashboard until somebody sshed in: every tap from then on went to
-# a page nothing was watching, Close included. A retake nothing was covering costs one window
-# rebuild carrying the frame it is about to show, which is invisible; the failure is total.
-PANEL_RETAKE_S = (0.6, 1.2, 2.4, 4.8, 9.6, 19.2)
+# The whole dark stretch, capped. Everything the warm-up waits on can fail to arrive - no admin
+# service, no Chromium installed, a page that never runs - and none of those may leave the panel
+# black: past this we light up and carry on without a warm browser, which costs the first tap on
+# his eye a browser start and costs the boot nothing.
+WARM_UP_S = 25.0
+# ...and a beat after the page starts polling, for Chromium's second raise. The poll is the last
+# thing the page does - it sits below half a megabyte of JointJS that blocks the parser - so by
+# the time it arrives the browser has finished its own startup, and this is only the margin.
+BROWSER_SETTLE_S = 2.0
 # How long the page gets to lay a drawing out before we uncover it anyway. Generously over the
 # ~400 ms poll plus a JointJS layout, because the cost of being wrong is asymmetric: uncovering
 # early shows the dashboard for a moment, and never uncovering loses the diagram entirely.
@@ -179,7 +197,24 @@ CHROME_FLAGS = (
     "--disable-component-update",
     "--password-store=basic",  # never block waiting on a keyring
     "--force-device-scale-factor=1",  # 1 CSS px == 1 panel px, so the page's layout maths holds
+    # What a mapped-but-unpainted window is filled with. Chromium's own default is white, and
+    # the page is #000, so without this every browser start is a white flash. It costs nothing
+    # at boot, where the panel is dark anyway, and everything on the one start somebody watches:
+    # the slow path in _ensure_browser, after the warm one has died.
+    "--default-background-color=FF000000",
 )
+
+
+def _phase(what: str) -> None:
+    """One timed line per startup phase, timed from the top of this module\'s imports.
+
+    So a slow boot can be read off the kiosk\'s own log.
+
+    The panel is dark for most of what this records and a dark panel explains nothing by itself.
+    Without these the only way to find out where a boot went was to reconstruct it from the
+    journal, the desktop's stderr and a Chromium log with no timestamps in it.
+    """
+    print(f"· +{time.monotonic() - _BEGAN:5.1f}s  {what}", flush=True)
 
 
 def _black(width: int, height: int) -> np.ndarray:
@@ -213,6 +248,38 @@ def _admin_reachable(url: str) -> bool:
             return True
     except (OSError, ValueError):
         return False
+
+
+# Where the browser's real binary lives on a Pi - /usr/bin/chromium is a shell wrapper and only
+# a few kB of it. Both names, for the same reason BROWSERS has both.
+CHROME_BINARIES = (
+    Path("/usr/lib/chromium/chromium"),
+    Path("/usr/lib/chromium-browser/chromium-browser"),
+)
+
+
+def preload_browser() -> None:
+    """Pull Chromium's binary into the page cache, off-thread, before anything wants it.
+
+    254 MB, which this card reads in 1.2 s - against the seven seconds it adds to a browser
+    started cold, every one of which is a second of black panel later on. So it is done here,
+    early, where it overlaps the camera opening and costs the boot nothing anybody can see.
+
+    Nothing to fail over: a box with no Chromium, or one that has it somewhere else, simply
+    starts its browser cold as before.
+    """
+
+    def read() -> None:
+        for path in CHROME_BINARIES:
+            try:
+                with path.open("rb") as binary:
+                    while binary.read(4 << 20):
+                        pass
+            except OSError:
+                continue
+            return
+
+    threading.Thread(target=read, name="kiosk-preload", daemon=True).start()
 
 
 def _spawn_browser(url: str, log: BinaryIO) -> subprocess.Popen | None:
@@ -360,6 +427,10 @@ class Kiosk:
         self._retake = threading.Event()  # ... and to take the panel back off it
         self._hidden = False  # the admin page has the panel; nothing we draw can be seen
         self._window_up = False  # whether highgui currently has a window for us
+        # Whether the panel's light has been turned on for this run. It comes on with the first
+        # fully drawn frame rather than at startup, because everything before that - the browser
+        # warming up over a panel we have no window on yet - is deliberately not shown.
+        self._lit = False
         # Deliberately "now" rather than zero, so the first check happens one interval in - by
         # which time run() has painted a panel-sized frame over open_window's camera-sized one,
         # and the rect being read is one worth reading.
@@ -700,41 +771,59 @@ class Kiosk:
         """
         return f"http://127.0.0.1:{self.controller.settings.admin_port}/#/sessions"
 
-    def prewarm(self) -> None:
-        """Start the admin browser now, in the background, so a tap only has to uncover it."""
-        threading.Thread(target=self._prewarm, name="kiosk-prewarm", daemon=True).start()
+    def warm_browser(self) -> bool:
+        """Get the admin browser up and painting, before this kiosk has a window at all.
 
-    def _prewarm(self) -> None:
-        """Wait for the admin service, start the browser on it, then take the panel back.
+        Blocking, and called with the panel's light off - see :func:`main`. Everything ugly about
+        a browser starting happens in here: the white fill of a mapped window with nothing in it
+        yet, the dashboard painting, and Chromium raising its own window a second time a few
+        seconds later. None of it is seen, and by the time we return it is over, so the window
+        opened after this maps last and stays on top for the life of the kiosk. That is what
+        replaced a schedule of six blind window rebuilds.
 
-        The browser then sits behind our window for the life of the kiosk with the page loaded
-        and polling, which is what makes the gear instant. It costs a couple of hundred MB of a
-        box that has 8 GB, and the alternative is a button that answers in seconds.
+        The browser then sits behind our window with the page loaded and polling, which is what
+        makes his eye instant. It costs a couple of hundred MB of a box that has 8 GB, and the
+        alternative is a button that answers in seconds.
+
+        False if the panel is about to come up without a warm browser, which is not a failure
+        worth stopping for: the eye then starts one on the tap, exactly as it does when the warm
+        one has died. Everything in here is bounded by one deadline, because the cost of waiting
+        is a black panel and nobody watching a black panel knows what it is waiting for.
         """
+        deadline = time.monotonic() + WARM_UP_S
         url = self._admin_url()
-        for _ in range(PREWARM_TRIES):
-            if not self.running:
-                return
-            if _admin_reachable(url):
-                break
-            time.sleep(PREWARM_RETRY_S)
-        else:
+        while not _admin_reachable(url):
+            if not self.running or time.monotonic() >= deadline:
+                print(
+                    f"· admin service never answered on {url}; his eye will start its own"
+                    " browser",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return False
+            time.sleep(ADMIN_RETRY_S)
+        _phase("admin service answering; starting the browser")
+        # Cleared before the spawn, so what comes back can only have been written by the browser
+        # started below - a note from a previous run would otherwise answer for this one instantly.
+        PAGE_ALIVE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        PAGE_ALIVE_FLAG.unlink(missing_ok=True)
+        asked_at = time.time()
+        if not self._start_browser(url, timeout=max(0.0, deadline - time.monotonic())):
+            return False
+        _phase("browser has the page; waiting for it to run")
+        if not _wait_for_flag(PAGE_ALIVE_FLAG, asked_at, max(0.0, deadline - time.monotonic())):
+            # Served but never polled. A page that is merely slow is still worth being behind us,
+            # so this is a note rather than a refusal - and the deadline has already spent
+            # whatever patience the panel could afford.
             print(
-                f"· admin service never answered on {url}; the gear will start its own browser",
+                "· the admin page never started polling; covering it anyway",
                 file=sys.stderr,
                 flush=True,
             )
-            return
-        if not self._start_browser(url):
-            return
-        print("· admin page warmed up behind the panel", flush=True)
-        for delay in PANEL_RETAKE_S:  # its window mapped on top of ours; see PANEL_RETAKE_S
-            time.sleep(delay)
-            if self._page_busy.is_set():
-                return  # something took the panel while we were starting: the page is theirs now
-            self._retake.set()
+        time.sleep(max(0.0, min(BROWSER_SETTLE_S, deadline - time.monotonic())))
+        return True
 
-    def _start_browser(self, url: str) -> bool:
+    def _start_browser(self, url: str, timeout: float = PAGE_WAIT_S) -> bool:
         """Launch Chromium on the admin page and wait for it to have it. True if it is up.
 
         Its output goes to a file rather than /dev/null: the two usual reasons the panel ends up
@@ -749,7 +838,7 @@ class Kiosk:
             return False
         self._browser = proc
         self._warm_at = launched_at
-        if not _wait_for_page(proc, launched_at, PAGE_WAIT_S):
+        if not _wait_for_page(proc, launched_at, timeout):
             if proc.poll() is not None:
                 print(
                     f"· the admin browser died starting up; see {CHROME_LOG}",
@@ -987,12 +1076,14 @@ class Kiosk:
     def _sync_stranded(self) -> None:
         """Answer the page's Close button even when nothing here uncovered it.
 
-        The warm browser is meant to sit behind the panel, and :data:`PANEL_RETAKE_S` is a
-        schedule rather than a certainty. When a retake loses the race, the panel is covered by a
-        page no thread of ours is watching - :meth:`_watch_page` only runs for a page this kiosk
-        put up - so every tap goes to the dashboard and its Close button writes a note nobody
-        reads. That is the state this exists for: honour the note here too, and the one gesture
-        somebody standing at the panel would try is also the one that works.
+        The warm browser is meant to sit behind the panel, and :meth:`warm_browser` makes that
+        as certain as it can be by finishing before our window exists at all. It is still not a
+        fact that can be read back: if Chromium ever raises itself again afterwards, the panel is
+        covered by a page no thread of ours is watching - :meth:`_watch_page` only runs for a
+        page this kiosk put up - so every tap goes to the dashboard and its Close button writes a
+        note nobody reads. That is the state this exists for, and it is now the only recovery
+        from it: honour the note here too, and the one gesture somebody standing at the panel
+        would try is also the one that works.
         """
         now = time.monotonic()
         if now - self._close_at < ADMIN_POLL_S:
@@ -1099,14 +1190,17 @@ class Kiosk:
         first = self.camera.frame()
         if first is None:  # nothing plugged in yet; the window still opens, and says why
             first = message(*NO_CAMERA_SIZE, NO_CAMERA)
-        h, w = first.shape[:2]
-        self.open_window(first, min(w, 1280), min(h, 720))
-        # The first frame is on the glass and the tab row can be pressed, which is the only
-        # thing anybody was waiting for. Here rather than inside open_window, which is called
-        # again for every retake of the panel from the browser. The other half of the pair -
-        # "booted", for Linux itself - is sounded much earlier and from another process
-        # entirely (cyclops.boot), so by the time this lands that one has long finished.
-        self._cues.play("started")
+        # Come up at the size the panel actually is. Sized from the camera's own frame, this
+        # opened an 800x450 window on an 800x480 panel and _keep_fullscreen corrected it a beat
+        # later, which is a visible jump - and one nobody could explain, because the window was
+        # never *wrong*, it was only briefly honest about a 16:9 camera.
+        if self.fullscreen and self.screen is not None:
+            width, height = self.screen
+            first = fit_to_window(first, width, height)
+        else:
+            h, w = first.shape[:2]
+            width, height = min(w, 1280), min(h, 720)
+        self.open_window(first, width, height)
 
         while self.running:
             started = time.monotonic()
@@ -1223,6 +1317,19 @@ class Kiosk:
                 )
                 self._paint(composite(canvas, chrome), width, height)
 
+            # The panel is showing what it will go on showing - picture, chrome and all - so
+            # light it and say so. This is the moment "ready" is about, and it is deliberately
+            # not open_window's: that one is called again for every retake of the panel from a
+            # page, and it puts a bare frame up a beat before the tab row is drawn over it.
+            # Everything that used to flicker after this point happened before it instead, in
+            # warm_browser, with the light off. The other half of the pair - "booted", for Linux
+            # itself - is sounded much earlier and from another process (cyclops.boot).
+            if not self._lit:
+                self._lit = True
+                self.backlight.on()
+                self._cues.play("started")
+                _phase("panel up")
+
             # Last of all, so the row that was pressed has had its frame on the glass: the panel
             # says what it is doing and the loop ends. Everything after this is main()'s
             # teardown, which finishes the session before the box is taken down.
@@ -1272,6 +1379,8 @@ def main() -> None:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
 
+    _phase("settings loaded; opening the camera")
+    preload_browser()  # 254 MB of Chromium, read while the camera is opening; see its docstring
     camera = CameraSource(settings.camera_index)
     camera.start()  # returns at once; the device may only be plugged in a minute from now
     try:
@@ -1283,6 +1392,7 @@ def main() -> None:
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
 
+    _phase("camera settled" if camera.connected else "camera absent; carrying on")
     webcam.set_live_source(camera)  # the shutter shoots from this same camera, always
     # Whichever of the two the tap picks, the recorder gets a source even when nothing is plugged
     # in: it waits its own moment for a first frame and says so in the session log if none comes,
@@ -1293,14 +1403,14 @@ def main() -> None:
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     diagram.set_panel(kiosk)  # so a finished diagram can find a panel to appear on
     # Nothing can be waiting for a panel that has only just come up, so anything here is a
-    # leftover from a process that is gone - and the browser prewarmed below would paint it.
+    # leftover from a process that is gone - and the browser warmed below would paint it.
     diagram.withdraw()
-    kiosk.backlight.on()  # a previous run may have been killed while the panel was dark
+    # Same argument, and the one that matters more: _sync_stranded reads this note every 200 ms
+    # and answers it by taking the panel back. Left behind by a kiosk that was killed with the
+    # page up, it would fire a window rebuild seconds into a boot that has nothing to take back.
+    BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+    BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
     kiosk.adopt_volume()
-    # Get the admin browser up now rather than on the tap that wants it. It comes up in front
-    # of the window opened below and is covered again a moment later - a flicker of the
-    # dashboard a second or two into startup is this, and is the price of an instant gear.
-    kiosk.prewarm()
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
@@ -1326,6 +1436,15 @@ def main() -> None:
         flush=True,
     )
     try:
+        # The curtain, and the only reason any of this is invisible. Between here and the first
+        # drawn frame the panel is dark, and behind it Chromium starts, paints white, loads the
+        # dashboard and raises itself as many times as it likes. Inside the try, because the
+        # finally below is what guarantees the light comes back from anything that goes wrong in
+        # here - a panel left dark is indistinguishable from a dead Pi.
+        kiosk.backlight.off()
+        _phase("panel dark; warming the browser behind it")
+        kiosk.warm_browser()
+        _phase("browser warm; taking the panel")
         kiosk.run()
     except KeyboardInterrupt:
         print("\n· bye", flush=True)

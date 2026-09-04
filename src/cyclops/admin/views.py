@@ -29,6 +29,7 @@ from ..config import (
     BROWSER_CLOSE_FLAG,
     DIAGRAM_FILE,
     DIAGRAM_SHOWN_FLAG,
+    PAGE_ALIVE_FLAG,
     PAGE_SERVED_FLAG,
     ConfigError,
     Settings,
@@ -194,12 +195,36 @@ def _pending() -> dict | None:
     return found if isinstance(found, dict) and found.get("id") else None
 
 
+def _note_alive() -> None:
+    """Leave word that the page is *running*, not merely served - see PAGE_ALIVE_FLAG.
+
+    Written from the fast poll rather than from the render because that is the difference being
+    claimed: bytes handed over prove Django answered, and a poll arriving proves a renderer
+    parsed them and is executing script. The kiosk waits on this before it opens its own window
+    over the browser, so that Chromium has finished raising itself by the time anything is
+    covering it.
+
+    Only when the note is missing, which the kiosk arranges by deleting it before it spawns.
+    That keeps the steady-state cost of a poll asked several times a second at one ``exists``,
+    and means exactly one write per browser start rather than 150 an hour onto an SD card.
+    """
+    try:
+        if PAGE_ALIVE_FLAG.exists():
+            return
+        PAGE_ALIVE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        PAGE_ALIVE_FLAG.touch()
+    except OSError as exc:  # the panel poll matters more than the note; the kiosk times out
+        print(f"· could not leave the page-alive note ({exc})", flush=True)
+
+
 def panel(request: HttpRequest) -> JsonResponse:
     """What the panel should be showing. Polled fast, so it stays one ``read`` and nothing else.
 
     Deliberately not folded into :func:`status`: that one collects temperatures, walks the
     sessions directory and formats a dozen strings, and this is asked several times a second.
     """
+    if _is_local(request):  # a laptop on the LAN must not answer for the kiosk's own browser
+        _note_alive()
     found = _pending()
     return JsonResponse({"diagram": found["id"] if found else None})
 

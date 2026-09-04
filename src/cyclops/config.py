@@ -21,6 +21,14 @@ BROWSER_CLOSE_FLAG = Path.home() / ".cache" / "cyclops" / "browser-close"
 # announces nothing, and nothing can be asked what is currently on the panel.
 PAGE_SERVED_FLAG = Path.home() / ".cache" / "cyclops" / "page-served"
 
+# And where the *page* says so, which is a different claim and the one that matters at startup.
+# PAGE_SERVED_FLAG is written when Django hands over the bytes; this one is written when the
+# browser has parsed them, run the script and begun polling, which is what Chromium's habit of
+# raising its own window a second time is tied to. The kiosk clears it before it spawns a
+# browser, so its reappearance can only mean *that* browser is alive - see
+# :meth:`cyclops.kiosk.Kiosk.warm_browser`.
+PAGE_ALIVE_FLAG = Path.home() / ".cache" / "cyclops" / "page-alive"
+
 # And where whatever the panel is being asked to show waits for it to notice. A diagram was the
 # first kind and gave the file its name; an imagined picture (cyclops.imagine) is the second, and
 # rides in the same payload under "image". This one holds the thing itself rather than being an
