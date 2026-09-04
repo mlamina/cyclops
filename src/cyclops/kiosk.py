@@ -39,6 +39,7 @@ import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 from . import barge, diagram, filming, mixer, power, session, sfx, stats, webcam  # noqa: E402
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
+from .button import RING_ACTIVE, RING_ERROR, RING_IDLE, ShutterButton  # noqa: E402
 from .camera import STALE_AFTER_S, CameraSource  # noqa: E402
 from .config import (  # noqa: E402
     BROWSER_CLOSE_FLAG,
@@ -438,6 +439,18 @@ class Kiosk:
         self._fullscreen_fixes = 0
         self._size = (0, 0)
         self.screen = screen
+        # While this is in the future the ring says a photo did not happen; see _ring_state.
+        self._shutter_error_until = 0.0
+        # The physical shutter, built here for the same reason Backlight is: it is hardware that
+        # may simply not be there, it settles that question itself, and everything downstream
+        # can then stop asking. Last of all in this constructor deliberately - it arms a handler
+        # on a thread of its own, and a press landing on a half-built kiosk would find half the
+        # attributes above missing.
+        self.button = ShutterButton(
+            pin=controller.settings.button_pin,
+            led_pin=controller.settings.button_led_pin,
+            on_press=self.shutter_pressed,
+        )
 
     # ---- window ----
 
@@ -706,6 +719,38 @@ class Kiosk:
         """That line while it is still current, else "" - and then the controller's own wins."""
         return self._notice if time.monotonic() < self._notice_until else ""
 
+    def shutter_pressed(self) -> None:
+        """The button beside the panel: the aperture's own path, with the coordinates taken out.
+
+        The one press here that does not arrive on the render thread - highgui dispatches taps
+        from inside ``waitKey``, gpiozero has a thread of its own. Everything this touches is
+        either lock-guarded (:meth:`cyclops.camera.CameraSource.start`) or a plain attribute the
+        loop only reads, and :meth:`_snap` already hands the work to a thread anyway.
+
+        A press while the panel is dark is spent waking it, exactly as a tap is, though for the
+        opposite reason: you *can* find this button in the dark. Sleeping released the camera,
+        so the photo it took would be of nothing.
+        """
+        self._touched_at = time.monotonic()
+        if self._asleep:
+            self._wake()
+            return
+        if self._menu:
+            return  # modal, and two of its three rows end the box: this is no answer to it
+        self._press("shutter")
+        self._snap()
+
+    def _ring_state(self, state: str) -> str:
+        """What the ring in the button should be saying: idle, listening, or a photo that failed.
+
+        Tied to what the box is doing rather than to the finger on it, which the press already
+        answers for itself with a flash and a click. The failure wins for as long as the caption
+        it matches, because it is the half of that message a head under a bench can see.
+        """
+        if time.monotonic() < self._shutter_error_until:
+            return RING_ERROR
+        return RING_ACTIVE if session_up(state) else RING_IDLE
+
     def _snap(self) -> None:
         """Take a photo straight away, off-thread, and flash the screen as the shutter.
 
@@ -741,6 +786,9 @@ class Kiosk:
             # shutter clicked, and no photo existed. A flash that means "taken" has to be able
             # to mean "not taken" too.
             self._say(CAMERA_STALLED if self.camera.connected else NO_CAMERA)
+            # ...and on the ring for those same four seconds, which is the half of this you can
+            # read without looking up at the panel. See _ring_state.
+            self._shutter_error_until = time.monotonic() + NOTICE_S
             print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
         else:
             # The whole point of the button: the photo goes to Cyclops, which answers out loud.
@@ -1245,6 +1293,10 @@ class Kiosk:
             state = self._effective(str(status["state"]))
             asleep = self._sleeping(state)
 
+            # What the ring is saying. Handed over every frame because what it reflects is a
+            # state rather than an event; it only reaches the pin when the answer changes.
+            self.button.show(self._ring_state(state))
+
             # Two sysfs reads, five seconds apart, on a board that takes minutes to change
             # temperature. Cheap enough to do while the panel is dark, which is worth it: the
             # lamp is then already right on the first frame after a tap rather than five
@@ -1415,6 +1467,13 @@ def main() -> None:
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
     found = f"on camera {camera.index}" if camera.connected else "still looking for a camera"
+    # Only when there is one. A line about a button nobody wired is a line that sends somebody
+    # looking for it - the same argument the idle note below makes about blanking that is off.
+    button_note = (
+        "  the button beside the panel is that same aperture: press it for a photo\n"
+        if kiosk.button.available
+        else ""
+    )
     idle_note = (
         f"  after {settings.sleep_after_s:g}s untouched the panel's light goes off and the"
         " camera is released\n  any tap lights it again\n"
@@ -1426,11 +1485,13 @@ def main() -> None:
         f" · font: {platform_font_note()}\n"
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
+        f" · button: {kiosk.button.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
         "  the two bottom corners: his eye on the left - tap it for the recordings and\n"
         "  pictures, and for the volume · the aperture shows him a photo, the microphone\n"
         "  wakes him and puts him back to sleep\n"
         f"  hold his eye for {LONG_PRESS_S:g}s to shut the box down or restart it\n"
+        f"{button_note}"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",
         flush=True,
@@ -1450,6 +1511,7 @@ def main() -> None:
         print("\n· bye", flush=True)
     finally:
         kiosk.close_browser()
+        kiosk.button.close()  # the ring out while we still own the pin, then hand it back
         kiosk.backlight.on()  # never leave the panel dark behind us
         diagram.set_panel(None)
         diagram.withdraw()  # nothing should be waiting for a panel that is gone

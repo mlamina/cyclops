@@ -17,6 +17,11 @@ dependencies = [
     "python-dotenv>=1.2.3",
     "sounddevice>=0.5.6",
     "supercamera>=0.1",  # useeplus endoscopes: vendor-specific USB, so no /dev/video node
+    # The shutter button on the panel. Linux-only markers because lgpio has no macOS wheel and
+    # would be built from source there for a header that does not exist - and cyclops.button
+    # already treats a missing gpiozero as "no button", which is exactly what a Mac has.
+    "gpiozero>=2.0; sys_platform == 'linux'",
+    "lgpio>=0.2.2.0; sys_platform == 'linux'",  # the Pi 5's RP1 factory; RPi.GPIO cannot drive it
     "websockets>=13,<16",
 ]
 

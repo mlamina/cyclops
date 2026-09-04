@@ -95,6 +95,8 @@ class Settings:
     record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 800x480
     record_width: int = 0  # cap the recorded width, never upscaling; 0 keeps the source's own
     sleep_after_s: int = 60  # untouched for this long the panel goes dark; 0 keeps it awake
+    button_pin: int | None = 17  # BCM17 (physical 11): the shutter button beside the panel
+    button_led_pin: int | None = 27  # BCM27 (physical 13): the ring inside it; see cyclops.button
     admin_host: str = "0.0.0.0"  # the admin page is meant to be read from the LAN, not just here
     admin_port: int = 80  # so it opens with a bare hostname
 
@@ -142,6 +144,25 @@ def _count(name: str, default: int) -> int:
     if value < 0:
         raise ConfigError(f"{name} must be zero or more, got {value}")
     return value
+
+
+def _pin(name: str, default: int | None) -> int | None:
+    """A BCM pin number, or None where the thing is not wired at all.
+
+    Unset means the default rather than None, unlike :func:`_int`, whose None means "work it
+    out": there is nothing to work out about a pin. Either it is the one the panel was built
+    with or somebody has moved it, and the numbers live here rather than inline because the
+    panel layout is still settling. ``off`` is how you say the button is not there.
+    """
+    raw = _env(name)
+    if raw is None:
+        return default
+    if raw.lower() in {"off", "none", "no"}:
+        return None
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a BCM pin number or 'off', got {raw!r}") from exc
 
 
 def _barge_in_db(name: str) -> float | None:
@@ -233,6 +254,8 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         record_width=_count("CYCLOPS_RECORD_WIDTH", Settings.record_width),
         # _count, not `or`: 0 means "never blank", which `or` would read as unset. See _count.
         sleep_after_s=_count("CYCLOPS_SLEEP_AFTER_S", Settings.sleep_after_s),
+        button_pin=_pin("CYCLOPS_BUTTON_PIN", Settings.button_pin),
+        button_led_pin=_pin("CYCLOPS_BUTTON_LED_PIN", Settings.button_led_pin),
         admin_host=_env("CYCLOPS_ADMIN_HOST") or Settings.admin_host,
         admin_port=_int("CYCLOPS_ADMIN_PORT") or Settings.admin_port,
     )
