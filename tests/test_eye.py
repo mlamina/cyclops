@@ -691,12 +691,11 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
     # over a live camera is harder to read than the same line in phosphor. The slab hangs off
     # ov.caption_right and grows leftwards, so the marker is found by measuring back from there.
     inset = round(8 * ov.scale)
-    text = overlay.MARKER + overlay.CAPTIONS[overlay.LISTENING]
     marker_w = int(ov.font_caption.getlength(overlay.MARKER))
-    slab_x = int(ov.caption_right - ov.font_caption.getlength(text) - inset)
-    top = int(ov.caption_y) - 6  # caption_y is the line's centre, not its top
-    assert wears((slab_x, top, slab_x + marker_w, top + 14)) == "accent"
-    assert wears((slab_x + marker_w, top, slab_x + marker_w + 60, top + 14)) == "phosphor"
+    at = int(ov.caption_left) + inset  # the bubble grows rightwards from a fixed left edge
+    top = int(ov.caption_y) - 6  # caption_y is the bottom line's centre, and this one fits on it
+    assert wears((at, top, at + marker_w, top + 14)) == "accent"
+    assert wears((at + marker_w, top, at + marker_w + 60, top + 14)) == "phosphor"
     # ...and the furniture: the SNAP glyph, well inside its cell, since the panel's own border
     # runs along the bottom of it and that *is* accented.
     snap = ov._cells["shutter"]
@@ -825,26 +824,26 @@ def test_he_fits_his_own_cell(width: int, height: int) -> None:
     assert cell.x < ov.eye[0] - ov.shoulder and ov.eye[0] + ov.shoulder < cell.right
 
 
-def test_no_caption_however_long_reaches_his_face() -> None:
-    """The line stops short of him, tail and all, by the whole gap the layout reserves.
+def test_the_bubble_comes_out_of_his_face_without_landing_on_it() -> None:
+    """Both halves, because they pull against each other and only one of them is obvious.
 
-    He stands on the caption's own rows, so this is what keeps the two apart - and nothing about
-    it is visible until some tool reports something wordy. Stated as the gap rather than as "off
-    his disc" because the near miss is the failure: the bubble has an inset either side of its
-    text and a tail leaning out past its corner, none of which the elide limit reserved at first,
-    and the longest caption came to rest one pixel off his rim. That is touching to anyone
-    looking at the panel, and passes any test that only asks whether the two overlap.
+    A bubble whose tail stops somewhere out over the picture is a bubble attached to nothing,
+    which is the entire point of shaping it like one - so "well clear of him" is a failure here,
+    not a safe default. The line used to hang off the right-hand edge and grow leftwards, which
+    put the tail wherever the sentence happened to end.
 
-    Two sentences, because :meth:`_elide` trims a character at a time: a worded one can stop
-    short of the limit on its own and pass without the limit being right at all.
+    And he must still not be *under* it. Measured against his circle rather than a box round it,
+    because the tail hangs below the bubble's bottom edge, which is exactly where his disc is
+    widest - a bounding box would call that clear while the tail sat on his rim.
     """
     ov = _panel()
-    cx, r = ov.eye[0], ov.eye_r
-    top = int(ov.caption_y - ov.caption_h / 2)
-    bottom = int(ov.caption_y + ov.caption_h / 2) + ov.caption_tail + 1
+    cx, cy, r = *ov.eye, ov.eye_r
+    top = int(ov.caption_bottom - overlay.CAPTION_LINES * ov.caption_h)
+    bottom = int(ov.caption_bottom) + ov.caption_tail + 1
     for detail in (
+        "listening — talk to me",
         "looking for the torque specification for an M8 stainless bolt into aluminium…",
-        "x" * 200 + "…",  # nowhere to break, so this one is trimmed to the limit exactly
+        "x" * 200 + "…",  # nowhere to break, so this one runs to the far edge on both lines
     ):
         band = ov.render(
             state=overlay.SEARCHING, level=0.0, elapsed=12.0, detail=detail, phase=10.0
@@ -852,15 +851,43 @@ def test_no_caption_however_long_reaches_his_face() -> None:
         # The bubble's own fill, colour and alpha together. PLATE_ALPHA alone is not enough: the
         # shoulder's arcs are anti-aliased, and a handful of their coverage values land on
         # exactly 210 out by his shoulder - which would have this pass or fail on where a curve
-        # happened to fall rather than on where the line stopped.
+        # happened to fall rather than on where the bubble reached.
         fill = (band[:, :, 3] == overlay.PLATE_ALPHA) & (
             band[:, :, :3] == np.array(overlay.SCREEN, np.uint8)
         ).all(axis=2)
         assert fill.any(), "no bubble on the panel at all - this would pass on a blank line"
-        left = int(np.where(fill.any(axis=0))[0].min())
-        assert left >= cx + r + ov._gap, (
-            f"the bubble reaches {cx + r + ov._gap - left}px into the gap in front of his rim"
+        ys, xs = np.nonzero(fill)
+        reach = np.hypot(xs - cx, ys + top - cy).min()
+        assert reach > r, f"the bubble is {r - reach:.1f}px inside his rim: {detail[:30]!r}"
+        assert reach < r + 12, (
+            f"its nearest point is {reach - r:.1f}px off his rim - the tail comes out of nothing"
         )
+
+
+def test_a_long_caption_takes_a_second_line_rather_than_a_stub() -> None:
+    # One line meant every sentence worth reading was cut to a stub ending in an ellipsis, in a
+    # bubble with most of the picture still free beside it. Measured on the bubble's height,
+    # which is the thing that has to grow, and upwards, because the bottom edge is where the
+    # tail hangs from and the tail has his shoulder to clear.
+    ov = _panel()
+    shown = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0, phase=10.0)
+
+    def box(detail: str) -> tuple[int, int]:
+        frame = ov.render(detail=detail, **shown)
+        fill = (frame[:, :, 3] == overlay.PLATE_ALPHA) & (
+            frame[:, :, :3] == np.array(overlay.SCREEN, np.uint8)
+        ).all(axis=2)
+        rows = np.where(fill.any(axis=1))[0]
+        return int(rows.min()), int(rows.max())
+
+    short = box("searching…")
+    long_ = box("looking for the torque specification for an M8 stainless bolt into aluminium…")
+    assert long_[1] == short[1], "the bubble grew downwards, onto the tab row"
+    assert short[0] - long_[0] == pytest.approx(ov.caption_h, abs=2), "no second line appeared"
+    # ...and the second line is used to say more, not to say the same amount twice as tall.
+    lines = ov._wrap("a b c d e f g h i j k l m n o p q r s t u v w x y z", ov.font_caption, 60, 2)
+    assert len(lines) == 2 and lines[-1].endswith("…"), "the wrap neither filled nor cut"
+    assert ov._wrap("short", ov.font_caption, 200, 2) == ["short"], "a short line was padded out"
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)

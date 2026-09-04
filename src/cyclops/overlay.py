@@ -254,6 +254,11 @@ MOODS = {
 # which is why none of them has to say twice whether it is a job or a state.
 BUSY_MARK = "…"
 MARKER = "› "  # what every caption opens with, and the smallest thing that wears the accent
+CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead. One line meant
+# every phrase worth reading - a fault, a search, what a tool is doing - was trimmed to a stub
+# ending in an ellipsis, in a bubble with most of the picture's width still free beside it. Two
+# is where it stops: a third would have the bubble standing taller than his head, and a caption
+# that big is a dialogue box rather than something said in passing.
 CAPTION_ALPHA = 245
 CAPTION_DOTS = 3
 DOT_PERIOD_S = 1.2  # one sweep of the three dots...
@@ -539,18 +544,10 @@ class Overlay:
         # attribute rather than a local because the long-press arc fills the outer shoulder in,
         # and a fill that is drawn a couple of pixels off the line it is filling is a smudge.
         self.rule_gap = max(2, round(4 * scale))
-        # The status line's fixed edges. It hangs off the right and grows leftwards, so only its
-        # right edge and its rows are layout; its left edge is however long the sentence is. Up
-        # here rather than inside the drawing because it is geometry, and because everything that
-        # has ever needed to know where this slab is has otherwise had to re-derive it.
-        self.caption_h = round(24 * scale)
-        self.caption_y = self.footer.y - round(20 * scale) - self.caption_h / 2
-        self.caption_right = self.viewport.right - self.pad - round(34 * scale)
-        # ...and what makes it a bubble rather than a slab. A corner radius a third of the
-        # height: half of it would be a lozenge, and a lozenge is a badge. The tail has to fit
-        # in the round(12 * scale) between the slab's bottom and the tab row's top rule, which
-        # is what sizes it - and why the line is not simply moved up to make room, since the
-        # gap under it is also the gap over his shoulder.
+        # What makes the status line a bubble rather than a slab. A corner radius a third of
+        # the line height: half of it would be a lozenge, and a lozenge is a badge. The tail has
+        # to fit in the round(20 * scale) between the bubble's bottom and the tab row's top rule,
+        # which is what sizes it.
         self.caption_radius = max(2, round(9 * scale))
         self.caption_tail = max(3, round(11 * scale))
         # The tail's root and its lean. Wide enough at the root to read as part of the bubble
@@ -559,6 +556,24 @@ class Overlay:
         # it is pointing at the floor.
         self.caption_root = max(4, round(15 * scale))
         self.caption_lean = max(2, round(6 * scale))
+
+        # The bubble's edges, and the left one is the fixed one. It used to hang off the right
+        # and grow leftwards, on the argument that a block growing away from a fixed edge is
+        # steadier to read than one whose far end wanders - which is true of a readout and beside
+        # the point for this. A speech bubble is not a readout: what it is *for* is saying that
+        # these words come out of that face, and a tail parked wherever the sentence happened to
+        # end is a tail attached to nothing. So the left edge is pinned beside his rim, the tail
+        # always lands in the same place - on him - and the sentence grows away to the right.
+        #
+        # `caption_lean` is in there because the tail hangs off the bottom-left corner and leans
+        # further left still; the nose is what is left between its tip and his rim, and it is
+        # small on purpose. Anything you can see is a gap, and a gap is the bubble not quite
+        # coming out of him.
+        self.caption_h = round(24 * scale)  # one line of it
+        self.caption_bottom = self.footer.y - round(20 * scale)
+        self.caption_y = self.caption_bottom - self.caption_h / 2  # the bottom line's middle
+        self.caption_left = self.eye[0] + self.eye_r + self.caption_lean + max(2, round(4 * scale))
+        self.caption_right = self.viewport.right - self.pad - round(34 * scale)
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
         self.font_read = _load_font(max(9, round(21 * scale)))
@@ -919,6 +934,35 @@ class Overlay:
             start += font.getlength(char) + tracking
         return width
 
+    def _wrap(
+        self, text: str, font: ImageFont.FreeTypeFont, limit: float, lines: int
+    ) -> list[str]:
+        """*text* broken over at most *lines* of *limit*, the last one trimmed if it still runs on.
+
+        Greedy and word-wise, which is all a caption needs: these are one short sentence, and the
+        alternative - balancing the lines - would have the first one change length every time the
+        second did, in a bubble that is already redrawn as the sentence changes.
+
+        A word longer than the whole limit still goes down and is cut mid-word by :meth:`_elide`,
+        rather than being dropped or spilling out of the bubble. Rare, and always a URL or a
+        token out of an API error, which is exactly the case that must not lose the beginning of
+        the message it is buried in.
+        """
+        words = text.split()
+        out: list[str] = []
+        line = ""
+        for i, word in enumerate(words):
+            trial = f"{line} {word}" if line else word
+            if line and font.getlength(trial) > limit:
+                if len(out) + 1 == lines:
+                    # Nowhere left to break: the rest goes down on this line and is cut there.
+                    return [*out, self._elide(" ".join([line, *words[i:]]), font, limit)]
+                out.append(line)
+                line = word
+            else:
+                line = trial
+        return [*out, self._elide(line, font, limit)]
+
     def _elide(self, text: str, font: ImageFont.FreeTypeFont, limit: float) -> str:
         """Trim to fit, with an ellipsis - an API error can be a paragraph long."""
         if font.getlength(text) <= limit:
@@ -1122,7 +1166,7 @@ class Overlay:
     def _draw_caption(
         self, d: ImageDraw.ImageDraw, state: str, halo: tuple, detail: str, phase: float
     ) -> None:
-        """One line of plain English along the bottom right of the picture, in his own bubble.
+        """Plain English over the bottom of the picture, in a bubble coming out of his face.
 
         The bubble is not decoration: this text sits on the live camera, and white-on-anything is
         a coin toss. It is also where an error actually says what went wrong, which the old
@@ -1142,30 +1186,31 @@ class Overlay:
         if busy:
             text = text[: -len(BUSY_MARK)]  # the dots take the ellipsis's place, and move
         font = self.font_caption
-        # Laid out from the right edge inwards, which is what the readout strip's own right-hand
-        # group does and for the same reason: these are phrases that change length every few
-        # seconds, and a block that grows away from a fixed edge is steadier to read than one
-        # whose far end wanders. It stops at him rather than at the far side of the panel: he
-        # stands on these rows, so a sentence left to run across would go under his face.
-        right = self.caption_right
-        inset = round(8 * self.scale)
-        # How far left the *bubble* may reach, which is not how long the sentence may be: the
-        # line has an inset either side of it and a tail leaning out past its corner, and all
-        # three used to be spent out of the gap in front of his rim rather than reserved. At the
-        # elide limit that put the tail on his face - the one place this whole layout exists to
-        # keep it off.
-        limit = right - (self.eye[0] + self.eye_r + self._gap) - inset * 2 - self.caption_lean
-        # Off the limit before the trim and back onto the width after it, so a sentence long
-        # enough to be elided cannot push its own dots off the edge of the panel.
+        # Laid out from his rim outwards, and the marker rides along on the front of the sentence
+        # so the wrap can put it where it belongs rather than the drawing assuming a first line.
+        x, inset = self.caption_left, round(8 * self.scale)
+        # The dots are reserved on every line whether any of them are showing or not. On the last
+        # one that is what stops the bubble's far edge shuffling four times a second while they
+        # count; on the others it costs at most a word's placement, which is cheaper than working
+        # out which line will turn out to be the widest before wrapping it.
         dots_w = self._dots_w if busy else 0.0
-        text = self._elide(text, font, limit - dots_w - font.getlength(MARKER))
-        width = font.getlength(MARKER + text) + dots_w
-        height, y = self.caption_h, self.caption_y
-        # The bubble hangs off the right edge and the text off its left, so the dots reserved
-        # above keep the *left* edge still: without them a sentence - and the tail under the
-        # corner of it - would shuffle sideways four times a second while its dots counted.
-        x = right - width - inset * 2
-        self._bubble(d, x, right, y, height)
+        limit = self.caption_right - x - inset * 2 - dots_w
+        lines = self._wrap(MARKER + text, font, limit, CAPTION_LINES)
+        if busy and lines[-1].endswith(BUSY_MARK):
+            # Cut short *and* about work in flight, which used to come out as "an M8 s…..": the
+            # ellipsis the trim leaves behind, followed by the dots that were already standing in
+            # for one. Four marks doing one mark's job. The dots win, because they are the half
+            # that moves, and they mean what the ellipsis meant anyway.
+            lines[-1] = lines[-1][: -len(BUSY_MARK)]
+        widths = [font.getlength(line) for line in lines]
+        widths[-1] += dots_w  # the dots trail the last line, so only that one has to make room
+        right = x + max(widths) + inset * 2
+        # It grows *up*. The bottom edge is where the tail hangs from and the tail has his
+        # shoulder to clear, so that edge is layout; a second line has nowhere to go but upwards,
+        # over a part of the picture where there is nothing but his own head anyway.
+        bottom = self.caption_bottom
+        top = bottom - len(lines) * self.caption_h
+        self._bubble(d, x, right, top, bottom)
         # The breath runs under every caption of a session that is up - it is what makes the line
         # read as a live tube rather than a printed label - and the dots only under one about work
         # in flight, where they mean the thing everybody already reads them to mean.
@@ -1180,15 +1225,21 @@ class Overlay:
         # white over a live camera is harder to read than the same line in phosphor, and the
         # marker is the part that is decoration anyway - so it is the part that gets to be a
         # colour, and it breathes with the words it introduces.
-        used = self._text(d, x + inset, y, MARKER, font, (*mix(halo, SCREEN, sunk), CAPTION_ALPHA))
-        used += self._text(d, x + inset + used, y, text, font, (*colour, CAPTION_ALPHA))
-        if busy and lit:
-            # Hard against the last letter, where an ellipsis belongs - these are standing in
-            # for the one the phrase arrived with, not sitting beside it as a separate mark.
-            self._text(d, x + inset + used, y, "." * lit, font, (*colour, CAPTION_ALPHA))
+        accent = (*mix(halo, SCREEN, sunk), CAPTION_ALPHA)
+        for i, line in enumerate(lines):
+            y = top + (i + 0.5) * self.caption_h
+            at = x + inset
+            if line.startswith(MARKER):  # only ever the first, and only if the wrap left it there
+                at += self._text(d, at, y, MARKER, font, accent)
+                line = line[len(MARKER):]
+            at += self._text(d, at, y, line, font, (*colour, CAPTION_ALPHA))
+            if busy and lit and i == len(lines) - 1:
+                # Hard against the last letter, where an ellipsis belongs - these are standing in
+                # for the one the phrase arrived with, not sitting beside it as a separate mark.
+                self._text(d, at, y, "." * lit, font, (*colour, CAPTION_ALPHA))
 
     def _bubble(
-        self, d: ImageDraw.ImageDraw, x: float, right: float, y: float, height: float
+        self, d: ImageDraw.ImageDraw, x: float, right: float, top: float, bottom: float
     ) -> None:
         """The slab the caption sits on, shaped like what it is: him saying something.
 
@@ -1213,7 +1264,6 @@ class Overlay:
         this panel - the tag, the menu card, the tab cells. Only the strokes are supersampled,
         because a stepped hairline reads as a fault and a stepped edge on a slab does not.
         """
-        top, bottom = y - height / 2, y + height / 2
         tip = (x - self.caption_lean, bottom + self.caption_tail)
         root = (x + self.caption_root, bottom)
         fill = (*SCREEN, PLATE_ALPHA)

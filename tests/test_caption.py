@@ -255,16 +255,18 @@ def test_the_slab_does_not_breathe_with_the_dots() -> None:
 
 
 def test_a_resting_caption_reserves_no_room_for_dots() -> None:
-    # The slab is pinned to the right and grows leftwards, so the width it reserves shows up on
-    # its left edge - and its right edge must not move at all.
+    # The bubble is pinned beside his rim and grows rightwards, so the width it reserves shows up
+    # on its far edge - and its left edge must not move at all, that being where the tail is.
     ov = overlay.Overlay(800, 480)
     at_rest = dict(state=overlay.LISTENING, level=0.0, phase=0.0)
     busy = _slab(ov.render(detail="doing a thing…", **at_rest), ov)
     rest = _slab(ov.render(detail="doing a thing", **at_rest), ov)
-    assert rest[0] - busy[0] == pytest.approx(ov._dots_w, abs=2), (
+    assert busy[1] - rest[1] == pytest.approx(ov._dots_w, abs=2), (
         "a line about work in flight is exactly the dots wider than the same line at rest"
     )
-    assert busy[1] == rest[1], "the slab's right edge is layout and must not move"
+    assert busy[0] == rest[0] == int(ov.caption_left), (
+        "the bubble's left edge is layout: move it and the tail stops coming out of his face"
+    )
 
 
 def test_the_dots_actually_land_on_the_panel() -> None:
