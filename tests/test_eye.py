@@ -87,12 +87,32 @@ def test_every_state_has_a_word_a_sentence_and_a_face(state: str) -> None:
 # ---------------------------------------------------------------- the moods
 
 
-def test_only_the_sleeping_and_broken_faces_hold_still() -> None:
+def test_only_the_broken_face_holds_still() -> None:
     # The invariant the whole design rests on, stated on the table rather than on the pixels:
-    # every mood that is not asleep or faulted has something about it that moves.
+    # every mood but the faulted one has something about it that moves. The sleeping face is in
+    # here now too - it breathes - and its own, much narrower rule is the test below.
     for state, mood in overlay.MOODS.items():
-        moves = bool(mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice)
-        assert moves == (state not in (overlay.IDLE, overlay.ERROR)), state
+        moves = bool(
+            mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice or mood.sink
+        )
+        assert moves == (state != overlay.ERROR), state
+
+
+def test_the_sleeping_face_moves_by_breathing_and_by_nothing_else() -> None:
+    # Asleep is not "a bit awake". The mechanism is stopped and the lid is down, and what is left
+    # is the whole of him dimming and coming back. A swell here would crack the iris - past 0.08
+    # the pupil pops in and out with every breath - and a spin would be a machine running in its
+    # sleep, which is the reading the stillness was there to prevent in the first place.
+    mood = overlay.MOODS[overlay.IDLE]
+    assert mood.sink > 0.0, "he does not breathe, and a frozen face reads as a box that is off"
+    assert not (mood.spin or mood.scan or mood.blink_s or mood.voice or mood.aperture)
+    assert mood.swell <= 0.08, "a breath that cracks the iris reads as half awake"
+    working = max(m.breath_s for state, m in overlay.MOODS.items() if state != overlay.IDLE)
+    assert mood.breath_s > working, "a sleeping creature breathes slower than a working one"
+    # ...and, like every other period on this panel, out of step with all of them - see
+    # WAKE_PERIOD_S. His is the longest, so it can only lock by being a multiple of one of them.
+    for period in (overlay.WAKE_PERIOD_S, overlay.RIM_PERIOD_S, overlay.BREATH_PERIOD_S):
+        assert mood.breath_s % period > 1e-6, f"his breath locks to the {period}s one"
 
 
 def test_the_states_do_not_all_look_the_same() -> None:
@@ -265,19 +285,56 @@ def _asleep(ov: overlay.Overlay, state: str, detail: str = "") -> list[np.ndarra
     return [ov.render(phase=100.0 + i * 0.31, **shown) for i in range(40)]
 
 
-def test_nothing_moves_while_he_is_asleep_except_the_way_out() -> None:
+def test_nothing_moves_while_he_is_asleep_except_his_breath_and_the_way_out() -> None:
     # The headline. Every animation on this panel is gated on there being a session, and this is
     # the one assertion that notices when a new one is not - including the caption's breath,
-    # which used to run at IDLE and made a resting panel quietly pulse. The single exception is
-    # the WAKE UP cell, which is allowed to beckon because it is the only thing left to press.
+    # which used to run at IDLE and made a resting panel quietly pulse. Two exceptions and no
+    # more: the WAKE UP cell, which may beckon because it is the only thing left to press, and
+    # his own face, which may breathe because he is asleep rather than off. A fault gets
+    # neither, which is what keeps the rest of this honest - blanking his disc in both states
+    # would leave nobody watching the pixels he is drawn on.
     ov = _panel()
     keep = ov._cells["wake"]
+    cx, cy, r = *ov.eye, ov.eye_r
     for state, detail in ((overlay.IDLE, ""), (overlay.ERROR, "OpenAI rejected the API key")):
         frames = [f.copy() for f in _asleep(ov, state, detail)]
         for f in frames:
             f[keep.y : keep.bottom, keep.x : keep.right] = 0
+            if state == overlay.IDLE:
+                f[cy - r : cy + r + 1, cx - r : cx + r + 1] = 0
         moved = [i for i, f in enumerate(frames) if not np.array_equal(f, frames[0])]
-        assert not moved, f"{state} moved outside the wake cell at frames {moved[:5]}"
+        assert not moved, f"{state} moved outside those at frames {moved[:5]}"
+
+
+def _glow(crop: np.ndarray) -> float:
+    """How much light is in a crop, weighted by how opaque it is.
+
+    A brightness rather than the count :func:`_lit` takes: a hard threshold quantises a smooth
+    fade into a handful of steps, and would call a breath either a stall or a flash depending on
+    where the threshold happened to fall.
+    """
+    return float((crop[:, :, :3].astype(float).sum(axis=2) * crop[:, :, 3] / 255).mean())
+
+
+def test_he_breathes_while_he_is_asleep() -> None:
+    # A box on a bench with a frozen face reads as switched off rather than as sleeping. What
+    # moves is the whole of him, dimming and coming back on the same raised cosine the border and
+    # the caption breathe on - and slower than either of them, because he is asleep.
+    ov = _panel()
+    asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
+    _settle(ov, **asleep)
+    period = overlay.MOODS[overlay.IDLE].breath_s
+    at = [100.0 + i * period / 24 for i in range(24)]
+    sweep = [_glow(_face(ov, ov.render(phase=t, **asleep))) for t in at]
+    assert max(sweep) > 1.15 * min(sweep), "the swell is too slight to notice"
+    assert min(sweep) > 0.5 * max(sweep), "he goes out at the bottom of it rather than dimming"
+    assert len({round(v, 1) for v in sweep}) > 8, "it steps rather than swelling"
+    # ...and it is a breath, not a flutter. Sampled at the steepest part of the cosine, which is
+    # where a period tuned down to something twitchy would show up first.
+    steepest = 15 * period + period / 4
+    steady = _glow(_face(ov, ov.render(phase=steepest, **asleep)))
+    twitch = _glow(_face(ov, ov.render(phase=steepest + 0.2, **asleep)))
+    assert abs(twitch - steady) < 0.04 * steady, "he is breathing far too fast to be asleep"
 
 
 def _invite(ov: overlay.Overlay, phase: float) -> float:
@@ -681,24 +738,42 @@ def test_he_fits_his_own_cell(width: int, height: int) -> None:
     assert cell.x < ov.eye[0] - ov.shoulder and ov.eye[0] + ov.shoulder < cell.right
 
 
-def test_no_caption_however_long_runs_under_his_face() -> None:
-    # He stands on the caption's own rows, so the line has to stop at him rather than at the
-    # frame. Nothing about this is visible until some tool reports something wordy.
+def test_no_caption_however_long_reaches_his_face() -> None:
+    """The line stops short of him, tail and all, by the whole gap the layout reserves.
+
+    He stands on the caption's own rows, so this is what keeps the two apart - and nothing about
+    it is visible until some tool reports something wordy. Stated as the gap rather than as "off
+    his disc" because the near miss is the failure: the bubble has an inset either side of its
+    text and a tail leaning out past its corner, none of which the elide limit reserved at first,
+    and the longest caption came to rest one pixel off his rim. That is touching to anyone
+    looking at the panel, and passes any test that only asks whether the two overlap.
+
+    Two sentences, because :meth:`_elide` trims a character at a time: a worded one can stop
+    short of the limit on its own and pass without the limit being right at all.
+    """
     ov = _panel()
-    frame = ov.render(
-        state=overlay.SEARCHING,
-        level=0.0,
-        elapsed=12.0,
-        detail="looking for the torque specification for an M8 stainless bolt into aluminium…",
-        phase=10.0,
-    )
     cx, r = ov.eye[0], ov.eye_r
-    height = round(24 * ov.scale)
-    top = int(ov.footer.y - round(12 * ov.scale) - height / 2 - height / 2)
-    band = frame[top : top + height, cx - r : cx + r]
-    # Inside his disc the only opaque thing is his own plate and rings; the caption's slab is
-    # drawn at PLATE_ALPHA and would show up here as a rectangle of it.
-    assert not (band[:, :, 3] == overlay.PLATE_ALPHA).any(), "the caption ran under his face"
+    top = int(ov.caption_y - ov.caption_h / 2)
+    bottom = int(ov.caption_y + ov.caption_h / 2) + ov.caption_tail + 1
+    for detail in (
+        "looking for the torque specification for an M8 stainless bolt into aluminium…",
+        "x" * 200 + "…",  # nowhere to break, so this one is trimmed to the limit exactly
+    ):
+        band = ov.render(
+            state=overlay.SEARCHING, level=0.0, elapsed=12.0, detail=detail, phase=10.0
+        )[top:bottom]
+        # The bubble's own fill, colour and alpha together. PLATE_ALPHA alone is not enough: the
+        # shoulder's arcs are anti-aliased, and a handful of their coverage values land on
+        # exactly 210 out by his shoulder - which would have this pass or fail on where a curve
+        # happened to fall rather than on where the line stopped.
+        fill = (band[:, :, 3] == overlay.PLATE_ALPHA) & (
+            band[:, :, :3] == np.array(overlay.SCREEN, np.uint8)
+        ).all(axis=2)
+        assert fill.any(), "no bubble on the panel at all - this would pass on a blank line"
+        left = int(np.where(fill.any(axis=0))[0].min())
+        assert left >= cx + r + ov._gap, (
+            f"the bubble reaches {cx + r + ov._gap - left}px into the gap in front of his rim"
+        )
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)

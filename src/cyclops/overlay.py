@@ -27,9 +27,11 @@ opens what the box has kept, because what you ask a face is what it remembers.
 
 The row's top rule runs in from both sides, lifts over the top of his head and comes down the
 other side. That shoulder is the join: it is what makes him part of the bar rather than a badge
-sitting on it. And nothing whatsoever moves while he is asleep, which is what makes any of the
-rest of it read as awake. The single exception is the WAKE UP cell, which breathes: it is the
-only control left to press, and a control nobody finds is worse than one that beckons.
+sitting on it. And while he is asleep the only things on this panel that move are his own
+breath and the WAKE UP cell: no ring turns, nothing blinks, no readout changes. That is what
+makes any of the rest of it read as awake - the *mechanism* stopping, rather than the creature
+holding its breath. The cell breathes because it is the only control left to press, and a
+control nobody finds is worse than one that beckons.
 
 Everything that holds still while the state does - the halo, the scanlines, the vignette, the
 frame and its glow, the mode word, the tab row and its two glyphs, the shoulder - is built once
@@ -192,9 +194,16 @@ CAPTIONS = {
 # has to be readable across a workshop; the eye is a face, and it may say something finer - so a
 # state that looks the same on the rim can still look different in the middle of the bar.
 MOODS = {
-    # Shut, dark, and utterly still. Everything else on this panel holds still with him, and that
-    # stillness is what makes any of the rest read as being awake.
-    IDLE: Mood(tint=GREEN_MID, aperture=0.0, swell=0.0, breath_s=0.0, spin=0.0),
+    # Asleep: shut, stopped, and breathing. Nothing turns, nothing blinks, and the lid stays
+    # down - a breath that cracked the iris would read as half awake, and past a swell of 0.08 the
+    # pupil pops in and out with it. So the breath is carried by how present he is instead: the
+    # whole face dims and comes back, which is what the border and the caption already do to say
+    # they are alive. He was utterly still here until now, and a frozen face on a lit panel reads
+    # as a box that is off rather than as one that is sleeping.
+    #
+    # The slowest breath in the table by some way - about nine a minute, which is a creature
+    # asleep - and, like every other period on this panel, not a multiple of any of the others.
+    IDLE: Mood(tint=GREEN_MID, aperture=0.0, swell=0.0, breath_s=6.5, spin=0.0, sink=0.35),
     # Coming round: the iris only half up, the rings running fast, and a highlight sweeping the
     # rim - a thing spinning itself up rather than a thing paying attention.
     STARTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0),
@@ -217,8 +226,9 @@ MOODS = {
     SEARCHING: Mood(tint=WHITE, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
     # Drawing. Deliberate, and turning the other way, because it is making rather than looking.
     DRAWING: Mood(tint=WHITE, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
-    # A fault. Still and red, and pointedly not pulsing: a thing that throbs is asking to be
-    # watched, and this one is asking to be read - the caption underneath says what broke.
+    # A fault. Still and red, and pointedly not pulsing - not even the sleeping breath: a thing
+    # that throbs is asking to be watched, and this one is asking to be read. The caption
+    # underneath says what broke, and it is the only face on the panel that never moves at all.
     ERROR: Mood(tint=RED, aperture=0.20, swell=0.0, breath_s=0.0, spin=0.0),
 }
 
@@ -249,7 +259,7 @@ GLOW_ALPHA = 0.42
 # screen, and that is 29% of a feed you are holding down a pipe to see what is at the bottom of
 # it. They now carry the filter and nothing else, so the picture runs edge to edge behind them
 # and the chrome earns its contrast from its own opaque glyphs rather than from a bar.
-PLATE_ALPHA = 210  # the one dark backing left: the caption slab, which sits on the picture
+PLATE_ALPHA = 210  # the one dark backing left: the caption bubble, which sits on the picture
 TAB_LIVE_ALPHA = 165  # ...and the selected tab's cell, tinted just enough to read as selected
 
 # Layout, all as fractions of the height - the official 7" panel is 800x480 and is the
@@ -275,10 +285,11 @@ EYE_R = 0.125  # 60 px at 800x480
 EYE_SHOULDER = 0.013  # the gap between his rim and the rule that arcs over it
 EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on purpose: this
 # one sits over the middle of the picture, and a porthole you cannot see through is a hole
-# The one thing that moves on a sleeping panel. Everything else holds still - that stillness is
-# what makes awake read as awake - but the button that ends it may say so, because a control that
-# does nothing until you find it is worth pointing at. A slow swell, not a flash: this is an
-# invitation, and a panel blinking at you across a workshop is an alarm.
+# The other thing that moves on a sleeping panel, his breath being the first. Everything else
+# holds still - that stillness is what makes awake read as awake - but the button that ends it may
+# say so, because a control that does nothing until you find it is worth pointing at. A slow
+# swell, not a flash: this is an invitation, and a panel blinking at you across a workshop is an
+# alarm.
 WAKE_PERIOD_S = 2.9  # seconds a breath takes, and not a multiple of any other on this panel
 WAKE_GLOW = 1.0  # how far the glyph and the word travel towards the colour he will be
 
@@ -519,6 +530,19 @@ class Overlay:
         self.caption_h = round(24 * scale)
         self.caption_y = self.footer.y - round(12 * scale) - self.caption_h / 2
         self.caption_right = self.viewport.right - self.pad - round(34 * scale)
+        # ...and what makes it a bubble rather than a slab. A corner radius a third of the
+        # height: half of it would be a lozenge, and a lozenge is a badge. The tail has to fit
+        # in the round(12 * scale) between the slab's bottom and the tab row's top rule, which
+        # is what sizes it - and why the line is not simply moved up to make room, since the
+        # gap under it is also the gap over his shoulder.
+        self.caption_radius = max(2, round(8 * scale))
+        self.caption_tail = max(3, round(7 * scale))
+        # The tail's root and its lean. Wide enough at the root to read as part of the bubble
+        # rather than as a spike stuck on it, and leaning by rather less than it drops: a tail
+        # that leans further than it falls stops looking like it hangs and starts looking like
+        # it is pointing at the floor.
+        self.caption_root = max(4, round(10 * scale))
+        self.caption_lean = max(2, round(4 * scale))
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
         self.font_read = _load_font(max(9, round(21 * scale)))
@@ -910,10 +934,11 @@ class Overlay:
         frame is a pure function of its arguments and the caption's animation can be tested
         without a clock - the same shape as ``flash``, which the kiosk has always computed.
 
-        Nothing here moves while he is asleep. That is deliberate and it is half the design: the
-        eye is shut, the border holds still, the caption stops breathing, and two frames of an
-        idle panel are byte-identical. Against a panel that was quietly pulsing whatever it was
-        doing, an awake one that pulses says nothing.
+        Almost nothing here moves while he is asleep, and that is deliberate and half the
+        design: no ring turns, the eye stays shut, the border holds still, the caption stops
+        breathing and the readouts have nothing to count. What is left is his breath and the
+        WAKE UP cell - the creature, and the way out of him. Against a panel that was quietly
+        pulsing whatever it was doing, an awake one that pulses says nothing.
 
         ``hold`` is how far a finger is through the long press on his face, 0 to 1, and ``menu``
         is whether that press has landed - the power menu, over everything else. The two are the
@@ -953,7 +978,9 @@ class Overlay:
             # Wide, bright and steady. Startled open is the right shape for an acknowledgement,
             # and it is the one gesture that reads the same from every mood - including asleep,
             # where you have just tapped a shut eye and it has opened to look at you.
-            mood = replace(mood, tint=GREEN, rings=1.0, aperture=1.0, swell=0.0, voice=0.0)
+            mood = replace(
+                mood, tint=GREEN, rings=1.0, sink=0.0, aperture=1.0, swell=0.0, voice=0.0
+            )
         self.engine.paint(layer, *self.eye, mood, phase, level)
         if hold > 0.0:
             self._draw_hold(layer, hold)
@@ -1081,11 +1108,12 @@ class Overlay:
     def _draw_caption(
         self, d: ImageDraw.ImageDraw, state: str, halo: tuple, detail: str, phase: float
     ) -> None:
-        """One line of plain English along the bottom right of the picture, on its own dark slab.
+        """One line of plain English along the bottom right of the picture, in his own bubble.
 
-        The slab is not decoration: this text sits on the live camera, and white-on-anything is
+        The bubble is not decoration: this text sits on the live camera, and white-on-anything is
         a coin toss. It is also where an error actually says what went wrong, which the old
-        chrome could only render as a red rim.
+        chrome could only render as a red rim. What it is *shaped* like is a separate argument -
+        see :meth:`_bubble`.
 
         The controller's sentence wins over this module's own table, and not the other way round
         as it used to: it is the half that knows what is being searched for, which project is
@@ -1106,19 +1134,24 @@ class Overlay:
         # whose far end wanders. It stops at him rather than at the far side of the panel: he
         # stands on these rows, so a sentence left to run across would go under his face.
         right = self.caption_right
-        limit = right - (self.eye[0] + self.eye_r + self._gap)
+        inset = round(8 * self.scale)
+        # How far left the *bubble* may reach, which is not how long the sentence may be: the
+        # line has an inset either side of it and a tail leaning out past its corner, and all
+        # three used to be spent out of the gap in front of his rim rather than reserved. At the
+        # elide limit that put the tail on his face - the one place this whole layout exists to
+        # keep it off.
+        limit = right - (self.eye[0] + self.eye_r + self._gap) - inset * 2 - self.caption_lean
         # Off the limit before the trim and back onto the width after it, so a sentence long
         # enough to be elided cannot push its own dots off the edge of the panel.
         dots_w = self._dots_w if busy else 0.0
         text = self._elide(text, font, limit - dots_w - font.getlength(MARKER))
         width = font.getlength(MARKER + text) + dots_w
         height, y = self.caption_h, self.caption_y
-        inset = round(8 * self.scale)
-        # The slab hangs off the right edge and the text off its left, so the dots reserved above
-        # keep the *left* edge still: without them a sentence would shuffle sideways four times a
-        # second while its dots counted.
+        # The bubble hangs off the right edge and the text off its left, so the dots reserved
+        # above keep the *left* edge still: without them a sentence - and the tail under the
+        # corner of it - would shuffle sideways four times a second while its dots counted.
         x = right - width - inset * 2
-        d.rectangle([x, y - height / 2, right, y + height / 2], fill=(*SCREEN, PLATE_ALPHA))
+        self._bubble(d, x, right, y, height)
         # The breath runs under every caption of a session that is up - it is what makes the line
         # read as a live tube rather than a printed label - and the dots only under one about work
         # in flight, where they mean the thing everybody already reads them to mean.
@@ -1139,6 +1172,45 @@ class Overlay:
             # Hard against the last letter, where an ellipsis belongs - these are standing in
             # for the one the phrase arrived with, not sitting beside it as a separate mark.
             self._text(d, x + inset + used, y, "." * lit, font, (*colour, CAPTION_ALPHA))
+
+    def _bubble(
+        self, d: ImageDraw.ImageDraw, x: float, right: float, y: float, height: float
+    ) -> None:
+        """The slab the caption sits on, shaped like what it is: him saying something.
+
+        The line was always his - the marker, the plain English, the breath under it - and a
+        rectangle was the one part of it that read as a readout. Three rounded corners and a
+        tail hanging off the fourth, leaning down and to the left towards the face it comes
+        out of, which is the shape everybody has been reading since before there were screens.
+
+        The tail hangs off the *left* because that is where he stands, and off the bottom rather
+        than out of the side because the bubble's left edge moves with the sentence: a tail on
+        the side would point straight at him under a long caption and into the picture under a
+        short one, while one under the corner leans the same way whatever the line says.
+
+        Drawn flat rather than through :func:`eye.smoothed`, like every other filled shape on
+        this panel - the tag, the menu card, the tab cells. Only the strokes are supersampled,
+        because a stepped hairline reads as a fault and a stepped edge on a slab does not.
+        Painted in two passes with no seam between them: ImageDraw *writes* into the layer
+        rather than compositing onto it, so the overlap is not drawn twice over - see
+        :func:`_mix`.
+        """
+        top, bottom = y - height / 2, y + height / 2
+        fill = (*SCREEN, PLATE_ALPHA)
+        d.rounded_rectangle(
+            [x, top, right, bottom],
+            radius=self.caption_radius,
+            corners=(True, True, True, False),
+            fill=fill,
+        )
+        d.polygon(
+            [
+                (x, bottom),
+                (x + self.caption_root, bottom),
+                (x - self.caption_lean, bottom + self.caption_tail),
+            ],
+            fill=fill,
+        )
 
     # ---- the tab row ----
 
