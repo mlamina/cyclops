@@ -38,7 +38,12 @@ frame and its glow, the mode word, the tab row and its two glyphs, the shoulder 
 and cached, keyed on the state. A Pi rendering this at 25 fps has 40 ms for the whole loop and
 the camera wants most of them; what is left for a frame here is a signal meter, a clock, a
 caption, one ring, the border line and the eye. Every part of the eye moves, so none of it is
-cached at all; measured, it is a tenth of a millisecond.
+cached at all; measured on the Pi, he is about 7 ms of a 9.5 ms frame, which is the single
+largest thing this loop does and is meant to be - he is the only part of the panel anybody
+looks at. The number is worth keeping honest, because it was wrong here for a long time: this
+line claimed a tenth of a millisecond, which was the figure before he was ever supersampled.
+Re-measure with `deploy/push.sh && ssh cyclops@cyclops.local` and a timing loop around
+`Overlay.render`, not by reasoning about it.
 """
 
 from __future__ import annotations
@@ -188,7 +193,8 @@ CAPTIONS = {
 
 # ...and how the eye behaves in each - the fourth table, and the one that says what he is *like*
 # rather than what he is doing. :mod:`cyclops.eye` is only the mechanism; every state here is
-# nine numbers and a colour, so a new one costs a line and tuning one costs a keystroke. Render
+# fourteen numbers and a colour, so a new one costs a line and tuning one costs a keystroke.
+# Render
 # `tools/eye_sheet.py` after touching any of them: these are meant to be looked at, not reasoned
 # about.
 #
@@ -221,32 +227,61 @@ MOODS = {
     # under two fifths open, which never crosses the threshold the pupil is drawn on, so it grows
     # and shrinks rather than popping in and out - dozing, and nowhere near the 0.52 of a face
     # that is paying attention.
-    IDLE: Mood(tint=GREEN_MID, aperture=0.24, swell=0.14, breath_s=6.5, spin=2.5, sway=1.6),
+    #
+    # The gaze is the newest of these and the one worth reading as a set rather than a row at a
+    # time: `gaze` is how far he wanders, `dart` how much of that is flicking rather than
+    # drifting, `dart_s` how often, and `look_x`/`look_y` a lean he holds under all of it. What
+    # separates a creature from a turret is that the mix differs per state - a hunting eye flicks
+    # and a staring one does not - and it costs a number rather than a branch.
+    #
+    # He drifts in his sleep and never darts: a sleeping face that flicks about is a dreaming
+    # one, and this panel is not claiming that. It is also the third thing that moves while he is
+    # asleep, after the rings and the breath, and that scarcity is what makes awake read as
+    # awake - so it is kept small.
+    IDLE: Mood(tint=GREEN_MID, aperture=0.24, swell=0.14, breath_s=6.5, spin=2.5, sway=1.6,
+               gaze=0.30),
     # Coming round: the iris only half up, the rings running fast, and a highlight sweeping the
-    # rim - a thing spinning itself up rather than a thing paying attention.
-    STARTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0),
-    CONNECTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0),
-    # Winding down. The same transition run backwards, which is what the rings do.
-    STOPPING: Mood(tint=AMBER, aperture=0.10, swell=0.04, breath_s=3.0, spin=-22.0),
+    # rim - a thing spinning itself up rather than a thing paying attention. It looks about while
+    # it does it, which is the difference between waking and booting.
+    STARTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0,
+                   gaze=0.55, dart=0.45, dart_s=1.1),
+    CONNECTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0,
+                     gaze=0.55, dart=0.45, dart_s=1.1),
+    # Winding down. The same transition run backwards, which is what the rings do - and the gaze
+    # settles as it goes, because a thing finishing is not still looking for anything.
+    STOPPING: Mood(tint=AMBER, aperture=0.10, swell=0.04, breath_s=3.0, spin=-22.0, gaze=0.14),
     # Awake and attending. A resting breath, a barely-moving ring set, and the one mood whose
-    # iris opens to your voice - which is the panel saying it can hear you.
+    # iris opens to your voice - which is the panel saying it can hear you. It looks around a
+    # little and flicks now and then: attending, not staring you down.
     LISTENING: Mood(
-        tint=WHITE, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4
+        tint=WHITE, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4,
+        gaze=0.38, dart=0.30, dart_s=2.9,
     ),
     # Talking: a faster breath and a wider iris, because he is doing the thing rather than
-    # waiting to. Barely opens to level here - the level *is* his own voice coming back.
+    # waiting to. Barely opens to level here - the level *is* his own voice coming back. He
+    # holds your eye while he talks, which is why this wanders less than listening does.
     SPEAKING: Mood(
-        tint=WHITE, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5
+        tint=WHITE, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5,
+        gaze=0.22, dart=0.15, dart_s=3.7,
     ),
-    # Looking at a photo. Wide, still, and it does not blink: this is a stare.
-    LOOKING: Mood(tint=WHITE, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0),
-    # Hunting. Narrowed to a point, breathing fast, rings tearing round with a scanning arc.
-    SEARCHING: Mood(tint=WHITE, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0),
-    # Drawing. Deliberate, and turning the other way, because it is making rather than looking.
-    DRAWING: Mood(tint=WHITE, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0),
+    # Looking at a photo. Wide, still, and it does not blink: this is a stare. The gaze is barely
+    # off zero for the same reason - a stare that wanders is not one.
+    LOOKING: Mood(tint=WHITE, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0, gaze=0.10),
+    # Hunting. Narrowed to a point, breathing fast, rings tearing round with a scanning arc, and
+    # the eye flicking all over: nearly the full travel, several times a second. This is the one
+    # mood where the gaze is the loudest thing about him, and it should be - he is looking *for*
+    # something rather than *at* something.
+    SEARCHING: Mood(tint=WHITE, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0,
+                    gaze=0.95, dart=0.85, dart_s=0.6),
+    # Drawing. Deliberate, and turning the other way, because it is making rather than looking -
+    # and looking down at the work while it does, which is the one mood with a lean it holds.
+    DRAWING: Mood(tint=WHITE, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0,
+                  gaze=0.26, look_x=-0.30, look_y=0.42),
     # A fault. Still and red, and pointedly not pulsing - not even the sleeping breath: a thing
     # that throbs is asking to be watched, and this one is asking to be read. The caption
-    # underneath says what broke, and it is the only face on the panel that never moves at all.
+    # underneath says what broke, and it is the only face on the panel that never moves at all
+    # - which now includes its gaze: `gaze` at 0 with no lean is a face staring dead ahead
+    # forever, and that is exactly what a fault should do.
     ERROR: Mood(tint=RED, aperture=0.20, swell=0.0, breath_s=0.0, spin=0.0),
 }
 
@@ -1046,10 +1081,18 @@ class Overlay:
         # so a slow browser looks like a box that heard you rather than one that ignored you.
         mood = self.engine.look(state, MOODS.get(state, MOODS[IDLE]), phase)
         if held:
-            # Wide, bright and steady. Startled open is the right shape for an acknowledgement,
+            # Wide, bright, steady - and looking straight at you, which is what `gaze` and
+            # `dart` at zero are for: an acknowledgement that carried on glancing round the
+            # room would not read as one. Startled open is the right shape for it,
             # and it is the one gesture that reads the same from every mood - including asleep,
             # where you have just tapped a shut eye and it has opened to look at you.
-            mood = replace(mood, tint=GREEN, rings=1.0, aperture=1.0, swell=0.0, voice=0.0)
+            # Past 1.0 on purpose: `rings` is how present he is and his resting level *is* 1.0,
+            # so coming "up to full" is a number above it. The machine is drawn well short of
+            # full at rest (eye.RIM_LIT and friends), and this is the one gesture that saturates
+            # it - which is what makes the acknowledgement read as brightening rather than as a
+            # colour change he might have made on his own.
+            mood = replace(mood, tint=GREEN, rings=1.7, aperture=1.0, swell=0.0,
+                           voice=0.0, gaze=0.0, dart=0.0)
         self.engine.paint(layer, *self.eye, mood, phase, level)
         if hold > 0.0:
             self._draw_hold(layer, hold)

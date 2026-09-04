@@ -873,19 +873,36 @@ out for anyone close enough to read it, including what an error actually said.
 **The middle of the row is Cyclops.** It is the one thing on the panel that is a face rather than
 a readout, and it is what lets the rest stay this terse: a glance answers *is he there, and what
 is he up to*, so the strip is free to spell it out only for whoever is close enough to read it.
-He is the boot mark brought to life — the splash's iris inside concentric HUD rings, with the
-rings turning, the iris breathing and a highlight sweeping the rim when he is hunting for
-something. The bar's top rule runs in from both sides, lifts over his head and comes down the
-other side; that shoulder is what makes him part of the row rather than a badge sitting on it.
+He is the boot mark brought to life — the splash's diaphragm inside concentric HUD rings, and
+the drawing keeps that mark's own vocabulary: a rim, a castellated ring that steps radially
+rather than running true, a hairline ring carrying a row of indicators at one clock position, a
+dotted ring, a part-way knurl, stator vanes, and an eight-leaf hatched diaphragm. The machine is
+deliberately dim and the middle of him is not: the core is a disc of radial filaments converging
+on a hot centre, which is what makes him look back at you rather than merely spin. The bar's top
+rule runs in from both sides, lifts over his head and comes down the other side; that shoulder is
+what makes him part of the row rather than a badge sitting on it.
 
-Everything he does is a **mood** — nine numbers and a colour, one row per state in
-`overlay.MOODS`, with `cyclops/eye.py` as the mechanism underneath. Asleep he is a shut iris in
-dim green and completely still. Waking, he is amber, half open, rings running fast with a
-scanning arc. Listening, he is green and calm, blinking every few seconds and never quite on the
-beat, and his iris opens to your voice. Speaking, he breathes faster and wider. Searching, he
-narrows to a point, the rings tear round and a bright trace sweeps a dimmed rim. A fault is red and does not move at all. He
+**He looks around.** The whole optic — blades, bezel and core — slides inside a shell that never
+moves, so it reads as an eye in a socket rather than a picture being panned. Two things sell it
+and both are free: the shell staying put, and the brow staying put with it, because a highlight
+on the outer glass does not travel with what is underneath it — so the core slides out from under
+its own catchlight.
+
+Everything he does is a **mood** — fourteen numbers and a colour, one row per state in
+`overlay.MOODS`, with `cyclops/eye.py` as the mechanism underneath. Asleep he is a narrow ember
+in dim green, turning slowly and drifting, and he never darts — a sleeping face that flicks about
+is a dreaming one. Waking, he is amber, half open, rings running fast with a scanning arc, and
+looking about as he comes round. Listening, he is calm and attending, blinking every few seconds
+and never quite on the beat, his iris opening to your voice. Speaking, he breathes faster and
+wider and holds your eye. Searching, he narrows, the rings tear round, a bright trace sweeps a
+dimmed rim and his gaze flicks all over — he is looking *for* something rather than *at* it.
+Drawing, he leans down at the work. A fault is red and does not move at all, gaze included. He
 crossfades between them rather than snapping, because a face that jumped colour between two
 frames would read as a different creature.
+
+Most of the variety is free rather than tuned: the core can only be as big as the hole the
+blades leave, and that hole grows as the iris opens — so a stare is a wide hot core and a fault
+is a narrow one, off the one number every mood already sets.
 
 These are meant to be pushed around rather than argued about:
 

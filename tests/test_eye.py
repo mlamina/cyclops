@@ -14,6 +14,7 @@ Everything here is pure: no camera, no key, no window. `Overlay` is PIL and nump
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import replace
 
@@ -102,7 +103,10 @@ def test_only_the_broken_face_holds_still() -> None:
     # every mood but the faulted one has something about it that moves. The sleeping face is in
     # here now too - it breathes - and its own, much narrower rule is the test below.
     for state, mood in overlay.MOODS.items():
-        moves = bool(mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice)
+        # The gaze is in here because it is a way of moving: a mood that only looked around
+        # would otherwise pass this test as "still" while visibly not being.
+        moves = bool(mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice
+                     or mood.gaze or mood.look_x or mood.look_y)
         assert moves == (state != overlay.ERROR), state
 
 
@@ -144,8 +148,8 @@ def _rates(mood: eye.Mood, share: float, ring: int, seconds: float = 300.0) -> l
 
 
 RING_SET = (
-    ("ticks", eye.TICK_SPIN, 0),
-    ("brackets", eye.BRACKET_SPIN, 1),
+    ("knurl", eye.KNURL_SPIN, 0),
+    ("castellation", eye.CASTLE_SPIN, 1),
     ("dots", eye.DOT_SPIN, 2),
 )
 
@@ -175,7 +179,7 @@ def test_the_sleeping_rings_are_not_a_gear_train() -> None:
     # the arrangement they hold comes round again. These do not: the ratio between them wanders
     # over a range, which is what "the movement never looks the same" actually amounts to.
     mood = overlay.MOODS[overlay.IDLE]
-    ticks = _rates(mood, eye.TICK_SPIN, 0)
+    ticks = _rates(mood, eye.KNURL_SPIN, 0)
     dots = _rates(mood, eye.DOT_SPIN, 2)
     ratios = [t / d for t, d in zip(ticks, dots, strict=True) if abs(d) > 0.5]
     assert len(ratios) > 100, "not enough of the run to say anything"
@@ -189,7 +193,7 @@ def test_a_mood_that_asks_for_no_wander_gets_the_turn_it_always_had() -> None:
     # sway defaults to 0 and every other mood leaves it there, so this is what keeps the change
     # to the sleeping face from quietly rewriting the other nine.
     for phase in (0.0, 3.3, 91.7):
-        for share in (eye.TICK_SPIN, eye.BRACKET_SPIN, eye.DOT_SPIN, eye.SCAN_SPIN):
+        for share in (eye.KNURL_SPIN, eye.CASTLE_SPIN, eye.DOT_SPIN, eye.SCAN_SPIN):
             assert eye.wander(phase, 7.0, share, 0.0, 0) == pytest.approx(7.0 * share * phase)
     assert all(m.sway == 0.0 for state, m in overlay.MOODS.items() if state != overlay.IDLE)
 
@@ -426,6 +430,26 @@ def test_his_line_snores_while_he_is_asleep() -> None:
     assert len({ink(i * overlay.DOT_PERIOD_S) for i in range(4)}) == 1, "the line breathes"
 
 
+RING_BAND = 0.75  # ...as a fraction of his radius: outside anything the gaze can reach
+
+
+def _rings(crop: np.ndarray) -> np.ndarray:
+    """Just his ring set - the band outside anything his gaze can move.
+
+    Load-bearing, and not obviously so. Both "the rings turn" tests below work by rendering two
+    frames a whole breath apart and asserting they differ, having first pinned the aperture equal
+    so the iris cannot explain it. Since he gained a gaze that no longer leaves rotation as the
+    only explanation: the optic slides even with every ring frozen, so a whole-face comparison
+    passes on the gaze alone and says nothing about whether anything turns. Verified - freeze
+    spin and scan and the face crops still differ, while this band does not.
+
+    The optic reaches eye.IRIS + eye.GAZE_SHIFT = 0.705 of him at full lean, so 0.75 clears it.
+    """
+    r = crop.shape[0] // 2
+    ys, xs = np.ogrid[-r:r, -r:r]
+    return crop[np.hypot(ys, xs) > RING_BAND * r]
+
+
 def _peak(crop: np.ndarray) -> int:
     """The brightest opaque pixel inside his rim. His own rim, in practice: it is the one ring
     drawn at the mood's tint undiluted, so it is exactly the tint in every frame unless something
@@ -457,7 +481,7 @@ def test_he_turns_and_breathes_while_he_is_asleep() -> None:
     ), "pick two phases a whole breath apart, or this test is about the iris"
     a = _face(ov, ov.render(phase=first, **asleep))
     b = _face(ov, ov.render(phase=second, **asleep))
-    assert not np.array_equal(a, b), "the ring set held still while he slept"
+    assert not np.array_equal(_rings(a), _rings(b)), "the ring set held still while he slept"
     # The iris, which is what actually breathes: it swells and shrinks, and stays the whole time
     # on the open side of the threshold the pupil is drawn on, so it grows rather than blinking
     # into existence once a breath.
@@ -468,9 +492,40 @@ def test_he_turns_and_breathes_while_he_is_asleep() -> None:
     # what state it is in; a face that pulses is competing with its own border, and the first
     # attempt at this was nothing but that pulse.
     peaks = {
-        _peak(_face(ov, ov.render(phase=i * mood.breath_s / 8, **asleep))) for i in range(8)
+        _peak(_face(ov, ov.render(phase=i * mood.breath_s / 60, **asleep))) for i in range(60)
     }
     assert len(peaks) == 1, f"his brightness pulses over a breath: {sorted(peaks)}"
+
+
+def test_the_spark_always_covers_a_whole_pixel() -> None:
+    """The rule that keeps his brightest pixel from flickering as his gaze drags it about.
+
+    Stated on the arithmetic rather than sampled off the pixels, because sampling for it is what
+    let it through: the spark fails only at a narrow band of sub-pixel alignments - 4 of 576
+    positions swept at eye_r 40 with a floor of 1.2 - so a render test would have to be enormous
+    to catch it reliably and would still only be evidence, not the rule.
+
+    The rule: a disc covers a whole panel pixel only if all four of that pixel's corners are
+    inside it, and the worst case puts the disc's centre on a corner, sqrt(2) from the nearest
+    pixel's far corner. Anything below that is luck - measured, a floor of 1.0 passes every one
+    of those 576 positions and 1.2 fails four of them, so "smaller" does not even mean "worse".
+
+    What this catches: lowering SPARK_FLOOR, or making the spark a fraction of something small
+    enough that the floor stops binding. Either turns a sleeping face into one that dims as it
+    looks around, which is the single thing the sleeping face is not allowed to do.
+    """
+    assert eye.SPARK_FLOOR >= math.sqrt(2), "the spark can land without covering a whole pixel"
+    # ...and the floor has to actually bind, in the units it is written in. The pupil threshold
+    # this module used to carry was in oversampled units and read as if it were in panel ones,
+    # which made it fire four times too early; this is the same mistake waiting to be made again.
+    for radius in (28, 40, 60, 90):
+        iris = eye.at(radius) * eye.IRIS
+        for aperture in (0.0, 0.1, 0.2, 0.5, 1.0):
+            hole = iris * (eye.HOLE_MIN + (eye.HOLE_MAX - eye.HOLE_MIN) * aperture)
+            spark = max(eye.SPARK_FLOOR * eye.SUPERSAMPLE, hole * eye.SPARK) / eye.SUPERSAMPLE
+            assert spark >= math.sqrt(2), (
+                f"at eye_r {radius}, aperture {aperture}, the spark is {spark:.2f} panel px"
+            )
 
 
 def _invite(ov: overlay.Overlay, phase: float) -> float:
@@ -621,13 +676,13 @@ def test_the_rings_turn_while_he_is_awake() -> None:
     _settle(ov, **AWAKE)
     a = _face(ov, ov.render(phase=first, **AWAKE))
     b = _face(ov, ov.render(phase=second, **AWAKE))
-    assert not np.array_equal(a, b), "the ring set held still"
+    assert not np.array_equal(_rings(a), _rings(b)), "the ring set held still"
 
 
 def test_the_rings_do_not_all_turn_together() -> None:
     # Rings that agree read as one printed disc. The counter-rotations are the whole reason it
     # reads as a mechanism, so they are stated here rather than left to whoever tunes them.
-    rates = (eye.TICK_SPIN, eye.BRACKET_SPIN, eye.DOT_SPIN)
+    rates = (eye.KNURL_SPIN, eye.CASTLE_SPIN, eye.DOT_SPIN)
     assert len(set(rates)) == len(rates)
     assert min(rates) < 0 < max(rates), "nothing counter-rotates"
 
