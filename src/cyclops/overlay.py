@@ -49,10 +49,13 @@ Everything that holds still while the state does - the halo, the brackets and th
 reticle, the mode word, the switches at rest - is built once and cached, keyed on the state. A
 Pi rendering this at 25 fps has 40 ms for the whole loop and the camera wants most of them; what
 is left for a frame here is a signal meter, a clock, a caption, one ring, the border line and the
-eye. Every part of the eye moves, so none of it is cached at all; measured on the Pi, he is about
-7 ms of a 9.5 ms frame, which is the single largest thing this loop does and is meant to be - he
-is the only part of the panel anybody looks at. The number is worth keeping honest, because it
-was wrong here for a long time: this line claimed a tenth of a millisecond, which was the figure
+eye. Every part of the eye moves, so none of it is cached at all; measured on the Pi, he is 10.5
+ms of a 13 ms frame, which is the single largest thing this loop does and is meant to be - he is
+the only part of the panel anybody looks at. He grew from r60 to r88 when he moved into the
+corner and took about 3.5 ms with him, which is the whole of the difference between this and the
+tab row; the board sat at 59 C and 0x0 throttled afterwards, so it is a price that is being paid
+out of headroom rather than out of frames. The number is worth keeping honest, because it was
+wrong here for a long time: this line once claimed a tenth of a millisecond, which was the figure
 before he was ever supersampled. Re-measure with `deploy/push.sh && ssh cyclops@cyclops.local`
 and a timing loop around `Overlay.render`, not by reasoning about it.
 """
