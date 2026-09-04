@@ -613,11 +613,15 @@ function dragScroll(el) {
     if (far > SLOP) { e.stopPropagation(); e.preventDefault(); }
   }, true);
 }
-dragScroll(vSessions);
-dragScroll(vMedia);
-dragScroll(vProjects);
-dragScroll(files);
-dragScroll(doc);
+// The panel only. This is the mousedev workaround above, and on anything with a real pointer it
+// is a bug: it swallows drag-to-select, so a laptop cannot highlight a paragraph of a README.
+if (document.body.classList.contains('kiosk')) {
+  dragScroll(vSessions);
+  dragScroll(vMedia);
+  dragScroll(vProjects);
+  dragScroll(files);
+  dragScroll(doc);
+}
 
 // ---------------------------------------------------------------- the router
 

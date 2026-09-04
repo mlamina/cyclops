@@ -144,8 +144,12 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
 .talk { display: none; }
 .line { display: grid; grid-template-columns: calc(44 * var(--u)) minmax(0, 1fr);
         gap: calc(10 * var(--u)); padding: calc(7 * var(--u)) calc(6 * var(--u)); }
-.line[data-t] { cursor: pointer; }
-.line[data-t]:hover { background: #0d2418; }
+/* A capability, not a size: :hover sticks after a tap on a touchscreen and leaves a line lit
+   that nobody is pointing at, and a hand has no cursor to change. */
+@media (hover: hover) and (pointer: fine) {
+  .line[data-t] { cursor: pointer; }
+  .line[data-t]:hover { background: #0d2418; }
+}
 .at { color: var(--dim); font-size: calc(12 * var(--u)); font-variant-numeric: tabular-nums;
       text-align: right; padding-top: calc(2 * var(--u)); }
 .who { display: block; color: var(--dim); font-size: calc(11 * var(--u));

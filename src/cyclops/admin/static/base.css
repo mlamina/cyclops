@@ -40,22 +40,40 @@
    because body.kiosk is the flag the server sets for its own browser, and everything that reads
    --u - including the ::before bezel and the ::after scanlines - inherits from here. */
 body.kiosk { --u: clamp(0.7px, min(0.125vw, 0.2083vh), 2px); }
-* { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
-/* A finger on a picture is scrolling, not picking it up. Chromium makes every <img> draggable
-   by default, and on a touchscreen that drag swallows the pan: measured on the media grid, a
-   swipe starting on empty space moved 148 px and the same swipe starting on a photo moved 0.
-   There is nothing here to drag a picture *to*, so no image is ever a drag handle. Also kills
-   the long-press callout, which is the same gesture arriving a moment later. */
-img, video { -webkit-user-drag: none; user-drag: none; -webkit-touch-callout: none; }
-::-webkit-scrollbar { width: 0; height: 0; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 html, body {
   margin: 0;
   height: 100vh;
   height: 100dvh;   /* the pair, not dvh alone: an older engine drops what it cannot parse */
   overflow: hidden;
-  overscroll-behavior: none;
-  touch-action: manipulation;
 }
+
+/* ---- what a kiosk is, as opposed to a page ---- */
+/* Everything below is hardening for a --kiosk Chromium on a capacitive panel that the kernel
+   also exposes as a mouse (see dragScroll in app.js). It used to be on `*`, `img` and `html`,
+   which meant every phone and laptop on the LAN got a browser with no scrollbar, no text
+   selection, no pull-to-refresh, no double-tap zoom and no long-press-to-save - none of which
+   was ever the intention, and all of which are things a person expects their own device to do.
+
+   The panel gets exactly what it got before. Only the selectors moved. */
+body.kiosk * { -webkit-user-select: none; user-select: none; }
+/* A finger on a picture is scrolling, not picking it up. Chromium makes every <img> draggable
+   by default, and on a touchscreen that drag swallows the pan: measured on the media grid, a
+   swipe starting on empty space moved 148 px and the same swipe starting on a photo moved 0.
+   There is nothing on the panel to drag a picture *to*, so no image is ever a drag handle. Also
+   kills the long-press callout, which is the same gesture arriving a moment later - and which
+   on a phone is how you save a photograph, so it stays there. */
+body.kiosk img, body.kiosk video {
+  -webkit-user-drag: none; user-drag: none; -webkit-touch-callout: none;
+}
+body.kiosk ::-webkit-scrollbar { width: 0; height: 0; }
+/* No pull-to-refresh and no double-tap zoom: there is nowhere to refresh to and nothing to
+   zoom, and both gestures land on a control instead. On a phone they are the phone. */
+/* On body alone, not also on html: overscroll-behavior propagates from body to the viewport as
+   long as html leaves it `auto`, so this is enough - and a selector list containing a :has()
+   an engine does not know is a list it drops *entirely*, which would have quietly taken the
+   panel's own hardening with it. */
+body.kiosk { overscroll-behavior: none; touch-action: manipulation; }
 body {
   background: #000;
   color: var(--green);
@@ -124,7 +142,6 @@ header {
 }
 .brand { color: var(--dim); font-size: calc(14 * var(--u)); letter-spacing: .3em; }
 .bar { width: calc(2 * var(--u)); height: calc(18 * var(--u)); background: var(--dim); }
-.page { font-size: calc(27 * var(--u)); letter-spacing: .12em; }
 .link { margin-left: auto; font-size: calc(14 * var(--u)); letter-spacing: .24em; color: var(--mid); }
 .link::after { content: "LINK OK"; }
 body.offline .link { color: var(--amber); }

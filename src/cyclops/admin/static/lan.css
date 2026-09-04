@@ -122,7 +122,17 @@ body:not(.kiosk) .crumb { max-width: clamp(calc(100 * var(--u)), 40%, calc(240 *
 @media (hover: hover) and (pointer: fine) {
   body:not(.kiosk) .row:hover { border-color: var(--mid); }
   body:not(.kiosk) .cell:hover { border-color: var(--mid); }
+  body:not(.kiosk) ::-webkit-scrollbar-thumb:hover { background: var(--mid); }
 }
+/* A scrollbar is the only thing that says .crumbs, .doc and the transcript scroll at all. It
+   was worth its 9 px on a laptop before this and is worth them on a phone too; the panel, which
+   has neither a pointer nor the room, keeps going without (see body.kiosk in base.css).
+
+   Text selection needs no rule here for the same reason: `user-select: none` moved onto
+   body.kiosk, so quoting a line of a transcript works everywhere else by simply not being
+   forbidden. */
+body:not(.kiosk) ::-webkit-scrollbar { width: calc(9 * var(--u)); height: calc(9 * var(--u)); }
+body:not(.kiosk) ::-webkit-scrollbar-thumb { background: var(--dim); }
 
 /* ---- sitting down ---- */
 /* The one width query left in this stylesheet, and it is not a layout question: it asks whether

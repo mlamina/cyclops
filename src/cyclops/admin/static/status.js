@@ -144,8 +144,14 @@ if (close) close.addEventListener('click', leave);
 
 // kiosk hardening: no context menu, no pinch/double-tap zoom, and nothing is draggable.
 // A native drag is a scroll that did not happen - the finger picks a picture up off the grid
-// instead of moving the grid under it - and there is nowhere in this interface to drop one.
-document.addEventListener('dragstart', (e) => e.preventDefault());
-document.addEventListener('contextmenu', (e) => e.preventDefault());
-document.addEventListener('gesturestart', (e) => e.preventDefault());
-document.addEventListener('dblclick', (e) => e.preventDefault());
+// instead of moving the grid under it - and there is nowhere on the panel to drop one.
+//
+// The panel only. On a phone these four are the phone: long-press is how you save a photograph,
+// pinch is how you read a wiring diagram, and there is nothing here worth taking any of that
+// away for.
+if (document.body.classList.contains('kiosk')) {
+  document.addEventListener('dragstart', (e) => e.preventDefault());
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
+  document.addEventListener('dblclick', (e) => e.preventDefault());
+}

@@ -18,7 +18,15 @@ every device on the network is exactly the sprawl this replaced.
 <html lang="en">
 <head>
 <meta charset="utf-8">
+{% if local %}
+<!-- The panel: locked. A pinch on a kiosk with no address bar is a zoom nobody can undo, and
+     the layout is already exactly one screenful. -->
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+{% else %}
+<!-- Everywhere else: ordinary. Pinch-to-zoom is an accessibility floor, and a phone is not a
+     kiosk just because it is small. viewport-fit stays, so the bezel can clear a notch. -->
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+{% endif %}
 <meta name="color-scheme" content="dark">
 <title>Cyclops · status</title>
 <!-- The look, in five files under admin/static/. ?v= is a digest of their contents (see
