@@ -203,7 +203,7 @@ MOODS = {
     #
     # The slowest breath in the table by some way - about nine a minute, which is a creature
     # asleep - and, like every other period on this panel, not a multiple of any of the others.
-    IDLE: Mood(tint=GREEN_MID, aperture=0.0, swell=0.0, breath_s=6.5, spin=0.0, sink=0.35),
+    IDLE: Mood(tint=GREEN_MID, aperture=0.0, swell=0.0, breath_s=6.5, spin=0.0, sink=0.70),
     # Coming round: the iris only half up, the rings running fast, and a highlight sweeping the
     # rim - a thing spinning itself up rather than a thing paying attention.
     STARTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0),
@@ -528,21 +528,21 @@ class Overlay:
         # here rather than inside the drawing because it is geometry, and because everything that
         # has ever needed to know where this slab is has otherwise had to re-derive it.
         self.caption_h = round(24 * scale)
-        self.caption_y = self.footer.y - round(12 * scale) - self.caption_h / 2
+        self.caption_y = self.footer.y - round(20 * scale) - self.caption_h / 2
         self.caption_right = self.viewport.right - self.pad - round(34 * scale)
         # ...and what makes it a bubble rather than a slab. A corner radius a third of the
         # height: half of it would be a lozenge, and a lozenge is a badge. The tail has to fit
         # in the round(12 * scale) between the slab's bottom and the tab row's top rule, which
         # is what sizes it - and why the line is not simply moved up to make room, since the
         # gap under it is also the gap over his shoulder.
-        self.caption_radius = max(2, round(8 * scale))
-        self.caption_tail = max(3, round(7 * scale))
+        self.caption_radius = max(2, round(9 * scale))
+        self.caption_tail = max(3, round(11 * scale))
         # The tail's root and its lean. Wide enough at the root to read as part of the bubble
         # rather than as a spike stuck on it, and leaning by rather less than it drops: a tail
         # that leans further than it falls stops looking like it hangs and starts looking like
         # it is pointing at the floor.
-        self.caption_root = max(4, round(10 * scale))
-        self.caption_lean = max(2, round(4 * scale))
+        self.caption_root = max(4, round(15 * scale))
+        self.caption_lean = max(2, round(6 * scale))
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
         self.font_read = _load_font(max(9, round(21 * scale)))
@@ -1188,29 +1188,38 @@ class Overlay:
         the side would point straight at him under a long caption and into the picture under a
         short one, while one under the corner leans the same way whatever the line says.
 
+        It is drawn with an edge, which the slab it replaces did not need. A dark fill only
+        has a shape where there is something behind it to differ from, and behind this there is
+        as often as not a black picture - an unlit room, or no camera at all - where a bubble and
+        a rectangle are the same invisible dark patch. The edge is what makes the shape survive
+        its own background, and it is the faintest phosphor on the panel because the words inside
+        it are what anybody is actually reading.
+
         Drawn flat rather than through :func:`eye.smoothed`, like every other filled shape on
         this panel - the tag, the menu card, the tab cells. Only the strokes are supersampled,
         because a stepped hairline reads as a fault and a stepped edge on a slab does not.
-        Painted in two passes with no seam between them: ImageDraw *writes* into the layer
-        rather than compositing onto it, so the overlap is not drawn twice over - see
-        :func:`_mix`.
         """
         top, bottom = y - height / 2, y + height / 2
+        tip = (x - self.caption_lean, bottom + self.caption_tail)
+        root = (x + self.caption_root, bottom)
         fill = (*SCREEN, PLATE_ALPHA)
+        edge = (*GREEN_DIM, PLATE_ALPHA)
+        line = max(1, self.line // 2)
         d.rounded_rectangle(
             [x, top, right, bottom],
             radius=self.caption_radius,
             corners=(True, True, True, False),
             fill=fill,
+            outline=edge,
+            width=line,
         )
-        d.polygon(
-            [
-                (x, bottom),
-                (x + self.caption_root, bottom),
-                (x - self.caption_lean, bottom + self.caption_tail),
-            ],
-            fill=fill,
-        )
+        # The tail, then the bottom edge between its corners wiped back to fill, then its own two
+        # sides - which is what makes the two shapes one silhouette rather than a box with a
+        # pennant taped under it. ImageDraw writes rather than composites, so the wipe is a wipe.
+        d.polygon([(x, bottom), root, tip], fill=fill)
+        d.line([(x, bottom), root], fill=fill, width=line)
+        d.line([root, tip], fill=edge, width=line)
+        d.line([tip, (x, bottom)], fill=edge, width=line)
 
     # ---- the tab row ----
 
