@@ -116,11 +116,72 @@ def test_the_sleeping_face_moves_slowly_and_by_moving() -> None:
     still = (overlay.IDLE, overlay.ERROR)
     working = [m for state, m in overlay.MOODS.items() if state not in still]
     assert mood.breath_s > max(m.breath_s for m in working), "he breathes faster than a working eye"
+    # His *steady* rate, which is not what you see - the wander runs well past it, and is meant
+    # to. What this pins is that the thing it wanders around is the gentlest in the table.
     assert abs(mood.spin) < min(abs(m.spin) for m in working), "he turns faster than a working eye"
     # ...and, like every other period on this panel, out of step with all of them - see
     # WAKE_PERIOD_S. His is the longest, so it can only lock by being a multiple of one of them.
     for period in (overlay.WAKE_PERIOD_S, overlay.RIM_PERIOD_S, overlay.BREATH_PERIOD_S):
         assert mood.breath_s % period > 1e-6, f"his breath locks to the {period}s one"
+
+
+def _rates(mood: eye.Mood, share: float, ring: int, seconds: float = 300.0) -> list[float]:
+    """How fast one ring is turning, degree per second, sampled across *seconds* of its wander."""
+    step = 0.05
+    n = int(seconds / step)
+    at = [eye.wander(i * step, mood.spin, share, mood.sway, ring) for i in range(n)]
+    return [(b - a) / step for a, b in zip(at, at[1:], strict=False)]
+
+
+RING_SET = (
+    ("ticks", eye.TICK_SPIN, 0),
+    ("brackets", eye.BRACKET_SPIN, 1),
+    ("dots", eye.DOT_SPIN, 2),
+)
+
+
+def test_the_sleeping_rings_change_their_minds() -> None:
+    """Every ring speeds up, falls back and turns over, and no two of them do it together.
+
+    What a gear train cannot do, and the complaint this answers: rings on fixed multiples of one
+    rate do turn, but the set only ever reaches arrangements it has reached before, and a few
+    seconds in the eye stops seeing it as movement at all. Every assertion here is false of the
+    version that shipped before it, which is the whole reason they are worth writing down.
+    """
+    mood = overlay.MOODS[overlay.IDLE]
+    assert mood.sway > 1.0, "under 1 a ring's wander never outruns its own rate, so it never turns"
+    for name, share, ring in RING_SET:
+        rates = _rates(mood, share, ring)
+        assert min(rates) < 0 < max(rates), f"the {name} only ever turn one way"
+        own = abs(mood.spin * share)
+        assert max(rates) > 2 * own, f"the {name} never get away from their own rate"
+        # ...and it is a wander and not a judder: no ring ever runs faster than a face that is
+        # actually paying attention, or this stops reading as sleep.
+        assert max(abs(r) for r in rates) < abs(overlay.MOODS[overlay.LISTENING].spin) * 2.0
+
+
+def test_the_sleeping_rings_are_not_a_gear_train() -> None:
+    # Two rings whose rates keep a fixed ratio are one mechanism however oddly it is geared, and
+    # the arrangement they hold comes round again. These do not: the ratio between them wanders
+    # over a range, which is what "the movement never looks the same" actually amounts to.
+    mood = overlay.MOODS[overlay.IDLE]
+    ticks = _rates(mood, eye.TICK_SPIN, 0)
+    dots = _rates(mood, eye.DOT_SPIN, 2)
+    ratios = [t / d for t, d in zip(ticks, dots, strict=True) if abs(d) > 0.5]
+    assert len(ratios) > 100, "not enough of the run to say anything"
+    assert max(ratios) - min(ratios) > 1.0, "the rings hold a fixed ratio - this is a gear train"
+    # The dotted ring is the slowest of the three on paper and must not be the slowest in fact,
+    # or the wander is decoration on top of a fixed order rather than a rearrangement of it.
+    assert max(dots) > max(ticks) * 0.5, "the slow ring never gets to overtake anything"
+
+
+def test_a_mood_that_asks_for_no_wander_gets_the_turn_it_always_had() -> None:
+    # sway defaults to 0 and every other mood leaves it there, so this is what keeps the change
+    # to the sleeping face from quietly rewriting the other nine.
+    for phase in (0.0, 3.3, 91.7):
+        for share in (eye.TICK_SPIN, eye.BRACKET_SPIN, eye.DOT_SPIN, eye.SCAN_SPIN):
+            assert eye.wander(phase, 7.0, share, 0.0, 0) == pytest.approx(7.0 * share * phase)
+    assert all(m.sway == 0.0 for state, m in overlay.MOODS.items() if state != overlay.IDLE)
 
 
 def test_the_states_do_not_all_look_the_same() -> None:

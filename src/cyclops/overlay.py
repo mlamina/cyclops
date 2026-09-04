@@ -200,20 +200,26 @@ MOODS = {
     # the same place in every frame reads as a still picture with something flickering behind it,
     # however deep the pulse is made.
     #
-    # Slower than anything else in the table, which is what makes this sleep rather than work.
-    # The spin is a sixtieth of a hunting eye's and a third of an attending one's - slower even
-    # than the stare, which is the stillest he gets while awake - so a turn takes two and a half
-    # minutes: movement you notice having happened rather than movement you watch. It still reads
-    # from across the room, because the brackets run backwards against the ticks and what the eye
-    # picks up is the two moving apart, not either of them going anywhere. The breath is the
-    # longest here, about nine a minute, and like every other period on this panel it is not a
-    # multiple of any of the others.
+    # Slower than anything else in the table, which is what makes this sleep rather than work:
+    # the steady rate is a sixtieth of a hunting eye's and a third of an attending one's, slower
+    # even than the stare, which is the stillest he gets while awake.
+    #
+    # But the steady rate is not what you see. At that rate alone he was barely perceptible - a
+    # gear train turning too slowly to notice, and one that only ever reaches arrangements it has
+    # reached before. The sway is what makes it read: past 1 a ring's wander outruns its own rate,
+    # so each of them speeds up, falls back and turns over on its own schedule, and the ticks,
+    # brackets and dots swap places instead of holding formation. At 1.6 the tick ring runs
+    # anywhere from five degrees a second backwards to ten forwards and spends about a quarter of
+    # its time going the wrong way - never fast, never still, and never twice the same.
+    #
+    # The breath is the longest here, about nine a minute, and like every other period on this
+    # panel it is not a multiple of any of the others.
     #
     # The iris carries that breath, and stays narrow doing it: it swells between a tenth and
     # under two fifths open, which never crosses the threshold the pupil is drawn on, so it grows
     # and shrinks rather than popping in and out - dozing, and nowhere near the 0.52 of a face
     # that is paying attention.
-    IDLE: Mood(tint=GREEN_MID, aperture=0.24, swell=0.14, breath_s=6.5, spin=2.5),
+    IDLE: Mood(tint=GREEN_MID, aperture=0.24, swell=0.14, breath_s=6.5, spin=2.5, sway=1.6),
     # Coming round: the iris only half up, the rings running fast, and a highlight sweeping the
     # rim - a thing spinning itself up rather than a thing paying attention.
     STARTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0),

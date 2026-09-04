@@ -5,7 +5,7 @@ this is that drawing with the rings turning, the iris breathing and the whole th
 whatever the box is doing - so a glance at the middle of the tab row answers "is he there, and
 what is he up to" without reading a word.
 
-Everything the eye does is a :class:`Mood`: nine numbers and a colour. The engine is only the
+Everything the eye does is a :class:`Mood`: ten numbers and a colour. The engine is only the
 mechanism that draws them, which is what makes the eye tunable - a state is not code here, it is
 a row in a table (``overlay.MOODS``), and a new one costs a line. The parameters are meant to be
 pushed around: ``tools/eye_sheet.py`` renders every mood over a strip of time, so a change can be
@@ -67,6 +67,17 @@ BRACKET_SPIN = -0.62
 DOT_SPIN = 0.31
 SCAN_SPIN = 2.3  # the sweeping highlight, when a mood asks for one...
 SCAN_DIM = 0.42  # ...and how far the rim is turned *down* underneath it while it sweeps
+
+# ...and the wander on top of those, for a mood that asks for one - see `Mood.sway` and
+# :func:`wander`. Fixed multiples of one rate are a gear train: it turns, but every arrangement
+# it reaches it has reached before, and a few seconds in, the eye stops reading it as alive.
+TAU = 2.0 * math.pi
+SWAY_S = 16.3  # the shorter of the two periods the wander is built out of. The longer is the
+# golden ratio times it - see BLINK_DRIFT, of which this is the same argument - so their ratio
+# is irrational, the two never come back into step, and no arrangement of the rings is ever
+# held twice. Both are long against a glance at the panel, which is the point: what you see in
+# any few seconds is rings speeding up, falling back and turning over, not a cycle.
+RINGS = 4  # ticks, brackets, dots and the scan arc, each wandering on its own offsets
 
 # How present each ring is against the rim, before the mood's own `rings` scales all of them.
 RIM_LIT = 1.0
@@ -133,6 +144,39 @@ def blink(phase: float, every: float) -> float:
     return 1.0 - breath(since, BLINK_S)
 
 
+def wander(phase: float, spin: float, share: float, sway: float, ring: int) -> float:
+    """Where one ring has got to by *phase*, in degrees: its own steady turn, pushed as it goes.
+
+    *share* is the ring's multiple of the mood's spin - the counter-rotation it would have on
+    its own - and *sway* is how hard it is pushed off that. At 0 this is the plain product the
+    rings used to turn on, so a mood that does not ask for a wander is untouched.
+
+    The push is two sines whose periods are in the golden ratio (see :data:`SWAY_S`), offset per
+    ring so no two are ever doing the same thing at the same time. Written on the *angle* rather
+    than on the rate, which is what makes the amplitude here mean something: a term of period P
+    contributes ``sway * spin`` degrees a second at its steepest whatever P is, so the two
+    periods change how long a surge lasts without changing how hard it pushes.
+
+    The push is scaled by the mood's own spin rather than by the ring's share of it, which is
+    the difference between a set that varies and a set that rearranges: proportional wander
+    leaves the slowest ring slowest forever, while this lets the dotted ring - a third of the
+    tick ring's rate - outrun it, fall behind it and turn back under it.
+
+    Offsets walked by the golden ratio for the reason :func:`blink` walks its own by it: it is
+    the least rational number there is, so no two rings fall into step. Not a PRNG and pointedly
+    not ``hash()``, which is salted per process and would give the box a different eye on every
+    boot - and this has to be the same creature each time it wakes up.
+    """
+    turn = spin * share * phase
+    if sway <= 0.0 or spin == 0.0:
+        return turn
+    long = SWAY_S * (1.0 + BLINK_DRIFT)  # the golden ratio times the short one
+    for i, period in enumerate((SWAY_S, long)):
+        offset = ((ring + 1) * (i + 1) * BLINK_DRIFT) % 1.0
+        turn += sway * spin * period / TAU * math.sin(TAU * (phase / period + offset))
+    return turn
+
+
 @dataclass(frozen=True)
 class Mood:
     """How the eye looks and moves. One per state, and the only thing that differs between them.
@@ -148,6 +192,10 @@ class Mood:
     breath_s: float = 4.0  # seconds per breath. A resting creature is twelve to fifteen a minute
     voice: float = 0.0  # how much further your voice opens it, on top of the breath
     spin: float = 6.0  # degrees a second the ring set turns; the sign is a direction
+    sway: float = 0.0  # ...and how far each ring wanders off that rate, as a multiple of it.
+    # 0 is a gear train, every ring locked to every other. Past 1 a ring's wander outruns its
+    # own rate and it turns over now and then - which is the whole point of it, since a set that
+    # only ever varies its speed still reads as one mechanism running unevenly.
     rings: float = 1.0  # how present the rings are at all, 0 .. 1
     scan: float = 0.0  # length in degrees of a bright arc sweeping the rim, 0 for none
     blink_s: float = 0.0  # mean seconds between blinks; 0 for a mood that does not blink
@@ -164,7 +212,7 @@ class Mood:
             tint=mix(self.tint, other.tint, k),
             **{
                 name: getattr(self, name) + (getattr(other, name) - getattr(self, name)) * k
-                for name in ("aperture", "swell", "breath_s", "voice", "spin", "scan")
+                for name in ("aperture", "swell", "breath_s", "voice", "spin", "scan", "sway")
             },
             rings=self.rings + (other.rings - self.rings) * k,
         )
@@ -319,7 +367,13 @@ class EyeEngine:
         """The whole eye, outside in, at the centre of its own oversampled tile."""
         cx = cy = r = self._c
         tint = mood.tint
-        turn = mood.spin * phase
+        # Each ring is asked where it has got to rather than all of them being read off one
+        # clock. With no sway that is the same product it always was; with one they drift apart,
+        # overtake and turn back under each other - see :func:`wander`.
+        ticks_at = wander(phase, mood.spin, TICK_SPIN, mood.sway, 0)
+        brackets_at = wander(phase, mood.spin, BRACKET_SPIN, mood.sway, 1)
+        dots_at = wander(phase, mood.spin, DOT_SPIN, mood.sway, 2)
+        scan_at = wander(phase, mood.spin, SCAN_SPIN, mood.sway, 3)
         lit = max(0.0, min(1.0, mood.rings))
         stroke, thin = self._stroke, self._thin
 
@@ -339,14 +393,14 @@ class EyeEngine:
             # worked while the accent was a colour and stopped working the day the accent became
             # the tube's own white - there is nowhere paler than pale to go. Turning the rim down
             # instead needs no headroom above the tint and cannot be defeated by any of it.
-            start = (SCAN_SPIN * turn) % 360.0
+            start = scan_at % 360.0
             d.arc(self._box(cx, cy, r), start=start, end=start + mood.scan,
                   fill=shade(RIM_LIT), width=stroke + thin)
 
         tick = shade(TICK_LIT)
         inner, outer = r * (TICKS - TICK_LEN), r * TICKS
         for i in range(TICK_N):
-            a = math.radians(turn * TICK_SPIN + i * 360.0 / TICK_N)
+            a = math.radians(ticks_at + i * 360.0 / TICK_N)
             d.line(
                 [cx + inner * math.cos(a), cy + inner * math.sin(a),
                  cx + outer * math.cos(a), cy + outer * math.sin(a)],
@@ -355,13 +409,13 @@ class EyeEngine:
 
         bracket, box = shade(BRACKET_LIT), self._box(cx, cy, r * BRACKETS)
         for i in range(BRACKET_N):
-            start = turn * BRACKET_SPIN + i * 360.0 / BRACKET_N
+            start = brackets_at + i * 360.0 / BRACKET_N
             d.arc(box, start=start, end=start + BRACKET_ARC, fill=bracket, width=thin)
 
         dot, ring = shade(DOT_LIT), r * DOTS
         size = max(1, thin)
         for i in range(DOT_N):
-            a = math.radians(turn * DOT_SPIN + i * 360.0 / DOT_N)
+            a = math.radians(dots_at + i * 360.0 / DOT_N)
             x, y = cx + ring * math.cos(a), cy + ring * math.sin(a)
             d.ellipse([x - size, y - size, x + size, y + size], fill=dot)
 
@@ -373,7 +427,7 @@ class EyeEngine:
         self._circle(d, cx, cy, iris, shade(IRIS_LIT), thin)
         blade = shade(BLADE_LIT)
         for i in range(BLADE_N):
-            a = math.radians(turn * TICK_SPIN + i * 360.0 / BLADE_N)
+            a = math.radians(ticks_at + i * 360.0 / BLADE_N)
             b = a + math.radians(BLADE_SWEEP)
             d.line(
                 [cx + iris * math.cos(a), cy + iris * math.sin(a),
