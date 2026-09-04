@@ -75,7 +75,6 @@ ENTRY_END = re.compile(r"<!--\s*cyclops:session\s+([0-9a-fA-F-]{36})[^>]*-->")
 # browsable. config.py already put the browser-close flag and the volume file here, for adjacent
 # reasons and with the same argument about /tmp.
 LOCK_FILE = Path.home() / ".cache" / "cyclops" / "projects.lock"
-LOG_FILE = Path.home() / ".cache" / "cyclops" / "projects.log"
 LOCK_WAIT_S = 300.0  # a backstop against a wedged sweep, not a budget anything plans against
 LOCK_POLL_S = 0.5
 
@@ -490,17 +489,6 @@ def torn(project: Project) -> bool:
     done = list(ENTRY_END.finditer(text))
     tail = text[done[-1].end() :] if done else text
     return any(line.startswith("## ") for line in tail.splitlines())
-
-
-def open_log():
-    """The append handle for the detached sweep's own output, directory and all.
-
-    Here rather than in the caller so that the "only store.py writes" rule stays literally true
-    and the grep in the module docstring keeps coming back empty. A rule you have to remember an
-    exception to is not a rule.
-    """
-    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    return LOG_FILE.open("ab")
 
 
 # ------------------------------------------------------------------ the lock

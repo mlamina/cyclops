@@ -1,7 +1,7 @@
 """Filing finished sessions into the projects on the card.
 
-A session ends, its folder is complete, and a moment later a detached process reads it and adds
-it to whichever project it advanced. Nothing here decides that a project should exist - that
+A session ends, and a moment later a detached process (:mod:`cyclops.after`) reads its folder and
+adds it to whichever project it advanced. Nothing here decides that a project should exist - that
 happens in the conversation, through the voice agent's ``track_project`` tool - so this only ever
 chooses between projects a person already agreed to, or files nothing at all.
 
@@ -10,14 +10,14 @@ with a ``session.md`` and no ``project.md`` is one that still needs reading. Tha
 story free. Nothing is filed twice because the receipt says so; nothing is lost because a failure
 leaves the receipt unwritten; a power cut costs one re-read and nothing else.
 
-Deliberately importable with no key, no network and no ``pydantic_ai``: :func:`spawn` is called
-from ``SessionLog.__exit__``, and a second of import time on that path would be a second of
-kiosk shutdown. The agents are imported inside :func:`file_session`, after the key check.
+Deliberately importable with no key and no network: :func:`check` is the offline half and has to
+work on a box that has neither. ``pydantic_ai`` is imported inside :func:`file_session`, after
+the key check, because it costs a second of import on a Pi - and nothing on the teardown path
+imports this package at all any more, which is what that second used to buy.
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
 from datetime import datetime
 from decimal import Decimal
@@ -30,50 +30,10 @@ from . import store
 from .deps import Filing, read_session
 from .store import Busy, Exists, Project, Unfilable, catalog, create
 
-__all__ = ["Busy", "Exists", "Project", "Unfilable", "catalog", "create", "main", "spawn", "sweep"]
+__all__ = ["Busy", "Exists", "Project", "Unfilable", "catalog", "create", "main", "sweep"]
 
 FILE_PROMPT = "File this session. It is at {folder}."
 SWEEP_BUDGET_S = 900.0  # whatever is left over simply waits for the next session to end
-
-
-# ------------------------------------------------------------------ the detached spawn
-
-
-def spawn(folder: Path, settings: Settings) -> None:
-    """Start a detached sweep and let go of it. Never waits, never raises.
-
-    A process rather than a thread, for one reason: on a deploy ``start-kiosk.sh`` pkills the
-    kiosk and starts a new one two seconds later, and a thread dies with the process that owns it.
-    Filing takes model calls and some file copies - seconds, sometimes tens of them - so it has to
-    outlive whatever spawned it.
-
-    It sweeps rather than filing the one folder it was handed. That is what makes this
-    self-healing with no timer anywhere: the sweep files the session that just ended *and*
-    anything an earlier power cut left behind, oldest first.
-    """
-    handle = store.open_log()
-    try:
-        started = f"{datetime.now().astimezone():%Y-%m-%d %H:%M:%S}"
-        handle.write(f"\n=== {started} after {folder.name}\n".encode())
-        handle.flush()
-        subprocess.Popen(  # noqa: S603 - the argv is ours; nothing here came from a model
-            [sys.executable, "-m", "cyclops.projects", "--sweep"],
-            # setsid, for two things: a Ctrl+C in the terminal that ran `cyclops` goes to the
-            # foreground process group and would otherwise take this with it, and the child gets
-            # a command line of its own that cannot match start-kiosk.sh's `pkill -f
-            # bin/cyclops-kiosk`, however that pattern is later edited.
-            start_new_session=True,
-            # The working directory is not incidental. sessions_dir and projects_dir are
-            # CWD-relative and deliberately unresolved, and load_settings finds .env by walking up
-            # from the CWD - start the child anywhere else and it files into the wrong tree with
-            # no error on either side. Passed explicitly so it reads as a decision.
-            cwd=Path.cwd(),
-            stdin=subprocess.DEVNULL,
-            stdout=handle,
-            stderr=handle,
-        )
-    finally:
-        handle.close()  # the child holds its own dup; ours would leak one per session
 
 
 # ------------------------------------------------------------------ what needs doing
@@ -248,7 +208,12 @@ def _when(session) -> datetime:
 async def sweep(
     settings: Settings, *, again: bool = False, limit: int = 0, dry_run: bool = False
 ) -> None:
-    """Read everything that still needs reading, oldest first."""
+    """Read everything that still needs reading, oldest first.
+
+    A sweep rather than the one folder a session end was handed, which is what makes this
+    self-healing with no timer anywhere: it files the session that just ended *and* anything an
+    earlier power cut or a night with no wifi left behind.
+    """
     import asyncio
 
     from pydantic_ai.usage import RunUsage

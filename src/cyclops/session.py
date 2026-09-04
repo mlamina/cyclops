@@ -24,15 +24,20 @@ Two rules shape everything here:
   session's own event loop - the one thread that must never block, because on ext4 ``data=ordered``
   a small fsync waits on the whole transaction's ordered buffers, which on a kiosk means whatever
   x264 has in flight. Do not add one. The single place worth paying is :meth:`SessionLog._sync_log`
-  at the close, because that is the moment ``session.md`` and ``summary.md`` are written *from
-  these same records*, and a page that outlived its own log is the one inconsistency this format
-  cannot repair. Everything before that is still best-effort, which is exactly why the format is
+  at the close, because that is the moment ``session.md`` is written *from these same records*,
+  and a page that outlived its own log is the one inconsistency this format cannot repair.
+  Everything before that is still best-effort, which is exactly why the format is
   JSON Lines rather than JSON: no shared state between lines, so :func:`read_log` drops a
   half-written last line and everything before it is still a session.
 * **Everything else lands whole or not at all.** Every file this module writes goes through
   :mod:`cyclops.card`, which writes to a scratch name, fsyncs it and renames it into place. A
   power cut used to leave a zero-byte ``session.md`` wearing the name that means "this session
   finished"; now it leaves the previous state, or nothing, and recovery can tell.
+* **Nothing that needs a network happens here.** Naming the folder, writing its ``summary.md``,
+  noting what was said about the person and filing the session under a project are all model
+  calls, and all of them used to sit between the tap that ends a session and the panel going
+  dark. They happen in a detached process now - see :mod:`cyclops.after` - which is why what is
+  left in this teardown is arithmetic and file writes and nothing else.
 
 Writes arrive from three threads - the session's event loop (:meth:`SessionLog.observe`), the
 kiosk's shutter thread (via :func:`note`), and the teardown - so the handle is lock-guarded.
@@ -80,7 +85,6 @@ VIDEO = card.VIDEO
 STAMP = card.STAMP
 STAMPED = card.STAMPED
 read_log = card.read_log  # moved there so triage() can use it; the name still lives here
-SLUG_JOIN_S = 12.0  # a hair over slug.DESCRIBE_TIMEOUT_S; it runs beside the mux, not after
 # How many sessions one boot-time recovery hands to the projects sweep. A backlog after a
 # long outage drains a few at a time rather than in one unattended burst - and it drains
 # anyway, because every session end spawns a full sweep of its own.
@@ -161,9 +165,9 @@ class SessionLog:
         speaker: Speaker | None = None,
         frames: FrameSource | None = None,  # only the kiosk has one; only it gets a video.mp4
         # Somewhere to say which step of the teardown is running. Optional because only the
-        # kiosk has a panel to say it on - the CLI passes nothing and is unchanged. This is the
-        # longest the device is ever silent: a mux gets up to record.MUX_TIMEOUT_S and the
-        # naming model up to SLUG_JOIN_S, and all of it used to happen behind one fixed word.
+        # kiosk has a panel to say it on - the CLI passes nothing and is unchanged. All that is
+        # left to narrate is the mux, which gets up to record.MUX_TIMEOUT_S; it used to share one
+        # fixed word with the model calls that now happen in cyclops.after.
         on_phase: Callable[[str], None] | None = None,
     ) -> None:
         self.settings = settings
@@ -171,8 +175,6 @@ class SessionLog:
         self.entrypoint = entrypoint
         self.started = datetime.now().astimezone()
         self.dir = settings.sessions_dir / self.started.strftime(STAMP)
-        self.slug = ""  # empty until __exit__ has named it
-        self.summary = ""  # the text of summary.md, likewise; empty means none was had
         self.failed = ""  # non-empty once logging gave up; the session carries on regardless
         self._agent = agent
         self._mic = mic
@@ -241,27 +243,11 @@ class SessionLog:
             if _live is self:
                 _live = None
         self._agent.on_event = None
-        # Both round trips go out now and hide behind the mux below. They are two calls rather
-        # than one because they are two jobs: what this session was, and what this session taught
-        # us about the person. Nothing has to agree between them, which is the only reason the
-        # naming call gets to stay the tidy single round trip it is.
-        namer = self._start_naming()
-        rememberer = self._start_remembering()
         self._stop_recorder()  # says "saving the video" for itself, when there is one
-        # One budget across both, not one each: they run at the same time, so two calls must not
-        # be able to cost twice what one did. A shutdown that takes twelve seconds is a shutdown
-        # somebody waits through; twenty-four is one they pull the plug on.
-        if namer is not None or rememberer is not None:
-            self._say("summarising…")
-            deadline = time.monotonic() + SLUG_JOIN_S
-            for worker in (namer, rememberer):
-                if worker is not None:
-                    worker.join(max(0.0, deadline - time.monotonic()))
         reason = _reason(exc_type)
         fields: dict[str, Any] = {
             "reason": reason,
             "seconds": self._elapsed(),
-            "slug": self.slug,  # in the file too, so the folder name is always reconstructible
             # Only the ones that landed, so this agrees with card.triage counting files in
             # photos/: an edit that failed leaves a record saying so and no picture.
             "photos": sum(
@@ -270,23 +256,20 @@ class SessionLog:
         }
         if reason == "error" and exc is not None:
             fields["error"] = f"{type(exc).__name__}: {exc}"
-        # One phrase over the four steps that follow rather than one each: the fsync is the only
-        # one of them that takes measurable time, and "naming the folder" for a rename that
-        # returns in microseconds is a caption about nothing.
+        # One phrase over the three steps that follow rather than one each: the fsync is the only
+        # one of them that takes measurable time, and the other two are a file write apiece.
         self._say("writing the notes…")
         self.event("end", **fields)
         self._sync_log()  # the records are on the card before anything is derived from them
-        self._write_summary()  # before the page, so the page stays the "finished" marker
         self._write_page()  # written last, which is what makes its presence mean "finished"
-        self._rename()
         self._report()
-        self._file()  # does not wait
-        # Closing drops this folder's flock, so it goes last of all: everything above renames
-        # files and the folder itself, and a recovery sweep that started mid-teardown would
-        # otherwise be free to do the same thing at the same time. Nothing writes after the end
-        # record - `_live` was cleared at the top, so note() is already a no-op - which is what
-        # makes it safe to keep the handle open this long.
+        # Closing drops this folder's flock, and it comes *before* the hand-off rather than after
+        # everything else: the child's first act is to rename this folder, and card.triage reads
+        # a folder that still claims itself as live and leaves it alone. Nothing writes after the
+        # end record - `_live` was cleared at the top, so note() is already a no-op - which is
+        # what makes it safe to have kept the handle open this long.
         self._close_handle()
+        self._after()  # named, remembered and filed in another process, on its own time
 
     def _start_recorder(self) -> None:
         """Tap the mic and the speaker for this session's video, if there is a camera for one."""
@@ -321,101 +304,6 @@ class SessionLog:
         elif recorder.failed:
             self.event("video", error=recorder.failed)
 
-    def _start_naming(self) -> threading.Thread | None:
-        """Ask a small model what this was, off-thread so the mux hides the wait.
-
-        One call answers both questions - what to call the folder, and what happened in it - so
-        the name and the summary inside can never disagree about the same conversation.
-        """
-        if self.failed or not self.settings.slug:
-            return None
-        text = transcript_text(self._records)
-        if not text:
-            return None
-        thread = threading.Thread(
-            target=self._describe, name="session-slug", args=(text,), daemon=True
-        )
-        thread.start()
-        return thread
-
-    def _describe(self, text: str) -> None:
-        # Imported here rather than at module scope so this module - and, more to the point,
-        # `cyclops-sessions --fix` - keeps working on a box with no key and no network.
-        from .slug import describe_session
-
-        described = describe_session(text, self.settings)
-        self.slug = described.slug
-        self.summary = described.page
-
-    def _start_remembering(self) -> threading.Thread | None:
-        """Ask a small model what this conversation said about the person, off-thread.
-
-        Shaped like :meth:`_start_naming` and started beside it. A failed session is skipped for
-        the same reason it is skipped there: a folder we could not write is not evidence about
-        anybody.
-        """
-        if self.failed or not self.settings.remember:
-            return None
-        text = transcript_text(self._records)
-        if not text:
-            return None
-        thread = threading.Thread(
-            target=self._remember, name="session-about", args=(text,), daemon=True
-        )
-        thread.start()
-        return thread
-
-    def _remember(self, text: str) -> None:
-        """Update ``about-you.md``, in the thread, on its own.
-
-        The one derived file this class does not write in :meth:`__exit__` alongside the others,
-        and deliberately: it lives outside the session folder, so it sits outside the
-        summary-then-page-then-rename-then-receipt ordering that everything in there is built
-        around. Giving it a ``_write_`` step would enrol it in an invariant it has no part in and
-        invite the next reader to wonder what it means for the folder. It means nothing for the
-        folder.
-
-        An empty answer is the normal outcome of most conversations and means leave the list
-        alone - see :mod:`cyclops.about`.
-        """
-        from .about import read, remember, write  # here, like slug: a keyless box still imports
-
-        known = read(self.settings)
-        facts = remember(text, known, self.settings)
-        if not facts or facts == known:
-            return
-        write(self.settings, facts)
-        print(f"· remembered: {len(facts)} thing(s) about you (was {len(known)})", flush=True)
-
-    def _rename(self) -> None:
-        """Append the slug. Atomic within a filesystem, so nothing sees a half-named folder."""
-        if self.failed or not self.slug:
-            return
-        target = self.dir.with_name(f"{self.dir.name}_{self.slug}")
-        if target.exists():
-            return
-        try:
-            self.dir.rename(target)
-        except OSError:
-            return  # the end record already says what it should have been called
-        card.sync_dir(target.parent)  # a rename is a change to the directory; sync it too
-        self.dir = target
-
-    def _write_summary(self) -> None:
-        """The sentence and the paragraph a small model made of this session.
-
-        Written before :meth:`_write_page`, deliberately: ``session.md`` being present is what
-        tells ``cyclops-sessions --fix`` a session finished, and a summary that landed after it
-        would put a folder in a state that marker does not describe. Missing is a normal
-        outcome - no key, no network, nothing worth summarising.
-        """
-        if self.failed or not self.summary:
-            return
-        try:
-            card.write_text(self.dir / SUMMARY_NAME, self.summary)
-        except OSError as exc:
-            self._give_up(f"{type(exc).__name__}: {exc}")
-
     def _write_page(self) -> None:
         if self.failed:
             return
@@ -424,37 +312,41 @@ class SessionLog:
         except OSError as exc:
             self._give_up(f"{type(exc).__name__}: {exc}")
 
-    def _file(self) -> None:
-        """Hand the card to ``cyclops-projects`` and let go of it.
+    def _after(self) -> None:
+        """Hand the folder to a detached child and let go of it - see :mod:`cyclops.after`.
 
-        Spawned here rather than anywhere earlier for three reasons, each of which is a bug
-        avoided: after :meth:`_write_page`, because ``session.md`` being present is what tells a
-        sweep a session is finished and this is now the fourth place that invariant is relied on;
-        after :meth:`_rename`, because the child is handed a tree whose folders must already be
-        at their final names; and after :meth:`_report`, because that is this log's last word
-        about itself and should not be pushed behind a fork.
+        Everything a finished session still wants doing needs a model: a name, the paragraph in
+        ``summary.md``, whatever it said about the person, a place in ``projects/``. None of it
+        needs doing *now*. A person who taps to end a session has said they are done, and made
+        the whole of it - three round trips - into somebody's wait.
 
-        Nothing is waited on and nothing can raise. The folder is already complete and correct
-        without this, and a filing that never started is not a failed session - it just leaves no
-        ``project.md``, which is exactly how the next sweep knows to pick this session up. The
-        absence of the receipt is the retry queue.
+        Spawned after :meth:`_close_handle`, which is the one ordering constraint left in this
+        teardown: a folder still holding the flock on its own log reads as live to
+        :func:`cyclops.card.triage`, and renaming this folder is the first thing the child does.
+
+        Nothing is waited on and nothing can raise. The folder is complete and readable without
+        any of it, and a child that never started is not a failed session - it leaves a folder
+        with no name and no ``project.md``, which is exactly how the next one knows to pick this
+        session up. The absence of the files is the retry queue.
         """
-        if self.failed or not self.settings.projects or not self.settings.api_key:
+        if self.failed:
             return
         try:
-            from . import projects  # imported here, like slug, so a keyless box still runs
+            from . import after  # imported here, like slug, so a keyless box still runs
 
-            projects.spawn(self.dir, self.settings)
-        except Exception:  # noqa: BLE001 - a filing that did not start never reaches teardown
+            if after.wanted(self.settings):
+                after.spawn(self.dir, self.settings)
+        except Exception:  # noqa: BLE001 - a hand-off that did not start never reaches teardown
             pass
 
     def _sync_log(self) -> None:
         """Put the records on the card. Once, at the end - see the module docstring.
 
-        This is the one fsync a session pays, and it is here because the next three lines
-        derive ``summary.md`` and ``session.md`` from these very records. Those are written
-        atomically and durably; a page that outlived its own log would be the one inconsistency
-        this format cannot repair.
+        This is the one fsync a session pays, and it is here because the next line derives
+        ``session.md`` from these very records. It is written atomically and durably; a page that
+        outlived its own log would be the one inconsistency this format cannot repair.
+        ``summary.md`` is derived from them too, in another process and out of the file this
+        fsync has just made durable - the same guarantee, one step further along.
         """
         with self._lock:
             handle = self._handle
@@ -753,11 +645,16 @@ def _shot_time(file: str) -> str:
     return stem.replace("-", ":") if re.fullmatch(r"\d{2}-\d{2}-\d{2}", stem) else stem
 
 
-def render_markdown(records: list[dict], *, dropped: int = 0) -> str:
+def render_markdown(records: list[dict], *, dropped: int = 0, slug: str = "") -> str:
     """The whole page, from records alone.
 
     Pure on purpose: the live close path and ``cyclops-sessions --fix`` both call this, which is
     the only way the two can be guaranteed to agree about what a session looked like.
+
+    The one thing the records cannot carry is the name, because a session is named after it has
+    written its last one - so :func:`describe` passes the slug it just chose and renders the page
+    again. Older logs wrote the name into their ``end`` record, back when naming happened in the
+    teardown, and those still title themselves from it.
     """
     head = next((r for r in records if r.get("type") == "session"), {})
     tail = next((r for r in reversed(records) if r.get("type") == "end"), {})
@@ -769,7 +666,7 @@ def render_markdown(records: list[dict], *, dropped: int = 0) -> str:
     except ValueError:
         when = None
     seconds = tail.get("seconds", records[-1].get("t") if records else None)
-    slug = str(tail.get("slug") or "")
+    slug = slug or str(tail.get("slug") or "")
     title = slug.replace("-", " ").title() if slug else (
         f"Session {when:%Y-%m-%d %H:%M}" if when else "Session"
     )
@@ -1026,7 +923,7 @@ def _fix(folder: Path, state: card.State | None = None) -> list[str]:
     return did
 
 
-def _describe(
+def describe(
     folder: Path, settings: Settings, state: card.State | None = None
 ) -> tuple[Path, list[str]]:
     """Give a finished session whatever it is missing: a name, a summary, or both.
@@ -1034,6 +931,10 @@ def _describe(
     Where the folder ends up comes back with what was done to it, because naming moves it. A
     folder that already has both costs nothing - it is never sent to the model at all, so this
     can be run over a whole card repeatedly without paying for it twice.
+
+    Public because this is where naming lives now: :mod:`cyclops.after` calls it moments after a
+    session ends, boot recovery calls it over the whole card, and ``cyclops-sessions --name``
+    calls it by hand. All three are the same call on the same folder in different weather.
     """
     from .slug import describe_session
 
@@ -1049,12 +950,11 @@ def _describe(
         # for a conversation about nothing into "", meaning leave the folder dated. Asking
         # again buys the same answer at the same price, on every boot, forever.
         return folder, []
-    records, _ = read_log(folder / LOG_NAME)
+    records, dropped = read_log(folder / LOG_NAME)
     text = transcript_text(records)
     if not text:
-        # The same check `_start_naming` makes before spending a round trip. It was missing
-        # here, so `--name` sent every silent session on the card to the model to be told
-        # there was nothing in it.
+        # Checked before spending a round trip: `--name` used to send every silent session on
+        # the card to the model to be told there was nothing in it.
         return folder, []
     described = describe_session(text, settings)
     did = []
@@ -1066,6 +966,17 @@ def _describe(
             did.append(f"wrote {SUMMARY_NAME}")
         except OSError as exc:
             did.append(f"could not write {SUMMARY_NAME} ({exc})")
+    if needs_name and described.slug and state.page:
+        # The page was rendered before this session had a name. Give it the one it just got -
+        # its heading and its `slug:` line are the only things in there that could not be known
+        # at the time. Atomic like every other write here, so a failure leaves the page that is
+        # already on the card, and a title is never worth failing a rename over.
+        try:
+            card.write_text(
+                folder / PAGE_NAME, render_markdown(records, dropped=dropped, slug=described.slug)
+            )
+        except OSError as exc:
+            did.append(f"could not retitle {PAGE_NAME} ({exc})")
     if needs_name and described.slug:
         target = folder.with_name(f"{folder.name}_{described.slug}")
         if not target.exists():
@@ -1078,6 +989,29 @@ def _describe(
                 did.append(f"named {target.name}")
                 folder = target
     return folder, did
+
+
+def describe_pending(settings: Settings) -> int:
+    """Name and summarise every session on the card that has neither. How many got a name.
+
+    The sweep behind :func:`describe`, and the shape every other job in :mod:`cyclops.after`
+    has: it does the session that just ended *and* whatever a power cut or a night with no wifi
+    left behind, oldest first. A folder that is already described costs a :func:`cyclops.card.
+    triage` and no model request, so running this after every conversation is close to free.
+
+    A live folder is stepped over, which matters more here than it does at boot: this now runs
+    while the kiosk is awake, and naming a folder *renames* it - out from under a session that
+    is writing into it, if we got this wrong.
+    """
+    named = 0
+    for folder in _folders(settings.sessions_dir):
+        if card.locked(folder):
+            continue  # a session is writing here; it will be named after it ends, like this one
+        folder, did = describe(folder, settings)
+        for one in did:
+            print(f"· {folder.name}: {one}", flush=True)
+            named += one.startswith("named")
+    return named
 
 
 def _remove(folder: Path, *, dry_run: bool = False) -> str:
@@ -1158,7 +1092,7 @@ def _recover(settings: Settings, *, offline: bool = False, dry_run: bool = False
             print(f"· {folder.name}: {did}", flush=True)
             repaired += 1
         if not offline and settings.api_key:
-            folder, did = _describe(folder, settings)
+            folder, did = describe(folder, settings)
             for one in did:
                 print(f"· {folder.name}: {one}", flush=True)
                 named += one.startswith("named")
@@ -1219,7 +1153,7 @@ def _wanting(folder: Path) -> bool:
 
 
 def _would_fix(folder: Path, state: card.State, *, offline: bool = False) -> list[str]:
-    """What :func:`_fix` and :func:`_describe` would do, for ``--dry-run``. Touches nothing.
+    """What :func:`_fix` and :func:`describe` would do, for ``--dry-run``. Touches nothing.
 
     Has to make exactly the decisions those two make, including the one that is easy to forget:
     a session nobody spoke in is never sent to the model, so predicting a name for one would be
@@ -1234,7 +1168,7 @@ def _would_fix(folder: Path, state: card.State, *, offline: bool = False) -> lis
         return would
     records, _ = read_log(folder / LOG_NAME)
     if not transcript_text(records):
-        return would  # the guard `_describe` makes: nothing was said, so nothing to describe
+        return would  # the guard `describe` makes: nothing was said, so nothing to describe
     if not state.summary:
         would.append(f"write {SUMMARY_NAME}")
     if not state.named:
@@ -1245,7 +1179,7 @@ def _would_fix(folder: Path, state: card.State, *, offline: bool = False) -> lis
 def _file_the_card(settings: Settings) -> None:
     """Hand what we repaired to the projects sweep, and wait for it.
 
-    In-process rather than :func:`cyclops.projects.spawn`, which is what a session end uses. A
+    In-process rather than :func:`cyclops.after.spawn`, which is what a session end uses. A
     detached child would outlive a ``Type=oneshot`` unit, take its output to
     ``~/.cache/cyclops/projects.log`` instead of the journal, and put its own failure outside
     systemd's reach. Imported here, as ``_file`` does, so a box with no key still runs.
@@ -1309,10 +1243,9 @@ def main() -> None:
         if fix:
             for did in _fix(folder):
                 print(f"· {folder.name}: {did}", flush=True)
-        if rename:
-            folder, did = _describe(folder, settings)
-            for one in did:
-                print(f"· {folder.name}: {one}", flush=True)
+    if rename:
+        describe_pending(settings)
+    for folder in _folders(settings.sessions_dir):
         print(_summarise(folder))
 
 

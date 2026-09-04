@@ -212,3 +212,59 @@ def test_no_call_site_anywhere_passes_a_kind_field():
                 line = text[: match.start()].count("\n") + 1
                 calls.append(f"{path.relative_to(src.parent.parent)}:{line}")
     assert not calls, f"note() cannot take a 'kind' field; rename it at {', '.join(calls)}"
+
+
+# ------------------------------------------------------------------ the hand-off
+
+
+@pytest.fixture
+def talkative(tmp_path, monkeypatch):
+    """A session with everything switched on and a key, so the teardown could call a model."""
+    monkeypatch.setattr(session, "_file_the_card", lambda settings: None)
+    settings = Settings(api_key="sk-test", sessions_dir=tmp_path / "sessions")
+    return session.SessionLog(settings, FakeAgent(), entrypoint="cli")
+
+
+def test_the_teardown_calls_no_model_and_hands_the_folder_over(talkative, monkeypatch):
+    """The whole point: a tap that ends a session must not wait on three round trips."""
+    from cyclops import after
+
+    asked = []
+    monkeypatch.setattr("cyclops.slug.describe_session",
+                        lambda text, settings: asked.append("named") or None)
+    monkeypatch.setattr("cyclops.about.remember",
+                        lambda text, facts, settings: asked.append("remembered") or [])
+    handed = []
+    monkeypatch.setattr(after, "spawn", lambda folder, settings: handed.append(folder))
+
+    with talkative:
+        talkative.event("you", text="how tight should this bolt be?")
+
+    assert asked == [], "nothing in the teardown may wait on a model"
+    assert handed == [talkative.dir], "and the folder must be handed to somebody who will"
+
+
+def test_the_flock_is_dropped_before_the_child_is_spawned(talkative, monkeypatch):
+    """The child's first act is to rename this folder, and triage leaves live folders alone."""
+    from cyclops import after
+
+    locked_at_spawn = []
+    monkeypatch.setattr(after, "spawn",
+                        lambda folder, settings: locked_at_spawn.append(card.locked(folder)))
+
+    with talkative:
+        talkative.event("you", text="hello")
+
+    assert locked_at_spawn == [False]
+
+
+def test_a_session_that_could_not_be_logged_is_never_handed_over(talkative, monkeypatch):
+    from cyclops import after
+
+    handed = []
+    monkeypatch.setattr(after, "spawn", lambda folder, settings: handed.append(folder))
+
+    with talkative:
+        talkative._give_up("the card went read-only")
+
+    assert handed == [], "a folder we could not write is not one to name, remember or file"

@@ -1,7 +1,7 @@
 """Repairing what a power cut left behind, and refusing to delete anything that survived it.
 
 Imports ``cyclops.session``, so this suite pulls in OpenCV - keep the fast, pure checks in
-``test_card.py``. Nothing here touches a camera, a model or the network: ``_describe`` is the
+``test_card.py``. Nothing here touches a camera, a model or the network: ``describe`` is the
 only step that would, and it is never reached (no key in the environment under test) or is
 stubbed out.
 """
@@ -220,7 +220,7 @@ def test_a_failed_mux_asks_systemd_to_come_back(card_root, monkeypatch):
     folder = build_incident(card_root)
     (folder / card.PARTS).mkdir()
     monkeypatch.setattr(session, "mux", lambda work, out: Mux(False, "ffmpeg: not found"))
-    monkeypatch.setattr(session, "_describe", lambda folder, settings, state=None: (folder, []))
+    monkeypatch.setattr(session, "describe", lambda folder, settings, state=None: (folder, []))
 
     code = session._recover(settings_for(card_root, api_key="sk-test"))
 
@@ -284,7 +284,7 @@ def test_a_session_with_a_summary_and_no_name_is_never_asked_again(card_root, mo
     monkeypatch.setattr("cyclops.slug.describe_session",
                         lambda text, settings: asked.append(text) or None)
 
-    back, did = session._describe(folder, settings_for(card_root, api_key="sk-test"))
+    back, did = session.describe(folder, settings_for(card_root, api_key="sk-test"))
 
     assert asked == [], "a described session must not go back to the model"
     assert (back, did) == (folder, [])
@@ -302,7 +302,45 @@ def test_a_session_that_was_never_described_still_gets_asked(card_root, monkeypa
     monkeypatch.setattr("cyclops.slug.describe_session",
                         lambda text, settings: Description(slug="mic-test", title="A mic test."))
 
-    back, did = session._describe(folder, settings_for(card_root, api_key="sk-test"))
+    back, did = session.describe(folder, settings_for(card_root, api_key="sk-test"))
 
     assert back.name == "2026-08-26_18-00-00_mic-test"
     assert f"wrote {card.SUMMARY_NAME}" in did
+
+
+# ------------------------------------------------------------------ naming, after the fact
+
+
+def test_naming_a_session_retitles_its_page(card_root, monkeypatch):
+    """session.md is rendered before the name exists, so naming has to go back and say it."""
+    from cyclops.slug import Description
+
+    folder = described(card_root, "2026-08-26_19-02-11", summary=False)
+    (folder / card.PAGE_NAME).write_text(session.render_markdown(card.read_log(
+        folder / card.LOG_NAME)[0]))
+    assert "Session 2026-08-28" in (folder / card.PAGE_NAME).read_text()
+
+    monkeypatch.setattr("cyclops.slug.describe_session", lambda text, settings: Description(
+        slug="bolt-torque", title="A bolt.", summary="Talked about a bolt."))
+    folder, did = session.describe(folder, settings_for(card_root, api_key="sk-test"))
+
+    assert any(one.startswith("named") for one in did)
+    page = (folder / card.PAGE_NAME).read_text()
+    assert "# Bolt Torque" in page and "slug: bolt-torque" in page
+
+
+def test_a_live_session_is_never_named_out_from_under_itself(card_root, monkeypatch):
+    """describe_pending runs while the kiosk is awake now, so this is the guard that matters."""
+    folder = described(card_root, "2026-08-26_19-40-00", summary=False)
+    handle = (folder / card.LOG_NAME).open("a", encoding="utf-8")
+    card.claim(handle)
+    asked = []
+    monkeypatch.setattr("cyclops.slug.describe_session",
+                        lambda text, settings: asked.append(text) or None)
+    try:
+        session.describe_pending(settings_for(card_root, api_key="sk-test"))
+    finally:
+        handle.close()
+
+    assert asked == [], "a folder holding its own flock is a conversation in progress"
+    assert folder.is_dir(), "and above all, it was not renamed"

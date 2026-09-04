@@ -195,7 +195,9 @@ class SessionController:
         Asked by the kiosk, which shows an optimistic CLOSING on the tap and needs to know how
         long to keep believing it. This controller goes on honestly reporting LISTENING the
         whole time, because the state machine describes the *agent* and the agent is the first
-        thing to go; the mux and the naming that follow it are not a state, they are a queue.
+        thing to go; the mux that follows it is not a state, it is a queue. (The naming and the
+        summarising used to be in that queue too. They are in another process now - see
+        :mod:`cyclops.after` - which is most of why this stretch is short.)
         """
         return self._closing
 

@@ -89,9 +89,15 @@ and what was left open. The sentence and the paragraph become `summary.md`. One 
 three, so the name and the summary can never disagree about the same conversation.
 
 With no network, no key, or `CYCLOPS_SLUG=0`, the folder keeps its date-time name and gets no
-summary. The call is capped at ten seconds, runs alongside the video mux, and never blocks a
-shutdown; the three answers are read out of the reply independently, so a mangled one costs you
+summary. The three answers are read out of the reply independently, so a mangled one costs you
 one of them rather than all three.
+
+**None of it happens while you wait.** The tap that ends a session ends it: the teardown writes
+`session.md` from records it already has and hands the folder to a detached `python -m
+cyclops.after`, which names it, notes anything it said about you, and files it — see below. The
+kiosk is back to sleep before the first of those three round trips comes back. Each is a sweep of
+the whole card rather than a visit to one folder, so a child that never started, or ran with the
+wifi down, costs nothing but time: the next session to end tries again, and so does every boot.
 
 **Continuity.** Every new session starts knowing where the last one got to. Cyclops's
 instructions gain a short *Where you left off* section built from the cards already written:
@@ -177,6 +183,7 @@ uv run cyclops-sessions --fix            # finish anything half-done (offline, n
 uv run cyclops-sessions --fix --name     # ...and name/summarise what the live call missed
 uv run cyclops-sessions --recover        # all of the above over the whole card, then file it
 uv run cyclops-sessions --recover --dry-run   # ...say what that would do, touch nothing
+uv run python -m cyclops.after PATH      # what a session end spawns: name, remember, file
 ```
 
 `--recover` is what `cyclops-recover.service` runs at boot, and it is the two verbs above plus
@@ -238,9 +245,8 @@ spirit level*.
 **The list is rewritten, not added to.** When a session ends, a model gets the list as it stands
 plus the transcript and answers with the whole list back, so *uses Fusion 360* becomes *uses
 OnShape* in place rather than sitting on the card next to its own contradiction — which is what
-an append-only list gives you after a month. It is a second call beside the naming one and goes
-out at the same moment, so the two share one twelve-second budget and a shutdown costs what it
-always did.
+an append-only list gives you after a month. It goes out in the same detached process as the
+naming, once the session is already over, so it costs a shutdown nothing at all.
 
 It is `gpt-5.6-terra` rather than the `gpt-5.4-nano` that names the session, and that is the one
 place these two calls genuinely differ. Naming is a transcription — read a conversation, say what
@@ -310,8 +316,8 @@ It's told the names and nothing else. When you come back to something it calls `
 read what was decided last time — so twenty projects cost twenty lines of its attention, not
 twenty pages.
 
-**The filing happens afterwards, on its own.** When a session ends, a detached `cyclops-projects
---sweep` starts and the kiosk forgets about it: an orchestrator on
+**The filing happens afterwards, on its own.** It is the last of the three jobs `cyclops.after`
+does once a session has ended, and the kiosk forgets about all of them: an orchestrator on
 [Pydantic AI](https://ai.pydantic.dev) reads the session and delegates to four smaller agents —
 one reads the transcript, one decides which project it advanced, one writes the log entry and the
 new page, one picks a few photos worth keeping. It never invents a project: it either files under
