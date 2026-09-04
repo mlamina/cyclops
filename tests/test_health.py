@@ -135,23 +135,23 @@ def test_the_lamp_says_which_kind_of_hot_in_colour(
 
 
 def test_the_lamp_never_shoves_the_readouts_along() -> None:
-    """SIG, REC and the session clock are laid out from the frame edge inwards.
+    """The meter, the tags and the session clock each have a place of their own in the pod.
 
     Putting the lamp in that group would mean the clock moved whenever the board got warm, which
     is the sort of thing that makes a panel feel unreliable while it is telling you the truth.
-    It hangs off the left of the pod's bottom row instead, beside REC, while the clock holds the
-    right edge of that same row. The two ends are laid out independently and grow towards each
-    other, so neither can push the other along - which is what this says.
+    It has a slot of its own in the middle of the pod, between the meter and the clock, and that
+    slot is there whether the lamp is lit or not. The clock is pinned to the pod's right edge and
+    the meter to its left, so neither of them can be pushed by anything appearing between them -
+    which is what this says.
 
-    Split at the clock's own left edge rather than at the middle of the frame: the pod is a
-    narrow module in the middle of the top edge now, so "the right-hand half" would have been
-    picture.
+    Split at the clock's own left edge rather than at the middle of the frame: the pod is a slim
+    module in the middle of the top edge now, so "the right-hand half" would have been picture.
     """
     ov = overlay.Overlay(800, 480)
     cool = _strip(ov.render(heat="", **AWAKE), ov)
     hot = _strip(ov.render(heat="throttled", **AWAKE), ov)
     clock_right, _, _ = ov._readouts(False)
-    right = slice(int(clock_right - ov._clock_w) - ov._gap, None)
+    right = slice(int(clock_right - ov._clock_w), None)
     assert np.array_equal(cool[:, right], hot[:, right]), "the right-hand readouts moved"
     assert not np.array_equal(cool, hot), "...and nothing was drawn at all"
 

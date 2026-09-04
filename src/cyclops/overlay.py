@@ -10,7 +10,7 @@ The layout is two corner mounts, a status pod and a picture. A mount's rail come
 one panel edge, ramps across the corner at 45 degrees and lands square on the other, and the two
 of them carry the three controls; the pod is that same shape turned inwards, hanging off the
 middle of the top edge with the readouts in it. This replaced a strip and a three-cell tab row
-that between them covered 29% of the panel - the chrome here covers about 17%, and the middle of
+that between them covered 29% of the panel - the chrome here covers 16%, and the middle of
 the screen, which is what somebody holding a camera down a pipe is actually looking at, is
 nothing but picture and a four-arc reticle on the lens axis.
 
@@ -379,9 +379,15 @@ PLATE_WASH = 0.34  # how far a bracket's plate is put towards SCREEN. Not opaque
 # splays out at 45 to the flat that carries the readouts, and goes back up the same way. So it
 # is a module rather than a mount - it has no corner to be bolted into - but it is plainly the
 # same metal, and both its ends land square on the frame like everything else does.
-POD_H = 76.0  # its depth, which is two rows of readout and the rail under them
-POD_STEP = 26.0  # the square drop off the top edge before the splay starts
+# One row, not two, and no label on the meter: eight lit segments beside a running clock are
+# not going to be mistaken for anything else, and the word cost a row of depth to say so. The
+# pod is wider for it and much slimmer, which is the right trade for something hanging over the
+# middle of the picture - depth is what it takes away from the room, width is not.
+POD_H = 50.0  # its depth, which is one row of readout and the rail under it
+POD_STEP = 16.0  # the square drop off the top edge before the splay starts
 POD_PAD = 16.0  # inside the flat, either side of the readouts
+POD_STOP = 12.0  # between the meter, the tags and the clock...
+POD_TAG_GAP = 8.0  # ...and the tighter one between two tags, which read as one group
 BOT_L = 250.0  # the bottom-left bracket's reach along both edges
 BOT_L_STEP = 38.0  # its square landings
 BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
@@ -763,12 +769,14 @@ class Overlay:
         self.font_brand = _load_font(max(7, round(14 * scale)))
         self.font_micro = _load_font(max(7, round(12 * scale)))
         self.font_caption = _load_font(max(8, round(14 * scale)))
-        # Where the pod's two rows sit. Centres rather than baselines, because _text centres on
-        # the y it is given, and both have to finish above the rail along the pod's bottom edge.
-        self.row_top = round(24 * scale)
-        self.row_bottom = round(51 * scale)
+        # Where the pod's one row sits. A centre rather than a baseline, because _text centres on
+        # the y it is given, and it has to finish above the rail along the pod's bottom edge.
+        self.row = round(22 * scale)
         self._clock_w = self.font_read.getlength("00:00")
-        self._rec_w = self.font_micro.getlength("REC") + round(7 * scale) * 2
+        # Both tags, measured the same way and to the same width - they sit side by side and a
+        # pair of slabs that differ by two pixels reads as a mistake. The face is not guaranteed
+        # monospaced (see _FONT_CANDIDATES' last resort), so this is a max and not one call.
+        self._tag_w = max(map(self.font_micro.getlength, (HEAT_WORD, "REC"))) + round(7 * scale) * 2
         self._gap = max(4, round(18 * scale))
         self._seg = (max(3, round(9 * scale)), max(6, round(16 * scale)), max(2, round(5 * scale)))
         # The three spines. Each is [edge, knee, knee, edge], and the ramp between the knees is
@@ -784,11 +792,13 @@ class Overlay:
         # *worst* case rather than its usual one - both tags showing beside the clock. Its plate
         # is cut once per window size and the tags come and go per state, so a pod that grew with
         # them would be a hole in the chrome the shape of a warning that is not lit.
-        meter_w = METER_SEGMENTS * self._seg[0] + (METER_SEGMENTS - 1) * self._seg[2]
-        self.pod_w = round(max(
-            self.font_micro.getlength("SIG") + self._gap + meter_w,
-            self._rec_w * 2 + self._gap * 2 + self._clock_w,
-        ))
+        self._meter_w = METER_SEGMENTS * self._seg[0] + (METER_SEGMENTS - 1) * self._seg[2]
+        self._stop = max(3, round(POD_STOP * scale))
+        self.pod_w = round(
+            self._meter_w + self._stop
+            + self._tag_w * 2 + max(2, round(POD_TAG_GAP * scale))
+            + self._stop + self._clock_w
+        )
         flat = self.pod_w + 2 * max(4, px(POD_PAD))
         middle = width // 2
         left, right = middle - flat // 2, middle - flat // 2 + flat
@@ -989,7 +999,7 @@ class Overlay:
         """The tube filter - a wash, corner shading and scanlines - inside the brackets only.
 
         It used to be laid over a strip and a tab row that between them covered 29% of the panel.
-        Two mounts and a pod cover about 17%, and the picture runs edge to edge behind them:
+        Two mounts and a pod cover 16% of it, and the picture runs edge to edge behind them:
         this is what the chrome is *made of* rather than something sitting under an opaque bar.
         The plate is darker than it was, though, because a bracket is a thing rather than a tint -
         see PLATE_WASH, which is as far towards SCREEN as it goes and no further.
@@ -1180,7 +1190,7 @@ class Overlay:
         from inside. A tube blooms in front of what it is showing, so this one does too.
 
         Keyed on the state rather than on the halo colour, because the words change with it too.
-        Baking the pod's label, its tags and both switches in here is what keeps a frame down to
+        Baking the pod's tags and both switches in here is what keeps a frame down to
         a meter, a clock, a caption and a ring: drawing all of it every time cost 10 ms of the
         Pi's 40 ms budget, against 2.8 ms for the chrome the tab row replaced.
         """
@@ -1239,7 +1249,7 @@ class Overlay:
         and dropping the argument would only move that question into three of them.
         """
         del taping
-        return self.pod.right, self.pod.x, self.pod.right
+        return self.pod.right, self.pod.x + self._meter_w + self._stop, self.pod.x + self._meter_w
 
     def _meter_x(self, right: float) -> float:
         seg_w, _, gap = self._seg
@@ -1406,14 +1416,14 @@ class Overlay:
     def _bake_header(
         self, d: ImageDraw.ImageDraw, state: str, recording: bool, heat: str = ""
     ) -> None:
-        """The half of the pod that only moves when the state does: the SIG label and the tags.
+        """The half of the pod that only moves when the state does: the two tags.
 
-        Two rows, each laid out from both ends: the label and the tags hold the left edge, the
-        meter and the clock hold the right. Nothing here is centred on its row, and that is the
-        point - the meter and the clock never change width, so their right edges line up under
-        one another and stay there, while the tags come and go into the slack on the left. A
-        centred row would move the clock 17 px sideways the moment the board got warm, which is
-        the sort of thing that makes a panel feel unreliable while it is telling you the truth.
+        One row: the meter against the pod's left edge, the clock against its right, and the two
+        tags in a fixed slot between them. Every one of the three is pinned to something that
+        does not move, and the slack sits in the middle where the tags are not - which is the
+        same bargain the caption strikes with its dots. Packed instead, the clock would slide
+        sideways the moment the board got warm, and a panel whose numbers move while it is
+        telling you the truth feels like one that is lying.
 
         No state word. It had a corner of its own for a long time and three other things were
         already saying it better - the border's colour, the eye's mood, and the line under the
@@ -1430,17 +1440,14 @@ class Overlay:
             # preference for its own green - and filling it rather than outlining it is how this
             # tube shouts. The one thing on screen that is red without being a fault, which is
             # exactly why it is a tag with a word in it and not a lamp.
-            lamp = tags + self._tag(d, tags, self.row_bottom, "REC", RED) + self._gap
-        else:
-            lamp = tags
+            self._tag(d, tags, self.row, "REC", RED)
+        # ...and the lamp always in the second slot, lit or not, rather than sliding left when
+        # there is no tape running. Two warnings that swap places are two warnings you have to
+        # read before you know which one you are looking at.
         colour = HEAT_LAMP.get(heat)
         if colour is not None:
-            self._tag(d, lamp, self.row_bottom, HEAT_WORD, colour)
-
-        # Hard against the pod's left edge rather than tucked beside the meter, so the top row
-        # spans the box the way the bottom one does when both tags are lit. A pod whose every
-        # readout huddles at one end reads as a pod that is the wrong size.
-        self._text(d, tags, self.row_top, "SIG", self.font_micro, (*GREEN_DIM, 255))
+            self._tag(d, tags + self._tag_w + max(2, round(POD_TAG_GAP * self.scale)),
+                      self.row, HEAT_WORD, colour)
 
     def _tag(
         self, d: ImageDraw.ImageDraw, x: float, cy: float, word: str, colour: tuple[int, int, int]
@@ -1449,18 +1456,20 @@ class Overlay:
 
         The panel's way of shouting, and there are two things that do it: REC and the heat lamp.
         They were one shape typed out twice for exactly as long as it took to add the second, so
-        they are one method now - which also means :attr:`_rec_w`, the width the right-hand group
-        is laid out against, is measured the same way the thing is drawn.
+        they are one method now - which also means :attr:`_tag_w`, the width the pod is laid out
+        against, is measured the same way the thing is drawn.
         """
         half = round(11 * self.scale)
-        pad = round(7 * self.scale)
-        width = self.font_micro.getlength(word) + pad * 2
+        # Both tags are drawn to one width and the word centred in it, so REC and HOT side by
+        # side are two slabs of the same size rather than two that nearly are.
+        width = self._tag_w
         d.rounded_rectangle(
             [x, cy - half, x + width, cy + half],
             radius=max(1, round(3 * self.scale)),
             fill=(*colour, 255),
         )
-        self._text(d, x + pad, cy, word, self.font_micro, (*INK, 255))
+        self._text(d, x + (width - self.font_micro.getlength(word)) / 2, cy, word,
+                   self.font_micro, (*INK, 255))
         return width
 
     def _draw_readouts(
@@ -1479,9 +1488,9 @@ class Overlay:
         # that only mean something during a session are the right place for the colour that only
         # appears during one.
         colour = (*GREEN_DIM, 255) if elapsed is None else (*halo, 255)
-        self._text(d, clock_right, self.row_bottom, clock, self.font_read, colour, align="r")
+        self._text(d, clock_right, self.row, clock, self.font_read, colour, align="r")
 
-        cy = self.row_top
+        cy = self.row
         seg_w, seg_h, gap = self._seg
         lit = round(max(0.0, min(1.0, level)) * METER_SEGMENTS)
         x = self._meter_x(meter_right)

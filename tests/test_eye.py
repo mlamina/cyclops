@@ -827,7 +827,7 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
         return min(near, key=near.get)  # type: ignore[arg-type]
 
     clock_right, _, meter_right = ov._readouts(False)
-    meter, clock = ov.row_top, ov.row_bottom
+    meter = clock = ov.row
     assert wears(
         (int(ov._meter_x(meter_right)), meter - 10, int(meter_right), meter + 10)
     ) == "accent"
@@ -888,8 +888,8 @@ def test_the_rec_tag_is_red() -> None:
     _settle(ov, **shown)
     frame = ov.render(phase=10.0, **shown)
     _, tags, _ = ov._readouts(True)
-    cy = ov.row_bottom
-    box = frame[cy - 8 : cy + 8, int(tags) : int(tags + ov._rec_w)].astype(float)
+    cy = ov.row
+    box = frame[cy - 8 : cy + 8, int(tags) : int(tags + ov._tag_w)].astype(float)
     px = box[box[:, :, 3] > 200][:, :3]
     seen = px.mean(axis=0) / px.mean(axis=0).sum()
     assert _nearest(seen, ("red", overlay.RED), ("green", overlay.GREEN)) == "red"
@@ -1074,10 +1074,11 @@ def test_the_pod_is_centred_and_holds_its_worst_case(width: int, height: int) ->
     ov = overlay.Overlay(width, height)
     clock_right, tags, meter_right = ov._readouts(False)
     assert ov.pod.center[0] in (width // 2, (width - 1) // 2), f"the pod is off centre at {width}"
-    assert tags + ov._width("SIG", ov.font_micro, 0) < ov._meter_x(meter_right), "SIG hits the bar"
-    widest = tags + ov._rec_w + ov._gap + ov._rec_w + ov._gap
+    assert ov._meter_x(meter_right) == ov.pod.x, "the meter has come off the pod's left edge"
+    assert meter_right < tags, "the tags are drawn over the meter"
+    widest = tags + ov._tag_w * 2 + max(2, round(overlay.POD_TAG_GAP * ov.scale))
     assert widest <= clock_right - ov._clock_w, f"both tags reach the clock at {width}x{height}"
-    # ...and the whole of it is inside the flat the rail draws round it, at both rows.
+    # ...and the whole of it is inside the flat the rail draws round it.
     left, right = ov.spines["pod"][3][0], ov.spines["pod"][2][0]
     assert left + ov.rail_w / 2 < ov.pod.x and ov.pod.right < right - ov.rail_w / 2
-    assert ov.row_bottom + ov.font_read.size / 2 < ov.pod.bottom - ov.rail_w / 2, "on the rail"
+    assert ov.row + ov.font_read.size / 2 < ov.pod.bottom - ov.rail_w / 2, "the clock hits the rail"
