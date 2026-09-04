@@ -263,3 +263,64 @@ def test_write_bytes_lands_the_data_durably(tmp_path):
     finally:
         card.os.fsync = real
     assert len(calls) >= 2, "the file and its directory both need syncing"
+
+
+# ------------------------------------------------------------------ bytes that arrive in pieces
+
+
+def test_write_stream_lands_a_file_whole(tmp_path):
+    target = tmp_path / "brake.jpg"
+    data = b"\xff\xd8jpeg" * 300
+    pieces = (data[i : i + 7] for i in range(0, len(data), 7))
+    landed = card.write_stream(target, pieces, limit=99999)
+    assert landed == len(data)
+    assert target.read_bytes() == data
+    assert card.strays(tmp_path) == []
+
+
+def test_write_stream_replaces_a_file_whole(tmp_path):
+    target = tmp_path / "spec.txt"
+    card.write_stream(target, iter([b"first draft"]), limit=999)
+    card.write_stream(target, iter([b"the ", b"corrected ", b"one"]), limit=999)
+    assert target.read_text(encoding="utf-8") == "the corrected one"
+    assert card.strays(tmp_path) == []
+
+
+def test_write_stream_leaves_nothing_behind_when_the_stream_gives_up(tmp_path):
+    """The promise the whole scratch-then-rename dance is for, on the path that arrives in pieces.
+
+    An upload that dies halfway across the LAN must leave the folder exactly as it found it: no
+    truncated file on the target, and no scratch name for ``strays`` to find and for the browser
+    to have to hide.
+    """
+
+    def dies():
+        yield b"the first half"
+        raise OSError("the laptop went away")
+
+    target = tmp_path / "half.bin"
+    with pytest.raises(OSError):
+        card.write_stream(target, dies(), limit=9999)
+    assert not target.exists()
+    assert card.strays(tmp_path) == []
+
+
+def test_write_stream_refuses_rather_than_truncates_at_the_limit(tmp_path):
+    """A file cut off at the ceiling would land whole, look whole, and be broken in what opened it.
+
+    So the ceiling raises. What makes this worth pinning is the second assertion: the refusal has
+    to leave the target absent, not present-and-short, or the cap becomes a way to plant a corrupt
+    file rather than a way to refuse a large one.
+    """
+    target = tmp_path / "huge.bin"
+    with pytest.raises(ValueError):
+        card.write_stream(target, (b"x" * 64 for _ in range(20)), limit=100)
+    assert not target.exists()
+    assert card.strays(tmp_path) == []
+
+
+def test_write_stream_makes_the_folder_it_is_pointed_at(tmp_path):
+    """Same as write_bytes: a project may not have the sub-folder an upload is aimed into yet."""
+    target = tmp_path / "Datasheets" / "part.pdf"
+    card.write_stream(target, iter([b"%PDF-1.4"]), limit=999)
+    assert target.read_bytes() == b"%PDF-1.4"

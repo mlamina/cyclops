@@ -22,8 +22,13 @@ ALLOWED_HOSTS = ["*"]
 INSTALLED_APPS: list[str] = []
 DATABASES: dict[str, dict] = {}
 
-# CommonMiddleware only. No CSRF: every mutating endpoint refuses anything that is not
-# loopback, which is a stronger guarantee than a token on a page that has no login to steal.
+# CommonMiddleware only. No CSRF, and the reason is that there is nothing for a forged request
+# to ride in on: no session, no cookie, no login, so a token would be a ceremony guarding a door
+# with no lock. What actually gates the mutating endpoints is where they are asked from. The ones
+# that only mean something to the panel - the volume, the switches, the close button - refuse
+# anything that is not loopback. The two that write files into projects/ deliberately do not,
+# because uploading from a laptop is the whole point of them; see the note above them in views.py
+# for the containment that holds the line there instead.
 MIDDLEWARE = ["django.middleware.common.CommonMiddleware"]
 
 ROOT_URLCONF = "cyclops.admin.urls"

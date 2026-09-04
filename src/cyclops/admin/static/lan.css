@@ -96,6 +96,14 @@ body:not(.kiosk) .rowwhen {
   padding: calc(10 * var(--u)) calc(11 * var(--u)) 0 0;
 }
 body:not(.kiosk) .files .rowwhen { align-self: center; padding-top: 0; }
+/* Dropping a file onto the folder you are looking at, which is the gesture everyone already has
+   for this and the reason the Upload button is not the only way in. Scoped here rather than in
+   views.css because dragging a file is not something the panel can be asked to do - there is no
+   pointer on it holding anything, and nowhere on the Pi to have dragged it from. */
+body:not(.kiosk) .files.drop {
+  outline: calc(1 * var(--u)) dashed var(--green);
+  outline-offset: calc(-4 * var(--u));
+}
 body:not(.kiosk) .rowtitle,
 body:not(.kiosk) .files .rowtitle,
 body:not(.kiosk) .rowsum { padding-right: 0; overflow-wrap: anywhere; }
@@ -116,6 +124,43 @@ body:not(.kiosk) .grid {
 }
 body:not(.kiosk) .crumb { max-width: clamp(calc(100 * var(--u)), 40%, calc(240 * var(--u))); }
 
+/* ---- putting something in, which is a thing only a machine with files can do ---- */
+/* All of it here rather than in views.css, though the markup is absent on the panel and none of
+   this could reach it anyway. The point is that test_panel_css.py only guards *this* file: a
+   rule written here is checked for scope for ever, and one written there is checked by nobody.
+
+   Sticky rather than merely pushed right. .crumbs scrolls sideways, so `margin-left: auto` alone
+   puts the two buttons off the edge the moment the trail is longer than the bar - which on a
+   phone is most folders, and in Photos/2026-08 bench/raw/ is all of them. */
+body:not(.kiosk) .put {
+  display: flex; align-items: center; gap: calc(2 * var(--u));
+  margin-left: auto; flex: none;
+  position: sticky; right: 0; background: var(--screen);
+  padding-left: calc(6 * var(--u));
+}
+body:not(.kiosk) .crumb.act { color: var(--green); border: calc(1 * var(--u)) solid var(--dim); }
+body:not(.kiosk) .pickfile { display: none; }   /* opened by the button beside it, never shown */
+/* Naming a folder. An inline field rather than a prompt(), which would freeze the page and look
+   like nothing else in this chrome. No fixed width, for the reason at the top of this file: a
+   clamp holds it between legible on a phone and not-a-search-box on a monitor. */
+body:not(.kiosk) .newdir {
+  appearance: none; -webkit-appearance: none; background: var(--screen); color: var(--green);
+  border: calc(1 * var(--u)) solid var(--green); font: inherit;
+  font-size: calc(13 * var(--u)); letter-spacing: .1em;
+  min-height: calc(28 * var(--u)); padding: 0 calc(6 * var(--u)); flex: none;
+  width: clamp(calc(110 * var(--u)), 24vw, calc(200 * var(--u)));
+}
+body:not(.kiosk) .newdir:focus { outline: none; }
+/* What is happening, or what went wrong, beside the buttons that caused it. Amber while a file
+   is crossing and red when one did not make it - the same two colours the meters already use for
+   "worth watching" and "wrong". */
+body:not(.kiosk) .flightbar {
+  color: var(--amber); flex: none; font-size: calc(12 * var(--u));
+  letter-spacing: .1em; padding: 0 calc(6 * var(--u));
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+body:not(.kiosk) .flightbar.bad { color: var(--red); }
+
 /* ---- a pointer, which is a capability and not a size ---- */
 /* :hover on a touchscreen sticks after the tap and leaves a row lit that nobody is pointing at.
    These used to be inside the laptop query, which answered the right question by accident. */
@@ -123,6 +168,7 @@ body:not(.kiosk) .crumb { max-width: clamp(calc(100 * var(--u)), 40%, calc(240 *
   body:not(.kiosk) .row:hover { border-color: var(--mid); }
   body:not(.kiosk) .cell:hover { border-color: var(--mid); }
   body:not(.kiosk) ::-webkit-scrollbar-thumb:hover { background: var(--mid); }
+  body:not(.kiosk) .crumb.act:hover { border-color: var(--green); }
 }
 /* A scrollbar is the only thing that says .crumbs, .doc and the transcript scroll at all. It
    was worth its 9 px on a laptop before this and is worth them on a phone too; the panel, which

@@ -13,8 +13,10 @@ rather than displayed.
 
 from __future__ import annotations
 
+import pytest
+
 from cyclops import shelf
-from cyclops.projects import data
+from cyclops.projects import data, store
 
 FRONT = """---
 project: Pelican Display Mount
@@ -246,3 +248,106 @@ def test_view_caps_what_it_will_read(tmp_path):
     """A reader is not a way to pull a gigabyte off the card into a JSON body."""
     folder = make(tmp_path, extra=[("huge.txt", "x" * (shelf.MAX_TEXT_BYTES + 5000))])
     assert len(shelf.view("P", folder, "huge.txt")["text"]) == shelf.MAX_TEXT_BYTES
+
+
+# ------------------------------------------------------------------ and putting something in
+
+
+def blocks(data, size=7):
+    """One upload, arriving the way the WSGI stream hands it over: in pieces, not all at once."""
+    for start in range(0, len(data), size):
+        yield data[start : start + size]
+
+
+def test_a_new_folder_is_made_under_the_name_it_comes_back_as(tmp_path):
+    folder = make(tmp_path)
+    assert store.make_folder(folder, "Datasheets") == "Datasheets"
+    assert (folder / "Datasheets").is_dir()
+    # Twice is the same answer: a folder that is already there is the outcome that was asked for.
+    assert store.make_folder(folder, "Datasheets") == "Datasheets"
+
+
+def test_a_new_folder_cannot_be_named_its_way_out_of_the_project(tmp_path):
+    """The half of the upload story that is not ``shelf.inside``.
+
+    Containment resolves the *directory* a write is aimed at. This is the other half: the last
+    segment, which is a name and never a path, and which arrives from whoever posted the form.
+    Every one of these lands inside the project or does not land at all.
+    """
+    folder = make(tmp_path)
+    for escape in ("..", "../secret", "a/b", "/etc", "..\\..\\etc", "."):
+        made = store.make_folder(folder, escape)
+        if made is not None:
+            assert (folder / made).parent == folder
+            assert "/" not in made and made not in ("..", ".")
+    assert not (tmp_path / "secret").exists()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["Pelican Display Mount"]
+
+
+def test_a_name_with_nothing_in_it_is_declined_rather_than_invented(tmp_path):
+    folder = make(tmp_path)
+    assert store.make_folder(folder, "///") is None
+    assert store.make_folder(folder, "   ") is None
+    assert store.make_folder(folder, "") is None
+
+
+def test_an_upload_lands_whole_and_keeps_its_extension(tmp_path):
+    folder = make(tmp_path)
+    landed = store.receive(folder, "brake.jpg", blocks(b"\xff\xd8jpeg" * 40), limit=9999)
+    assert landed == "brake.jpg"
+    assert (folder / "brake.jpg").read_bytes() == b"\xff\xd8jpeg" * 40
+    # And nothing of the write itself is left beside it for the browser to list.
+    assert [p.name for p in folder.iterdir() if p.name.startswith(".")] == []
+
+
+def test_an_upload_keeps_its_extension_even_when_the_name_is_too_long(tmp_path):
+    """The reason the name is sanitized in two pieces rather than one.
+
+    ``safe_folder_name`` cuts at 64 characters on a word boundary, so a long enough filename put
+    through it whole comes back without its suffix - and the suffix is what ``shelf.view`` and
+    the page's mark column dispatch on, so losing it changes what the file is.
+    """
+    folder = make(tmp_path)
+    long = ("a very long name that goes on and on and on and on and on and on and on" * 2) + ".jpg"
+    landed = store.receive(folder, long, blocks(b"x"), limit=99)
+    assert landed.endswith(".jpg")
+    assert shelf.view("P", folder, landed)["kind"] == "image"
+
+
+def test_an_upload_cannot_be_named_its_way_out_of_the_folder(tmp_path):
+    folder = make(tmp_path)
+    (tmp_path / "keep.txt").write_text("not yours", encoding="utf-8")
+    for escape in ("../keep.txt", "../../keep.txt", "/etc/passwd", "Photos/../../keep.txt"):
+        landed = store.receive(folder, escape, blocks(b"pwned"), limit=99)
+        assert landed is None or (folder / landed).parent == folder
+    assert (tmp_path / "keep.txt").read_text(encoding="utf-8") == "not yours"
+
+
+def test_an_upload_named_only_a_dot_is_declined(tmp_path):
+    """A dotfile would land and then be invisible, which is a worse answer than a refusal.
+
+    ``shelf.listing`` hides dotfiles - that is how the scratch names ``card.py`` writes through
+    stay out of the browser - so a file uploaded as ``.bashrc`` would be on the card and absent
+    from the only view of the card there is.
+    """
+    folder = make(tmp_path)
+    landed = store.receive(folder, ".bashrc", blocks(b"x"), limit=99)
+    assert landed is None or not landed.startswith(".")
+    assert store.receive(folder, "...", blocks(b"x"), limit=99) is None
+
+
+def test_an_upload_replaces_a_file_of_the_same_name(tmp_path):
+    folder = make(tmp_path)
+    store.receive(folder, "spec.txt", blocks(b"first draft"), limit=99)
+    store.receive(folder, "spec.txt", blocks(b"the corrected one"), limit=99)
+    assert (folder / "spec.txt").read_text(encoding="utf-8") == "the corrected one"
+    assert len([p for p in folder.iterdir() if p.name.startswith("spec")]) == 1
+
+
+def test_an_upload_over_the_ceiling_leaves_nothing_behind(tmp_path):
+    """Refused and not truncated. A file cut off at the cap would look whole and not be."""
+    folder = make(tmp_path)
+    with pytest.raises(ValueError):
+        store.receive(folder, "huge.bin", blocks(b"x" * 500), limit=100)
+    assert not (folder / "huge.bin").exists()
+    assert [p.name for p in folder.iterdir() if p.name.startswith(".")] == []

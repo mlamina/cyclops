@@ -25,11 +25,17 @@ urlpatterns = [
     # safe is not the converter - it is the two resolutions in views._media_file.
     path("media/<str:name>/<path:relative>", views.media, name="media"),
     # The other half of the card, and the durable half: one folder per project, browsed a
-    # directory at a time. Same shape as the session routes above and read-only for the same
-    # reason - store.py is the only thing in this repo that writes into projects/.
+    # directory at a time. Same shape as the session routes above.
     path("api/projects", views.projects, name="projects"),
     path("api/project/<str:name>/files", views.project_files, name="project-files"),
     path("api/project/<str:name>/file", views.project_file, name="project-file"),
+    # And the two that write, which are the only routes here that do. Reading a project on a
+    # laptop and then having to scp a datasheet onto the Pi is a browser that stops halfway, so
+    # these exist and - unlike every other POST below - they answer to the LAN rather than to
+    # loopback. They still go through store.py, which remains the only module in the repo that
+    # writes into projects/; see the note above them in views.py for what holds the line instead.
+    path("api/project/<str:name>/folder", views.project_mkdir, name="project-mkdir"),
+    path("api/project/<str:name>/upload", views.project_upload, name="project-upload"),
     path(
         "project-media/<str:name>/<path:relative>",
         views.project_media,

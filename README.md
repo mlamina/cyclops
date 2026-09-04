@@ -466,7 +466,16 @@ withholds the tool entirely.
 
 `cyclops-admin` serves a small Django page on **port 80**, so from anywhere on your network you
 can open `http://cyclops.local/` and see both how the box is doing and what it has recorded. It
-is read-only, has no database and no login — a private-LAN dashboard, not an exposed service.
+has no database and no login — a private-LAN dashboard, not an exposed service.
+
+Almost all of it is read-only. The two exceptions are in the project browser, where anything on
+the network can make a folder and upload a file into `projects/`, because putting a datasheet on
+the box from the machine the datasheet is on is the whole point of them. What stands in for a
+login there is containment rather than a credential: a destination is resolved before it is
+compared against the project it must be under, every name is sanitised rather than trusted, and
+a file is refused past 128 MB. That is a defence against a mistake and against a browser on
+another origin. It is not a defence against something on your LAN that is not a browser — if the
+Pi ever sits on a network you do not own, this is the first thing to revisit.
 
 Four screens, picked by the tabs in the header and by the hash in the address bar, so nothing
 ever navigates (the kiosk's browser is kept warm on this page and a reload would be felt). The
@@ -476,7 +485,7 @@ kiosk opens it on **SESSIONS**, which is what its tab promises:
 |---|---|
 | **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
 | **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
-| **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one for a plain file browser over its folder; open a file to read it. |
+| **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one for a plain file browser over its folder; open a file to read it. From anything that is not the panel, also **+ Folder** and **↑ Upload**. |
 | **MEDIA** `#/media` | Every photo and every drawing on the card as one stream, newest first. Tap one to fill the screen and flip through with the arrows, the arrow keys, or the columns down either side. |
 
 **The session view changes shape with the screen.** On a laptop it is the recording on the left
@@ -493,6 +502,22 @@ rewritten server-side, which is why a relative `![](Photos/x.jpg)` written by th
 at all. `Project Data.xlsx` is shown as what it is: the remembered pairs, under the tab name they
 were written on, rather than a spreadsheet grid nobody wants on a 7" panel. Pictures, drawings
 and recordings open in place; anything else says what it weighs and leaves it at that.
+
+**And you can put things in.** At the right-hand end of that same bar, from anything that is not
+the panel, **+ Folder** names a new folder inline and **↑ Upload** opens a file picker — or you
+drag files onto the browser, which is the gesture you already have for this. Files go up one
+request at a time, so the listing repainting under you *is* the progress bar and a failure names
+the file it belongs to. A file whose name is already there is replaced rather than duplicated,
+and replaced whole: the bytes land on a scratch name beside the target and are renamed onto it,
+so the file you had is intact right up to the instant the new one takes over.
+
+The body of an upload is the file itself and not a form, which saves the Pi twice: no multipart
+to parse, and no spool through `/tmp` before the real write — Django's own upload handling would
+put every file over 2.5 MB onto the SD card once before we put it there again. Names are
+sanitised by the same function that turns a model's project title into a folder name, which
+leaves no separator alive, so a name cannot become a path. Nothing you upload can begin with a
+dot, because the browser hides dotfiles and a file you cannot see is a worse answer than a
+refusal.
 
 The markdown is turned into HTML on the server, where the project folder is known. The
 frontmatter is dropped (it is the code's half of the file, not the model's), the
@@ -514,9 +539,10 @@ not a bug in the page; it means the board wants better cooling.
 On the kiosk, **tapping Cyclops' eye** opens the same page fullscreen in Chromium on the panel — same
 green terminal chrome, so it reads as the next screen of the same device — and the page grows a
 volume slider, an INTERRUPT switch and a full-width **Close** bar to get you back to the camera.
-All three appear only for the Pi's own browser: from a laptop there is nothing to close,
-everything else on the page is a read-only copy of what is on the card, and the panel is meant to
-be the one place the box is set. The slider and the switch sit on **SYSTEM** only, so browsing
+All three appear only for the Pi's own browser: from a laptop there is nothing to close, and the
+panel is meant to be the one place the box is set. The split runs the other way too — the project
+browser's **+ Folder** and **↑ Upload** are sent to everything *except* the panel, which has no
+filesystem to upload from and no file picker worth opening at 800×480. The slider and the switch sit on **SYSTEM** only, so browsing
 does not spend a fifth of the panel's 480 px carrying controls you did not come for.
 
 INTERRUPT is barge-in: **ON** and you can talk over Cyclops to cut it off, **OFF** and the mic is

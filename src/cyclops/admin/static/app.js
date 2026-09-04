@@ -32,7 +32,7 @@ const FRESH = 20000;   // a listing is worth re-using for as long as nothing new
 const vSessions = document.getElementById('v-sessions');
 const vMedia = document.getElementById('v-media');
 const vProjects = document.getElementById('v-projects');
-const crumbBar = document.getElementById('crumbs');
+const crumbTrail = document.getElementById('crumbtrail');
 const files = document.getElementById('files');
 const fileCrumbs = document.getElementById('fcrumbs');
 const doc = document.getElementById('doc');
@@ -451,18 +451,180 @@ function fileRow(name, one) {
     '</button>';
 }
 
+// Which folder the browser is pointed at. The controls beside the crumbs need it and the router
+// does not tell them - it calls showBrowse and moves on - so this is where the two meet.
+let here = { name: '', path: '' };
+// Set below when the server sent the controls, so showBrowse can clear them without knowing
+// whether there are any. Null on the panel, where there is nothing to reset.
+let putReset = null;
+
+// The listing, drawn. Split out of showBrowse because a folder is now repainted from two places:
+// asking for it, and having just changed it. It is handed the folder it is drawing rather than
+// reading `here`, so a listing that lands late cannot paint itself into whatever is on screen by
+// then - the same care showSession takes with `openName`.
+function redraw(at, found) {
+  files.innerHTML = found.entries && found.entries.length
+    ? found.entries.map((one) => fileRow(at.name, one)).join('')
+    : '<div class="empty">this folder is empty</div>';
+}
+
 async function showBrowse(name, path) {
-  crumbBar.innerHTML = crumbs(name, path, '');
+  const at = here = { name, path };
+  if (putReset) putReset();   // a refusal is about the folder you were in, not the one you opened
+  crumbTrail.innerHTML = crumbs(name, path, '');
   const url = '/api/project/' + encodeURIComponent(name) +
     '/files?path=' + encodeURIComponent(path);
   try {
     const found = await grab(url);
-    files.innerHTML = found.entries.length
-      ? found.entries.map((one) => fileRow(name, one)).join('')
-      : '<div class="empty">this folder is empty</div>';
+    if (here !== at) return;
+    redraw(at, found);
   } catch (e) {
     files.innerHTML = '<div class="empty">could not read that folder</div>';
   }
+}
+
+// ---------------------------------------------------------------- putting something in
+
+// Everything below exists only when the server sent the controls, which it does for everything
+// except the panel (dashboard.html). One guard rather than one per listener: on the kiosk there
+// is nothing here to bind to, and a page that spent its startup looking for buttons that were
+// never rendered would be doing it on the slowest browser of the two.
+const putBar = document.getElementById('put');
+if (putBar) {
+  const flight = document.getElementById('flight');
+  const newdir = document.getElementById('newdir');
+  const mkdirBtn = document.getElementById('mkdir');
+  const pick = document.getElementById('pick');
+  const pickfile = document.getElementById('pickfile');
+
+  // Built from the folder a run started in, never from `here`. A batch of six photos takes a
+  // moment, and clicking into another folder while it runs must not send the seventh somewhere
+  // else - or paint folder A's listing over folder B.
+  const pUrl = (at, leaf) => '/api/project/' + encodeURIComponent(at.name) + '/' + leaf +
+    '?path=' + encodeURIComponent(at.path);
+
+  // grab()'s sibling, for the two routes that write. It reads the body on a failure where grab
+  // throws the status, because these are the only requests on this page whose refusal has
+  // something to say - "that name has nothing in it a file can be called" is worth showing, and
+  // "400" is not.
+  async function put(url, body, headers) {
+    const r = await fetch(url, { method: 'POST', body, headers });
+    if (!r.ok) throw new Error((await r.text().catch(() => '')) || r.status);
+    return r.json();
+  }
+
+  const saying = (text, bad) => {
+    flight.textContent = text;
+    flight.classList.toggle('bad', !!bad);
+  };
+
+  // The files still to go, drawn as rows that are already there and dimmed. Without this a photo
+  // crossing the LAN looks like a folder doing nothing, and the second click is how you end up
+  // sending it twice.
+  function waiting(rest) {
+    const gone = files.querySelector('.empty');
+    if (gone) gone.remove();
+    files.insertAdjacentHTML('beforeend', rest.map((file) =>
+      '<button class="row flight" type="button" disabled>' +
+      '<span class="mark">\u00b7</span>' +
+      '<span class="rowtext"><span class="rowtitle">' + esc(file.name) + '</span></span>' +
+      '<span class="rowwhen">' + heft(file.size) + '</span></button>').join(''));
+  }
+
+  // One request per file rather than one for all of them, which is what makes the count below
+  // honest: each response is a folder that really does contain what it says. It also keeps any
+  // single failure to the file it belongs to instead of losing a batch to one bad name.
+  async function send(list) {
+    const at = here;
+    const rest = [...list];
+    const all = rest.length;
+    while (rest.length) {
+      const file = rest[0];
+      saying(all > 1 ? (all - rest.length + 1) + '/' + all + ' ' + file.name : file.name);
+      waiting(rest);
+      try {
+        // application/octet-stream and not whatever the File claims to be. A .txt would go as
+        // text/plain, which is one of the three types a cross-origin page may post without a
+        // preflight - and a preflight this server never answers is the nearest thing to a CSRF
+        // token a page with no login has. Naming the type keeps every upload behind one.
+        const found = await put(pUrl(at, 'upload') + '&name=' + encodeURIComponent(file.name),
+          file, { 'Content-Type': 'application/octet-stream' });
+        if (here !== at) return;   // you moved on; that folder is not what is on screen now
+        redraw(at, found);
+      } catch (e) {
+        // Stop, and say which one. A file that did not arrive must never be left looking like
+        // one that did, and the dimmed rows below it are still on screen saying what is missing.
+        if (here === at) saying(String(e.message || e).slice(0, 60), true);
+        return;
+      }
+      rest.shift();
+    }
+    saying('');
+  }
+
+  // Naming a folder happens in the bar itself. A prompt() would freeze the page and look like
+  // nothing else here; a field that takes the button's place is the smallest thing that works.
+  function naming(on) {
+    newdir.hidden = !on;
+    mkdirBtn.hidden = on;
+    if (on) { newdir.value = ''; newdir.focus(); }
+  }
+
+  async function made() {
+    const at = here;
+    const name = newdir.value.trim();
+    naming(false);
+    if (!name) return;
+    try {
+      const found = await put(pUrl(at, 'folder'), 'name=' + encodeURIComponent(name),
+        { 'Content-Type': 'application/x-www-form-urlencoded' });
+      if (here !== at) return;
+      redraw(at, found);
+      saying('');
+    } catch (e) {
+      if (here === at) saying(String(e.message || e).slice(0, 60), true);
+    }
+  }
+
+  // What showBrowse calls on the way into a folder: a refusal and a half-typed name both belong
+  // to the folder you were looking at when you caused them.
+  putReset = () => { saying(''); naming(false); };
+
+  mkdirBtn.addEventListener('click', () => naming(true));
+  newdir.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') made();
+    if (e.key === 'Escape') naming(false);
+  });
+  newdir.addEventListener('blur', () => naming(false));
+
+  pick.addEventListener('click', () => pickfile.click());
+  pickfile.addEventListener('change', () => {
+    if (pickfile.files.length) send(pickfile.files);
+    pickfile.value = '';   // so picking the same file twice in a row fires change twice
+  });
+
+  // And the gesture everyone already has for this. dragover must preventDefault or the browser
+  // takes the drop itself and navigates away to the file - which on this page, whose whole
+  // premise is that it never navigates, is the expensive kind of bug.
+  //
+  // Bound to the whole screen and not to the file list, for that same reason. The list stops
+  // short of the crumb bar and of the empty space under a short folder, and a drop landing on
+  // either of those is Chromium leaving for file:///. Catching the screen means every drop
+  // anywhere in the browser is ours. The outline still goes on the list, because that is the
+  // thing you are putting something into.
+  const screen = document.getElementById('v-browse');
+  screen.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    files.classList.add('drop');
+  });
+  screen.addEventListener('dragleave', (e) => {
+    if (!screen.contains(e.relatedTarget)) files.classList.remove('drop');
+  });
+  screen.addEventListener('drop', (e) => {
+    e.preventDefault();
+    files.classList.remove('drop');
+    if (e.dataTransfer.files.length) send(e.dataTransfer.files);
+  });
 }
 
 // ---------------------------------------------------------------- one file

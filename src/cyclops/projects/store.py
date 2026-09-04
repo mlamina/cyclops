@@ -894,3 +894,66 @@ def write_receipt(session_dir: Path, project: Project | None, why: str = "") -> 
             "session again. Delete it, and the entry it points at, to have it filed elsewhere.\n"
         )
     _write(receipt(session_dir), f"{render_front(front)}\n\n{body}")
+
+
+# ------------------------------------------------------------------ what a person puts in
+
+
+def make_folder(parent: Path, name: str) -> str | None:
+    """Make one folder inside a project, and hand back what it ended up being called.
+
+    The name comes off the LAN, so it goes through :func:`safe_folder_name` before anything
+    touches the filesystem - the same sanitizer a model's project name goes through, for the same
+    reason and with the same guarantee: no separator survives it, so no name that comes out of it
+    can traverse. ``None`` when nothing survives, which the caller turns into a refusal rather
+    than a folder called "Untitled".
+
+    ``exist_ok``, because a folder that is already there is the outcome the caller asked for and
+    reporting it as a failure would be pedantry. ``sync_dir`` for the reason the whole of
+    ``card.py`` exists: a name that appeared in a directory is not on the card until the
+    directory itself has been fsynced.
+    """
+    safe = safe_folder_name(name)
+    if not safe:
+        return None
+    target = parent / safe
+    target.mkdir(exist_ok=True)
+    card.sync_dir(parent)
+    return safe
+
+
+def receive(folder: Path, name: str, chunks: Iterator[bytes], *, limit: int) -> str | None:
+    """Land one uploaded file in one folder, and hand back what it ended up being called.
+
+    The name is sanitized in two pieces rather than one, which :func:`safe_folder_name` alone
+    would get wrong. Its 64-character cut lands on a word boundary, so a long enough name would
+    come back without its extension - and the extension is not decoration here: ``shelf.view``
+    and the page's mark column both dispatch on it, so losing it changes what the file *is*. So
+    the stem goes through the sanitizer and the suffix is checked on its own terms.
+
+    Overwrites a file of the same name, and is safe to because of what is underneath it: the
+    bytes land on a scratch name and are renamed onto the target, so the file you already had is
+    whole until the moment the new one replaces it. Re-uploading a corrected file is the common
+    case and refusing it would send you back to your desktop to rename something.
+    """
+    safe = _upload_name(name)
+    if safe is None:
+        return None
+    card.write_stream(folder / safe, chunks, limit=limit)
+    return safe
+
+
+def _upload_name(name: str) -> str | None:
+    """One uploaded filename, sanitized with its extension intact, or None if nothing survives.
+
+    The suffix is taken from the last dot and kept only if it still looks like one after being
+    lowercased: letters and digits, and few enough of them to be an extension rather than the
+    back half of a sentence. Anything else is not a suffix worth preserving and the whole string
+    goes through the sanitizer as a name.
+    """
+    stem, dot, suffix = Path(name).name.rpartition(".")
+    suffix = suffix.lower()
+    if not dot or not stem or not suffix.isalnum() or len(suffix) > 8:
+        return safe_folder_name(name) or None
+    safe = safe_folder_name(stem)
+    return f"{safe}.{suffix}" if safe else None

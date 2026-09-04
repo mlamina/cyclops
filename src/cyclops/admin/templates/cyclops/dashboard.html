@@ -164,7 +164,31 @@ every device on the network is exactly the sprawl this replaced.
   <main class="view projects" id="v-projects"></main>
 
   <main class="view browse" id="v-browse">
-    <div class="crumbs" id="crumbs"></div>
+    {% comment %}
+    Two children rather than one run of buttons, because showBrowse() rewrites the trail on every
+    folder you open and the controls beside it must survive that. The trail is `display: contents`
+    so the crumbs are still direct flex items of the bar and its layout is unchanged.
+    {% endcomment %}
+    <div class="crumbs" id="crumbs"><span class="trail" id="crumbtrail"></span>
+      {% comment %}
+      Putting something *in*, which is a thing you can only do from the machine the file is on.
+      The panel is never sent this: it has no filesystem to upload from, no file picker worth
+      opening at 800x480, and a keyboard only if one happens to be plugged in. Same {% if %} as
+      the kiosk-only chrome elsewhere in this file, pointed the other way.
+
+      Inside the crumb bar rather than in a row of its own, so the browser stays two rows and the
+      file list does not move down the screen to make space for something the panel never shows.
+      {% endcomment %}
+      {% if not local %}
+      <span class="put" id="put">
+        <span class="flightbar" id="flight"></span>
+        <input class="newdir" id="newdir" type="text" placeholder="folder name" hidden>
+        <button class="crumb act" id="mkdir" type="button">+ Folder</button>
+        <button class="crumb act" id="pick" type="button">&#8593; Upload</button>
+        <input class="pickfile" id="pickfile" type="file" multiple>
+      </span>
+      {% endif %}
+    </div>
     <div class="files" id="files"></div>
   </main>
 

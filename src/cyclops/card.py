@@ -49,6 +49,7 @@ import json
 import os
 import re
 import stat
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -143,6 +144,42 @@ def write_bytes(path: Path, data: bytes, *, mode: int = 0o644) -> None:
 def write_text(path: Path, text: str, *, mode: int = 0o644) -> None:
     """:func:`write_bytes`, for the markdown and JSON everything here actually writes."""
     write_bytes(path, text.encode("utf-8"), mode=mode)
+
+
+def write_stream(path: Path, chunks: Iterable[bytes], *, limit: int, mode: int = 0o644) -> int:
+    """:func:`write_bytes`, for bytes that arrive a block at a time. Returns how many landed.
+
+    The same scratch-fsync-rename dance, and it exists for the one case ``write_bytes`` cannot
+    cover: that one takes the whole payload as a ``bytes``, and what this was written for is a
+    file somebody dragged onto the admin page from a laptop. The payload is then however large
+    that file is, and a 40 MB video would be 40 MB of a Pi's RAM held for the length of an
+    upload - on the box whose whole design note is that memory and heat are the scarce things.
+
+    ``limit`` refuses rather than truncates. A file cut off at the ceiling would land whole, look
+    whole in the browser, and be broken in whatever opened it later; raising leaves the scratch
+    file to the ``finally`` below and nothing on the target at all, which is a failure you can
+    see. The caller is what turns that into an answer the page can show.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = tmp_for(path)
+    written = 0
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
+        with os.fdopen(fd, "wb") as handle:
+            os.fchmod(fd, mode)  # the mode sticks even if the scratch file pre-existed
+            for block in chunks:
+                written += len(block)
+                if written > limit:
+                    raise ValueError(f"more than {limit} bytes")
+                handle.write(block)
+            handle.flush()
+            os.fsync(fd)
+        land(tmp, path)
+    finally:
+        # Same contract as write_bytes: only reached with the tmp still there when something
+        # raised, which for this one includes the caller sending too much.
+        tmp.unlink(missing_ok=True)
+    return written
 
 
 def strays(folder: Path) -> list[Path]:

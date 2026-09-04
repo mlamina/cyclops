@@ -318,6 +318,15 @@ body.lit .lightbox { display: grid; }
 .crumb:active { color: var(--green); }
 .crumb.here { color: var(--green); }   /* the file you are reading: named, but not a way back */
 .sep { color: var(--dim); flex: none; }
+/* The trail renders nothing of its own: it exists so showBrowse() has something to rewrite that
+   is not the whole bar, and `contents` keeps its crumbs direct flex children of .crumbs so the
+   bar lays out exactly as it did before there was anything beside them. */
+.trail { display: contents; }
+/* A file on its way in: a row that is already there, dimmed, so the folder does not appear to be
+   doing nothing while a phone photo crosses the LAN. Replaced by the real listing when it lands.
+   Here rather than in lan.css because it is a state of .row, which is this file's shape - the
+   controls that cause it live over there, with everything else the panel is never sent. */
+.files .row.flight { opacity: .55; }
 .files { overflow-y: auto; overscroll-behavior: contain;
          padding: calc(8 * var(--u)) calc(2 * var(--u)); }
 /* A file row is a project row with the still swapped for a mark. Same box, same border, same

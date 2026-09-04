@@ -36,6 +36,7 @@ from ..config import (
     Settings,
     load_settings,
 )
+from ..projects import store
 
 LOOPBACK = {"127.0.0.1", "::1"}
 GIB = 1024**3  # what df -h means by "G", so the page and the shell agree
@@ -100,6 +101,10 @@ def _asset_version() -> str:
 
 ASSET_VERSION = _asset_version()
 MAX_SVG_BYTES = 4 * 1024 * 1024  # a 40-pin pinout is ~90 KB; this is a ceiling, not a budget
+# The same shape of number for what may be dropped onto the page from a laptop. A datasheet is
+# kilobytes and a phone photo is single-digit megabytes; this is a ceiling, not a budget, and it
+# is here so that a mis-drag of something enormous is refused rather than written to the card.
+MAX_UPLOAD_BYTES = 128 * 1024 * 1024
 
 # What may come out of a session folder, and as what. An allow-list by suffix for the same reason
 # STATIC_FILES is one: the set of legal answers is short enough to write down, and writing it down
@@ -603,3 +608,98 @@ def project_media(request: HttpRequest, name: str, relative: str) -> HttpRespons
     if kind is None:
         raise Http404("no such file")
     return _serve(request, found, kind)
+
+
+# ------------------------------------------------------------------ putting something in
+
+# The two endpoints on this box that answer to somebody who is not the kiosk - see the note on
+# MIDDLEWARE in settings.py. Every other mutating view here refuses anything that is not loopback,
+# because everything else they do only means something to the panel. These two mean the opposite:
+# writing from somewhere that is not the Pi is the entire feature, and a rule that let only the
+# Pi upload to the Pi would leave nothing behind.
+#
+# What is left holding the line is containment, and it is the same containment the read-only
+# routes already run on. `shelf.inside` resolves before it compares, so `..`, an absolute name and
+# a symlink out of the tree all fail together; `store` sanitizes every name that becomes a path
+# segment; and neither of them can be handed a destination outside one project folder.
+
+
+def _too_big() -> str:
+    """What the page is told when a file is past the ceiling. Said from two places, so said once."""
+    return f"that file is over {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+
+
+def _folder(name: str, relative: str) -> Path:
+    """The directory inside one project that a write is aimed at, or 404.
+
+    Deliberately the same two steps in the same order as every read on this page: resolve the
+    project, then resolve the path under it. A write does not get its own path logic - that is
+    how the two drift and how the stricter one stops being the one that runs.
+    """
+    here = shelf.inside(_project(name), relative)
+    if here is None or not here.is_dir():
+        raise Http404("no such folder")
+    return here
+
+
+@require_POST
+def project_mkdir(request: HttpRequest, name: str) -> JsonResponse:
+    """Make a folder inside a project. ``?path=`` is the folder to make it in, "" for the root."""
+    relative = request.GET.get("path", "")
+    here = _folder(name, relative)
+    try:
+        made = store.make_folder(here, request.POST.get("name", ""))
+    except OSError as exc:
+        return HttpResponseBadRequest(f"could not make that folder ({exc})")
+    if made is None:
+        return HttpResponseBadRequest("that name has nothing in it a folder can be called")
+    return JsonResponse(shelf.listing(_project(name), relative) or {})
+
+
+@require_POST
+def project_upload(request: HttpRequest, name: str) -> JsonResponse:
+    """Land one uploaded file in one folder of one project, and answer with the folder again.
+
+    The body is the file itself and not a multipart form, which is two savings on a Pi rather than
+    one. Django's upload handling spools anything over 2.5 MB to a temporary file first, and
+    ``cyclops-admin.service`` deliberately leaves ``PrivateTmp`` unset - so every large upload
+    would be written to the card once before we wrote it to the card again. Reading the stream
+    ourselves also skips the multipart parse, on the box whose design note is that CPU matters.
+
+    ``request.read`` goes straight to the WSGI input and past every ``DATA_UPLOAD_*`` ceiling
+    Django would otherwise apply, so ``MAX_UPLOAD_BYTES`` below is not a second opinion - it is
+    the only one there is.
+
+    Answering with the fresh listing rather than 204 is what lets the page repaint from this
+    response. It has just changed the directory it is showing; making it ask again what it already
+    caused would be a second round trip over the LAN for something we are holding.
+    """
+    # Django sizes the stream it hands us from Content-Length and falls back to *zero* when the
+    # header is missing (wsgi.py builds a LimitedStream from it). So a chunked body - curl -T, or
+    # any client that streams - would read as nothing, and write_stream would fsync and rename an
+    # empty file into the project: a name with no bytes behind it, landed durably, looking exactly
+    # like a file that arrived. That is the zero-byte husk this whole card.py dance exists to make
+    # impossible, and it is only not reachable from our own page because fetch() sets the header.
+    # Refuse it out loud instead, and take the chance to turn away something enormous before any
+    # of it has been written to the card rather than 128 MB in.
+    try:
+        offered = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        offered = 0
+    if offered <= 0:
+        return HttpResponse("say how many bytes are coming", status=411)
+    if offered > MAX_UPLOAD_BYTES:
+        return HttpResponse(_too_big(), status=413)
+
+    relative = request.GET.get("path", "")
+    here = _folder(name, relative)
+    chunks = iter(lambda: request.read(CHUNK), b"")
+    try:
+        landed = store.receive(here, request.GET.get("name", ""), chunks, limit=MAX_UPLOAD_BYTES)
+    except ValueError:  # more bytes arrived than the header promised
+        return HttpResponseBadRequest(_too_big())
+    except OSError as exc:
+        return HttpResponseBadRequest(f"could not write that file ({exc})")
+    if landed is None:
+        return HttpResponseBadRequest("that name has nothing in it a file can be called")
+    return JsonResponse(shelf.listing(_project(name), relative) or {})

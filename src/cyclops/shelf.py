@@ -15,7 +15,10 @@ The layout it walks is ``projects/store.py``'s, described in full at the top of 
 
 Read-only, all of it. ``store.py`` is the only thing in this repo that writes into ``projects/``
 and that invariant is checkable with a grep - so this module reads, classifies and renders, and
-owns no path that anything writes to.
+owns no path that anything writes to. The admin page can now make a folder and take an upload,
+and that changed nothing here: the two endpoints resolve their destination with :func:`inside`,
+the same function every read on the page goes through, and then hand it to ``store.py`` to write.
+Resolving is this module's job; writing is still not.
 
 Two things are worth knowing about the identity used here. A project's real identity is the
 ``key`` in its frontmatter, but what appears in every URL below is the **folder name**, exactly as
