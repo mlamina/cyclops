@@ -884,9 +884,9 @@ def test_the_rec_tag_is_red() -> None:
     shown = dict(state=overlay.LISTENING, level=0.0, elapsed=12.0, recording=True)
     _settle(ov, **shown)
     frame = ov.render(phase=10.0, **shown)
-    _, rec_right, _ = ov._readouts(True)
-    cy = ov.row_top
-    box = frame[cy - 8 : cy + 8, int(rec_right - ov._rec_w) : int(rec_right)].astype(float)
+    _, tags, _ = ov._readouts(True)
+    cy = ov.row_bottom
+    box = frame[cy - 8 : cy + 8, int(tags) : int(tags + ov._rec_w)].astype(float)
     px = box[box[:, :, 3] > 200][:, :3]
     seen = px.mean(axis=0) / px.mean(axis=0).sum()
     assert _nearest(seen, ("red", overlay.RED), ("green", overlay.GREEN)) == "red"
@@ -1060,37 +1060,25 @@ def test_the_face_is_tappable_where_the_face_is(width: int, height: int) -> None
         assert not other.contains(cx, cy), "his face overlaps another tab's target"
 
 
-def _ramp_edge(ov: overlay.Overlay, name: str, y: int) -> float:
-    """How far a top bracket reaches at row *y*: its landing, or its ramp once past the knee.
-
-    The two top brackets are the only chrome on this panel with something written inside them,
-    so they are the only place a readout can run out of bracket - and they narrow as they climb,
-    which a straight bar never did.
-    """
-    _, flat, knee, _ = ov.spines[name]
-    reach = knee[0] if y <= knee[1] else knee[0] + (y - knee[1]) * (1 if flat[0] > knee[0] else -1)
-    return reach + ov.rail_w * (0.5 if flat[0] > knee[0] else -0.5)
-
-
 @pytest.mark.parametrize(("width", "height"), SIZES)
-def test_both_rows_of_a_top_bracket_stay_inside_it(width: int, height: int) -> None:
+def test_both_rows_of_the_top_bracket_stay_inside_it(width: int, height: int) -> None:
     """The Mac and the Pi pick different faces, so this is a test and not a measurement.
 
-    The word used to have a whole strip to run out into and only had to clear SIG. It has a
-    bracket now, and a bracket that a nine-letter state word overruns is a rail with LISTENING
-    written through it.
+    Two groups grow towards each other inside one bracket: the state word and the tags rightwards
+    off the ramp, the meter and the clock inwards off the frame. Either one overrunning is a
+    readout with a rail drawn through it, and the bracket widens past the panel's midline when it
+    has to - so this also says that widening actually works.
     """
     ov = overlay.Overlay(width, height)
     track = max(1.0, 2.0 * ov.scale)
-    left = ov.read_pad
+    pad = round(12 * ov.scale)
+    word_left = ov._inside(ov.row_top + round(14 * ov.scale)) + pad
+    _, tags, meter_right = ov._readouts(False)
+    sig_left = ov._meter_x(meter_right) - round(9 * ov.scale) - ov._width("SIG", ov.font_micro, 0)
     for word in set(overlay.LABELS.values()):
-        end = left + ov._width(word, ov.font_mode, track * 0.7)
-        assert end < _ramp_edge(ov, "tl", ov.row_bottom), f"{word} at {width}x{height}"
-    assert left + ov._width("CYCLOPS", ov.font_brand, track) < _ramp_edge(ov, "tl", ov.row_top)
-    for taping in (False, True):
-        _, rec_right, meter_right = ov._readouts(taping)
-        start = ov._meter_x(meter_right) - round(9 * ov.scale)
-        start -= ov._rec_w + ov._gap if taping else ov._width("SIG", ov.font_micro, 0)
-        assert start > _ramp_edge(ov, "tr", ov.row_top), f"the meter row at {width} ({taping=})"
-        clock, _, _ = ov._readouts(taping)
-        assert clock - ov._clock_w > _ramp_edge(ov, "tr", ov.row_bottom), f"the clock at {width}"
+        end = word_left + ov._width(word, ov.font_mode, track * 0.7)
+        assert end < sig_left, f"{word} runs into SIG at {width}x{height}"
+    # ...and the tag row under it, at its widest: the tape running *and* the board throttled.
+    assert tags > ov._inside(ov.row_bottom + round(11 * ov.scale)), f"the tags at {width}"
+    widest = tags + ov._rec_w + ov._gap + ov._rec_w
+    assert widest < meter_right - ov._clock_w - ov._gap, f"the tags reach the clock at {width}"
