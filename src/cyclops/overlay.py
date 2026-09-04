@@ -788,26 +788,17 @@ class Overlay:
         blegs = bot - bstep
         rout, rstep = max(12, px(BOT_R_OUT)), max(4, px(BOT_R_STEP))
         rlegs = rout - max(4, px(BOT_R_LAND))
-        # The pod is sized by what it carries and centred on the panel, and it is sized for its
-        # *worst* case rather than its usual one - both tags showing beside the clock. Its plate
-        # is cut once per window size and the tags come and go per state, so a pod that grew with
-        # them would be a hole in the chrome the shape of a warning that is not lit.
+        # The pod is exactly as wide as what it is showing, and there is one of it per number of
+        # tags. It used to be cut once at its worst case - both tags lit - which left a tag-shaped
+        # hole in the middle of it whenever neither was, and that hole is bigger than the meter.
+        # Three plates are three masks and three rails, built the first time each is needed and
+        # kept; the alternative is dead space on the panel at all times to save a bake that
+        # happens twice a session.
         self._meter_w = METER_SEGMENTS * self._seg[0] + (METER_SEGMENTS - 1) * self._seg[2]
         self._stop = max(3, round(POD_STOP * scale))
-        self.pod_w = round(
-            self._meter_w + self._stop
-            + self._tag_w * 2 + max(2, round(POD_TAG_GAP * scale))
-            + self._stop + self._clock_w
-        )
-        flat = self.pod_w + 2 * max(4, px(POD_PAD))
-        middle = width // 2
-        left, right = middle - flat // 2, middle - flat // 2 + flat
-        # Wound right to left, so that (dy, -dx) points out of the pod's own body - the same sign
-        # that means "away from the corner" on the three mounts, and what lets one rail routine
-        # light the correct side of all four.
+        self._tag_gap = max(2, round(POD_TAG_GAP * scale))
+        self._pod_pad = max(4, px(POD_PAD))
         self.spines = {
-            "pod": [(right + ramp, 0), (right + ramp, step), (right, depth),
-                    (left, depth), (left - ramp, step), (left - ramp, 0)],
             "bl": [(0, height - bot), (bstep, height - bot),
                    (bstep + blegs, height - bot + blegs), (bstep + blegs, height)],
             "br": [(width - rout, height), (width - rout, height - rstep),
@@ -815,13 +806,31 @@ class Overlay:
                    (width, height - rstep - rlegs)],
         }
         self.brackets = {
-            name: Bracket(
-                None if name == "pod" else (0 if name[1] == "l" else width, height), spine
-            )
+            name: Bracket((0 if name[1] == "l" else width, height), spine)
             for name, spine in self.spines.items()
         }
-        # The readouts' own box inside the pod's flat: everything in there is placed off this.
-        self.pod = Rect(round(left + max(4, px(POD_PAD))), 0, self.pod_w, depth)
+        # ...and the pods, one per tag count. Geometry only, so all three cost nothing to hold.
+        self.pods, self.pod_boxes = {}, {}
+        for tags in range(3):
+            # meter, stop, [tag, gap, tag,] stop, clock - and with no tags at all the two stops
+            # collapse into the one between the meter and the clock.
+            content = round(
+                self._meter_w + self._stop + self._clock_w
+                + (tags * self._tag_w + (tags - 1) * self._tag_gap + self._stop if tags else 0)
+            )
+            flat = content + 2 * self._pod_pad
+            left = width // 2 - flat // 2
+            right = left + flat
+            # Wound right to left, so that (dy, -dx) points out of the pod's own body - the same
+            # sign that means "away from the corner" on the two mounts, and what lets one rail
+            # routine light the correct side of all three.
+            self.pods[tags] = Bracket(None, [
+                (right + ramp, 0), (right + ramp, step), (right, depth),
+                (left, depth), (left - ramp, step), (left - ramp, 0),
+            ])
+            # The readouts' own box inside the flat: everything in there is placed off this.
+            self.pod_boxes[tags] = Rect(left + self._pod_pad, 0, content, depth)
+        self.pod = self.pod_boxes[0]  # its resting size, and every one of them is this deep
         self.reticle_r = max(8, round(RETICLE_R * height))
 
         # Him, riding the big bracket's ramp. Everything about where he is comes off that ramp,
@@ -886,9 +895,11 @@ class Overlay:
         self.caption_y = self.caption_bottom - self.caption_h / 2  # the bottom line's middle
 
         self._halo = halo_alpha(width, height)
-        self._backdrop = self._build_backdrop()
+        self._filter = self._build_filter()
+        self._backdrops: dict[int, Image.Image] = {}
+        self._chromes: dict[int, Image.Image] = {}
         self._plate = self._build_plate()
-        self._chrome = self._build_chrome()
+        self._chrome_base = self._build_chrome()
         # One engine per window size: it owns the geometry, and it remembers which mood it is
         # easing out of, which is why it is built here and not per frame.
         self.engine = EyeEngine(self.eye_r, self.line, SCREEN, MOODS[IDLE])
@@ -971,8 +982,8 @@ class Overlay:
 
     # ---- the cached backdrop ----
 
-    def _bracket_mask(self) -> np.ndarray:
-        """Where the four brackets are, as 0..1 - their plates, less the disc his face fills.
+    def _bracket_mask(self, tags: int) -> np.ndarray:
+        """Where the chrome is, as 0..1 - the plates, less the disc his face fills.
 
         His plate is what backs him instead, and it is the same all the way round; without this
         the wash's own edge would run across his face as a tide line. The switches keep the wash
@@ -981,7 +992,7 @@ class Overlay:
         """
         plate = Image.new("L", (self.width, self.height), 0)
         d = ImageDraw.Draw(plate)
-        for bracket in self.brackets.values():
+        for bracket in (*self.brackets.values(), self.pods[tags]):
             bracket.plate(d)
         holes = Image.new("L", (self.width, self.height), 0)
         hd = ImageDraw.Draw(holes)
@@ -995,14 +1006,15 @@ class Overlay:
         )
         return inside * (np.asarray(rounded, np.float32) / 255.0)
 
-    def _build_backdrop(self) -> tuple[np.ndarray, np.ndarray]:
-        """The tube filter - a wash, corner shading and scanlines - inside the brackets only.
+    def _build_filter(self) -> tuple[np.ndarray, np.ndarray]:
+        """The tube filter - a wash, corner shading and scanlines - over the whole panel.
 
-        It used to be laid over a strip and a tab row that between them covered 29% of the panel.
-        Two mounts and a pod cover 16% of it, and the picture runs edge to edge behind them:
-        this is what the chrome is *made of* rather than something sitting under an opaque bar.
-        The plate is darker than it was, though, because a bracket is a thing rather than a tint -
-        see PLATE_WASH, which is as far towards SCREEN as it goes and no further.
+        Unmasked, because none of it depends on where the chrome is: it is built once and every
+        plate is cut out of it. It used to be laid over a strip and a tab row that between them
+        covered 29% of the panel; two mounts and a pod cover 16% of it, and the picture runs edge
+        to edge behind them - this is what the chrome is *made of* rather than something sitting
+        under an opaque bar. The plate is darker than it was, though, because a bracket is a
+        thing rather than a tint - see PLATE_WASH, which is as far towards SCREEN as it goes.
         """
         shape = (self.height, self.width)
         base: tuple[np.ndarray, np.ndarray] = (
@@ -1013,8 +1025,15 @@ class Overlay:
         base = _over(base, GREEN, np.full(shape, TINT_ALPHA, dtype=np.float32))
         base = _over(base, (0, 0, 0), vignette_alpha(self.width, self.height))
         base = _over(base, (0, 0, 0), scanline_alpha(self.width, self.height))
-        rgb, alpha = base
-        return rgb, alpha * self._bracket_mask()
+        return base
+
+    def _backdrop(self, tags: int) -> Image.Image:
+        """The filter cut to the plates a pod this wide makes. Built on demand, then kept."""
+        cached = self._backdrops.get(tags)
+        if cached is None:
+            rgb, alpha = self._filter
+            cached = self._backdrops[tags] = _to_image(rgb, alpha * self._bracket_mask(tags))
+        return cached
 
     def _build_plate(self) -> Image.Image:
         """The disc behind the eye, on its own layer under the chrome.
@@ -1036,11 +1055,12 @@ class Overlay:
         return layer
 
     def _build_chrome(self) -> Image.Image:
-        """The two mounts, the status pod and the reticle, on transparency.
+        """The two mounts and the reticle, on transparency - everything of a fixed size.
 
         Drawn once and kept: nothing in here depends on the state, only on the window size. The
-        border around the outside is not in here - it carries the state colour, so it belongs to
-        the per-state base and goes on last of all.
+        pod is not in here, because it is as wide as the tags it is showing - see :meth:`_chrome`,
+        which lays one on top of this. Nor is the border around the outside: it carries the state
+        colour, so it belongs to the per-state base and goes on last of all.
 
         There is no bloom over any of it, which the doubled hairlines this replaces did have. A
         Gaussian blur over a 17 px rail is not a glow, it is a lamp - and the profile across the
@@ -1052,6 +1072,21 @@ class Overlay:
             self._draw_bracket(layer, bracket)
         self._draw_reticle(layer)
         return layer
+
+    def _chrome(self, tags: int) -> Image.Image:
+        """...and the same with a pod of the right width on it. Built on demand, then kept.
+
+        Three of these exist at most, and each costs one rail - one Gaussian and seventeen offset
+        strokes - the first time a session starts recording or a board goes hot. That is a couple
+        of frames, twice a session, against a tag-shaped hole sitting in the middle of the panel
+        the rest of the time.
+        """
+        cached = self._chromes.get(tags)
+        if cached is None:
+            layer = self._chrome_base.copy()
+            self._draw_bracket(layer, self.pods[tags])
+            cached = self._chromes[tags] = layer
+        return cached
 
     def _rail_colour(self, across: float) -> tuple[int, int, int]:
         """The rail seen end-on. *across* runs 1 at the outer lip to 0 at the inner flank.
@@ -1202,8 +1237,9 @@ class Overlay:
         # of them any more: the strip, the tab row and the four scraps outside the border's
         # rounded corners are all just the wash and the scanlines over the live picture, and the
         # picture between them is not covered at all - not even by the border's own corners.
-        image = Image.alpha_composite(_to_image(*self._backdrop), self._plate)
-        image = Image.alpha_composite(image, self._chrome)
+        tags = self._tag_count(state, recording, heat)
+        image = Image.alpha_composite(self._backdrop(tags), self._plate)
+        image = Image.alpha_composite(image, self._chrome(tags))
 
         d = ImageDraw.Draw(image)
         self._bake_header(d, state, recording, heat)
@@ -1229,6 +1265,10 @@ class Overlay:
 
     # ---- where the readouts sit ----
 
+    def _tag_count(self, state: str, recording: bool, heat: str) -> int:
+        """How many tags the pod is showing, which is the whole of what sets its width."""
+        return int(self._taping(state, recording)) + int(heat in HEAT_LAMP)
+
     @staticmethod
     def _taping(state: str, recording: bool) -> bool:
         """Is a recording actually being made? Configured to record is not the same thing.
@@ -1238,18 +1278,22 @@ class Overlay:
         """
         return recording and session_up(state)
 
-    def _readouts(self, taping: bool) -> tuple[float, float, float]:
+    def _readouts(self, tags: int) -> tuple[float, float, float]:
         """The clock's right edge, the tags' left edge, and the meter's right edge.
 
-        Two rows inside the pod, and each is laid out from both ends at once: the meter and the
-        clock right-aligned so their edges line up under one another, the tags left-aligned so
-        neither of them can shove a digit along. A lamp appearing on a warm board moves nothing.
+        One row, packed: the meter, then whichever tags are lit, then the clock, with a single
+        stop between each. Nothing is reserved and nothing is padded - the pod itself is as wide
+        as this comes to, so closing the gaps here is what makes the whole module narrower rather
+        than only moving its contents about inside it. It was the other way round for a while and
+        the reserved slot was the biggest thing on the pod, lit or not.
 
-        ``taping`` is unused and kept, because every caller asks the same question a line earlier
-        and dropping the argument would only move that question into three of them.
+        What that costs is that the clock's digits sit a tag's width further right while the tape
+        is running than while it is not. They do not *drift*: recording is settled for the whole
+        of a session, so the position changes when a session starts and when a board goes hot,
+        and both of those are moments the panel is entitled to look different.
         """
-        del taping
-        return self.pod.right, self.pod.x + self._meter_w + self._stop, self.pod.x + self._meter_w
+        box = self.pod_boxes[tags]
+        return box.right, box.x + self._meter_w + self._stop, box.x + self._meter_w
 
     def _meter_x(self, right: float) -> float:
         seg_w, _, gap = self._seg
@@ -1362,7 +1406,7 @@ class Overlay:
         layer = self._base(state, recording, heat).copy()
         d = ImageDraw.Draw(layer)
 
-        self._draw_readouts(d, halo, level, elapsed, self._taping(state, recording))
+        self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat))
         self._draw_caption(d, state, halo, detail, phase)
         held = pressed == "eye"
         if pressed in SWITCHES and not held:
@@ -1433,21 +1477,17 @@ class Overlay:
         precisely why it is baked rather than redrawn 25 times a second.
         """
         taping = self._taping(state, recording)
-        _, tags, meter_right = self._readouts(taping)
+        _, tags, _ = self._readouts(self._tag_count(state, recording, heat))
         if taping:
             # Red, and a filled tag rather than a dot. Red is what a record light is on every
             # other machine anybody has ever used, which is worth more here than the panel's
             # preference for its own green - and filling it rather than outlining it is how this
             # tube shouts. The one thing on screen that is red without being a fault, which is
             # exactly why it is a tag with a word in it and not a lamp.
-            self._tag(d, tags, self.row, "REC", RED)
-        # ...and the lamp always in the second slot, lit or not, rather than sliding left when
-        # there is no tape running. Two warnings that swap places are two warnings you have to
-        # read before you know which one you are looking at.
+            tags += self._tag(d, tags, self.row, "REC", RED) + self._tag_gap
         colour = HEAT_LAMP.get(heat)
         if colour is not None:
-            self._tag(d, tags + self._tag_w + max(2, round(POD_TAG_GAP * self.scale)),
-                      self.row, HEAT_WORD, colour)
+            self._tag(d, tags, self.row, HEAT_WORD, colour)
 
     def _tag(
         self, d: ImageDraw.ImageDraw, x: float, cy: float, word: str, colour: tuple[int, int, int]
@@ -1478,10 +1518,10 @@ class Overlay:
         halo: tuple[int, int, int],
         level: float,
         elapsed: float | None,
-        taping: bool,
+        tags: int,
     ) -> None:
         """The half that moves: the signal bar, and the clock counting the session up."""
-        clock_right, _, meter_right = self._readouts(taping)
+        clock_right, _, meter_right = self._readouts(tags)
         whole = 0 if elapsed is None else int(elapsed)
         clock = "--:--" if elapsed is None else f"{whole // 60:02d}:{whole % 60:02d}"
         # Dim green with nothing to count, the state's accent the moment there is - the numbers

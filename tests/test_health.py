@@ -134,26 +134,32 @@ def test_the_lamp_says_which_kind_of_hot_in_colour(
     assert _painted(band, other) == 0, "and it is wearing the wrong colour"
 
 
-def test_the_lamp_never_shoves_the_readouts_along() -> None:
-    """The meter, the tags and the session clock each have a place of their own in the pod.
+def test_the_lamp_makes_room_for_itself_rather_than_covering_anything() -> None:
+    """It used to have a slot reserved for it, and the panel paid for that slot at all times.
 
-    Putting the lamp in that group would mean the clock moved whenever the board got warm, which
-    is the sort of thing that makes a panel feel unreliable while it is telling you the truth.
-    It has a slot of its own in the middle of the pod, between the meter and the clock, and that
-    slot is there whether the lamp is lit or not. The clock is pinned to the pod's right edge and
-    the meter to its left, so neither of them can be pushed by anything appearing between them -
-    which is what this says.
+    It does not any more: the pod is exactly as wide as what it is showing, so a lamp lighting
+    widens the whole module by one tag and pushes the clock along with it. That is a real cost -
+    digits that sit somewhere different on a hot board than on a cool one - and it buys back a
+    gap wider than the meter on every frame where nothing is wrong.
 
-    Split at the clock's own left edge rather than at the middle of the frame: the pod is a slim
-    module in the middle of the top edge now, so "the right-hand half" would have been picture.
+    What must not happen is the tag being drawn over something, or off the end of the plate the
+    chrome cut for it. Both ends of that are asserted here, because the plate is cached per tag
+    count and the two could silently disagree.
     """
     ov = overlay.Overlay(800, 480)
-    cool = _strip(ov.render(heat="", **AWAKE), ov)
-    hot = _strip(ov.render(heat="throttled", **AWAKE), ov)
-    clock_right, _, _ = ov._readouts(False)
-    right = slice(int(clock_right - ov._clock_w), None)
-    assert np.array_equal(cool[:, right], hot[:, right]), "the right-hand readouts moved"
-    assert not np.array_equal(cool, hot), "...and nothing was drawn at all"
+    cool, hot = ov.pod_boxes[0], ov.pod_boxes[1]
+    grew = hot.w - cool.w
+    assert grew == round(ov._tag_w + ov._stop), f"the pod grew by {grew}px, not by one tag"
+    assert hot.center[0] == cool.center[0], "...and it grew off centre"
+    # The lamp lands between the meter and the clock, inside the plate, with nothing overlapping.
+    clock_right, tag_x, meter_right = ov._readouts(1)
+    assert meter_right < tag_x and tag_x + ov._tag_w <= clock_right - ov._clock_w
+    flat = ov.pods[1].spine[3][0], ov.pods[1].spine[2][0]
+    assert flat[0] + ov.rail_w / 2 < hot.x and hot.right < flat[1] - ov.rail_w / 2
+    # ...and it is on the panel in the colour it was asked for, which is the half a geometry
+    # test cannot see.
+    band = _strip(ov.render(heat="throttled", **AWAKE), ov)
+    assert _painted(band, overlay.RED) > 100, "the lamp is not lit at all"
 
 
 def test_the_lamp_costs_one_baked_layer_per_temperature() -> None:
