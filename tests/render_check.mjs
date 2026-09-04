@@ -14,9 +14,11 @@
  *   uv run cyclops-admin --port=8099 &
  *   node tests/render_check.mjs                     # or: BASE=http://127.0.0.1:80 node ...
  *
- * Restart the service after every template edit. DEBUG is off, so Django caches the compiled
- * template for the life of the process and an edited file is simply not what you are testing -
- * this check passed twice against a bug that was sitting in the working tree the whole time.
+ * Restart the service after every edit under admin/ - the template, the CSS or the JS. DEBUG is
+ * off, so Django caches the compiled template for the life of the process, and the ?v= digest on
+ * the stylesheets and scripts is likewise read once at import (views._asset_version). An edited
+ * file is simply not what you are testing - this check passed twice against a bug that was
+ * sitting in the working tree the whole time.
  *
  * Screenshots land in /tmp/cyclops-render/ so a failure can be looked at rather than guessed at.
  */

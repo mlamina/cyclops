@@ -1,5 +1,12 @@
 # Third-party code served by the admin page
 
+`src/cyclops/admin/static/` holds two kinds of file. The page's own stylesheets and scripts
+(`*.css`, `status.js`, `app.js`, `diagram.js`) are ours: written by hand, served exactly as
+written, and versioned by a digest of their contents in the query string, so an edit reaches the
+kiosk's warm browser. Everything below is third-party, served at a bare URL — a version bump
+means a new filename, never an edit in place, because an `immutable` asset at a URL Chromium has
+already seen is one it will never ask for again.
+
 These three files are vendored rather than fetched from a CDN. The panel's UI layer has no
 internet assumption — the Pi reaches OpenAI and nothing else — and a diagram that will not draw
 because a CDN is unreachable is worse than one that costs 527 KB on the card.

@@ -83,9 +83,9 @@ MAX_NODES = 40
 MAX_PORTS = 48  # a 40-pin header plus room; the pinout is the thing that sets this
 MAX_WIRES = 80
 
-# The symbol library, by name. Every one of these is drawn by the template - see the `TYPES` map
-# in dashboard.html - and this tuple is the contract between the two. Adding a shape means adding
-# it in both places, and the test over this tuple is what says so out loud.
+# The symbol library, by name. Every one of these is drawn by the panel - see the `TYPES` map in
+# admin/static/diagram.js - and this tuple is the contract between the two. Adding a shape means
+# adding it in both places, and the test over this tuple is what says so out loud.
 SYMBOLS = ("box", "resistor", "led", "header")
 SIDES = ("left", "right", "left-out", "right-out", "top", "bottom")
 # What a wire is carrying, which is only ever a colour on the panel. "" is an unremarkable wire.

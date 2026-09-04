@@ -411,7 +411,8 @@ Ask for one again — *"put that relay wiring back up"* — and `find_diagram` m
 and re-renders the stored spec. That is instant and costs no model call, which is also why it is
 preferred to drawing it twice: a redraw would come back subtly different.
 
-The three vendored bundles under `src/cyclops/admin/static/` are served from the Pi, never a CDN
+The three vendored bundles under `src/cyclops/admin/static/` - which also holds the page's own
+CSS and JS - are served from the Pi, never a CDN
 (see `NOTICE.md` there). Nothing about the panel needs the internet.
 
 ## Imagining a change

@@ -12,6 +12,7 @@ render, a label clipped off the paper) are both invisible to Python.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -139,30 +140,29 @@ def test_duplicate_ports_are_dropped_not_fatal():
 
 # ------------------------------------------------------------------ the contract with the panel
 
+# The panel's symbol library, read as text. Not a browser: the two tests below only ask whether
+# a name is written down in both places, and tests/render_check.mjs is what actually draws.
+PANEL = Path(__file__).resolve().parents[1] / "src/cyclops/admin/static/diagram.js"
+
 
 @pytest.mark.parametrize("symbol", diagram.SYMBOLS)
-def test_every_symbol_is_drawn_by_the_template(symbol):
-    """SYMBOLS and the template's TYPES map are two halves of one contract.
+def test_every_symbol_is_drawn_by_the_panel(symbol):
+    """SYMBOLS and diagram.js's TYPES map are two halves of one contract.
 
     A shape named here and missing there renders as a plain box with no error anywhere, which is
     the failure this parametrize exists to make loud. Adding a symbol means adding it twice.
     """
-    from pathlib import Path
-
-    template = (Path(__file__).resolve().parents[1]
-                / "src/cyclops/admin/templates/cyclops/dashboard.html").read_text()
-    assert f"{symbol}:" in template.split("const TYPES = {")[1].split("}")[0], (
-        f"{symbol!r} is in SYMBOLS but not in the template's TYPES map"
+    library = PANEL.read_text()
+    assert f"{symbol}:" in library.split("const TYPES = {")[1].split("}")[0], (
+        f"{symbol!r} is in SYMBOLS but not in the panel's TYPES map"
     )
 
 
 @pytest.mark.parametrize("side", diagram.SIDES)
-def test_every_side_is_a_port_group_in_the_template(side):
-    from pathlib import Path
-
-    template = (Path(__file__).resolve().parents[1]
-                / "src/cyclops/admin/templates/cyclops/dashboard.html").read_text()
-    assert f"'{side}': portGroup(" in template, f"{side!r} has no port group in the template"
+def test_every_side_is_a_port_group_in_the_panel(side):
+    assert f"'{side}': portGroup(" in PANEL.read_text(), (
+        f"{side!r} has no port group in the panel's symbol library"
+    )
 
 
 # ------------------------------------------------------------------ the card

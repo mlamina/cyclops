@@ -297,7 +297,7 @@ def _proc_stat(tmp_path: Path, name: str, busy: int, idle: int, iowait: int) -> 
 def test_the_temperature_bar_turns_amber_where_the_tile_did() -> None:
     """73% is written into the page's own gradient by hand. This is what stops the two drifting.
 
-    See ``.mtrack`` in cyclops/admin/templates/cyclops/dashboard.html: the amber stop sits at 73%
+    See ``.mtrack`` in cyclops/admin/static/system.css: the amber stop sits at 73%
     because that is where WARN_C lands on this scale, so the bar changes colour at the same
     reading temp_band() does. Move COOL_C or THROTTLE_C without moving the stop and the bar goes
     on looking right while quietly warning at the wrong temperature.
