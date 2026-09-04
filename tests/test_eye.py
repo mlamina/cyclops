@@ -824,6 +824,23 @@ def test_he_fits_his_own_cell(width: int, height: int) -> None:
     assert cell.x < ov.eye[0] - ov.shoulder and ov.eye[0] + ov.shoulder < cell.right
 
 
+def _bubble_mask(band: np.ndarray) -> np.ndarray:
+    """Where the caption bubble is, by its own two colours: the fill, and the outline round it.
+
+    Alpha alone is not enough and never was. The shoulder's arcs are anti-aliased and a handful
+    of their coverage values land on the fill's exactly; thin the fill and his plate, the corner
+    brackets and half the chrome come in as well. The edge has to be in here too - it is the
+    outermost pixel of the shape, so a mask of the fill alone reports the bubble a pixel further
+    from his face than it is.
+    """
+    rgb, alpha = band[:, :, :3], band[:, :, 3]
+    fill = (alpha == overlay.PLATE_ALPHA) & (rgb == np.array(overlay.SCREEN, np.uint8)).all(axis=2)
+    edge = (alpha == overlay.BUBBLE_EDGE_ALPHA) & (
+        rgb == np.array(overlay.GREEN_DIM, np.uint8)
+    ).all(axis=2)
+    return fill | edge
+
+
 def test_the_bubble_comes_out_of_his_face_without_landing_on_it() -> None:
     """Both halves, because they pull against each other and only one of them is obvious.
 
@@ -848,19 +865,18 @@ def test_the_bubble_comes_out_of_his_face_without_landing_on_it() -> None:
         band = ov.render(
             state=overlay.SEARCHING, level=0.0, elapsed=12.0, detail=detail, phase=10.0
         )[top:bottom]
-        # The bubble's own fill, colour and alpha together. PLATE_ALPHA alone is not enough: the
-        # shoulder's arcs are anti-aliased, and a handful of their coverage values land on
-        # exactly 210 out by his shoulder - which would have this pass or fail on where a curve
-        # happened to fall rather than on where the bubble reached.
-        fill = (band[:, :, 3] == overlay.PLATE_ALPHA) & (
-            band[:, :, :3] == np.array(overlay.SCREEN, np.uint8)
-        ).all(axis=2)
-        assert fill.any(), "no bubble on the panel at all - this would pass on a blank line"
-        ys, xs = np.nonzero(fill)
-        reach = np.hypot(xs - cx, ys + top - cy).min()
-        assert reach > r, f"the bubble is {r - reach:.1f}px inside his rim: {detail[:30]!r}"
-        assert reach < r + 12, (
-            f"its nearest point is {reach - r:.1f}px off his rim - the tail comes out of nothing"
+        mask = _bubble_mask(band)
+        assert mask.any(), "no bubble on the panel at all - this would pass on a blank line"
+        ys, xs = np.nonzero(mask)
+        reach = np.hypot(xs - cx, ys + top - cy).min() - r
+        # Both bounds are the gap itself, which is the one number here anybody chose. The tail's
+        # tip sits above his equator, so the distance out to it is always a little more than the
+        # nose measured straight across - but not twice it, or the tail is pointing at the room.
+        assert reach >= ov.caption_nose, (
+            f"the bubble is {ov.caption_nose - reach:.1f}px inside its own gap: {detail[:30]!r}"
+        )
+        assert reach < 2 * ov.caption_nose, (
+            f"its nearest point is {reach:.1f}px off his rim - the tail comes out of nothing"
         )
 
 
@@ -873,11 +889,7 @@ def test_a_long_caption_takes_a_second_line_rather_than_a_stub() -> None:
     shown = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0, phase=10.0)
 
     def box(detail: str) -> tuple[int, int]:
-        frame = ov.render(detail=detail, **shown)
-        fill = (frame[:, :, 3] == overlay.PLATE_ALPHA) & (
-            frame[:, :, :3] == np.array(overlay.SCREEN, np.uint8)
-        ).all(axis=2)
-        rows = np.where(fill.any(axis=1))[0]
+        rows = np.where(_bubble_mask(ov.render(detail=detail, **shown)).any(axis=1))[0]
         return int(rows.min()), int(rows.max())
 
     short = box("searching…")

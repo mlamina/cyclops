@@ -208,29 +208,25 @@ def test_the_controller_prefers_the_agent_then_the_phase(voice: agent.VoiceAgent
 
 
 def _slab(frame: np.ndarray, ov: overlay.Overlay) -> tuple[int, int]:
-    """The caption slab's left and right edge, read back off a rendered frame.
+    """The caption bubble's left and right edge, read back off a rendered frame.
 
-    The picture band's backdrop alpha is zeroed (see Overlay.__init__), so inside these rows the
-    only fully opaque things are the slab, the panel's border down either side, and Cyclops - who
-    stands on exactly these rows, in the middle of them, and whose rings are opaque too. So this
-    takes the *rightmost* run that is not the border rather than the first lit column: the slab
-    hangs off ``ov.caption_right`` and everything else opaque out there is to the left of it.
+    Matched on its own two colours - the fill and the outline, each at its own alpha - rather
+    than on "opaque enough". A threshold picked up his plate, the frame's corner brackets and
+    anything else that happened to land above it, and quietly went on picking the rightmost of
+    them: the day the fill was thinned to let the room through, this helper started measuring a
+    bracket at x=782 and reporting that the bubble never moved.
     """
     band = frame[
-        int(ov.caption_y - ov.caption_h / 2) + 1 : int(ov.caption_y + ov.caption_h / 2) - 1,
-        :,
-        3,
-    ].max(axis=0)
-    lit = np.where(band >= overlay.PLATE_ALPHA)[0]
-    runs, start = [], lit[0]
-    for a, b in zip(lit, lit[1:], strict=False):
-        if b - a > 1:
-            runs.append((int(start), int(a)))
-            start = b
-    runs.append((int(start), int(lit[-1])))
-    runs = [r for r in runs if r[0] > ov.line and r[1] < ov.frame.right - ov.line]
-    assert runs, "nothing opaque out there but the bezel"
-    return runs[-1]
+        int(ov.caption_y - ov.caption_h / 2) + 1 : int(ov.caption_y + ov.caption_h / 2) - 1
+    ]
+    rgb, alpha = band[:, :, :3], band[:, :, 3]
+    fill = (alpha == overlay.PLATE_ALPHA) & (rgb == np.array(overlay.SCREEN, np.uint8)).all(axis=2)
+    edge = (alpha == overlay.BUBBLE_EDGE_ALPHA) & (
+        rgb == np.array(overlay.GREEN_DIM, np.uint8)
+    ).all(axis=2)
+    lit = np.where((fill | edge).any(axis=0))[0]
+    assert lit.size, "no bubble on the panel at all"
+    return int(lit.min()), int(lit.max())
 
 
 def test_the_slab_does_not_breathe_with_the_dots() -> None:

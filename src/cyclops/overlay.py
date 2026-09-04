@@ -280,7 +280,13 @@ GLOW_ALPHA = 0.42
 # screen, and that is 29% of a feed you are holding down a pipe to see what is at the bottom of
 # it. They now carry the filter and nothing else, so the picture runs edge to edge behind them
 # and the chrome earns its contrast from its own opaque glyphs rather than from a bar.
-PLATE_ALPHA = 210  # the one dark backing left: the caption bubble, which sits on the picture
+PLATE_ALPHA = 170  # the one dark backing left: the caption bubble, which sits on the picture.
+# Backing rather than a bar: it is there to stop white-on-anything, and every point of alpha past
+# what that needs is a point of the room taken away from somebody holding a camera down a pipe to
+# look at it. The edge below is what carries the shape, so the fill can afford to be thin.
+BUBBLE_EDGE_ALPHA = 215  # ...and the outline, which stays nearly solid. Fill and edge used to be
+# one number, so thinning the fill dissolved the bubble's own shape along with it - which is the
+# half that has to survive whatever the camera is pointed at
 TAB_LIVE_ALPHA = 165  # ...and the selected tab's cell, tinted just enough to read as selected
 
 # Layout, all as fractions of the height - the official 7" panel is 800x480 and is the
@@ -544,11 +550,11 @@ class Overlay:
         # attribute rather than a local because the long-press arc fills the outer shoulder in,
         # and a fill that is drawn a couple of pixels off the line it is filling is a smudge.
         self.rule_gap = max(2, round(4 * scale))
-        # What makes the status line a bubble rather than a slab. A corner radius a third of
-        # the line height: half of it would be a lozenge, and a lozenge is a badge. The tail has
-        # to fit in the round(20 * scale) between the bubble's bottom and the tab row's top rule,
-        # which is what sizes it.
-        self.caption_radius = max(2, round(9 * scale))
+        # What makes the status line a bubble rather than a slab is the tail, and only the tail.
+        # The corners were rounded for a while and it was the wrong borrowing: every other edge on
+        # this panel is square or is a full arc, and a softened box in the middle of it read as a
+        # chat app dropped onto a terminal. The tail has to fit in the round(20 * scale) between
+        # the bubble's bottom and the tab row's top rule, which is what sizes it.
         self.caption_tail = max(3, round(11 * scale))
         # The tail's root and its lean. Wide enough at the root to read as part of the bubble
         # rather than as a spike stuck on it, and leaning by rather less than it drops: a tail
@@ -566,13 +572,15 @@ class Overlay:
         # always lands in the same place - on him - and the sentence grows away to the right.
         #
         # `caption_lean` is in there because the tail hangs off the bottom-left corner and leans
-        # further left still; the nose is what is left between its tip and his rim, and it is
-        # small on purpose. Anything you can see is a gap, and a gap is the bubble not quite
-        # coming out of him.
+        # further left still; the nose is what is left between its tip and his rim. Short enough
+        # that the tail plainly belongs to him, long enough that the two are separate things -
+        # tucked right up against the rim it read as a growth on the side of his head rather than
+        # as something he was saying.
         self.caption_h = round(24 * scale)  # one line of it
         self.caption_bottom = self.footer.y - round(20 * scale)
         self.caption_y = self.caption_bottom - self.caption_h / 2  # the bottom line's middle
-        self.caption_left = self.eye[0] + self.eye_r + self.caption_lean + max(2, round(4 * scale))
+        self.caption_nose = max(3, round(14 * scale))  # tail tip to his rim
+        self.caption_left = self.eye[0] + self.eye_r + self.caption_lean + self.caption_nose
         self.caption_right = self.viewport.right - self.pad - round(34 * scale)
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
@@ -1267,16 +1275,9 @@ class Overlay:
         tip = (x - self.caption_lean, bottom + self.caption_tail)
         root = (x + self.caption_root, bottom)
         fill = (*SCREEN, PLATE_ALPHA)
-        edge = (*GREEN_DIM, PLATE_ALPHA)
+        edge = (*GREEN_DIM, BUBBLE_EDGE_ALPHA)
         line = max(1, self.line // 2)
-        d.rounded_rectangle(
-            [x, top, right, bottom],
-            radius=self.caption_radius,
-            corners=(True, True, True, False),
-            fill=fill,
-            outline=edge,
-            width=line,
-        )
+        d.rectangle([x, top, right, bottom], fill=fill, outline=edge, width=line)
         # The tail, then the bottom edge between its corners wiped back to fill, then its own two
         # sides - which is what makes the two shapes one silhouette rather than a box with a
         # pennant taped under it. ImageDraw writes rather than composites, so the wipe is a wipe.
