@@ -19,11 +19,27 @@
   --screen: #050f0a;  /* the green-black everything is drawn on */
   --ink: #030b07;     /* text on a filled control */
   --tint: var(--green);
-  /* 1u == 1px at 800x480, growing with whichever dimension is tighter - so a short, wide
-     window never overflows its rows the way a bare vw would. Same trick as the kiosk chrome,
-     which pins its own layout to a 480 px reference height. */
-  --u: clamp(0.7px, min(0.125vw, 0.2083vh), 2px);
+  /* The unit everything on this page is measured in. Off the panel it is not a fit-to-viewport
+     transform any more - it is simply what the rest of these files always meant by "u": one
+     pixel of the 800x480 the interface was drawn at. It grows a little with the window, because
+     a phone at arm's length and a 15" laptop on a desk are not the same reading distance, and it
+     is bounded at both ends so that a 27" monitor gets more columns rather than bigger glyphs.
+
+     Anchored in rem rather than px, so a reader who has set large type gets a larger interface.
+
+     No vh term, which is the whole change: height must never decide how big a letter is. It used
+     to, and that is why an 820x1180 tablet rendered 19 px body text and a header 52 px wider
+     than the tablet - a taller phone got bigger type, which is not a rule anybody would write. */
+  --u: clamp(0.0625rem, 0.055rem + 0.02vw, 0.0719rem);   /* 1.00px -> 1.15px at a 16 px root */
 }
+/* The panel, and only the panel: 1u == 1px at 800x480, growing with whichever dimension is
+   tighter, so a short, wide window never overflows its rows the way a bare vw would. Same trick
+   as the kiosk chrome, which pins its own layout to a 480 px reference height.
+
+   This is what every client used to get, copied unmoved. It sits on body rather than :root
+   because body.kiosk is the flag the server sets for its own browser, and everything that reads
+   --u - including the ::before bezel and the ::after scanlines - inherits from here. */
+body.kiosk { --u: clamp(0.7px, min(0.125vw, 0.2083vh), 2px); }
 * { box-sizing: border-box; -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent; }
 /* A finger on a picture is scrolling, not picking it up. Chromium makes every <img> draggable
    by default, and on a touchscreen that drag swallows the pan: measured on the media grid, a

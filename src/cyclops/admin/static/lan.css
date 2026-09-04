@@ -3,72 +3,165 @@
    Every selector in this file starts `body:not(.kiosk)` or sits in a media query the panel
    cannot match. That is not a convention, it is the whole safety argument: the panel is the one
    client with no scrollbar, no zoom and nobody watching it start, and a rule that cannot reach
-   it cannot break it. tests/layout_check.mjs holds the panel to a saved baseline and will fail
-   on any rule in here that leaks.
+   it cannot break it. tests/layout_check.mjs holds the panel to a saved baseline and fails on
+   any rule in here that leaks.
+
+   Almost nothing here names a width. The panel is one screenful of a known 800x480 and the rest
+   of this stylesheet is written that way; a phone, a tablet and a monitor are a range, and a
+   layout tuned to three points in it is wrong at every fourth. So the ladders below fall out of
+   how wide a thing has to be to hold its own contents - auto-fit, wrapping, clamp - and the one
+   surviving media query is not about layout at all (see the bottom of the file).
 
    Loaded last, so it is also last in the cascade - though nothing here relies on that, because
    `body:not(.kiosk) .thing` outweighs `.thing` on specificity alone. */
 
-/* ---- a laptop ---- */
-/* Landscape and wide. The string is repeated in the script, which must agree with it: the
-   transcript is not hidden here, it is never fetched. Keep the two in step.
+/* ---- a document, not one scaled screenful ---- */
+/* The bug this file was rewritten for. <body> is a grid that declares rows and no columns, so
+   its items land in an implicit column sized `auto` - whose minimum is min-content. The header's
+   min-content is ~626 px, all four tabs being nowrap words at .2em tracking. On the panel that
+   sits inside 766 px and nobody ever saw it. At 390 px it blew the column out to 626 px and
+   `overflow: hidden` clipped the difference, so *every descendant laid itself out at 626 px* -
+   which is why session titles were sliced mid-word, the four readings showed a bar and no
+   number, and two of the four tabs could not be reached. One declaration ends all of it. */
+body:not(.kiosk) {
+  grid-template-columns: minmax(0, 1fr);
+  /* The bezel's inset, fluid. Clamped to the panel's own 8u..20u so it never becomes a margin. */
+  --pad: clamp(calc(8 * var(--u)), 2.5vw, calc(20 * var(--u)));
+  padding: var(--pad);
+  /* viewport-fit=cover puts the border under the notch on a phone held sideways. */
+  padding-left: max(var(--pad), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--pad), env(safe-area-inset-right, 0px));
+}
+/* Braces to the rule above's belt: a grid item's automatic minimum is its min-content too, and
+   a session titled with one unbroken 44-character word is min-content all by itself. */
+body:not(.kiosk) .view { min-width: 0; }
 
-   --u is pinned rather than left to scale. Growing every glyph with the viewport is a panel
-   technique - it exists so a 480 px screen never overflows a row - and on a 27" monitor it
-   makes a billboard out of a page of small print. So the type stays the size it is on the
-   panel, near enough, and the extra room goes into columns instead. */
-@media (min-width: 900px) and (min-aspect-ratio: 1/1) {
-  :root { --u: 1.15px; }
-  body { padding: calc(20 * var(--u)); }
-  /* Four bars in a row, held to a strip. A column of four across a whole monitor would be
-     four rules a yard long, which is the same mistake the 2x2 of tiles made here. A laptop is
-     never loopback, so there are no settings beside them and the split is already one column. */
-  .system { align-content: start; }
-  .meters { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto;
-            align-content: start; gap: calc(44 * var(--u)); }
-  .sessions, .media { padding: calc(12 * var(--u)) calc(4 * var(--u)); }
-  /* 176 wide against a 132 min-height is 4:3 to the pixel: uncropped as well as ungapped for
-     a recording made from the camera, and trimmed down the sides for one made from the 5:3
-     screen. `cover` on .thumb is what makes a list of both look like one list. */
-  .row { grid-template-columns: calc(176 * var(--u)) minmax(0, 1fr);
-         min-height: calc(132 * var(--u)); }
-  .row:hover { border-color: var(--mid); }
-  .rowtext { padding: calc(14 * var(--u)) calc(16 * var(--u)); }
-  .rowsum {
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    color: var(--dim); font-size: calc(13 * var(--u)); line-height: 1.4;
-    margin-top: calc(7 * var(--u)); padding-right: calc(96 * var(--u));
-  }
-  .grid { grid-template-columns: repeat(auto-fill, minmax(calc(210 * var(--u)), 1fr));
-          gap: calc(10 * var(--u)); }
-  .cell:hover { border-color: var(--mid); }
-  /* Video left, conversation right, each scrolling on its own. */
-  .watch { grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-           grid-template-rows: minmax(0, 1fr); gap: calc(18 * var(--u)); }
-  .playing { grid-template-rows: min-content min-content; align-content: start; overflow-y: auto; }
-  /* `auto` first, so the box takes the recording's own shape once the metadata lands and the
-     ratio after it is only what to hold before that. It has to be both: a session recorded
-     from the screen is 5:3 like the panel, one recorded from the camera is 4:3 like the
-     sensor, and the card holds a mix of the two forever. See cyclops.filming. */
-  .video { height: auto; max-height: 52vh; aspect-ratio: auto 5 / 3;
-           border: calc(1 * var(--u)) solid var(--dim); }
-  .stitle { font-size: calc(20 * var(--u)); -webkit-line-clamp: 3; }
-  .ssum { display: block; color: var(--dim); line-height: 1.5; margin-top: calc(10 * var(--u));
-          font-size: calc(13 * var(--u)); }
-  .talk { display: block; overflow-y: auto; min-height: 0;
-          border-left: calc(1 * var(--u)) solid var(--dim); padding-left: calc(14 * var(--u)); }
-  /* Sitting down, with a pointer: text is for reading and quoting, and a scrollbar is worth
-     its 8 px. Both are turned off everywhere else because a panel has neither a cursor nor a
-     reason to let a sleeve select half a screen. */
-  .said, .ssum, .stitle, .aside { -webkit-user-select: text; user-select: text; }
-  ::-webkit-scrollbar { width: calc(9 * var(--u)); height: calc(9 * var(--u)); }
-  ::-webkit-scrollbar-thumb { background: var(--dim); }
-  ::-webkit-scrollbar-thumb:hover { background: var(--mid); }
+/* ---- the header wraps ---- */
+/* Four monospace words at .2em tracking cannot share a 390 px row at any size worth reading -
+   the nav's min-content is 430u, and still 344u with the tracking halved and the padding gone.
+   So it wraps, which is the ordinary app-bar-over-a-tab-row every phone already has, and which
+   decides where to break by measuring the actual glyphs rather than by guessing at a width. */
+body:not(.kiosk) header { position: relative; flex-wrap: wrap; }
+body:not(.kiosk) .nav { flex-wrap: wrap; min-width: 0; }
+/* Tighter than the panel's, which is the same argument --u makes: .2em tracking and 14u of
+   padding either side exist so a word can be read across a workshop, and nothing held in a hand
+   needs them. The 44u target is untouched - that is what a thumb needs, and it is not a
+   typographic measurement.
+
+   An auto-fit grid was tried here and is wrong: .nav is a flex item with no definite width, so
+   the track count resolves against its own max-content and collapses to a single column - four
+   tabs stacked down a phone. Wrapping flex measures the actual glyphs instead, which is also
+   the only thing that can answer "do these four words fit" correctly at every width. */
+body:not(.kiosk) .tab { letter-spacing: .12em; padding: 0 calc(9 * var(--u)); }
+/* Pinned to the corner rather than pushed there by an auto margin: when the tabs take a line of
+   their own, LINK OK has to stay up on the brand's line instead of claiming a third. */
+body:not(.kiosk) .link {
+  position: absolute; top: calc(4 * var(--u)); right: calc(16 * var(--u));
+  margin: 0; line-height: calc(44 * var(--u));
 }
 
-/* Portrait only - a phone held upright. The System screen needs nothing here any more: how
-   many columns it has is decided by whether the settings exist at all (body.kiosk, above) and
-   not by the aspect ratio, so a phone is already one column of four stacked bars. */
-@media (max-aspect-ratio: 3/4) {
-  :root { --u: clamp(0.7px, min(0.28vw, 0.115vh), 2px); }
+/* ---- the four readings ---- */
+/* One bar per row on a phone, two on a tablet, four on a laptop - and the ladder falls out of
+   how wide a bar must be to hold "81.6 GB free" beside its own name, not out of a device. The
+   panel's `space-between` goes with the fixed height it was filling: on a 844 px column it left
+   four 50 px bars swimming in 250 px of black each. */
+body:not(.kiosk) .system { align-content: start; }
+body:not(.kiosk) .meters {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(240 * var(--u))), 1fr));
+  grid-template-rows: auto;
+  align-content: start;
+  gap: calc(14 * var(--u));
+}
+
+/* ---- the lists ---- */
+body:not(.kiosk) .sessions,
+body:not(.kiosk) .media,
+body:not(.kiosk) .projects { padding: clamp(calc(8 * var(--u)), 1.4vw, calc(12 * var(--u))) calc(4 * var(--u)); }
+/* Three columns, so the date sizes itself instead of being reserved for. The still keeps its
+   4:3 against the row's height at both ends of the clamp: 96u/76u on a phone, 176u/132u once
+   there is room, which is the measurement the laptop layout used to hard-code. */
+body:not(.kiosk) .row {
+  grid-template-columns: clamp(calc(96 * var(--u)), 26%, calc(176 * var(--u))) minmax(0, 1fr) auto;
+  min-height: clamp(calc(76 * var(--u)), 22vw, calc(132 * var(--u)));
+}
+body:not(.kiosk) .files .row {
+  grid-template-columns: calc(46 * var(--u)) minmax(0, 1fr) auto;
+  min-height: calc(50 * var(--u));
+}
+body:not(.kiosk) .rowtext { padding: clamp(calc(10 * var(--u)), 1.2vw, calc(16 * var(--u))); }
+/* Out of the corner and into a column of its own. Absolute plus a flat `padding-right: 96u` on
+   the title was 40% of a phone's text column reserved for a date that might be six characters. */
+body:not(.kiosk) .rowwhen {
+  position: static; align-self: start; transform: none;
+  padding: calc(10 * var(--u)) calc(11 * var(--u)) 0 0;
+}
+body:not(.kiosk) .files .rowwhen { align-self: center; padding-top: 0; }
+body:not(.kiosk) .rowtitle,
+body:not(.kiosk) .files .rowtitle,
+body:not(.kiosk) .rowsum { padding-right: 0; overflow-wrap: anywhere; }
+
+/* ---- the picture stream ---- */
+/* auto-fill and not auto-fit: one photograph should stay one tile wide rather than stretch
+   across a monitor. min() so a container narrower than a tile shrinks the tile instead of
+   overflowing it - this grid was already the right shape and is the model for the rest.
+
+   The floor is itself fluid, because one number cannot serve both ends: 210u is right on a
+   monitor and leaves a phone with a single tile per row, 140u is right on a phone and leaves a
+   monitor with nine. Between them the tile is simply a fraction of the window, which lands at
+   two across a phone, three or four on a tablet and six on a laptop without naming any of them. */
+body:not(.kiosk) .grid {
+  grid-template-columns: repeat(auto-fill,
+    minmax(min(100%, clamp(calc(140 * var(--u)), 22vw, calc(210 * var(--u)))), 1fr));
+  gap: calc(10 * var(--u));
+}
+body:not(.kiosk) .crumb { max-width: clamp(calc(100 * var(--u)), 40%, calc(240 * var(--u))); }
+
+/* ---- a pointer, which is a capability and not a size ---- */
+/* :hover on a touchscreen sticks after the tap and leaves a row lit that nobody is pointing at.
+   These used to be inside the laptop query, which answered the right question by accident. */
+@media (hover: hover) and (pointer: fine) {
+  body:not(.kiosk) .row:hover { border-color: var(--mid); }
+  body:not(.kiosk) .cell:hover { border-color: var(--mid); }
+}
+
+/* ---- sitting down ---- */
+/* The one width query left in this stylesheet, and it is not a layout question: it asks whether
+   this is a device somebody sits down and reads a transcript on. That matters because the answer
+   decides a *fetch* - a narrow client does not hide the conversation, it never asks the server
+   for it (see app.js) - which is why it cannot be answered by auto-fit like everything above.
+   app.js reads the query text out of --wide-q below rather than repeating it, so there is one
+   definition of it and not two.
+
+   62rem is derived rather than chosen: two 420u columns plus their gutter and the page's own
+   padding come to ~967 px at the --u that width resolves to, and 62rem is 992 px at a default
+   root. In rem so that browser zoom moves the threshold with the type. */
+:root { --wide-q: "(min-width: 62rem) and (min-aspect-ratio: 1/1)"; }
+@media (min-width: 62rem) and (min-aspect-ratio: 1/1) {
+  /* Video left, conversation right, each scrolling on its own - when two columns fit. Nothing
+     here says how wide the window is; auto-fit stacks them the moment they do not. */
+  body:not(.kiosk) .watch {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(420 * var(--u))), 1fr));
+    grid-template-rows: minmax(0, 1fr);
+    gap: calc(18 * var(--u));
+  }
+  body:not(.kiosk) .playing { grid-template-rows: min-content min-content; align-content: start;
+                              overflow-y: auto; }
+  /* `auto` first, so the box takes the recording's own shape once the metadata lands and the
+     ratio after it is only what to hold before that. It has to be both: a session recorded from
+     the screen is 5:3 like the panel, one recorded from the camera is 4:3 like the sensor, and
+     the card holds a mix of the two forever. See cyclops.filming. */
+  body:not(.kiosk) .video { height: auto; max-height: min(52vh, 100%); aspect-ratio: auto 5 / 3;
+                            border: calc(1 * var(--u)) solid var(--dim); }
+  body:not(.kiosk) .stitle { font-size: calc(20 * var(--u)); -webkit-line-clamp: 3; }
+  body:not(.kiosk) .ssum { display: block; color: var(--dim); line-height: 1.5;
+                           margin-top: calc(10 * var(--u)); font-size: calc(13 * var(--u)); }
+  /* No left rule: it is right beside the video and wrong underneath it, and CSS cannot tell
+     which of the two this column landed in. The gap does the job either way. */
+  body:not(.kiosk) .talk { display: block; overflow-y: auto; min-height: 0; }
+  /* What a row says once there is room to say it. */
+  body:not(.kiosk) .rowsum {
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    color: var(--dim); font-size: calc(13 * var(--u)); line-height: 1.4;
+    margin-top: calc(7 * var(--u));
+  }
 }

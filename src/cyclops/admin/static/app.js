@@ -15,10 +15,15 @@
 // DOM: there is no build step here and no CDN to reach for (static/NOTICE.md), and the panel
 // has no internet to reach one over.
 
-// Must say the same thing as the @media rule at the end of the stylesheet. The narrow layout
-// does not *hide* the transcript, it never asks the server for it, which is the whole of
-// "everything on the desktop, only the video on the panel".
-const WIDE = window.matchMedia('(min-width: 900px) and (min-aspect-ratio: 1/1)');
+// The narrow layout does not *hide* the transcript, it never asks the server for it, which is
+// the whole of "everything on the desktop, only the video on the panel".
+//
+// The stylesheet owns this query and this reads it, so there is one definition of it rather
+// than two strings that have to be kept in step. It is not a layout question - lan.css answers
+// those with auto-fit and wrapping - it is whether this is a device you sit down and read on,
+// and the answer decides whether the transcript is fetched at all. See --wide-q in lan.css.
+const WIDE = window.matchMedia(
+  getComputedStyle(document.documentElement).getPropertyValue('--wide-q').trim().slice(1, -1));
 
 const VIEWS = ['view-status', 'view-sessions', 'view-session', 'view-media',
                'view-projects', 'view-browse', 'view-file'];

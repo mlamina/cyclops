@@ -33,6 +33,10 @@
  *   node tests/layout_check.mjs --save     # write the baseline (do this before you change CSS)
  *   node tests/layout_check.mjs            # compare against it
  *
+ * Editing a fixture below moves the baseline too, because the geometry is the geometry of these
+ * rows. Re-save in the same commit, and read the diff first: a fixture change should move the
+ * things it added and nothing else.
+ *
  * KIOSK= is the loopback origin, which is what makes views._is_local() true and puts
  * class="kiosk" on the body. LAN= must NOT be loopback, or you measure the panel twice and
  * conclude the phone is fine. Screenshots land in /tmp/cyclops-layout/.
@@ -95,24 +99,40 @@ const SESSION = {
   started: '2026-09-01T18:13:08', seconds: 88, video: true, verdict: 'finished',
   photos: ['photos/18-13-40_bracket.jpg', 'photos/18-14-02_ribbon.jpg'], diagrams: [],
 };
+// The shape library.records() actually returns - `type` and `t` and `text`, not a prose
+// invention. A fixture that does not match renders as a column of "Something went wrong", which
+// is the transcript layout going untested while the check reports green.
 const RECORDS = {
   records: [
-    { at: 2.0, who: 'you', said: 'What would it take to put a proper camera on this thing?' },
-    { at: 6.5, who: 'cyclops', said: 'The Camera Module 3 Wide is the one that fits the case without a new cut-out, and it is the official part, so libcamera already knows it.' },
-    { at: 21.0, who: 'cyclops', note: 'took a photograph' },
+    { type: 'you', t: 2.0, text: 'What would it take to put a proper camera on this thing?' },
+    { type: 'cyclops', t: 6.5, text: 'The Camera Module 3 Wide is the one that fits the case without a new cut-out, and it is the official part, so libcamera already knows it. The Arducam clone wants a libcamera fork on the Pi, which is a maintenance bill rather than a purchase.' },
+    { type: 'you', t: 19.2, text: 'Fine. Order it.', interrupted: true },
+    { type: 'photo', t: 21.0, shown: true, file: 'photos/18-13-40_bracket.jpg' },
+    { type: 'diagram', t: 44.0, title: 'Ribbon routing', found: false },
+    { type: 'error', t: 61.0, message: 'the camera stopped answering for nine seconds' },
   ],
 };
+// library.Item, under the key media_stream() actually uses. A `drawn: false` diagram is in
+// here because it is the one tile that renders text instead of a picture.
+const shot = (kind, title, when, drawn) => ({
+  kind, session: '2026-09-01_18-13-08', session_title: 'Planned to swap a USB webcam',
+  title, when, url: `/media/2026-09-01_18-13-08/photos/${when.slice(11, 13)}.jpg`, drawn });
 const MEDIA = {
-  media: [
-    { session: '2026-09-01_18-13-08', path: 'photos/18-13-40_bracket.jpg', kind: 'photo', at: '2026-09-01T18:13:40' },
-    { session: '2026-09-01_18-13-08', path: 'photos/18-14-02_ribbon.jpg', kind: 'photo', at: '2026-09-01T18:14:02' },
-    { session: '2026-08-30_21-15-42', path: 'diagrams/21-16-00_wiring.svg', kind: 'diagram', at: '2026-08-30T21:16:00' },
+  items: [
+    shot('photo', 'a bracket', '2026-09-01T18:13:40', true),
+    shot('photo', 'the ribbon, seated', '2026-09-01T18:14:02', true),
+    shot('diagram', 'Ribbon routing from the module to the header', '2026-08-30T21:16:00', true),
+    shot('diagram', 'A drawing the panel never sent back', '2026-08-30T21:18:00', false),
+    shot('photo', 'the case, cut', '2026-08-30T21:20:00', true),
   ],
 };
+// shelf.projects(): name, title, tagline, status, updated, sessions, photos, thumb.
 const PROJECTS = {
   projects: [
-    { name: 'cyclops-camera-swap', title: 'Camera swap', files: 6, updated: '2026-09-01T18:20:00' },
-    { name: 'bench-power-supply', title: 'Bench power supply', files: 2, updated: '2026-08-28T11:00:00' },
+    { name: 'cyclops-camera-swap', title: 'Camera swap', tagline: 'Official Module 3 Wide, case-mounted, no new cut-out.',
+      status: 'active', updated: '2026-09-01T18:20:00', sessions: 4, photos: 11, thumb: '' },
+    { name: 'bench-power-supply', title: 'Bench power supply', tagline: 'Two rails and a current limit.',
+      status: 'paused', updated: '2026-08-28T11:00:00', sessions: 2, photos: 3, thumb: '' },
   ],
 };
 
@@ -126,11 +146,18 @@ async function stub(ctx) {
     await ctx.route(pattern, (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) }));
   }
-  // Thumbnails and photographs are aborted rather than served. .thumb is `position: absolute;
-  // inset: 0` and .cell img has its own aspect-ratio, so nothing here decides a size - and a
-  // video that decodes on its own schedule is exactly the flake this file exists to avoid.
-  await ctx.route('**/media/**', (route) => route.abort());
-  await ctx.route('**/project-media/**', (route) => route.abort());
+  // A picture is served, and a recording is not. A broken <img> is not a small picture: it is a
+  // box sized by its own alt text, which on the media grid made a 4:3 tile 580 px tall and would
+  // have had this file reporting a layout that does not exist. So stills get a 4:3 SVG, and the
+  // aspect ratio the grid is measured at is the real one. Video is still aborted - .thumb is
+  // `position: absolute; inset: 0` so it decides no size, and a decoder that finishes when it
+  // feels like it is exactly the flake this file exists to avoid.
+  const STILL = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 3">' +
+                '<rect width="4" height="3" fill="#0d2418"/></svg>';
+  await ctx.route('**/*.mp4', (route) => route.abort());
+  for (const pattern of ['**/media/**', '**/project-media/**'])
+    await ctx.route(pattern, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/svg+xml', body: STILL }));
 }
 
 // ---------------------------------------------------------------- what gets measured
