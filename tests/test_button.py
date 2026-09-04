@@ -1,9 +1,14 @@
-"""The shutter button beside the panel, and the ring in it.
+"""The button beside the panel: its two gestures, and the ring in it.
 
-Two things worth pinning down, neither of which needs a pin. The button is a second way into a
-path that already existed, so what matters is that it lands on exactly that path and nowhere
-else - and that the three cases the touchscreen already distinguishes (asleep, menu up, plain
-press) come out the same way when the press arrives on a thread of its own instead.
+Three things worth pinning down, none of which needs a pin. The button is a second way into two
+paths that already existed - the aperture on a tap, the microphone switch on a hold - so what
+matters is that each lands on exactly its own path and nowhere else, and that the cases the
+touchscreen already distinguishes (asleep, menu up, plain press) come out right when the press
+arrives on a thread of its own instead. The one place the two deliberately part company is a
+dark panel, and that has a test to itself.
+
+Then the latch, which is the only real logic the module gained: a press that became a hold must
+not also arrive as a tap when the finger finally comes off.
 
 And the object itself has to survive having no hardware under it, because that is the normal
 case everywhere except the Pi: no gpiozero on a Mac, no free pin on a box where the kiosk is
@@ -35,10 +40,16 @@ def _panel(monkeypatch: pytest.MonkeyPatch) -> kiosk_module.Kiosk:
     kiosk.did: list[str] = []
     monkeypatch.setattr(kiosk, "_snap", lambda: kiosk.did.append("snap"))
     monkeypatch.setattr(kiosk, "_wake", lambda: kiosk.did.append("wake"))
+    monkeypatch.setattr(kiosk, "_toggle_session", lambda: kiosk.did.append("toggle"))
     return kiosk
 
 
-# ---------------------------------------------------------------- the press
+def _pinless(**handlers: object) -> ShutterButton:
+    """A ShutterButton with no pin under it, so its callbacks can be driven by hand."""
+    return ShutterButton(pin=None, led_pin=None, hold_s=0.7, **handlers)
+
+
+# ------------------------------------------------------------------ the tap
 
 
 def test_a_press_takes_a_photo(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -74,6 +85,64 @@ def test_the_power_menu_swallows_it(monkeypatch: pytest.MonkeyPatch) -> None:
     assert kiosk.did == []
 
 
+# ----------------------------------------------------------------- the hold
+
+
+def test_a_hold_wakes_him_and_puts_him_back_to_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The microphone switch's own path, so there is no second way for a session to begin."""
+    kiosk = _panel(monkeypatch)
+    kiosk.button_held()
+    assert kiosk.did == ["toggle"]
+    assert kiosk._pressed == "wake", "the switch on the glass should show which one you hit"
+
+
+def test_a_hold_on_a_dark_panel_lands_as_well_as_lighting_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one place the two gestures part company, and the reason is not symmetry.
+
+    A tap under a black screen is ambiguous and is spent waking it. A hold cannot be: it can
+    only have meant one thing. It has to light the glass itself, though - _sleeping never clears
+    _asleep on its own, so the session would otherwise run its whole length behind a dark panel.
+    """
+    kiosk = _panel(monkeypatch)
+    kiosk._asleep = True
+    kiosk.button_held()
+    assert kiosk.did == ["wake", "toggle"], "a session started behind a panel nobody lit"
+
+
+def test_the_power_menu_swallows_a_hold_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Modal is modal. Two of its three rows end the box; starting a session is no answer."""
+    kiosk = _panel(monkeypatch)
+    kiosk._menu = True
+    kiosk.button_held()
+    assert kiosk.did == []
+
+
+# ---------------------------------------------------------------- the latch
+
+
+def test_a_hold_does_not_also_arrive_as_a_tap() -> None:
+    """What the release edge costs, and the only real logic in the module.
+
+    Letting go is what ends both gestures, so without the latch every hold would be followed by
+    the photo it was not: press, hold, release, snap.
+    """
+    did: list[str] = []
+    button = _pinless(on_tap=lambda: did.append("tap"), on_hold=lambda: did.append("hold"))
+
+    button._down()
+    button._held()
+    button._up()
+    assert did == ["hold"]
+
+    # ...and the next press is a tap again: the latch is cleared on the way down, not up, so a
+    # release that never arrived cannot go on swallowing taps for the rest of the run.
+    button._down()
+    button._up()
+    assert did == ["hold", "tap"]
+
+
 # ---------------------------------------------------------------- the ring
 
 
@@ -104,23 +173,27 @@ def test_a_photo_that_did_not_happen_reaches_the_ring(monkeypatch: pytest.Monkey
 
 def test_no_pin_is_a_button_that_does_nothing() -> None:
     """The normal case off the Pi. Every method still answers, and the kiosk never asks."""
-    pressed: list[int] = []
-    button = ShutterButton(pin=None, led_pin=None, on_press=lambda: pressed.append(1))
+    did: list[str] = []
+    button = _pinless(on_tap=lambda: did.append("tap"), on_hold=lambda: did.append("hold"))
     assert not button.available
     button.show(RING_ACTIVE)  # no ring to light, and no exception either
     button.close()
-    assert pressed == []
+    assert did == []
 
 
 def test_a_handler_that_raises_cannot_kill_the_thread() -> None:
-    """gpiozero calls this on one thread and never starts another.
+    """gpiozero has one thread for edges and one for holds, and never starts another of either.
 
-    An exception let out of here would take the button out for the rest of the run, silently,
-    and the only symptom anybody would ever see is a button that used to work.
+    An exception let out of either would take half the button out for the rest of the run,
+    silently, and the only symptom anybody would ever see is a gesture that used to work.
     """
 
     def explode() -> None:
         raise RuntimeError("the application action went wrong")
 
-    button = ShutterButton(pin=None, led_pin=None, on_press=explode)
-    button._pressed()  # what gpiozero would call; it must come back rather than propagate
+    button = _pinless(on_tap=explode, on_hold=explode)
+    # What gpiozero would call. Both must come back rather than propagate.
+    button._down()
+    button._up()
+    button._down()
+    button._held()

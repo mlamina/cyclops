@@ -449,7 +449,12 @@ class Kiosk:
         self.button = ShutterButton(
             pin=controller.settings.button_pin,
             led_pin=controller.settings.button_led_pin,
-            on_press=self.shutter_pressed,
+            # The same threshold his eye is held for, so the two long presses on this box feel
+            # like one gesture rather than two conventions. Passed down rather than declared
+            # again over there: a second constant is a second thing to keep in step.
+            hold_s=LONG_PRESS_S,
+            on_tap=self.shutter_pressed,
+            on_hold=self.button_held,
         )
 
     # ---- window ----
@@ -720,16 +725,21 @@ class Kiosk:
         return self._notice if time.monotonic() < self._notice_until else ""
 
     def shutter_pressed(self) -> None:
-        """The button beside the panel: the aperture's own path, with the coordinates taken out.
+        """A *tap* on the button beside the panel: the aperture's path, coordinates taken out.
 
-        The one press here that does not arrive on the render thread - highgui dispatches taps
-        from inside ``waitKey``, gpiozero has a thread of its own. Everything this touches is
-        either lock-guarded (:meth:`cyclops.camera.CameraSource.start`) or a plain attribute the
-        loop only reads, and :meth:`_snap` already hands the work to a thread anyway.
+        On the release rather than the press, because a tap and a hold are the same event until
+        somebody lets go and the hold now means something (see :meth:`button_held`). The photo
+        is therefore late by however long you lean on the button, which is the bargain his eye
+        has always made for the same reason.
 
-        A press while the panel is dark is spent waking it, exactly as a tap is, though for the
-        opposite reason: you *can* find this button in the dark. Sleeping released the camera,
-        so the photo it took would be of nothing.
+        Neither this nor the hold arrives on the render thread - highgui dispatches taps from
+        inside ``waitKey``, gpiozero has threads of its own. Everything they touch is either
+        lock-guarded (:meth:`cyclops.camera.CameraSource.start`) or a plain attribute the loop
+        only reads, and :meth:`_snap` already hands the work to a thread anyway.
+
+        A tap while the panel is dark is spent waking it, exactly as a tap on the glass is,
+        though for the opposite reason: you *can* find this button in the dark. Sleeping
+        released the camera, so the photo it took would be of nothing.
         """
         self._touched_at = time.monotonic()
         if self._asleep:
@@ -739,6 +749,34 @@ class Kiosk:
             return  # modal, and two of its three rows end the box: this is no answer to it
         self._press("shutter")
         self._snap()
+
+    def button_held(self) -> None:
+        """The button held down: the microphone switch, without having to find the glass.
+
+        The switch that starts and ends a conversation is a 12 mm target you have to look at,
+        and the moment you want to start talking to him is the moment both hands are full. This
+        is the same :meth:`_toggle_session` the switch itself calls - the record source, the
+        printed line, the closing cue and the optimistic ``_pending`` all come with it - so
+        there is no second way for a session to begin.
+
+        Unlike the tap, a hold on a dark panel is not spent waking it: the tap is ambiguous
+        under a black screen and this cannot be, so it lands. It has to light the glass itself,
+        though. :meth:`_sleeping` only keeps the idle clock reset while a session is up; it
+        never clears :attr:`_asleep`, so a session started on a dark panel would otherwise run
+        its whole length behind one.
+
+        No cue of its own, and no ring state of its own. ``_pending`` makes :meth:`_effective`
+        report STARTING at once, which is a session as far as :meth:`_ring_state` is concerned,
+        so the ring lights as the hold lands - and after it the connecting ping and the closing
+        pair say the rest, which is the half of this a head under a bench can hear.
+        """
+        self._touched_at = time.monotonic()
+        if self._menu:
+            return  # modal, exactly as it is for the tap above
+        if self._asleep:
+            self._wake()
+        self._press("wake")  # the switch on the glass inverts, so you can see which one you hit
+        self._toggle_session()
 
     def _ring_state(self, state: str) -> str:
         """What the ring in the button should be saying: idle, listening, or a photo that failed.
@@ -1470,7 +1508,8 @@ def main() -> None:
     # Only when there is one. A line about a button nobody wired is a line that sends somebody
     # looking for it - the same argument the idle note below makes about blanking that is off.
     button_note = (
-        "  the button beside the panel is that same aperture: press it for a photo\n"
+        "  the button beside the panel is both switches: tap it for a photo,\n"
+        f"  hold it {LONG_PRESS_S:g}s to wake him or put him back to sleep\n"
         if kiosk.button.available
         else ""
     )
