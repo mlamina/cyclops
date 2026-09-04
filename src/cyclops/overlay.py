@@ -194,16 +194,26 @@ CAPTIONS = {
 # has to be readable across a workshop; the eye is a face, and it may say something finer - so a
 # state that looks the same on the rim can still look different in the middle of the bar.
 MOODS = {
-    # Asleep: shut, stopped, and breathing. Nothing turns, nothing blinks, and the lid stays
-    # down - a breath that cracked the iris would read as half awake, and past a swell of 0.08 the
-    # pupil pops in and out with it. So the breath is carried by how present he is instead: the
-    # whole face dims and comes back, which is what the border and the caption already do to say
-    # they are alive. He was utterly still here until now, and a frozen face on a lit panel reads
-    # as a box that is off rather than as one that is sleeping.
+    # Asleep: turning slowly, and breathing with the iris. Two things move, and both of them
+    # are movement rather than light - a resting creature is not a lamp on a dimmer. Brightness
+    # was tried as the whole of it and is not animation at all: a face whose ticks sit in exactly
+    # the same place in every frame reads as a still picture with something flickering behind it,
+    # however deep the pulse is made.
     #
-    # The slowest breath in the table by some way - about nine a minute, which is a creature
-    # asleep - and, like every other period on this panel, not a multiple of any of the others.
-    IDLE: Mood(tint=GREEN_MID, aperture=0.0, swell=0.0, breath_s=6.5, spin=0.0, sink=0.70),
+    # Slower than anything else in the table, which is what makes this sleep rather than work.
+    # The spin is a sixtieth of a hunting eye's and a third of an attending one's - slower even
+    # than the stare, which is the stillest he gets while awake - so a turn takes two and a half
+    # minutes: movement you notice having happened rather than movement you watch. It still reads
+    # from across the room, because the brackets run backwards against the ticks and what the eye
+    # picks up is the two moving apart, not either of them going anywhere. The breath is the
+    # longest here, about nine a minute, and like every other period on this panel it is not a
+    # multiple of any of the others.
+    #
+    # The iris carries that breath, and stays narrow doing it: it swells between a tenth and
+    # under two fifths open, which never crosses the threshold the pupil is drawn on, so it grows
+    # and shrinks rather than popping in and out - dozing, and nowhere near the 0.52 of a face
+    # that is paying attention.
+    IDLE: Mood(tint=GREEN_MID, aperture=0.24, swell=0.14, breath_s=6.5, spin=2.5),
     # Coming round: the iris only half up, the rings running fast, and a highlight sweeping the
     # rim - a thing spinning itself up rather than a thing paying attention.
     STARTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0),
@@ -978,9 +988,7 @@ class Overlay:
             # Wide, bright and steady. Startled open is the right shape for an acknowledgement,
             # and it is the one gesture that reads the same from every mood - including asleep,
             # where you have just tapped a shut eye and it has opened to look at you.
-            mood = replace(
-                mood, tint=GREEN, rings=1.0, sink=0.0, aperture=1.0, swell=0.0, voice=0.0
-            )
+            mood = replace(mood, tint=GREEN, rings=1.0, aperture=1.0, swell=0.0, voice=0.0)
         self.engine.paint(layer, *self.eye, mood, phase, level)
         if hold > 0.0:
             self._draw_hold(layer, hold)

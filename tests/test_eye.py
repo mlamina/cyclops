@@ -92,28 +92,31 @@ def test_only_the_broken_face_holds_still() -> None:
     # every mood but the faulted one has something about it that moves. The sleeping face is in
     # here now too - it breathes - and its own, much narrower rule is the test below.
     for state, mood in overlay.MOODS.items():
-        moves = bool(
-            mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice or mood.sink
-        )
+        moves = bool(mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice)
         assert moves == (state != overlay.ERROR), state
 
 
-def test_the_sleeping_face_moves_by_breathing_and_by_nothing_else() -> None:
-    # Asleep is not "a bit awake". The mechanism is stopped and the lid is down, and what is left
-    # is the whole of him dimming and coming back. A swell here would crack the iris - past 0.08
-    # the pupil pops in and out with every breath - and a spin would be a machine running in its
-    # sleep, which is the reading the stillness was there to prevent in the first place.
+def test_the_sleeping_face_moves_slowly_and_by_moving() -> None:
+    """He turns and his iris breathes, and he does neither of them by changing brightness.
+
+    Both halves are the requirement rather than a preference, and the second one is here because
+    it was got wrong: the sleeping face first shipped as a still drawing behind a slow fade,
+    which is a lamp on a dimmer and not a creature. Brightness is what this panel says *state*
+    with - the border, the caption, the wake cell all breathe in light - so a face doing it too
+    says nothing, and says it over the one thing that was supposed to be a face.
+
+    Slow is the other half. Every number here is the gentlest of its kind in the table, which is
+    what separates a creature asleep from one at work.
+    """
     mood = overlay.MOODS[overlay.IDLE]
-    assert mood.sink > 0.0, "he does not breathe, and a frozen face reads as a box that is off"
-    assert not (mood.spin or mood.scan or mood.blink_s or mood.voice or mood.aperture)
-    assert mood.swell <= 0.08, "a breath that cracks the iris reads as half awake"
-    # How deep the breath may go, found by looking at tools/eye_sheet.py rather than reasoned
-    # about. Past about three quarters he is gone at the bottom of it rather than dim, and a face
-    # that blinks out once a breath reads as a fault light - which is the failure at the far end
-    # from the one that shipped, and just as invisible to a test that only asks whether he moved.
-    assert 0.5 <= mood.sink <= 0.75, "he either cannot be seen to breathe, or blinks out doing it"
-    working = max(m.breath_s for state, m in overlay.MOODS.items() if state != overlay.IDLE)
-    assert mood.breath_s > working, "a sleeping creature breathes slower than a working one"
+    assert mood.spin, "the rings hold still - the ticks are in the same place in every frame"
+    assert mood.swell, "the iris holds still"
+    assert not mood.blink_s, "a shut-and-open lid is not what a sleeping face does"
+    assert not (mood.scan or mood.voice), "he is asleep, not hunting or listening"
+    still = (overlay.IDLE, overlay.ERROR)
+    working = [m for state, m in overlay.MOODS.items() if state not in still]
+    assert mood.breath_s > max(m.breath_s for m in working), "he breathes faster than a working eye"
+    assert abs(mood.spin) < min(abs(m.spin) for m in working), "he turns faster than a working eye"
     # ...and, like every other period on this panel, out of step with all of them - see
     # WAKE_PERIOD_S. His is the longest, so it can only lock by being a multiple of one of them.
     for period in (overlay.WAKE_PERIOD_S, overlay.RIM_PERIOD_S, overlay.BREATH_PERIOD_S):
@@ -311,51 +314,51 @@ def test_nothing_moves_while_he_is_asleep_except_his_breath_and_the_way_out() ->
         assert not moved, f"{state} moved outside those at frames {moved[:5]}"
 
 
-def _glow(crop: np.ndarray) -> float:
-    """How much light is inside his rim, weighted by how opaque it is.
+def _peak(crop: np.ndarray) -> int:
+    """The brightest opaque pixel inside his rim. His own rim, in practice: it is the one ring
+    drawn at the mood's tint undiluted, so it is exactly the tint in every frame unless something
+    is dimming him.
 
-    A brightness rather than the count :func:`_lit` takes: a hard threshold quantises a smooth
-    fade into a handful of steps, and would call a breath either a stall or a flash depending on
-    where the threshold happened to fall.
-
-    Inside the *disc* and not the square :func:`_face` cuts, which is not fussiness: the corners
-    of that square reach past his rim into the tab row's own chrome, and the shoulder rule out
-    there holds still. Left in, it is 177 pixels of nothing-happening dragging the mean towards
-    a constant - enough to make a face that blinks out entirely still measure as one that dims.
+    Inside the *disc*, not the square :func:`_face` cuts. The corners of that square reach past
+    him into the tab row's chrome, which is drawn in full phosphor and never moves - brighter
+    than anything of his, so a peak taken over the square is a constant that would sit there
+    unchanged while he faded to nothing. This has already caught one measurement out.
     """
     r = crop.shape[0] // 2
     ys, xs = np.ogrid[-r:r, -r:r]
-    light = crop[:, :, :3].astype(float).sum(axis=2) * crop[:, :, 3] / 255
-    return float(light[ys**2 + xs**2 <= r**2].mean())
+    inside = (ys**2 + xs**2 <= r**2) & (crop[:, :, 3] > 200)
+    return int(crop[:, :, :3][inside].astype(int).sum(axis=1).max())
 
 
-def test_he_breathes_while_he_is_asleep() -> None:
-    # A box on a bench with a frozen face reads as switched off rather than as sleeping. What
-    # moves is the whole of him, dimming and coming back on the same raised cosine the border and
-    # the caption breathe on - and slower than either of them, because he is asleep.
+def test_he_turns_and_breathes_while_he_is_asleep() -> None:
+    # What "asleep and breathing" was asked to look like, on the pixels rather than on the table.
     ov = _panel()
     asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **asleep)
-    period = overlay.MOODS[overlay.IDLE].breath_s
-    at = [100.0 + i * period / 24 for i in range(24)]
-    sweep = [_glow(_face(ov, ov.render(phase=t, **asleep))) for t in at]
-    # A whole third, and the number is the point rather than a margin. This shipped once at a
-    # sink of 0.35 - a swing of 1.21 - which passes any assertion that only asks whether the
-    # pixels changed, and which nobody standing in front of the panel could see at all. An
-    # animation nobody notices is the same as no animation, so the floor is set where it starts
-    # being legible across a room.
-    assert max(sweep) > 1.4 * min(sweep), "the swell is too slight for anyone to notice"
-    assert min(sweep) > 0.5 * max(sweep), "he goes out at the bottom of it rather than dimming"
-    assert len({round(v, 1) for v in sweep}) > 8, "it steps rather than swelling"
-    # ...and it is a breath, not a flutter. Sampled at the steepest part of the cosine, and
-    # stated against his own swing rather than as a percentage, so it goes on meaning the same
-    # thing if the depth is ever tuned: a fifth of a second is a fifth of a second whatever the
-    # swell is, and at anything under about a second a breath it would carry a fifth of the way.
-    span = max(sweep) - min(sweep)
-    steepest = 15 * period + period / 4
-    steady = _glow(_face(ov, ov.render(phase=steepest, **asleep)))
-    twitch = _glow(_face(ov, ov.render(phase=steepest + 0.2, **asleep)))
-    assert abs(twitch - steady) < 0.2 * span, "he is breathing far too fast to be asleep"
+    mood = overlay.MOODS[overlay.IDLE]
+    # The rings, measured a whole breath apart so the iris is in exactly the same place in both
+    # frames and rotation is the only thing left that can differ. Two arbitrary phases would pass
+    # on the breath alone and say nothing at all about whether anything turns.
+    first, second = 10.0, 10.0 + mood.breath_s
+    assert ov.engine.aperture(mood, first, 0.0) == pytest.approx(
+        ov.engine.aperture(mood, second, 0.0)
+    ), "pick two phases a whole breath apart, or this test is about the iris"
+    a = _face(ov, ov.render(phase=first, **asleep))
+    b = _face(ov, ov.render(phase=second, **asleep))
+    assert not np.array_equal(a, b), "the ring set held still while he slept"
+    # The iris, which is what actually breathes: it swells and shrinks, and stays the whole time
+    # on the open side of the threshold the pupil is drawn on, so it grows rather than blinking
+    # into existence once a breath.
+    sweep = [ov.engine.aperture(mood, i * mood.breath_s / 24, 0.0) for i in range(24)]
+    assert max(sweep) - min(sweep) == pytest.approx(mood.swell, abs=1e-2)
+    assert min(sweep) > 0.08, "the pupil pops in and out rather than breathing"
+    # ...and he does none of it by getting brighter and darker. Brightness is how this panel says
+    # what state it is in; a face that pulses is competing with its own border, and the first
+    # attempt at this was nothing but that pulse.
+    peaks = {
+        _peak(_face(ov, ov.render(phase=i * mood.breath_s / 8, **asleep))) for i in range(8)
+    }
+    assert len(peaks) == 1, f"his brightness pulses over a breath: {sorted(peaks)}"
 
 
 def _invite(ov: overlay.Overlay, phase: float) -> float:
@@ -555,14 +558,16 @@ def test_the_scan_arc_sweeps_the_rim_while_he_is_hunting() -> None:
     assert 15 < moved < 345, f"the trace sat still ({moved:.0f} degrees in a quarter second)"
 
 
-def test_the_iris_is_shut_asleep_and_open_awake() -> None:
+def test_the_iris_is_narrower_asleep_than_awake() -> None:
     ov = _panel()
     asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **asleep)
-    shut = _face(ov, ov.render(phase=10.0, **asleep))
+    dozing = _face(ov, ov.render(phase=10.0, **asleep))
     _settle(ov, **AWAKE)
     open_ = _face(ov, ov.render(phase=10.0, **AWAKE))
-    assert _lit(open_) > _lit(shut), "an open iris is not brighter than a shut one"
+    assert _lit(open_) > _lit(dozing), "an attending iris is not wider than a dozing one"
+    # ...and on the table, where the pupil's own size comes from.
+    assert overlay.MOODS[overlay.IDLE].aperture < overlay.MOODS[overlay.LISTENING].aperture
 
 
 def test_the_pupil_widens_with_your_voice() -> None:

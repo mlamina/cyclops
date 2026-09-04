@@ -5,7 +5,7 @@ this is that drawing with the rings turning, the iris breathing and the whole th
 whatever the box is doing - so a glance at the middle of the tab row answers "is he there, and
 what is he up to" without reading a word.
 
-Everything the eye does is a :class:`Mood`: ten numbers and a colour. The engine is only the
+Everything the eye does is a :class:`Mood`: nine numbers and a colour. The engine is only the
 mechanism that draws them, which is what makes the eye tunable - a state is not code here, it is
 a row in a table (``overlay.MOODS``), and a new one costs a line. The parameters are meant to be
 pushed around: ``tools/eye_sheet.py`` renders every mood over a strip of time, so a change can be
@@ -137,7 +137,7 @@ def blink(phase: float, every: float) -> float:
 class Mood:
     """How the eye looks and moves. One per state, and the only thing that differs between them.
 
-    Ten numbers and a colour. Every one of them is meant to be pushed around - see the module
+    Nine numbers and a colour. Every one of them is meant to be pushed around - see the module
     docstring - so none of them is allowed to be load-bearing on its own: an eye with every
     parameter at zero is a dim ring, not a crash.
     """
@@ -149,11 +149,6 @@ class Mood:
     voice: float = 0.0  # how much further your voice opens it, on top of the breath
     spin: float = 6.0  # degrees a second the ring set turns; the sign is a direction
     rings: float = 1.0  # how present the rings are at all, 0 .. 1
-    sink: float = 0.0  # ...and how much of that the breath takes away again at the bottom
-    # of it. The other half of a breath, and the half a shut eye is left with: `swell` moves
-    # the iris, which a sleeping face has none of to move, and this dims the whole of him
-    # instead. Named for the two things on this panel that already do it - see
-    # `overlay.rim_breath` and `overlay.caption_pulse`, both of which hand back a *sunk*.
     scan: float = 0.0  # length in degrees of a bright arc sweeping the rim, 0 for none
     blink_s: float = 0.0  # mean seconds between blinks; 0 for a mood that does not blink
 
@@ -169,7 +164,7 @@ class Mood:
             tint=mix(self.tint, other.tint, k),
             **{
                 name: getattr(self, name) + (getattr(other, name) - getattr(self, name)) * k
-                for name in ("aperture", "swell", "breath_s", "voice", "spin", "scan", "sink")
+                for name in ("aperture", "swell", "breath_s", "voice", "spin", "scan")
             },
             rings=self.rings + (other.rings - self.rings) * k,
         )
@@ -325,9 +320,7 @@ class EyeEngine:
         cx = cy = r = self._c
         tint = mood.tint
         turn = mood.spin * phase
-        # His presence, with the breath taken out of it. A mood that does not sink comes through
-        # untouched, and so does one with no breath at all: breath() is 0 at a period of 0.
-        lit = max(0.0, min(1.0, mood.rings * (1.0 - mood.sink * breath(phase, mood.breath_s))))
+        lit = max(0.0, min(1.0, mood.rings))
         stroke, thin = self._stroke, self._thin
 
         def shade(strength: float) -> tuple:
