@@ -4,7 +4,7 @@
 (via :class:`~cyclops.camera.CameraSource`), draws each frame into a fullscreen OpenCV window
 with a PIL-rendered overlay on top, and turns taps into session control. The agent itself runs
 on a background thread inside a :class:`~cyclops.ui.SessionController`, and the photos the
-SNAP button feeds it are borrowed from the very camera you are watching.
+shutter switch feeds it are borrowed from the very camera you are watching.
 
 highgui must own the main thread, so the render loop lives here and everything else is off-thread.
 """
@@ -417,7 +417,7 @@ class Kiosk:
         self._warm_at = time.time()  # when it was launched, so a note older than it means nothing
         self._close_at = 0.0  # when we last looked for a Close from a page nobody here put up
         self._admin_busy = threading.Event()  # set from the tap until the page is done with
-        # A second latch rather than reusing _admin_busy, which the tab row reads to decide
+        # A second latch rather than reusing _admin_busy, which the chrome reads to decide
         # whether the eye is lit (see _pressed_now). A diagram is not that page, and a
         # panel that lights the eye whenever Cyclops draws would be telling the truth about the
         # browser and a lie about what you are looking at. Both still gate _open_admin, so the
@@ -556,7 +556,7 @@ class Kiosk:
     def _on_mouse(self, event: int, x: int, y: int, flags: int, _param: object) -> None:
         """Touchscreen taps arrive here as ordinary mouse events via XWayland.
 
-        Two of the three tabs act on the press, which is what a screen with no travel should do:
+        Both switches act on the press, which is what a screen with no travel should do:
         the flash and the shutter belong to the moment your finger lands. His face is the one
         exception, because it now carries two things - a tap for what the box has kept, a hold
         for the power menu - and the release is the only event that can tell them apart. That is
@@ -647,7 +647,7 @@ class Kiosk:
         self._touched_at = time.monotonic()  # putting it away is a touch like any other
 
     def _choose(self, key: str | None) -> None:
-        """Act on a tap while the menu is up. Its rows act on the press, as every tab does.
+        """Act on a tap while the menu is up. Its rows act on the press, as the switches do.
 
         Pointedly *not* on the release: the menu opens under a finger that is still down on his
         face, and a row that acted on a lift would be chosen by the very press that asked for the
@@ -682,15 +682,15 @@ class Kiosk:
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
-        """Which control to draw as held - a tab, or a row of the power menu.
+        """Which control to draw as held - a switch, his face, or a row of the power menu.
 
-        His cell stays lit while its page is up, and for as long as a finger is on him: a hold
+        He stays lit while his page is up, and for as long as a finger is on him: a hold
         that is going somewhere should look held for all of the second it takes, not for the
         180 ms a tap gets.
 
         Uncovering a warm browser is immediate, so the page half of this is normally seen for a
         frame or two. It still earns its place on the one tap that has to start a browser:
-        without it the tab goes dark 180 ms in and a panel that is busy looks like a panel that
+        without it he goes dark 180 ms in and a panel that is busy looks like a panel that
         ignored you.
         """
         if self._admin_busy.is_set() or self._eye_down_at is not None:
@@ -1002,9 +1002,9 @@ class Kiosk:
     def _toggle_session(self) -> None:
         """Act on the tap and record what we asked for, so the UI can show it at once."""
         state = self.controller.status()["state"]
-        # The same question the tab's own label asks, so what the button says and what the button
-        # does cannot drift: WAKE UP is an imperative, and one that stays put once it is no longer
-        # what the tap will do is a lie.
+        # The same question the microphone's own fill answers, so what the switch shows and what
+        # the switch does cannot drift. It is the only thing left saying which way the tap goes -
+        # the words that used to say it went with the tab row.
         starting = not session_up(str(state))
         self._pending = "start" if starting else "stop"
         self._pending_at = time.monotonic()
@@ -1168,7 +1168,7 @@ class Kiosk:
     def _wake(self) -> None:
         """Light the panel, reopen the camera, and start drawing again.
 
-        This wakes the *panel*; the WAKE UP tab wakes Cyclops. The two senses never contradict
+        This wakes the *panel*; the microphone switch wakes Cyclops. The two senses never contradict
         each other on screen because they nest: :meth:`_sleeping` only ever blanks the glass
         while the session is down, so the panel can only be dark when he is already asleep, and
         the tap that lights it is spent doing that and fires no button underneath.
@@ -1320,7 +1320,7 @@ class Kiosk:
             # The panel is showing what it will go on showing - picture, chrome and all - so
             # light it and say so. This is the moment "ready" is about, and it is deliberately
             # not open_window's: that one is called again for every retake of the panel from a
-            # page, and it puts a bare frame up a beat before the tab row is drawn over it.
+            # page, and it puts a bare frame up a beat before the brackets are drawn over it.
             # Everything that used to flicker after this point happened before it instead, in
             # warm_browser, with the light off. The other half of the pair - "booted", for Linux
             # itself - is sounded much earlier and from another process (cyclops.boot).
@@ -1387,7 +1387,7 @@ def main() -> None:
         camera.wait_for_frame()
     except WebcamError as exc:
         # A missing camera is a degraded panel, not a dead one. Everything else still works -
-        # WAKE UP starts a session, the eye opens the admin page, the light and the volume
+        # The microphone starts a session, the eye opens the admin page, the light and the volume
         # behave - and a Pi showing nothing at all reads as broken hardware, which sends
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
@@ -1427,9 +1427,9 @@ def main() -> None:
         f"  screen: {'x'.join(map(str, screen)) if screen else 'window-sized'}"
         f" · backlight: {kiosk.backlight.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
-        "  the tab row along the bottom: SNAP shows Cyclops a photo · tap his eye in the\n"
-        "  middle for the recordings and pictures, and for the volume · WAKE UP wakes him,\n"
-        "  and says GO TO SLEEP while he is up\n"
+        "  the two bottom corners: his eye on the left - tap it for the recordings and\n"
+        "  pictures, and for the volume · the aperture shows him a photo, the microphone\n"
+        "  wakes him and puts him back to sleep\n"
         f"  hold his eye for {LONG_PRESS_S:g}s to shut the box down or restart it\n"
         f"{idle_note}"
         "  q or ESC to quit · f toggles fullscreen",

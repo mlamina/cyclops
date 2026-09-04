@@ -2,7 +2,7 @@
 
 The boot mark brought to life. ``assets/splash.png`` is a diaphragm inside concentric HUD rings,
 and this is that drawing with the rings turning, the iris breathing, the core lit and the whole
-thing tinted by whatever the box is doing - so a glance at the middle of the tab row answers "is
+thing tinted by whatever the box is doing - so a glance at the bottom-left corner answers "is
 he there, what is he up to, and is he looking at me" without reading a word.
 
 Three things make him read as alive rather than as a spinner, and they are worth naming because

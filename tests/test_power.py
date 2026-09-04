@@ -28,12 +28,18 @@ DOWN, UP = cv2.EVENT_LBUTTONDOWN, cv2.EVENT_LBUTTONUP
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
 def test_the_card_leaves_his_face_showing(width: int, height: int) -> None:
-    """He is what you pressed to get here. A card over him would orphan the gesture."""
+    """He is what you pressed to get here. A card over him would orphan the gesture.
+
+    It used to have to dodge him upwards, because he stood in the middle of the tab row and the
+    honest centre of the panel was his face. With him in a corner the card can simply be centred
+    and still clear him - sideways now rather than above, which is why this measures against his
+    swell on the x axis and not against the top of his head.
+    """
     ov = overlay.Overlay(width, height)
     card = ov.menu_card
-    assert card.bottom <= ov.eye[1] - ov.eye_r, "the menu covers the face that opened it"
-    assert card.y >= ov.header.bottom, "the menu runs under the readout strip"
+    assert card.x > ov.eye[0] + ov.shoulder, "the menu covers the face that opened it"
     assert ov.frame.x <= card.x and card.right <= ov.frame.right
+    assert ov.frame.y <= card.y and card.bottom <= ov.frame.bottom
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
@@ -105,11 +111,20 @@ def test_the_choices_are_opaque() -> None:
 
 
 def _collar(chrome: np.ndarray, ov: overlay.Overlay) -> int:
-    """How much of the bright ring over his head is lit, in pixels."""
+    """How much of the rail that goes round him is lit in full phosphor, in pixels.
+
+    The whole square he stands in, not the top half of it: the rail leaves the straight below his
+    equator on one side and rejoins it below on the other, so a band cut at his centre would miss
+    both ends of the sweep and see the fill only in the middle of the press.
+    """
     cx, cy = ov.eye
-    reach = ov.shoulder + ov.rule_gap + 4
-    band = chrome[cy - reach : cy + 1, cx - reach : cx + reach, :3]
-    return int((band[:, :, 1] > 200).sum())
+    reach = ov.shoulder + ov.rail_w
+    band = chrome[max(0, cy - reach) : cy + reach, max(0, cx - reach) : cx + reach, :3]
+    # Full phosphor, not merely bright: the rail he is mounted in has a lit lip of its own a
+    # couple of pixels outside this arc, and a threshold loose enough to include that is a
+    # threshold measuring a constant. He sits in a corner now, so the band is clamped to the
+    # panel as well - a negative slice would quietly measure the wrong side of the screen.
+    return int((band[:, :, 1] > 240).sum())
 
 
 def test_the_collar_fills_as_the_press_goes_on() -> None:

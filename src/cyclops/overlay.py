@@ -6,50 +6,62 @@ shapes, a numpy-built halo and scanline field - and handed to :mod:`cyclops.kios
 array to alpha-blend onto the frame. Geometry doubles as the hit-test map: every interactive
 element returns its rectangle, so a tap can be resolved without a second layout.
 
-The layout is a terminal screen: a rounded border hard against the panel's edges, a readout
-strip along the top, three tabs along the bottom with Cyclops himself standing in the middle of
-them, and the camera behind all of it. The picture itself is left alone - no wash, no
-scanlines, nothing between you and the lens - because the panel's job is to let you see the room
-and the endoscope has no detail to spare. The filter is
-what the strip and the tab row are made of instead: they used to be opaque bars, and are now
-that same phosphor wash, corner shading and scanline field laid over the live picture, so the
-camera shows through the chrome as well as between it. The border carries the session state in
-its colour and glows inwards from it, which is the one thing that has to be readable across a
+The layout is four corner brackets and a picture. Each bracket's rail comes in square to one
+panel edge, ramps across the corner at 45 degrees and lands square on the other; the two top
+ones carry two rows of readout each, and the two bottom ones carry the controls. This replaced a
+readout strip and a three-cell tab row that between them covered 29% of the panel - the brackets
+cover about 14%, and the middle of the screen, which is what somebody holding a camera down a
+pipe is actually looking at, is now nothing but picture and a four-arc reticle on the lens axis.
+
+What made that affordable was giving up the words. SNAP, WAKE UP and GO TO SLEEP were what
+forced the controls into a row across the bottom: a cell has to be as wide as its label. Two
+glyphs and a face need a disc each, and a disc can go in a corner. What the words used to say is
+said by the microphone filling in while he is up, by the state word in the opposite corner, and
+by the line under the picture.
+
+A bracket is drawn to look like one. The rail is an extrusion rather than a stroke - a shadow
+cast inwards onto the plate, then a profile across its width: a lit chamfer on the outer lip, a
+body falling away, a flank in shadow - with socket-head bolts wherever it turns and stiffeners
+across the deep corner. The plate itself is still see-through: the tube filter (a phosphor wash,
+corner shading and a scanline field) laid over the live picture rather than an opaque bar, so
+the camera shows through the chrome as well as between it. The border carries the session state
+in its colour and glows inwards from it, which is the one thing that has to be readable across a
 workshop without reading any words - and it says so in *hue* rather than in brightness, because
 dim green and bright green are the same colour to anyone more than a pace away.
 
 His eye is the one thing here that is a face rather than a readout, and it is what lets the rest
-stay this terse: a glance at the middle of the row answers "is he there, and what is he up to",
-so the strip is left free to spell it out only for whoever is close enough to read it. He is the
+stay this terse: a glance at the bottom-left corner answers "is he there, and what is he up to",
+so the readouts are left to spell it out only for whoever is close enough to read them. He is the
 boot mark brought to life - :mod:`cyclops.eye` draws the splash's iris-inside-HUD-rings with the
 rings turning and the iris breathing, and :data:`MOODS` says how, one row per state. Tapping him
 opens what the box has kept, because what you ask a face is what it remembers.
 
-The row's top rule runs in from both sides, lifts over the top of his head and comes down the
-other side. That shoulder is the join: it is what makes him part of the bar rather than a badge
-sitting on it. And while he is asleep the only things on this panel that move are his own
-breath and the WAKE UP cell: no ring turns, nothing blinks, no readout changes. That is what
-makes any of the rest of it read as awake - the *mechanism* stopping, rather than the creature
-holding its breath. The cell breathes because it is the only control left to press, and a
-control nobody finds is worse than one that beckons.
+His bracket's rail leaves the straight, goes round him and comes back. That shoulder is the
+join: it is what makes him part of the bracket rather than a badge sitting on it, and it is why
+his corner is the big one - a face wants room, and the two switches opposite are bolted straight
+through their rail and take a third of the space. While he is asleep the only things on this
+panel that move are his own breath and the microphone: no ring turns, nothing blinks, no readout
+changes. That is what makes any of the rest of it read as awake - the *mechanism* stopping,
+rather than the creature holding its breath. The switch breathes because it is the only control
+left to press, and a control nobody finds is worse than one that beckons.
 
-Everything that holds still while the state does - the halo, the scanlines, the vignette, the
-frame and its glow, the mode word, the tab row and its two glyphs, the shoulder - is built once
-and cached, keyed on the state. A Pi rendering this at 25 fps has 40 ms for the whole loop and
-the camera wants most of them; what is left for a frame here is a signal meter, a clock, a
-caption, one ring, the border line and the eye. Every part of the eye moves, so none of it is
-cached at all; measured on the Pi, he is about 7 ms of a 9.5 ms frame, which is the single
-largest thing this loop does and is meant to be - he is the only part of the panel anybody
-looks at. The number is worth keeping honest, because it was wrong here for a long time: this
-line claimed a tenth of a millisecond, which was the figure before he was ever supersampled.
-Re-measure with `deploy/push.sh && ssh cyclops@cyclops.local` and a timing loop around
-`Overlay.render`, not by reasoning about it.
+Everything that holds still while the state does - the halo, the brackets and their bolts, the
+reticle, the mode word, the switches at rest - is built once and cached, keyed on the state. A
+Pi rendering this at 25 fps has 40 ms for the whole loop and the camera wants most of them; what
+is left for a frame here is a signal meter, a clock, a caption, one ring, the border line and the
+eye. Every part of the eye moves, so none of it is cached at all; measured on the Pi, he is about
+7 ms of a 9.5 ms frame, which is the single largest thing this loop does and is meant to be - he
+is the only part of the panel anybody looks at. The number is worth keeping honest, because it
+was wrong here for a long time: this line claimed a tenth of a millisecond, which was the figure
+before he was ever supersampled. Re-measure with `deploy/push.sh && ssh cyclops@cyclops.local`
+and a timing loop around `Overlay.render`, not by reasoning about it.
 """
 
 from __future__ import annotations
 
 import math
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -77,10 +89,9 @@ STARTING, STOPPING = "starting", "stopping"
 def session_up(state: str) -> bool:
     """Is there a session at all - from the tap that starts one to the last file it writes?
 
-    The panel's coarsest question, and the one the *words* answer to: the tab says GO TO SLEEP
-    rather than WAKE UP, the caption breathes, the border breathes. The kiosk asks it too, so
-    that what the button says and what the button does can never drift apart - see
-    ``_toggle_session``.
+    The panel's coarsest question: the caption breathes, the border breathes, the microphone
+    fills in. The kiosk asks it too, so that what the switch shows and what the switch does can
+    never drift apart - see ``_toggle_session``.
     """
     return state not in (IDLE, ERROR)
 
@@ -106,8 +117,8 @@ GREEN_DIM = (32, 118, 70)  # the faintest thing still legible on the panel
 AMBER = (255, 184, 60)
 RED = (255, 86, 70)
 # The one the tube gets while he is up. Asleep, the panel is a single hue and he is the same
-# green as the furniture he sits in - bar the WAKE UP button, which breathes towards this to say
-# what pressing it does; awake, the live parts step off the green.
+# green as the furniture he sits in - bar the microphone, which breathes towards this to say what
+# pressing it does; awake, the live parts step off the green.
 #
 # Not a second hue at all, in the end: the tube's own white. A single-phosphor screen driven hard
 # blooms towards white with its own colour still in it, which is why this is 225,255,240 and not
@@ -119,7 +130,7 @@ RED = (255, 86, 70)
 # the REC tag both went pale long before this did, because on a one-hue tube pale is the only
 # direction left.
 WHITE = (225, 255, 240)
-SCREEN = (5, 15, 10)  # the green-black the readout strip and the tab row are made of
+SCREEN = (5, 15, 10)  # the green-black the brackets and their plates are made of
 INK = (3, 11, 7)  # text on a filled tab
 
 # The halo answers one question only from across a room - is the agent up? - and the state's
@@ -144,8 +155,9 @@ HALOS = {
 # because two of these states are the kiosk's own invention and the controller has never heard
 # of them; the controller's sentence goes in the caption underneath instead.
 #
-# Asleep, waking, sleeping - because the button underneath says WAKE UP, and a box that is asked
-# to wake up does not answer STANDBY. The five states in the middle already read as a creature
+# Asleep, waking, sleeping - because the control in the other corner is a microphone you press to
+# wake him, and a box asked to wake up does not answer STANDBY. The five in the middle read as a
+# creature
 # doing something and are left alone, and so is FAULT: the metaphor does not get to swallow the
 # one word that has to be believed.
 LABELS = {
@@ -178,9 +190,9 @@ HEAT_WORD = "HOT"
 # project is being opened, which step of the teardown is running - and that wins; this is what the
 # panel falls back on. Every state has one, so the line is never blank while a session is up.
 CAPTIONS = {
-    IDLE: "zzZzzzZ…",  # he snores. The tab underneath still says WAKE UP and still breathes
-    # towards the colour it will turn, which is the half of this that was ever load-bearing - so
-    # the line is free to stop being an instruction and go back to being him.
+    IDLE: "zzZzzzZ…",  # he snores. The microphone opposite still breathes towards the colour it
+    # will turn, which is the half of this that was ever load-bearing - so the line is free to
+    # stop being an instruction and go back to being him.
     STARTING: "waking up…",
     STOPPING: "going to sleep…",
     CONNECTING: "waking up…",
@@ -311,13 +323,11 @@ SCANLINE_EVERY = 3  # every third row of the chrome is darkened...
 SCANLINE_ALPHA = 0.17  # ...by this much, which is a CRT at arm's length and not a zebra
 VIGNETTE_FROM = 0.46  # where the corner shading starts, as a fraction of the half-diagonal
 VIGNETTE_ALPHA = 0.42
-GLOW_RADIUS = 4.0  # blur, in reference pixels, of the bloom baked in under the frame lines
-GLOW_ALPHA = 0.42
-# The strip, the tab row and the four corner scraps used to be opaque near-black, which bought
-# contrast at the price of a third of the panel: HEADER_H and FOOTER_H together cover 29% of the
-# screen, and that is 29% of a feed you are holding down a pipe to see what is at the bottom of
-# it. They now carry the filter and nothing else, so the picture runs edge to edge behind them
-# and the chrome earns its contrast from its own opaque glyphs rather than from a bar.
+# The strip and the tab row this layout replaced used to be opaque near-black, which bought
+# contrast at the price of a third of the panel - 29% of a feed you are holding down a pipe to
+# see what is at the bottom of. The brackets carry the filter and nothing else, so the picture
+# runs edge to edge behind them and the chrome earns its contrast from its own opaque glyphs
+# rather than from a bar.
 PLATE_ALPHA = 170  # the one dark backing left: the caption bubble, which sits on the picture.
 # Backing rather than a bar: it is there to stop white-on-anything, and every point of alpha past
 # what that needs is a point of the room taken away from somebody holding a camera down a pipe to
@@ -325,38 +335,94 @@ PLATE_ALPHA = 170  # the one dark backing left: the caption bubble, which sits o
 BUBBLE_EDGE_ALPHA = 215  # ...and the outline, which stays nearly solid. Fill and edge used to be
 # one number, so thinning the fill dissolved the bubble's own shape along with it - which is the
 # half that has to survive whatever the camera is pointed at
-TAB_LIVE_ALPHA = 165  # ...and the selected tab's cell, tinted just enough to read as selected
+SWITCH_ALPHA = 215  # ...and the well a switch is sunk into, which is dark enough to read a
+# glyph off and no darker: it sits over the picture like everything else in a bracket does
 
-# Layout, all as fractions of the height - the official 7" panel is 800x480 and is the
-# reference. The tab row is deliberately the tallest thing here: three cells across the full
-# width is the largest target the screen can offer, which is the point of putting the controls
-# in a row rather than on discs in the corners.
+# Layout. Fractions of the height where a thing is a proportion of the panel, reference pixels
+# at 800x480 scaled by `scale` where a thing is a shape - the official 7" panel is the reference
+# either way. The controls are in the corners now, in four brackets, and the middle of the screen
+# is picture.
 #
 # The border runs along the very edge of the panel: there is no margin outside it, because a
 # glow sitting outside a border reads as light leaking off the device rather than as a screen
 # lit from within. The state light therefore falls *inwards* from the border instead.
 FRAME_RADIUS = 0.034
-LINE = 0.0042  # stroke of the border and the rules
+LINE = 0.0042  # stroke of the border and the hairlines
 PAD = 0.036  # inner padding - wide enough that the inward glow never reaches any text
-HEADER_H = 0.118
-FOOTER_H = 0.170
-# The eye, in the middle of the tab row. His centre sits exactly *on* the row's top rule, so the
-# rule runs in from both sides, arcs over the top half of him and comes down the other side, and
-# the two meet at the widest point of the circle - the one place a straight line and a circle
-# join without a corner. Half of him is in the bar and half is in the picture.
-# That shoulder is the whole reason he is here and not in a box in a corner: the bar is the one
-# piece of chrome you already look at to do anything, so his face belongs in it.
-EYE_R = 0.125  # 60 px at 800x480
-EYE_SHOULDER = 0.013  # the gap between his rim and the rule that arcs over it
+
+# ---- the four brackets ----
+#
+# Each corner carries a bracket, and a bracket is a *spine*: the rail comes in square to one
+# panel edge, ramps across the corner at 45 degrees, and lands square on the other. The square
+# landings are the whole reason the shape is four points rather than two - a naked diagonal runs
+# off the frame at an angle and eats the edges either side of the corner, and these give that
+# room back to the picture.
+#
+# The rail on that spine is an extrusion rather than a stroke: a shadow cast inwards onto the
+# plate, then a profile drawn across its width - a lit chamfer on the outer lip, a body falling
+# away, a flank in shadow. That is what makes a bracket read as something bolted to the panel
+# rather than as a line drawn on it, and it is why the rail is this thick: at a hairline there is
+# no width for a profile to happen in.
+RAIL = 17.0  # reference pixels, and the one number the whole bracket language rests on
+RAIL_LIP = 0.78  # fraction of the rail's width that is the lit chamfer
+RAIL_BODY = 0.28  # ...and where the body gives way to the flank in shadow
+RAIL_SHADOW = 165  # alpha of the shadow the rail casts onto its own plate
+BOLT_R = 7.0  # a socket head, sunk through the rail wherever it turns
+RIB_N = 3  # stiffeners across the deep corner of a bracket
+PLATE_WASH = 0.34  # how far a bracket's plate is put towards SCREEN. Not opaque: a bracket you
+# cannot see the room through is a bar, and this layout exists to stop having those.
+
+# The spines, at the reference. Anything on the right or the bottom is written as a distance in
+# from that edge, so one table lays out all four and mirrors without a second.
+#
+# The two bottom brackets are deliberately unequal. The left one is a housing - it has a face in
+# it, and a face wants room. The right one is a bracket with two switches bolted through it, and
+# every pixel it does not take is a pixel of the room somebody is holding a camera down a pipe
+# to look at.
+TOP_H = 78.0  # the top brackets' depth, and two lines of readout fit in it
+TOP_STEP = 26.0  # the square landing before the top edge
+TOP_L_FLAT = 218.0  # where the left bracket's ramp starts
+TOP_R_FLAT = 190.0  # ...and the right one's, in from the right edge
+BOT_L = 250.0  # the bottom-left bracket's reach along both edges
+BOT_L_STEP = 38.0  # its square landings
+BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
+BOT_R_STEP = 38.0  # ...its landing on the bottom edge...
+BOT_R_LAND = 26.0  # ...and the shorter one on the right, which is what makes it the small one
+
+# The eye. He rides the left bracket's ramp, sunk halfway into it - `EYE_SEAT` is that depth as a
+# fraction of the swell's radius, and acos(0.5) is a 60-degree shoulder, which is where the rail
+# leaves the straight and goes round him. Half of him is in the bracket and half is over the
+# picture, which is the same join the tab row used to make and the reason he reads as part of the
+# machine rather than as a badge stuck on it.
+EYE_R = 0.1833  # 88 px at 800x480, against 60 in the row this replaced
+EYE_SHOULDER = 16.0  # reference px between his rim and the rail's centreline round him
+EYE_SEAT = 0.5
 EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on purpose: this
 # one sits over the middle of the picture, and a porthole you cannot see through is a hole
+
+# The two switches, bolted straight through the small bracket's rail rather than sitting in a
+# plate of their own. Neither has a word: a glyph that needs a label is the wrong glyph, and the
+# words were what forced the controls into a row across the bottom in the first place.
+#
+# Shutter nearer the middle of the panel, microphone nearer the corner, so the left-to-right
+# order the tab row taught still holds on a diagonal.
+BTN_R = 36.0
+BTN_SPACING = 52.0  # along the ramp, either side of its middle
+SWITCHES = ("shutter", "wake")
+
+# The reticle: four arcs on the lens axis and nothing else. It was a cross with graduations for
+# about an hour, which is exactly as long as it took somebody to say it looked like a gun sight -
+# and they were right. A broken ring says "lens" and says nothing else.
+RETICLE_R = 0.1625  # 78 px at 480
+RETICLE_ARC = 68.0  # degrees of ring per quadrant; the rest is gap
+
 # The other thing that moves on a sleeping panel, his breath being the first. Everything else
 # holds still - that stillness is what makes awake read as awake - but the button that ends it may
 # say so, because a control that does nothing until you find it is worth pointing at. A slow
 # swell, not a flash: this is an invitation, and a panel blinking at you across a workshop is an
 # alarm.
 WAKE_PERIOD_S = 2.9  # seconds a breath takes, and not a multiple of any other on this panel
-WAKE_GLOW = 1.0  # how far the glyph and the word travel towards the colour he will be
+WAKE_GLOW = 1.0  # how far the glyph and its bezel travel towards the colour he will be
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -366,23 +432,9 @@ METER_SEGMENTS = 8  # steps in the signal bar
 # How much colour is stirred into the chrome for the parts that are meant to look faded. These
 # are mixes rather than alphas on purpose - see _mix: drawing them translucently would not dim
 # them, it would open a window onto whatever the camera is pointed at.
-TAB_LIVE = 0.20  # the selected tab's cell, which is then drawn at TAB_LIVE_ALPHA
 METER_OFF = 0.45  # an unlit signal segment
-RING_MIX = 0.55  # the ring around the open eye
-TABS = ("shutter", "eye", "wake")  # left to right
-# The keys used to be ("shutter", "admin", "eye"), from a layout where the eye was the button
-# that started a session and a gear opened the page. Both moved, and the names were left naming
-# the wrong cells - `hitboxes.eye` was the microphone. Renaming them does reach into kiosk.py's
-# press handling, which the old comment here said would buy nothing anybody can see; what it
-# buys now is a file that is not lying about which one is the eye.
-# The middle cell has no word. It is a face - you tap it to ask what he remembers - and a label
-# under a face reads as a caption for it rather than as a name for the button.
-#
-# The other two are imperatives, and the pair have to match: "WAKE UP" and "SLEEP" did not, one
-# being a thing you say to somebody and the other a thing you would find on a menu. Both are what
-# you would actually say to him now, and the longer one still leaves half its cell empty.
-TAB_LABELS = {"shutter": "SNAP", "eye": ""}
-WAKE_LABEL, SLEEP_LABEL = "WAKE UP", "GO TO SLEEP"
+RING_MIX = 0.55  # the ring around the live microphone
+STEEL = 0.58  # how far the rail's body is stirred towards SCREEN out of GREEN_MID
 
 # ---- the power menu ----
 #
@@ -413,11 +465,135 @@ MENU_GLYPH_R = 0.030  # the power and restart marks, which are the half of a row
 # from further away than its word
 
 
-def tab_label(name: str, state: str) -> str:
-    """What a tab is called right now. Only the last one changes, because only it is a toggle."""
-    if name != "wake":
-        return TAB_LABELS[name]
-    return SLEEP_LABEL if session_up(state) else WAKE_LABEL
+def unit(ax: float, ay: float, bx: float, by: float) -> Point:
+    """The unit vector from a to b, and (0, 0) never happens because no spine has a zero leg."""
+    dx, dy = bx - ax, by - ay
+    length = math.hypot(dx, dy) or 1.0
+    return dx / length, dy / length
+
+
+Point = tuple[float, float]
+
+
+def offset_path(points: Sequence[Point], distance: float) -> list[Point]:
+    """Miter-offset a polyline. Positive is the ``(dy, -dx)`` side of it.
+
+    Every spine on this panel is wound so that side points away from the corner its bracket is
+    bolted into, which is what lets one sign mean "outwards" for all four of them. The miter is
+    clamped rather than limited: at the 90-degree turns a spine actually has, 1/cos(45) is 1.41
+    and nothing here ever reaches the clamp, but a window size that rounded a knee into a spike
+    would put a spike on the panel and not raise.
+    """
+    out: list[tuple[float, float]] = []
+    for i, (px, py) in enumerate(points):
+        normals = []
+        if i:
+            dx, dy = unit(*points[i - 1], px, py)
+            normals.append((dy, -dx))
+        if i < len(points) - 1:
+            dx, dy = unit(px, py, *points[i + 1])
+            normals.append((dy, -dx))
+        nx, ny = sum(n[0] for n in normals), sum(n[1] for n in normals)
+        length = math.hypot(nx, ny)
+        if length < 1e-6:  # a doubled-back segment; there are none, but a spike is worse
+            nx, ny, miter = normals[0][0], normals[0][1], 1.0
+        else:
+            nx, ny = nx / length, ny / length
+            miter = 1.0 / max(0.45, nx * normals[0][0] + ny * normals[0][1])
+        out.append((px + nx * distance * miter, py + ny * distance * miter))
+    return out
+
+
+def arc_points(
+    cx: float, cy: float, r: float, a0: float, a1: float, step: float = 4.0
+) -> list[Point]:
+    """An arc as a polyline, so a swell round a control can be offset like any other segment."""
+    n = max(2, int(abs(a1 - a0) / step))
+    return [
+        (cx + r * math.cos(math.radians(a0 + (a1 - a0) * i / n)),
+         cy + r * math.sin(math.radians(a0 + (a1 - a0) * i / n)))
+        for i in range(n + 1)
+    ]
+
+
+@dataclass(frozen=True)
+class Seat:
+    """A control riding a bracket's ramp: where it sits, how big it is, and its swell.
+
+    ``depth`` is how far its centre is sunk below the rail's centreline. Zero puts the rail
+    straight through it - which is what the two switches want, because a rail that parted round
+    a 36 px disc twice in 170 px would be more swell than rail. The eye is sunk half its swell
+    instead, so the rail leaves the straight at 60 degrees, goes round him and comes back.
+    """
+
+    centre: tuple[float, float]
+    radius: float
+    shoulder: float
+
+    @property
+    def swell(self) -> float:
+        return self.radius + self.shoulder
+
+
+class Bracket:
+    """One corner mount: the stepped spine, and whatever is seated on its ramp.
+
+    Geometry only. What is *drawn* on it - the rail, the bolts, the ribs - is
+    :meth:`Overlay._draw_bracket`, because all of that is baked once per window size and this
+    has to answer a hit test every time a finger lands.
+    """
+
+    def __init__(self, corner: tuple[int, int], spine: Sequence[tuple[int, int]],
+                 seats: Sequence[Seat] = ()) -> None:
+        self.corner = corner
+        self.spine = list(spine)
+        self.seats = list(seats)
+        self.dir = unit(*spine[1], *spine[2])          # along the ramp
+        self.out = (self.dir[1], -self.dir[0])         # away from the corner, by construction
+        self.mid = ((spine[1][0] + spine[2][0]) / 2.0, (spine[1][1] + spine[2][1]) / 2.0)
+
+    def on_ramp(self, along: float, depth: float = 0.0) -> tuple[float, float]:
+        """A point *along* the ramp from its middle and *depth* in from the rail's centreline."""
+        return (self.mid[0] + self.dir[0] * along - self.out[0] * depth,
+                self.mid[1] + self.dir[1] * along - self.out[1] * depth)
+
+    def shoulder(self, seat: Seat) -> tuple[tuple[float, float], tuple[float, float], float, float]:
+        """Where the rail leaves the ramp for a seat and where it rejoins, and the two angles.
+
+        The angles come back in PIL's convention - degrees clockwise from three o'clock, with the
+        second always greater than the first - because both the swell and the long press's fill
+        are drawn as arcs and they have to be the same arc.
+        """
+        (cx, cy), R = seat.centre, seat.swell
+        depth = abs((cx - self.mid[0]) * self.out[0] + (cy - self.mid[1]) * self.out[1])
+        half = math.sqrt(max(1.0, R * R - depth * depth))
+        foot = (cx + self.out[0] * depth, cy + self.out[1] * depth)
+        p0 = (foot[0] - self.dir[0] * half, foot[1] - self.dir[1] * half)
+        p1 = (foot[0] + self.dir[0] * half, foot[1] + self.dir[1] * half)
+        a0 = math.degrees(math.atan2(p0[1] - cy, p0[0] - cx))
+        a1 = math.degrees(math.atan2(p1[1] - cy, p1[0] - cx))
+        while a1 < a0:
+            a1 += 360.0
+        return p0, p1, a0, a1
+
+    def path(self) -> list[tuple[float, float]]:
+        """The rail's centreline: in from one edge, round whatever is seated on it, out to the
+        other."""
+        points: list[tuple[float, float]] = [self.spine[0], self.spine[1]]
+        for seat in self.seats:
+            p0, p1, a0, a1 = self.shoulder(seat)
+            points.append(p0)
+            points += arc_points(*seat.centre, seat.swell, a0, a1)[1:-1]
+            points.append(p1)
+        points += [self.spine[2], self.spine[3]]
+        return points
+
+    def plate(self, d: ImageDraw.ImageDraw) -> None:
+        """Fill the bracket's footprint into a mask: the gusset, plus every seat's swell."""
+        d.polygon([self.corner, *self.spine], fill=255)
+        for seat in self.seats:
+            (cx, cy), R = seat.centre, seat.swell
+            d.ellipse([cx - R, cy - R, cx + R, cy + R], fill=255)
 
 
 _FONT_CANDIDATES = (
@@ -565,61 +741,91 @@ class Overlay:
         self.line = max(1, round(LINE * height))
         self.pad = max(4, round(PAD * height))
         self.radius = max(2, round(FRAME_RADIUS * height))
-
         self.frame = Rect(0, 0, width, height)
-        header_h = max(18, round(HEADER_H * height))
-        footer_h = max(28, round(FOOTER_H * height))
-        self.header = Rect(self.frame.x, self.frame.y, self.frame.w, header_h)
-        self.footer = Rect(self.frame.x, self.frame.bottom - footer_h, self.frame.w, footer_h)
-        self.viewport = Rect(
-            self.frame.x,
-            self.header.bottom,
-            self.frame.w,
-            self.footer.y - self.header.bottom,
-        )
 
-        # Cyclops himself: a disc on the tab row's top rule, in the middle cell. Half of him is
-        # in the row and half is in the picture, which is what makes the rule lift over him
-        # rather than run past him.
+        def px(value: float) -> int:
+            return round(value * scale)
+
+        self.rail_w = max(4, px(RAIL))
+        self.bolt_r = max(2, px(BOLT_R))
+        # The four spines. Each is [edge, knee, knee, edge], and the ramp between the knees is
+        # built from its own start rather than from a second table entry, so it is a true 45
+        # whatever the rounding does to the numbers either side of it.
+        top, step = max(10, px(TOP_H)), max(4, px(TOP_STEP))
+        ramp = top - step
+        bot, bstep = max(12, px(BOT_L)), max(4, px(BOT_L_STEP))
+        blegs = bot - bstep
+        rout, rstep = max(12, px(BOT_R_OUT)), max(4, px(BOT_R_STEP))
+        rlegs = rout - max(4, px(BOT_R_LAND))
+        self.spines = {
+            "tl": [(0, top), (px(TOP_L_FLAT), top), (px(TOP_L_FLAT) + ramp, step),
+                   (px(TOP_L_FLAT) + ramp, 0)],
+            "tr": [(width, top), (width - px(TOP_R_FLAT), top),
+                   (width - px(TOP_R_FLAT) - ramp, step), (width - px(TOP_R_FLAT) - ramp, 0)],
+            "bl": [(0, height - bot), (bstep, height - bot),
+                   (bstep + blegs, height - bot + blegs), (bstep + blegs, height)],
+            "br": [(width - rout, height), (width - rout, height - rstep),
+                   (width - rout + rlegs, height - rstep - rlegs),
+                   (width, height - rstep - rlegs)],
+        }
+        self.brackets = {
+            name: Bracket((0 if name[1] == "l" else width, 0 if name[0] == "t" else height), spine)
+            for name, spine in self.spines.items()
+        }
+
+        # Him, riding the big bracket's ramp. Everything about where he is comes off that ramp,
+        # so moving the bracket moves him and the rail still goes round him.
         self.eye_r = max(10, round(EYE_R * height))
-        self.eye = (self.frame.x + width // 2, self.footer.y)
-        self.shoulder = self.eye_r + max(2, round(EYE_SHOULDER * height))
-        # How far the thin companion rule sits off its partner, everywhere on this panel. An
-        # attribute rather than a local because the long-press arc fills the outer shoulder in,
-        # and a fill that is drawn a couple of pixels off the line it is filling is a smudge.
-        self.rule_gap = max(2, round(4 * scale))
+        eye_swell = self.eye_r + max(2, px(EYE_SHOULDER))
+        self.brackets["bl"].seats = [
+            Seat(self.brackets["bl"].on_ramp(0.0, eye_swell * EYE_SEAT), self.eye_r,
+                 eye_swell - self.eye_r)
+        ]
+        self.eye_seat = self.brackets["bl"].seats[0]
+        self.eye = (round(self.eye_seat.centre[0]), round(self.eye_seat.centre[1]))
+        self.shoulder = eye_swell
+
+        # ...and the two switches, sunk into the small bracket's rail rather than parting it.
+        self.btn_r = max(8, px(BTN_R))
+        spacing = max(self.btn_r + 4, px(BTN_SPACING))
+        self.switches = {
+            name: self.brackets["br"].on_ramp(offset)
+            for name, offset in zip(SWITCHES, (-spacing, spacing), strict=True)
+        }
+
         # What makes the status line a bubble rather than a slab is the tail, and only the tail.
         # The corners were rounded for a while and it was the wrong borrowing: every other edge on
         # this panel is square or is a full arc, and a softened box in the middle of it read as a
-        # chat app dropped onto a terminal. The tail has to fit in the round(20 * scale) between
-        # the bubble's bottom and the tab row's top rule, which is what sizes it.
+        # chat app dropped onto a terminal.
         self.caption_tail = max(3, round(11 * scale))
-        # The tail's root and its lean. Wide enough at the root to read as part of the bubble
-        # rather than as a spike stuck on it, and leaning by rather less than it drops: a tail
-        # that leans further than it falls stops looking like it hangs and starts looking like
-        # it is pointing at the floor.
         self.caption_root = max(4, round(15 * scale))
         self.caption_lean = max(2, round(6 * scale))
-
-        # The bubble's edges, and the left one is the fixed one. It used to hang off the right
-        # and grow leftwards, on the argument that a block growing away from a fixed edge is
-        # steadier to read than one whose far end wanders - which is true of a readout and beside
-        # the point for this. A speech bubble is not a readout: what it is *for* is saying that
-        # these words come out of that face, and a tail parked wherever the sentence happened to
-        # end is a tail attached to nothing. So the left edge is pinned beside his rim, the tail
-        # always lands in the same place - on him - and the sentence grows away to the right.
-        #
-        # `caption_lean` is in there because the tail hangs off the bottom-left corner and leans
-        # further left still; the nose is what is left between its tip and his rim. Short enough
-        # that the tail plainly belongs to him, long enough that the two are separate things -
-        # tucked right up against the rim it read as a growth on the side of his head rather than
-        # as something he was saying.
         self.caption_h = round(24 * scale)  # one line of it
-        self.caption_bottom = self.footer.y - round(20 * scale)
+        self.caption_nose = max(3, round(14 * scale))  # tail tip to his shoulder
+        # The bubble's left edge is the fixed one, pinned beside him, so the tail always lands in
+        # the same place - on him - and the sentence grows away to the right. It clears his
+        # *swell* rather than his rim, because the rail goes round him out there and a tail
+        # coming out of the rail is a tail coming out of the bracket.
+        #
+        # It hangs off his shoulder now rather than straight out from his side, so the gap is
+        # solved for rather than added on: the tail's tip is put exactly `caption_nose` clear of
+        # the swell along whatever diagonal it happens to lie on. Written as `x + nose` instead,
+        # the constant would mean fourteen pixels at one window size and thirty at another, which
+        # is how a tail stops looking like it comes out of anything.
+        self.caption_bottom = self.eye[1] - self.eye_r + round(15 * scale)
+        reach = self.shoulder + self.caption_nose
+        drop = self.caption_bottom + self.caption_tail - self.eye[1]
+        across = math.sqrt(reach * reach - drop * drop) if abs(drop) < reach else reach
+        self.caption_left = math.ceil(self.eye[0] + across) + self.caption_lean
+        # ...and it stops short of the switches rather than at the frame's own padding. A
+        # two-line sentence at full width has its bottom edge and its tail at very nearly the
+        # height of the microphone, and a bubble clipping the top of a control is a bubble that
+        # has made the control look broken.
+        self.caption_right = min(
+            self.width - self.pad - round(34 * scale),
+            self.switches["wake"][0] - self.btn_r - round(12 * scale),
+        )
         self.caption_y = self.caption_bottom - self.caption_h / 2  # the bottom line's middle
-        self.caption_nose = max(3, round(14 * scale))  # tail tip to his rim
-        self.caption_left = self.eye[0] + self.eye_r + self.caption_lean + self.caption_nose
-        self.caption_right = self.viewport.right - self.pad - round(34 * scale)
 
         self.font_mode = _load_font(max(11, round(27 * scale)))
         self.font_read = _load_font(max(9, round(21 * scale)))
@@ -628,92 +834,69 @@ class Overlay:
         self.font_micro = _load_font(max(7, round(12 * scale)))
         self.font_caption = _load_font(max(8, round(14 * scale)))
 
+        # Where the two rows of each top bracket sit. Centres rather than baselines, because
+        # _text centres on the y it is given - and the mode word's row has to clear the rail,
+        # which is `rail_w` wide and centred on the spine.
+        self.row_top = round(25 * scale)
+        self.row_bottom = round(52 * scale)
+        self.read_pad = self.pad + round(10 * scale)
+
         self._halo = halo_alpha(width, height)
-        # The tube filter - wash, corner shading, scanlines - flattened once. It is the whole
-        # substance of the strip and the tab row now, rather than something laid under opaque
-        # bars, so the picture band is cut straight out of it: the camera reaches the middle of
-        # the panel with nothing whatsoever in front of it, and only the chrome wears the tube.
-        base: tuple[np.ndarray, np.ndarray] = (
-            np.zeros((height, width, 3), dtype=np.float32),
-            np.zeros((height, width), dtype=np.float32),
-        )
-        base = _over(base, GREEN, np.full((height, width), TINT_ALPHA, dtype=np.float32))
-        base = _over(base, (0, 0, 0), vignette_alpha(width, height))
-        base = _over(base, (0, 0, 0), scanline_alpha(width, height))
-        rgb, alpha = base
-        alpha = alpha.copy()
-        v = self.viewport
-        alpha[v.y : v.bottom, v.x : v.right] = 0.0
-        # ...and his disc with it. Half of him is in the washed tab row and half is over the raw
-        # picture, so without this the filter's own edge runs across his face as a tide line.
-        # His plate is what backs him instead, and it is the same all the way round.
-        cx, cy = self.eye
-        ys, xs = np.ogrid[:height, :width]
-        alpha[(ys - cy) ** 2 + (xs - cx) ** 2 <= self.eye_r**2] = 0.0
-        self._backdrop = (rgb, alpha)
+        self._backdrop = self._build_backdrop()
         self._plate = self._build_plate()
         self._chrome = self._build_chrome()
         # One engine per window size: it owns the geometry, and it remembers which mood it is
         # easing out of, which is why it is built here and not per frame.
         self.engine = EyeEngine(self.eye_r, self.line, SCREEN, MOODS[IDLE])
-        # Keyed on the heat lamp as well as the state: the lamp is baked with the rest of the
-        # left-hand group, and it changes about once an hour, so it costs three cached layers on
-        # a hot box and nothing at all on a cool one.
         self._bases: dict[tuple[str, bool, str], Image.Image] = {}
         # The readout strip's right-hand group is laid out from the frame edge inwards, and in a
         # monospaced face every width in it is a constant, so it is worked out here rather than
         # per frame - and, more to the point, the baked half and the drawn half then agree.
         self._clock_w = self.font_read.getlength("00:00")
         self._rec_w = self.font_micro.getlength("REC") + round(7 * scale) * 2
-        # The space the dots will need, reserved whether any of them are showing or not. The slab
-        # is sized to its text, so without this it would breathe in and out with them - and a dark
-        # rectangle changing width four times a second is far more distracting than the dots.
         self._dots_w = self.font_caption.getlength("." * CAPTION_DOTS)
         self._gap = max(4, round(18 * scale))
-        self._seg = (max(3, round(9 * scale)), max(6, round(18 * scale)), max(2, round(5 * scale)))
+        self._seg = (max(3, round(9 * scale)), max(6, round(16 * scale)), max(2, round(5 * scale)))
         self.hitboxes = self._layout()
         self.menu_card, self.menu_cells = self._menu_layout()
         self._scrim: Image.Image | None = None  # built on the first long press, then kept
 
     # ---- layout ----
 
-    def _tab(self, index: int) -> Rect:
-        """One of the three cells of the tab row, laid out to cover the full frame width."""
-        x0 = self.footer.x + round(index * self.footer.w / len(TABS))
-        x1 = self.footer.x + round((index + 1) * self.footer.w / len(TABS))
-        return Rect(x0, self.footer.y, x1 - x0, self.footer.h)
-
-    def _glyph_at(self, cell: Rect) -> tuple[int, int, int]:
-        """Centre and radius of a tab's glyph - shared by the baked tab and the live ring."""
-        return cell.center[0], cell.y + round(29 * self.scale), round(16 * self.scale)
+    def _disc(self, centre: tuple[float, float], radius: float) -> Rect:
+        """The bounding box of a round control, which is what a hit test gets to work with."""
+        cx, cy = round(centre[0]), round(centre[1])
+        r = round(radius)
+        return Rect(cx - r, cy - r, r * 2, r * 2)
 
     def _layout(self) -> Hitboxes:
-        """Three tabs across the bottom. The rest of the frame is picture.
+        """Three round targets in two corners. The rest of the frame is picture.
 
-        Shutter left and session right are where the two discs used to be, so the thumb that
-        learnt them keeps being right; the admin tab takes the middle, where a disc could never
-        have gone. Each cell is roughly a third of the panel wide - about six times the area of
-        the disc it replaces, which is what a tab row buys over a corner control.
+        They are discs now rather than thirds of a row, which costs area and buys the middle of
+        the screen back: the tab row was 17% of the panel and the three cells here are under 6%
+        between them. What keeps that honest is that they are still targets a thumb finds without
+        being looked at - 72 px is about 14 mm on the 7" panel, which is over the 9 mm everybody
+        agrees is the floor - and that the eye, the one you press to go looking for something, is
+        by far the biggest of the three.
+
+        Bounding boxes rather than circles because that is what the kiosk's hit test takes, and
+        the two switches are spaced along the ramp so their boxes do not overlap: a tap in a
+        corner shared by two controls would silently belong to whichever was tested first.
         """
-        self._cells = {name: self._tab(index) for index, name in enumerate(TABS)}
-        # The eye's cell reaches up to take in the half of him that stands proud of the row.
-        # People tap the face, not the strip of bar underneath it, and there is nothing else up
-        # there to hit - only picture, which has never done anything on a tap.
-        cell = self._cells["eye"]
-        top = min(cell.y, self.eye[1] - self.eye_r)
         return Hitboxes(
-            shutter=self._cells["shutter"],
-            eye=Rect(cell.x, top, cell.w, cell.bottom - top),
-            wake=self._cells["wake"],
+            shutter=self._disc(self.switches["shutter"], self.btn_r),
+            eye=self._disc(self.eye, self.eye_r),
+            wake=self._disc(self.switches["wake"], self.btn_r),
         )
-
     def _menu_layout(self) -> tuple[Rect, dict[str, Rect]]:
         """The power menu's card and its rows, sized off the panel like everything else here.
 
-        It is centred in the band between the readout strip and *the top of his head*, not in the
-        panel: he is what you pressed to get here, and a card that covered his face would leave
-        the gesture and its answer with nothing to do with each other. On the 7" panel that puts
-        it a comfortable 16 px clear of him.
+        Centred in what is left beside him rather than in the panel. It used to dodge him
+        *upwards*, because he stood in the middle of the tab row and the honest centre of the
+        screen was his face; with him in a corner it can dodge sideways instead, which is far
+        cheaper - on the 7" panel the card only has to give up 13 px of centring to clear his
+        swell, and on a small window where it would otherwise land on him it slides right until
+        it does.
 
         Laid out once, in the constructor, because a hit test has to agree with a drawing and the
         cheapest way to make sure of that is for there to be only one of them.
@@ -723,12 +906,12 @@ class Overlay:
         head_h = max(14, round(MENU_HEAD_H * self.height))
         pad = max(3, round(MENU_PAD * self.height))
         height = head_h + row_h * len(MENU_ROWS) + pad * 2
-        top, bottom = self.header.bottom, self.eye[1] - self.eye_r
-        # max() rather than a plain centring: on a window too short for the band to hold it, the
-        # card starts under the strip and takes the room it needs, which puts it over his head
-        # rather than off the bottom of the screen.
-        y = top + max(0, (bottom - top - height) // 2)
-        card = Rect(self.frame.x + (self.width - width) // 2, y, width, height)
+        y = max(0, (self.height - height) // 2)
+        x = self.frame.x + (self.width - width) // 2
+        clear = self.eye[0] + self.shoulder + max(4, round(10 * self.scale))
+        if x < clear:
+            x = min(clear, self.frame.right - width)
+        card = Rect(x, y, width, height)
         cells = {}
         row_y = card.y + pad + head_h
         for key, _ in MENU_ROWS:
@@ -751,6 +934,51 @@ class Overlay:
 
     # ---- the cached backdrop ----
 
+    def _bracket_mask(self) -> np.ndarray:
+        """Where the four brackets are, as 0..1 - their plates, less the disc his face fills.
+
+        His plate is what backs him instead, and it is the same all the way round; without this
+        the wash's own edge would run across his face as a tide line. The switches keep the wash
+        under them, because their wells are opaque enough not to care and cutting two more holes
+        in a mask is two more edges to land in the wrong place.
+        """
+        plate = Image.new("L", (self.width, self.height), 0)
+        d = ImageDraw.Draw(plate)
+        for bracket in self.brackets.values():
+            bracket.plate(d)
+        holes = Image.new("L", (self.width, self.height), 0)
+        hd = ImageDraw.Draw(holes)
+        cx, cy, r = *self.eye, self.eye_r
+        hd.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
+        inside = np.asarray(plate, np.float32) / 255.0
+        inside *= 1.0 - np.asarray(holes, np.float32) / 255.0
+        rounded = Image.new("L", (self.width, self.height), 0)
+        ImageDraw.Draw(rounded).rounded_rectangle(
+            [0, 0, self.width - 1, self.height - 1], radius=self.radius, fill=255
+        )
+        return inside * (np.asarray(rounded, np.float32) / 255.0)
+
+    def _build_backdrop(self) -> tuple[np.ndarray, np.ndarray]:
+        """The tube filter - a wash, corner shading and scanlines - inside the brackets only.
+
+        It used to be laid over a strip and a tab row that between them covered 29% of the panel.
+        Four corner brackets cover about 14%, and the picture runs edge to edge behind all of it:
+        this is what the chrome is *made of* rather than something sitting under an opaque bar.
+        The plate is darker than it was, though, because a bracket is a thing rather than a tint -
+        see PLATE_WASH, which is as far towards SCREEN as it goes and no further.
+        """
+        shape = (self.height, self.width)
+        base: tuple[np.ndarray, np.ndarray] = (
+            np.zeros((*shape, 3), dtype=np.float32),
+            np.zeros(shape, dtype=np.float32),
+        )
+        base = _over(base, SCREEN, np.full(shape, PLATE_WASH, dtype=np.float32))
+        base = _over(base, GREEN, np.full(shape, TINT_ALPHA, dtype=np.float32))
+        base = _over(base, (0, 0, 0), vignette_alpha(self.width, self.height))
+        base = _over(base, (0, 0, 0), scanline_alpha(self.width, self.height))
+        rgb, alpha = base
+        return rgb, alpha * self._bracket_mask()
+
     def _build_plate(self) -> Image.Image:
         """The disc behind the eye, on its own layer under the chrome.
 
@@ -771,114 +999,147 @@ class Overlay:
         return layer
 
     def _build_chrome(self) -> Image.Image:
-        """The rules, the tab dividers and the viewport ticks, on transparency.
+        """The four brackets and the reticle, on transparency.
 
         Drawn once and kept: nothing in here depends on the state, only on the window size. The
         border around the outside is not in here - it carries the state colour, so it belongs to
         the per-state base and goes on last of all.
+
+        There is no bloom over any of it, which the doubled hairlines this replaces did have. A
+        Gaussian blur over a 17 px rail is not a glow, it is a lamp - and the profile across the
+        rail's own width is already doing the job the bloom was there to do, which is to say that
+        the chrome has a thickness.
         """
         layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        d = ImageDraw.Draw(layer)
-        f, pad, w = self.frame, self.pad, self.line
-        gap = self.rule_gap
-        # A rule with a thinner companion a few pixels off it, top and bottom - the doubled
-        # divider is most of what makes a green terminal read as a terminal rather than a form.
-        # Along the top it crosses the whole panel; along the bottom it lifts into the eye, which
-        # is the one place on this screen where the chrome gets out of something's way.
-        d.line([f.x + pad, self.header.bottom, f.right - pad, self.header.bottom],
-               fill=(*GREEN_MID, 230), width=w)
-        d.line([f.x + pad * 3, self.header.bottom + gap, f.right - pad * 3,
-                self.header.bottom + gap], fill=(*GREEN_DIM, 220), width=max(1, w // 2))
-        self._draw_eye_shoulder(layer, gap)
-        for index in range(1, len(TABS)):  # the two dividers between the three tabs
-            x = self._tab(index).x
-            d.line(
-                [x, self.footer.y + pad, x, f.bottom - pad],
-                fill=(*GREEN_DIM, 210),
-                width=max(1, w // 2),
-            )
-        self._draw_ticks(d)
+        for bracket in self.brackets.values():
+            self._draw_bracket(layer, bracket)
+        self._draw_reticle(layer)
+        return layer
 
-        # Bloom, from the alpha of what was just drawn. Blurring the RGBA directly would drag
-        # the colour towards black wherever it is transparent, so only the mask is blurred and
-        # the glow is a flat green wearing it.
-        mask = layer.getchannel("A").filter(
-            ImageFilter.GaussianBlur(max(1.0, GLOW_RADIUS * self.scale))
+    def _rail_colour(self, across: float) -> tuple[int, int, int]:
+        """The rail seen end-on. *across* runs 1 at the outer lip to 0 at the inner flank.
+
+        Three bands rather than one ramp: a smooth gradient over seventeen pixels reads as a
+        blur, and a chamfer reads as an edge. The lit band is well short of full phosphor -
+        pushed any further it stops looking like steel catching the screen's own light and starts
+        looking like a neon tube laid on the panel, which was the first thing anybody said about
+        it.
+        """
+        steel = mix(GREEN_MID, SCREEN, STEEL)
+        if across > RAIL_LIP:
+            return mix(steel, GREEN, 0.34)
+        if across > RAIL_BODY:
+            return mix(steel, GREEN, 0.18 * (across - RAIL_BODY) / (RAIL_LIP - RAIL_BODY))
+        return mix(steel, SCREEN, 0.80 * (RAIL_BODY - across) / RAIL_BODY)
+
+    def _draw_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]]) -> None:
+        """An extrusion, not a stroke: a shadow cast onto the plate, then a profile across it.
+
+        The shadow is what does most of the work. A rail with a chamfer and no shadow reads as a
+        drawing of a rail; the same rail with something dark falling off its inner edge sits *on*
+        something. It is blurred, so it is composited from a layer of its own rather than drawn -
+        blurring the chrome in place would drag every hairline on the panel with it.
+
+        Both halves are built here rather than at a frame: this whole layer is cached per window
+        size, so the cost is four Gaussians once and nothing at all at 25 fps.
+        """
+        thick = self.rail_w
+        shade = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        ImageDraw.Draw(shade).line(
+            [tuple(p) for p in offset_path(points, -thick * 0.3)],
+            fill=(0, 0, 0, RAIL_SHADOW), width=thick + max(2, round(6 * self.scale)),
+            joint="curve",
         )
-        glow = Image.new("RGBA", layer.size, (*GREEN, 0))
-        glow.putalpha(mask.point(lambda v: int(v * GLOW_ALPHA)))
-        return Image.alpha_composite(glow, layer)
+        layer.alpha_composite(shade.filter(ImageFilter.GaussianBlur(max(1.5, 5.0 * self.scale))))
+        d = ImageDraw.Draw(layer)
+        half = thick / 2.0
+        for i in range(thick):
+            at_ = half - 0.5 - i
+            d.line([tuple(p) for p in offset_path(points, at_)],
+                   fill=(*self._rail_colour((at_ + half) / thick), 255), width=2, joint="curve")
+        # The lit lip and the flank, crisp on top of the bands they end - two pixels each, which
+        # is what stops a seventeen-band profile reading as a smudge with a bright side.
+        d.line([tuple(p) for p in offset_path(points, half - 0.6)],
+               fill=(*mix(GREEN_MID, GREEN, 0.5), 255), width=2, joint="curve")
+        d.line([tuple(p) for p in offset_path(points, -(half - 0.6))],
+               fill=(*SCREEN, 240), width=2, joint="curve")
 
-    def _draw_eye_shoulder(self, layer: Image.Image, gap: int) -> None:
-        """The tab row's top rule, which runs in from both sides and arcs over the eye.
+    def _draw_bolt(
+        self, d: ImageDraw.ImageDraw, x: float, y: float, r: float | None = None
+    ) -> None:
+        """A socket head sunk through the rail: a shadowed seat, a lit rim above, a dark hex.
 
-        The doubled divider everywhere else on this panel is two straight lines a few pixels
-        apart. Here it is two straight lines and two arcs, concentric on him: the bar's edge
-        lifts, goes over the top of his head and comes down again. That shoulder is the join -
-        it is what makes him part of the row rather than a badge sitting on it.
+        The one detail that says a bracket is bolted on rather than drawn on, and it costs a
+        circle and a hexagon. The rim is two arcs and not one ring, which is the whole of the
+        depth: light from above means the top half of a countersink is bright and the bottom
+        half is not.
+        """
+        r = self.bolt_r if r is None else r
+        d.ellipse([x - r - 1, y - r, x + r + 1, y + r + 2], fill=(0, 0, 0, 130))
+        d.ellipse([x - r, y - r, x + r, y + r], fill=(*mix(GREEN_MID, SCREEN, 0.72), 255))
+        d.arc([x - r, y - r, x + r, y + r], start=170, end=350, fill=(*GREEN, 245), width=2)
+        d.arc([x - r, y - r, x + r, y + r], start=350, end=530, fill=(*SCREEN, 220), width=2)
+        d.polygon(
+            [(x + r * 0.52 * math.cos(math.radians(a)), y + r * 0.52 * math.sin(math.radians(a)))
+             for a in range(0, 360, 60)],
+            fill=(*SCREEN, 255), outline=(*mix(GREEN_MID, SCREEN, 0.45), 190),
+        )
 
-        Chrome, not his own colour. His rim ring is drawn per frame just inside this and is free
-        to go as dim as the mood wants; the line that has to stay unbroken is this one.
+    def _draw_bracket(self, layer: Image.Image, bracket: Bracket) -> None:
+        """Stiffeners, then the rail, then the bolts at every place the rail turns.
 
-        The straight runs are stroked onto the chrome as they are, because a horizontal line on a
-        whole pixel is already the line it wants to be; the two arcs go through
-        :func:`~cyclops.eye.smoothed`, because his rim is now smooth and a stepped collar half a
-        millimetre outside a smooth head is more conspicuous than two stepped arcs ever were. It
-        costs nothing at a frame: the chrome layer is built once per window size and kept.
+        The ribs go down first and stay near the corner. Run them out towards the rail and they
+        stop reading as webbing inside a bracket and start reading as stripes laid over the room,
+        which is the one thing this layout is spending its corners to avoid.
         """
         d = ImageDraw.Draw(layer)
-        f, pad, w = self.frame, self.pad, self.line
-        cx, cy = self.eye
-        thin = max(1, w // 2)
-        arcs = []
-        for radius, y, rgb, alpha, stroke, inset in (
-            (self.shoulder, self.footer.y, GREEN_MID, 230, w, pad),
-            (self.shoulder + gap, self.footer.y - gap, GREEN_DIM, 220, thin, pad * 3),
-        ):
-            # Where the arc meets the straight run. His centre is above the rule, so the two
-            # touch off to either side rather than at the widest point of the circle - and the
-            # arc has to start and end on exactly those points or the join shows as a step.
-            sin = (y - cy) / radius
-            if abs(sin) >= 1.0:  # a window too short for him to stand proud of the row at all
-                d.line([f.x + inset, y, f.right - inset, y], fill=(*rgb, alpha), width=stroke)
-                continue
-            a = math.degrees(math.asin(sin))
-            reach = radius * math.cos(math.radians(a))
-            d.line([f.x + inset, y, cx - reach, y], fill=(*rgb, alpha), width=stroke)
-            d.line([cx + reach, y, f.right - inset, y], fill=(*rgb, alpha), width=stroke)
-            arcs.append((radius, a, rgb, alpha, stroke))
-        if not arcs:
-            return
-        # One tile for both arcs, cut round the outer one and the stroke that stands outside it.
-        # Square and centred on him though only the top half of it is ever drawn in, because a
-        # tile that is his own bounding box is the one that cannot put an arc off his centre.
-        span = self.shoulder + gap + w
+        corner, a, b = bracket.corner, bracket.spine[0], bracket.spine[-1]
+        for i in range(RIB_N):
+            t = 0.15 + 0.075 * i
+            d.line(
+                [(corner[0] + (a[0] - corner[0]) * t, corner[1] + (a[1] - corner[1]) * t),
+                 (corner[0] + (b[0] - corner[0]) * t, corner[1] + (b[1] - corner[1]) * t)],
+                fill=(*mix(GREEN_MID, SCREEN, 0.5), 170), width=max(1, round(4 * self.scale)),
+            )
+        self._draw_rail(layer, bracket.path())
+        d = ImageDraw.Draw(layer)
+        for knee in bracket.spine[1:3]:
+            self._draw_bolt(d, *knee)
+        # ...and where the rail leaves the straight to go round a face, which is the one join on
+        # this panel that is carrying anything.
+        for seat in bracket.seats:
+            p0, p1, _, _ = bracket.shoulder(seat)
+            self._draw_bolt(d, *p0, self.bolt_r - 1)
+            self._draw_bolt(d, *p1, self.bolt_r - 1)
+
+    def _draw_reticle(self, layer: Image.Image) -> None:
+        """Four arcs on the lens axis, and nothing in the middle of them.
+
+        What a camera shows you when it is looking rather than aiming. This was a gapped cross
+        with graduations for exactly as long as it took somebody to look at it and say it read as
+        a gun sight; the arcs say lens and say nothing else, and they leave the centre of the
+        picture - which is the part anybody actually points the thing at - completely clear.
+
+        Supersampled, unlike the corner ticks it replaces: a stepped circle in the middle of an
+        otherwise smooth panel is the most conspicuous kind of aliasing there is, and this layer
+        is built once so the tile costs nothing at a frame.
+        """
+        r = max(8, round(RETICLE_R * self.height))
+        cx, cy = self.width // 2, self.height // 2
+        span = r + self.line * 2
 
         def paint(t: ImageDraw.ImageDraw) -> None:
-            middle = at(span)
-            for radius, a, rgb, alpha, stroke in arcs:
-                # The box comes off a centre and a radius, never off its own corners: the two
-                # map differently into the tile, and a corner mapped as a centre is a ring drawn
-                # a third of a pixel small.
-                reach = at(radius)
-                # 180 - a to 360 + a, which is the way round that goes over the top of his head.
+            middle, reach = at(span), at(r)
+            for quadrant in range(4):
+                start = quadrant * 90 - RETICLE_ARC / 2
                 t.arc(
                     [middle - reach, middle - reach, middle + reach, middle + reach],
-                    start=180 - a, end=360 + a, fill=linear(rgb, alpha),
-                    width=round(wide(stroke)),
+                    start=start, end=start + RETICLE_ARC, fill=linear(GREEN_MID, 230),
+                    width=round(wide(self.line)),
                 )
 
         layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
 
-    def _draw_ticks(self, d: ImageDraw.ImageDraw) -> None:
-        """Corner ticks around the picture, so the live area reads as a framed feed."""
-        v, pad = self.viewport, self.pad
-        arm = max(6, round(26 * self.scale))
-        box = (v.x + pad, v.y + pad, v.right - pad, v.bottom - pad)
-        for x, dx in ((box[0], 1), (box[2], -1)):
-            for y, dy in ((box[1], 1), (box[3], -1)):
-                d.line([x, y, x + arm * dx, y], fill=(*GREEN_MID, 200), width=self.line)
-                d.line([x, y, x, y + arm * dy], fill=(*GREEN_MID, 200), width=self.line)
 
     def _base(self, state: str, recording: bool, heat: str = "") -> Image.Image:
         """Everything that holds still while the state does, built once and copied per frame.
@@ -889,9 +1150,9 @@ class Overlay:
         from inside. A tube blooms in front of what it is showing, so this one does too.
 
         Keyed on the state rather than on the halo colour, because the words change with it too.
-        Baking the brand, the mode, the REC tag and the whole tab row in here is what keeps a
-        frame down to a meter, a clock, a caption and a ring: drawing all of it every time cost
-        10 ms of the Pi's 40 ms budget, against 2.8 ms for the chrome this design replaced.
+        Baking the brand, the mode, the REC tag and both switches in here is what keeps a frame
+        down to a meter, a clock, a caption and a ring: drawing all of it every time cost 10 ms of
+        the Pi's 40 ms budget, against 2.8 ms for the chrome the tab row replaced.
         """
         cached = self._bases.get((state, recording, heat))
         if cached is not None:
@@ -906,8 +1167,8 @@ class Overlay:
 
         d = ImageDraw.Draw(image)
         self._bake_header(d, state, halo, recording, heat)
-        for index, name in enumerate(TABS):
-            self._draw_tab(d, self._tab(index), name, state, halo, pressed=False)
+        for name in SWITCHES:
+            self._draw_switch(d, name, state, halo, pressed=False)
 
         # The state light, falling inwards from the border over everything drawn so far - a tube
         # blooms in front of what it is showing, not behind it. It reaches about 13 px at 480,
@@ -938,11 +1199,19 @@ class Overlay:
         return recording and session_up(state)
 
     def _readouts(self, taping: bool) -> tuple[float, float, float]:
-        """Right edges of the clock, the REC tag and the signal meter, laid out edge inwards."""
-        clock = self.frame.right - self.pad
-        rec = clock - self._clock_w - self._gap
-        meter = rec - (self._rec_w + self._gap) if taping else rec
-        return clock, rec, meter
+        """Right edges of the clock, the REC tag and the signal meter, laid out edge inwards.
+
+        Two rows now rather than one line: the meter and its label on top, the clock underneath.
+        That is what lets the top-right bracket be a corner rather than a bar - a single row of
+        SIG, eight segments, REC and a clock is 290 px wide, and stacked it is 190. The clock has
+        the bottom row to itself, so its right edge is the only one of the three that is not on
+        the meter's row and the REC tag sits beside the meter instead of between it and the
+        clock.
+        """
+        right = self.frame.right - self.read_pad
+        meter = right
+        rec = self._meter_x(meter) - self._gap
+        return right, rec, meter
 
     def _meter_x(self, right: float) -> float:
         seg_w, _, gap = self._seg
@@ -1043,7 +1312,7 @@ class Overlay:
         Almost nothing here moves while he is asleep, and that is deliberate and half the
         design: no ring turns, the eye stays shut, the border holds still, the caption stops
         breathing and the readouts have nothing to count. What is left is his breath and the
-        WAKE UP cell - the creature, and the way out of him. Against a panel that was quietly
+        microphone - the creature, and the way out of him. Against a panel that was quietly
         pulsing whatever it was doing, an awake one that pulses says nothing.
 
         ``hold`` is how far a finger is through the long press on his face, 0 to 1, and ``menu``
@@ -1058,25 +1327,19 @@ class Overlay:
         self._draw_readouts(d, halo, level, elapsed, self._taping(state, recording))
         self._draw_caption(d, state, halo, detail, phase)
         held = pressed == "eye"
-        if pressed is not None and not held:
-            # Redrawn over the tab the base has at rest: an inverted cell is the only feedback
-            # a screen with no travel can give, and it lasts a handful of frames.
-            cell = self._cells.get(pressed)
-            if cell is not None:
-                self._draw_tab(d, cell, pressed, state, halo, pressed=True)
-        # After the pressed cell, not before it: the ring used to be drawn, painted over by an
-        # inverted tab and then drawn again in ink. One order, one draw, one colour.
+        if pressed in SWITCHES and not held:
+            # Redrawn over the switch the base has at rest: an inverted control is the only
+            # feedback a screen with no travel can give, and it lasts a handful of frames.
+            self._draw_switch(d, pressed, state, halo, pressed=True)
+        # After the pressed switch, not before it: the ring used to be drawn, painted over by an
+        # inverted cell and then drawn again in ink. One order, one draw, one colour.
         if awake(state):
             inverted = pressed == "wake"
-            ring = (
-                mix(halo, INK, RING_MIX)
-                if inverted
-                else mix(mix(SCREEN, halo, TAB_LIVE), halo, RING_MIX)
-            )
+            ring = mix(halo, INK, RING_MIX) if inverted else mix(SCREEN, halo, 1.0 - RING_MIX)
             self._draw_ring(d, ring, level)
-        # Him, last of everything in the row. His cell is the one that never inverts under a
-        # thumb: a face in photographic negative is not the same face, and half of him is over
-        # the picture anyway, where there is no cell to invert. He acknowledges a tap by coming
+        # Him, last of everything in his corner. He is the one control that never inverts under
+        # a thumb: a face in photographic negative is not the same face, and half of him is over
+        # the picture anyway, where there is nothing to invert. He acknowledges a tap by coming
         # up to full instead - which also holds for as long as the page behind him is loading,
         # so a slow browser looks like a box that heard you rather than one that ignored you.
         mood = self.engine.look(state, MOODS.get(state, MOODS[IDLE]), phase)
@@ -1120,36 +1383,39 @@ class Overlay:
         recording: bool,
         heat: str = "",
     ) -> None:
-        """The half of the readout strip that only moves when the state does.
+        """The half of the two top brackets that only moves when the state does.
 
-        Brand, divider and mode on the left; the SIG caption and the REC tag on the right. All
-        of it is letter-spaced, which PIL can only do a character at a time, which is precisely
-        why it is baked rather than redrawn 25 times a second.
+        Who he is over what he is doing on the left; the SIG caption and the REC tag on the
+        right. Two rows rather than one because that is what turns a bar into a corner: a bracket
+        wide enough for CYCLOPS, a divider and LISTENING on one line would reach a third of the
+        way across the panel, and stacked it stops at an eighth.
+
+        All of it is letter-spaced, which PIL can only do a character at a time, which is
+        precisely why it is baked rather than redrawn 25 times a second.
         """
-        _, cy = self.header.center
-        x = self.frame.x + self.pad
+        x = self.frame.x + self.read_pad
         track = max(1.0, 2.0 * self.scale)
 
-        x += self._text(d, x, cy, "CYCLOPS", self.font_brand, (*GREEN_DIM, 255), tracking=track)
-        x += round(11 * self.scale)
-        rule = round(9 * self.scale)
-        d.line([x, cy - rule, x, cy + rule], fill=(*GREEN_DIM, 255), width=max(1, self.line // 2))
-        x += round(11 * self.scale)
-        x += self._text(
-            d, x, cy, LABELS.get(state, "—"), self.font_mode, (*halo, 255), tracking=track * 0.7
+        # A step up from GREEN_DIM, which is what it wore on the old strip. The bracket's plate
+        # is darker than that strip was and the name sits on the busiest corner of it, so the
+        # faintest phosphor on the panel stopped being legible there.
+        brand = self._text(
+            d, x, self.row_top, "CYCLOPS", self.font_brand, (*GREEN_MID, 255), tracking=track
         )
-
-        # The heat lamp sits after the mode word rather than in the right-hand group, which is
-        # laid out from the frame edge inwards and would have to shuffle SIG, REC and the clock
-        # along to make room for it. Here it costs nobody anything: the left group already runs
-        # out into empty strip, and a warning beside the word for what he is doing is exactly
-        # where somebody wondering why he is doing it badly will already be looking.
+        # The heat lamp goes on the brand's row rather than beside the mode word, which is the
+        # widest thing in the bracket and has nowhere to put it. A warning beside the name of the
+        # box is still the first place somebody wondering why it is misbehaving will look.
         colour = HEAT_LAMP.get(heat)
         if colour is not None:
-            self._tag(d, x + self._gap, cy, HEAT_WORD, colour)
+            self._tag(d, x + brand + self._gap, self.row_top, HEAT_WORD, colour)
+        self._text(
+            d, x, self.row_bottom, LABELS.get(state, "—"), self.font_mode, (*halo, 255),
+            tracking=track * 0.7,
+        )
 
         taping = self._taping(state, recording)
         _, rec_right, meter_right = self._readouts(taping)
+        cy = self.row_top
         if taping:
             # Red, and a filled tag rather than a dot. Red is what a record light is on every
             # other machine anybody has ever used, which is worth more here than the panel's
@@ -1157,15 +1423,19 @@ class Overlay:
             # tube shouts. The one thing on screen that is red without being a fault, which is
             # exactly why it is a tag with a word in it and not a lamp.
             self._tag(d, rec_right - self._rec_w, cy, "REC", RED)
-        self._text(
-            d,
-            self._meter_x(meter_right) - round(9 * self.scale),
-            cy,
-            "SIG",
-            self.font_micro,
-            (*GREEN_DIM, 255),
-            align="r",
-        )
+        else:
+            # SIG only when there is room for it. With the tape running the label gives its place
+            # to the tag, which is the one of the two that is telling you something you did not
+            # already know from the eight segments beside it.
+            self._text(
+                d,
+                self._meter_x(meter_right) - round(9 * self.scale),
+                cy,
+                "SIG",
+                self.font_micro,
+                (*GREEN_DIM, 255),
+                align="r",
+            )
 
     def _tag(
         self, d: ImageDraw.ImageDraw, x: float, cy: float, word: str, colour: tuple[int, int, int]
@@ -1197,7 +1467,6 @@ class Overlay:
         taping: bool,
     ) -> None:
         """The half that moves: the signal bar, and the clock counting the session up."""
-        _, cy = self.header.center
         clock_right, _, meter_right = self._readouts(taping)
         whole = 0 if elapsed is None else int(elapsed)
         clock = "--:--" if elapsed is None else f"{whole // 60:02d}:{whole % 60:02d}"
@@ -1205,8 +1474,9 @@ class Overlay:
         # that only mean something during a session are the right place for the colour that only
         # appears during one.
         colour = (*GREEN_DIM, 255) if elapsed is None else (*halo, 255)
-        self._text(d, clock_right, cy, clock, self.font_read, colour, align="r")
+        self._text(d, clock_right, self.row_bottom, clock, self.font_read, colour, align="r")
 
+        cy = self.row_top
         seg_w, seg_h, gap = self._seg
         lit = round(max(0.0, min(1.0, level)) * METER_SEGMENTS)
         x = self._meter_x(meter_right)
@@ -1337,71 +1607,46 @@ class Overlay:
         d.line([root, tip], fill=edge, width=line)
         d.line([tip, (x, bottom)], fill=edge, width=line)
 
-    # ---- the tab row ----
+    # ---- the two switches ----
 
-    def _draw_tab(
-        self,
-        d: ImageDraw.ImageDraw,
-        cell: Rect,
-        name: str,
-        state: str,
-        halo: tuple,
-        pressed: bool,
+    def _draw_switch(
+        self, d: ImageDraw.ImageDraw, name: str, state: str, halo: tuple, pressed: bool
     ) -> None:
-        """One cell of the tab row: a glyph, a tracked label, and the fill that says what it is.
+        """One switch, sunk through the small bracket's rail: a well, a bezel, and a glyph.
 
-        Three appearances, and they have to stay distinguishable: at rest it is chrome on the
-        dark strip; while a session is up the wake tab carries a tinted cell and wears the
-        state's own colour; and under a thumb any tab inverts completely, which is the only
-        feedback a touchscreen with no travel can give.
+        Three appearances, and they have to stay distinguishable without a word between them.
+        At rest it is a dark well with a chrome bezel and a phosphor glyph. While a session is
+        up the microphone fills in and takes the state's colour, which is now the whole of what
+        that control says about itself - the row it came from said GO TO SLEEP, and there is
+        nothing to read here. Under a thumb it inverts, which is the only feedback a touchscreen
+        with no travel can give.
 
-        A lit bar used to run along the top of the selected cell as well. It was the heaviest
-        mark on the row for the least it had to say, and the tint plus the colour say it.
+        The bezel is drawn as five rings stepping down the rail's own profile rather than as one
+        stroke, so a switch reads as the same piece of metal the bracket is made of. It is the
+        cheapest way to make two discs sitting on a diagonal look bolted through it instead of
+        parked on it.
         """
+        cx, cy = self.switches[name]
+        r = self.btn_r
         live = name == "wake" and session_up(state)
-        # The wake cell is the only one carrying a state, so it is the only one that takes the
-        # state's colour - glyph and word together, in every state it has. Asleep it keeps the
-        # resting green, because that is the floor the glow lifts off; everywhere else it is
-        # amber, white or red along with the rest of the panel. SNAP and the eye's cell are
-        # furniture and stay phosphor whatever is going on.
         ink = halo if name == "wake" and state != IDLE else GREEN_MID
-        if pressed:
-            fill, glyph, label = (*halo, 255), INK, INK
-        elif live:
-            # Translucent, unlike a press: the row is see-through now, and a selected tab that
-            # blacked out a third of it would put back the bar this layout just took away.
-            fill, glyph, label = (*mix(SCREEN, halo, TAB_LIVE), TAB_LIVE_ALPHA), ink, ink
-        else:
-            fill, glyph, label = None, ink, ink
-
-        inset = max(1, round(3 * self.scale))
-        if fill is not None:
-            # The outermost tabs reach the panel's own bottom corners, so their fill has to be
-            # rounded to match or it squeezes out past the border, into the corner the border
-            # cuts off. Only the one outer corner each: the rest of the cell is square.
-            d.rounded_rectangle(
-                [cell.x + inset, cell.y + inset, cell.right - inset, cell.bottom - inset],
-                radius=max(0, self.radius - inset),
-                corners=(False, False, name == "wake", name == "shutter"),
-                fill=fill,
-            )
-        cx, gy, radius = self._glyph_at(cell)
+        glyph = INK if pressed else ink
+        d.ellipse([cx - r - 2, cy - r, cx + r + 2, cy + r + 3], fill=(0, 0, 0, 120))
+        d.ellipse([cx - r, cy - r, cx + r, cy + r],
+                  fill=(*halo, 255) if pressed else (*SCREEN, SWITCH_ALPHA))
+        if not pressed:
+            for step in range(5):
+                edge = r - step
+                d.ellipse([cx - edge, cy - edge, cx + edge, cy + edge],
+                          outline=(*self._rail_colour(1.0 - step / 6.0), 255), width=2)
+            d.ellipse([cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2],
+                      outline=(*mix(GREEN_MID, GREEN, 0.5), 255), width=2)
+        radius = round(self.btn_r * 0.5)
         if name == "shutter":
-            self._glyph_aperture(d, cx, gy, radius, glyph)
-        elif name == "wake":
-            self._glyph_mic(d, cx, gy, radius, glyph, state)
-        # ...and the middle cell has no glyph baked at all: what stands there is the eye, and
-        # every part of him moves. See :meth:`Overlay.render`.
-        self._text(
-            d,
-            cx,
-            cell.bottom - round(23 * self.scale),
-            tab_label(name, state),
-            self.font_tab,
-            (*label, 255),
-            align="c",
-            tracking=max(1.0, 2.4 * self.scale),
-        )
+            self._glyph_aperture(d, round(cx), round(cy), radius, glyph)
+        else:
+            self._glyph_mic(d, round(cx), round(cy), radius + 2, glyph, state if live else IDLE)
+
 
     def _glyph_aperture(self, d: ImageDraw.ImageDraw, cx: int, cy: int, r: int, c: tuple) -> None:
         """Take a photo now. A six-bladed aperture, swept the one way round."""
@@ -1422,43 +1667,39 @@ class Overlay:
             )
 
     def _draw_invite(self, d: ImageDraw.ImageDraw, phase: float) -> None:
-        """Breathe the WAKE UP cell, because it is the only thing left to do.
+        """Breathe the microphone switch, because it is the only thing left to do.
 
-        Drawn per frame over the cell the base baked at rest, which is why the wash goes down
-        first and the glyph and the word on top of it: the base's own copies of those are
-        underneath, and this covers them.
+        Drawn per frame over the switch the base baked at rest, which is why the well goes down
+        first and the bezel and the glyph on top of it: the base's own copies are underneath, and
+        this covers them.
 
-        It swells towards the accent rather than up the green, so the glyph and the word change
+        It swells towards the accent rather than up the green, so the glyph and its bezel change
         colour and not just brightness - which is the point of the accent everywhere else on this
-        panel, and here it is also a promise: the button wears the colour the whole screen turns
+        panel, and here it is also a promise: the switch wears the colour the whole screen turns
         when you press it. The one white thing on a sleeping panel is the way off it.
+
+        It matters more than it did. The control this replaces had the words WAKE UP written
+        across a third of the panel and the breath was a flourish on top of them; this one is a
+        36 px microphone in a corner with nothing written anywhere, so the breath is now most of
+        how anybody finds it.
 
         Only while he is asleep proper. Not on a fault - a red panel with a green button
         beckoning at you is a machine asking to be prodded rather than read, and the line under
         the picture is where a fault has something to say.
         """
-        cell = self._cells["wake"]
+        cx, cy = self.switches["wake"]
+        r = self.btn_r
         swell = breath(phase, WAKE_PERIOD_S)
-        inset = max(1, round(3 * self.scale))
-        d.rounded_rectangle(
-            [cell.x + inset, cell.y + inset, cell.right - inset, cell.bottom - inset],
-            radius=max(0, self.radius - inset),
-            corners=(False, False, True, False),
-            fill=(*mix(SCREEN, WHITE, TAB_LIVE), round(TAB_LIVE_ALPHA * swell)),
-        )
         colour = mix(GREEN_MID, WHITE, WAKE_GLOW * swell)
-        cx, gy, radius = self._glyph_at(cell)
-        self._glyph_mic(d, cx, gy, radius, colour, IDLE)
-        self._text(
-            d,
-            cx,
-            cell.bottom - round(23 * self.scale),
-            tab_label("wake", IDLE),
-            self.font_tab,
-            (*colour, 255),
-            align="c",
-            tracking=max(1.0, 2.4 * self.scale),
-        )
+        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(*SCREEN, SWITCH_ALPHA))
+        for step in range(5):
+            edge = r - step
+            d.ellipse([cx - edge, cy - edge, cx + edge, cy + edge],
+                      outline=(*self._rail_colour(1.0 - step / 6.0), 255), width=2)
+        d.ellipse([cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2],
+                  outline=(*colour, 255), width=2)
+        self._glyph_mic(d, round(cx), round(cy), round(r * 0.5) + 2, colour, IDLE)
+
 
     def _draw_rim(self, d: ImageDraw.ImageDraw, halo: tuple, phase: float) -> None:
         """Re-stroke the border, sunk by one breath. Only ever called while a session is up.
@@ -1482,11 +1723,14 @@ class Overlay:
     def _draw_ring(self, d: ImageDraw.ImageDraw, colour: tuple, level: float) -> None:
         """The ring around the microphone, which swells with your voice as the eye's pupil does.
 
-        Drawn per frame rather than baked with the rest of the tab, for the obvious reason that
-        it is the only part of the tab row with anything to say between one frame and the next.
+        Drawn per frame rather than baked with the switch, for the obvious reason that it is the
+        only part of that corner with anything to say between one frame and the next. It sits
+        *outside* the switch's own bezel now rather than inside its glyph: the switch is a disc
+        with a machined edge, and a ring drawn within that edge would be read as part of it and
+        would stop being a meter.
         """
-        cx, cy, r = self._glyph_at(self.hitboxes.wake)
-        ring = round(r * (1.25 + 0.30 * max(0.0, min(1.0, level))))
+        cx, cy = self.switches["wake"]
+        ring = round(self.btn_r + 5 * self.scale + 7 * self.scale * max(0.0, min(1.0, level)))
         d.ellipse(
             [cx - ring, cy - ring, cx + ring, cy + ring],
             outline=(*colour, 255),
@@ -1499,16 +1743,14 @@ class Overlay:
         """Start or stop the agent. Hollow while it is down, filled in while it is listening.
 
         A microphone rather than the eye that was here: what this tab starts is a conversation,
-        and the camera it also opens is the *other* two tabs' business - SNAP shows Cyclops a
-        picture, and the panel behind all three is already a viewfinder. An eye over the word
-        SESSION said the wrong one of the two things this box does.
+        and the camera it also opens is the shutter's business - the aperture beside this shows
+        Cyclops a picture, and the panel behind both is already a viewfinder. An eye over the word
+        SESSION said the wrong one of the two things this box does, and the eye is a face in the
+        opposite corner now rather than a control at all.
 
-        The word says WAKE UP now, and the eye is back - but in the corner of the panel where it
-        can be a face rather than a control (see :meth:`_draw_eye`). This tab is still about the
-        conversation, so it is still a microphone.
-
-        Filled is the whole state indicator, and it has to survive being 32 px on a panel seen
-        from across a bench: an outline that gained a detail when live would read as neither.
+        Filled is the whole state indicator, and there is no word beside it any more, so it has
+        to carry the whole message at 36 px on a panel seen from across a bench: an outline that
+        gained a detail when live would read as neither.
         """
         stroke = max(2, round(3 * self.scale))
         live = awake(state)
@@ -1545,24 +1787,22 @@ class Overlay:
         so while it is happening: without this, a long press is a second of a panel doing nothing
         followed by a menu, which reads as a fault that resolved itself.
 
-        It is drawn *on the shoulder rule that is already there* rather than beside it - the same
-        radius, in ink instead of chrome - so nothing new appears on the screen while you hold
-        him. A line you already stopped seeing lights up from one end, and when it reaches the
-        far side the menu is open. That also keeps it out of the picture: this panel has no room
-        for a progress bar, and a ring drawn further out would cross the two rules running away
-        to either edge.
+        It is drawn *on the rail that is already round him* rather than beside it - the same
+        radius, in full phosphor instead of the rail's own steel - so nothing new appears on the
+        screen while you hold him. A line you already stopped seeing lights up from one end, and
+        when it reaches the far side the menu is open. That also keeps it out of the picture:
+        this panel has no room for a progress bar, and a ring drawn further out would cross the
+        rail running away to either edge.
         """
-        radius = self.shoulder + self.rule_gap
+        seat = self.eye_seat
         cx, cy = self.eye
-        sin = (self.footer.y - self.rule_gap - cy) / radius
-        if abs(sin) >= 1.0:  # a window too short for him to stand proud of the row at all
-            return
-        a = math.degrees(math.asin(sin))
-        start, sweep = 180 - a, (180 + 2 * a) * max(0.0, min(1.0, hold))
-        # Heavier than the rule it lands on. Ink over chrome: the same line, filled in, and at
-        # the panel's own stroke it was a brightness change on two pixels - which from a bench is
-        # no change at all.
-        stroke = max(2, round(self.line * 1.6))
+        radius = seat.swell
+        _, _, a0, a1 = self.brackets["bl"].shoulder(seat)
+        start, sweep = a0, (a1 - a0) * max(0.0, min(1.0, hold))
+        # Heavier than the hairline this used to land on, and now it has a 17 px rail to be seen
+        # against: at the panel's own stroke it would be a brightness change on two pixels of
+        # seventeen, which from a bench is no change at all.
+        stroke = max(3, round(self.rail_w * 0.45))
         span = round(radius) + stroke
 
         def paint(t: ImageDraw.ImageDraw) -> None:

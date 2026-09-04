@@ -136,8 +136,8 @@ SAMPLES: dict[str, str] = {
     # by the kiosk, because the kiosk is the last thing on this box to start and by the time it
     # could say this nobody is still waiting to be told - see that module.
     "booted": "cyclops_system_boot_finished.wav",
-    # ...and the other end of starting up: the first frame is on the panel, so the tab row can
-    # be pressed. This one is the kiosk's, because the kiosk is the only thing that knows.
+    # ...and the other end of starting up: the first frame is on the panel, so the controls in
+    # the corners can be pressed. This one is the kiosk's: it is the only thing that knows.
     "started": "cyclops_boot_sequence_finished.wav",
     # His face, answering the finger that landed on it.
     "pressed": "cyclops_eye_pressed.wav",

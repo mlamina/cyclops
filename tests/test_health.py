@@ -96,7 +96,8 @@ def test_the_panel_is_stricter_than_the_page() -> None:
 
 
 def _strip(frame: np.ndarray, ov: overlay.Overlay) -> np.ndarray:
-    return frame[: ov.header.bottom]
+    """The two top brackets, which is where every readout on this panel lives."""
+    return frame[: ov.spines["tl"][0][1] + ov.rail_w]
 
 
 def _painted(band: np.ndarray, colour: tuple[int, int, int]) -> int:
@@ -138,7 +139,9 @@ def test_the_lamp_never_shoves_the_readouts_along() -> None:
 
     Putting the lamp in that group would mean the clock moved whenever the board got warm, which
     is the sort of thing that makes a panel feel unreliable while it is telling you the truth.
-    It goes after the mode word instead, and this is what says it stayed there.
+    It goes beside the brand in the *other* bracket instead, and this is what says it stayed
+    there - the two are in opposite corners now, so "the right-hand readouts" is the whole of the
+    top-right bracket rather than half of one strip.
     """
     ov = overlay.Overlay(800, 480)
     cool = _strip(ov.render(heat="", **AWAKE), ov)

@@ -1,7 +1,9 @@
-"""Cyclops' eye: how it moves, how it changes its mind, and where it sits in the tab row.
+"""Cyclops' eye: how it moves, how it changes its mind, and where it sits in his bracket.
 
-Five failures live here, and none of them raises. A button whose word stops matching what the tap
-does is a lie nobody notices until they press it. A blink on a fixed period is a status LED and
+Five failures live here, and none of them raises. A microphone that stops filling in while he is
+up is a lie nobody notices until they press it - and it is the *only* thing left saying which way
+that switch will go, now that no control on this panel carries a word. A blink on a fixed
+period is a status LED and
 reads as a fault rather than as a face, and one shorter than a few frames is indistinguishable
 from a dropped frame - neither shows up in any assertion about *whether* it blinks. A mood table
 that gains a state without a row falls back to the sleeping face, so a whole state of the machine
@@ -57,18 +59,51 @@ def _settle(ov: overlay.Overlay, **shown: object) -> None:
 # ---------------------------------------------------------------- the words
 
 
+def _mic_core(ov: overlay.Overlay, state: str) -> float:
+    """How lit the middle of the microphone's head is - the whole of what "filled in" means.
+
+    The head is a rounded rectangle: an outline while he is down, a solid while he is up. Its
+    strokes are in the same place either way, so the only honest place to ask is inside it.
+    """
+    shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+    _settle(ov, **shown)
+    frame = ov.render(phase=10.0, **shown).astype(float)
+    cx, cy = (round(v) for v in ov.switches["wake"])
+    r = round(ov.btn_r * 0.5) + 2
+    box = frame[cy - round(r * 0.55) : cy - round(r * 0.15), cx - 3 : cx + 3]
+    return float((box[:, :, :3].sum(axis=2) * box[:, :, 3] / 255).mean())
+
+
 @pytest.mark.parametrize("state", STATES)
-def test_the_button_says_what_the_tap_will_do(state: str) -> None:
-    want = overlay.SLEEP_LABEL if overlay.session_up(state) else overlay.WAKE_LABEL
-    assert overlay.tab_label("wake", state) == want
-    # ...and the same question the kiosk asks before deciding to start or stop, so the word on
-    # the button and the action behind it cannot drift apart.
+def test_the_microphone_says_what_the_tap_will_do(state: str) -> None:
+    """Filled while he is up, hollow while he is down, and that is now the whole of the message.
+
+    The control this replaces had GO TO SLEEP or WAKE UP written across a third of the panel, and
+    the fill was a detail on top of the word. There is no word any more, so a fill that stopped
+    tracking `awake` would leave the panel with nothing at all saying which way the switch goes.
+    """
+    ov = _panel()
+    hollow, filled = _mic_core(ov, overlay.IDLE), _mic_core(ov, overlay.LISTENING)
+    assert filled > hollow * 2, "the microphone looks the same up as it does down"
+    assert (_mic_core(ov, state) > (hollow + filled) / 2) == overlay.awake(state)
+    # ...and the same question the kiosk asks before deciding to start or stop, so what the
+    # switch shows and the action behind it cannot drift apart.
     assert overlay.session_up(state) == (state not in (overlay.IDLE, overlay.ERROR))
 
 
-@pytest.mark.parametrize("name", ("shutter", "eye"))
-def test_the_other_two_tabs_do_not_change_under_you(name: str) -> None:
-    assert len({overlay.tab_label(name, state) for state in STATES}) == 1
+def test_the_shutter_does_not_change_under_you() -> None:
+    # The one control that means the same thing in every state, so it has to look the same in
+    # every state. Byte-for-byte: it sits far enough inside the panel that the border's glow
+    # never reaches it, so there is nothing legitimate to differ.
+    ov = _panel()
+    box = ov.hitboxes.shutter
+    seen = set()
+    for state in STATES:
+        shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+        _settle(ov, **shown)
+        crop = ov.render(phase=10.0, **shown)[box.y : box.bottom, box.x : box.right]
+        seen.add(crop.tobytes())
+    assert len(seen) == 1, "the shutter changed with a state it has nothing to do with"
 
 
 def test_no_caption_names_a_button_that_is_not_there() -> None:
@@ -76,14 +111,15 @@ def test_no_caption_names_a_button_that_is_not_there() -> None:
 
     The bug this invites, once: the resting line said "tap SESSION to begin" for as long as the
     tab said SESSION, and would have gone on saying it afterwards. It said "tap WAKE UP" until
-    the line became a snore, so today nothing matches and nothing is checked - which is the point
-    of writing it as the rule rather than as that one string. The tab still says WAKE UP and
-    still breathes towards the colour it will turn; that was always the load-bearing half.
+    the line became a snore.
+
+    Nothing on this panel carries a word now - the three controls are a face and two glyphs - so
+    the rule has got stricter rather than going away: a caption that shouts anything is naming
+    something nobody can find.
     """
-    on_the_panel = {overlay.tab_label(name, s) for name in overlay.TABS for s in STATES}
     for state, caption in overlay.CAPTIONS.items():
-        for shout in re.findall(r"[A-Z][A-Z ]+[A-Z]", caption):
-            assert shout in on_the_panel, f"the {state} line names {shout!r}, which is not a tab"
+        shouts = re.findall(r"[A-Z][A-Z ]+[A-Z]", caption)
+        assert not shouts, f"the {state} line names {shouts[0]!r}, and no control has a word"
 
 
 @pytest.mark.parametrize("state", STATES)
@@ -368,11 +404,30 @@ def _asleep(ov: overlay.Overlay, state: str, detail: str = "") -> list[np.ndarra
     return [ov.render(phase=100.0 + i * 0.31, **shown) for i in range(40)]
 
 
+def _glow(crop: np.ndarray) -> float:
+    """How much light a crop is putting out. Brightness, not coverage.
+
+    What the invite changes is the *colour* of the glyph and its bezel, not how many pixels they
+    cover - so a count of lit pixels says nothing at all about it: both ends of the breath are
+    opaque phosphor and both pass any threshold loose enough to include the dim one. That is not
+    a hypothetical; counting is what this measured first, and it reported a control that was
+    plainly breathing as holding still.
+    """
+    return round(float((crop[:, :, :3].astype(float).sum(axis=2) * crop[:, :, 3] / 255).mean()), 3)
+
+
 def _line_box(ov: overlay.Overlay) -> tuple[slice, slice]:
-    """Everywhere the caption bubble can reach: its tallest, plus the tail, out to the far edge."""
+    """Everywhere the caption bubble can reach: its tallest, plus the tail, out to its far edge.
+
+    Both ends are the bubble's own and neither is the panel's, because it now has a neighbour at
+    each: his swell is a few pixels left of the tail's tip, and the microphone is a few pixels
+    right of where the longest sentence stops. Either one dragged into this band is something
+    that moves for its own reasons, being measured as though it were the line.
+    """
     top = int(ov.caption_bottom - overlay.CAPTION_LINES * ov.caption_h)
     bottom = int(ov.caption_bottom) + ov.caption_tail + 1
-    return slice(top, bottom), slice(int(ov.caption_left - ov.caption_lean), None)
+    left = max(int(ov.caption_left - ov.caption_lean), ov.eye[0] + ov.shoulder + 1)
+    return slice(top, bottom), slice(left, int(ov.caption_right) + 2)
 
 
 def test_only_three_things_move_while_he_is_asleep() -> None:
@@ -385,7 +440,7 @@ def test_only_three_things_move_while_he_is_asleep() -> None:
     # A fault gets none of the three, and that is what keeps this honest - blanking the same
     # regions in both states would leave nobody watching the pixels they are drawn on.
     ov = _panel()
-    keep = ov._cells["wake"]
+    keep = ov.hitboxes.wake
     cx, cy, r = *ov.eye, ov.eye_r
     rows, cols = _line_box(ov)
     for state, detail in ((overlay.IDLE, ""), (overlay.ERROR, "OpenAI rejected the API key")):
@@ -528,25 +583,34 @@ def test_the_spark_always_covers_a_whole_pixel() -> None:
             )
 
 
+def _glyph_box(ov: overlay.Overlay, name: str) -> tuple[slice, slice]:
+    """Just the glyph inside a switch, which is the part that wears a colour."""
+    cx, cy = (round(v) for v in ov.switches[name])
+    r = round(ov.btn_r * 0.5) + 2
+    return slice(cy - r, cy + r), slice(cx - r, cx + r)
+
+
 def _invite(ov: overlay.Overlay, phase: float) -> float:
-    """How bright the WAKE UP glyph's strokes are, off a rendered frame.
+    """How bright the microphone glyph's strokes are, off a rendered frame.
 
     The brightest pixel in the box rather than its mean: ImageDraw does not anti-alias, so the
     strokes are exactly the colour they were drawn in, and a mean would be dragged around by the
-    wash swelling behind them - which moves the other way.
+    bezel swelling behind them - which moves the other way.
     """
-    cell = ov._cells["wake"]
-    cx, gy, r = ov._glyph_at(cell)
+    rows, cols = _glyph_box(ov, "wake")
     frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=phase)
-    crop = frame[gy - r : gy + r, cx - r : cx + r]
+    crop = frame[rows, cols]
     return float(crop[crop[:, :, 3] > 150][:, 1].max())
 
 
 def test_the_way_out_glows_while_he_is_asleep() -> None:
+    # It matters more than it did. The control this replaces had WAKE UP written across a third
+    # of the panel and the breath was a flourish on top of it; this one is a microphone in a
+    # corner with nothing written anywhere, so the breath is now most of how anybody finds it.
     ov = _panel()
-    lit = [_lit(f[c.y : c.bottom, c.x : c.right])
-           for c in (ov._cells["wake"],) for f in _asleep(ov, overlay.IDLE)]
-    assert max(lit) > min(lit), "the WAKE UP cell held still - nothing invites the tap"
+    box = ov.hitboxes.wake
+    lit = [_glow(f[box.y : box.bottom, box.x : box.right]) for f in _asleep(ov, overlay.IDLE)]
+    assert max(lit) > min(lit), "the microphone held still - nothing invites the tap"
 
 
 def test_the_glow_swells_rather_than_flashing() -> None:
@@ -566,11 +630,10 @@ def test_the_glow_swells_rather_than_flashing() -> None:
 
 
 def _glyph_hue(ov: overlay.Overlay, phase: float) -> str:
-    """Whether the WAKE UP glyph's strokes are nearer the phosphor or nearer the accent."""
-    cell = ov._cells["wake"]
-    cx, gy, r = ov._glyph_at(cell)
+    """Whether the microphone glyph's strokes are nearer the phosphor or nearer the accent."""
+    rows, cols = _glyph_box(ov, "wake")
     frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=phase)
-    crop = frame[gy - r : gy + r, cx - r : cx + r].astype(float)
+    crop = frame[rows, cols].astype(float)
     px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 250)][:, :3]
     seen = px.mean(axis=0) / px.mean(axis=0).sum()
     near = {
@@ -581,15 +644,17 @@ def _glyph_hue(ov: overlay.Overlay, phase: float) -> str:
 
 
 def _word_colour(ov: overlay.Overlay, state: str, phase: float) -> np.ndarray:
-    """The wake button's word, as a colour, normalised so brightness is out of the question."""
-    cell = ov._cells["wake"]
-    baseline = cell.bottom - round(23 * ov.scale)
-    box = np.s_[baseline - 10 : baseline + 10, cell.x + 20 : cell.right - 20]
+    """The microphone glyph, as a colour, normalised so brightness is out of the question.
+
+    It used to be the word underneath it. There is no word, so the glyph carries the state on its
+    own - which is a stronger claim than the one this made before, not a weaker one.
+    """
+    rows, cols = _glyph_box(ov, "wake")
     shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
     _settle(ov, **shown)
-    crop = ov.render(phase=phase, **shown)[box].astype(float)
+    crop = ov.render(phase=phase, **shown)[rows, cols].astype(float)
     px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 250)][:, :3]
-    assert len(px), f"no word on the wake button in {state}"
+    assert len(px), f"nothing lit on the microphone in {state}"
     return px.mean(axis=0) / px.mean(axis=0).sum()
 
 
@@ -622,43 +687,12 @@ def test_the_glow_changes_colour_and_not_only_brightness() -> None:
     assert _glyph_hue(ov, overlay.WAKE_PERIOD_S * 1.5) == "accent", "it only got brighter"
 
 
-@pytest.mark.parametrize("state", STATES)
-def test_no_bar_lights_up_along_the_top_of_the_wake_cell(state: str) -> None:
-    # A lit top edge was how this row said "selected", and it was the heaviest mark on the panel
-    # for the least it had to say. It went from the sleeping glow first and from the live cell
-    # second, which is why this is parametrised: the two are different code paths.
-    #
-    # Measured against SNAP rather than against the rest of the wake cell. The row's top rule
-    # blooms a few pixels down into both of them, which on its own reads as a bar to any
-    # threshold naive enough to look at one cell alone - so the control is the cell that can
-    # never have one.
-    ov = _panel()
-    inset = max(1, round(3 * ov.scale))
-    edge = max(2, round(4 * ov.scale))
-    shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
-    _settle(ov, **shown)
-    frame = ov.render(phase=overlay.WAKE_PERIOD_S * 1.5, **shown).astype(float)
-
-    def top_heaviness(cell: overlay.Rect) -> float:
-        left = cell.x + inset + 4, cell.x + inset + 4 + round(60 * ov.scale)
-
-        def band(top: int) -> float:
-            strip = frame[top : top + edge, left[0] : left[1]]
-            return float((strip[:, :, :3].sum(axis=2) * strip[:, :, 3] / 255).mean())
-
-        return band(cell.y + inset) / max(1.0, band(cell.y + inset + edge + 6))
-
-    wake = top_heaviness(ov._cells["wake"])
-    snap = top_heaviness(ov._cells["shutter"])
-    assert wake < snap * 1.4, f"a bar along the top in {state} ({wake:.2f} against SNAP {snap:.2f})"
-
-
 def test_a_fault_does_not_beckon() -> None:
     # A red panel with a green button pulsing at you is a machine asking to be prodded rather
     # than read, and a fault has something to say on the line under the picture.
     ov = _panel()
-    cell = ov._cells["wake"]
-    lit = [_lit(f[cell.y : cell.bottom, cell.x : cell.right])
+    box = ov.hitboxes.wake
+    lit = [_glow(f[box.y : box.bottom, box.x : box.right])
            for f in _asleep(ov, overlay.ERROR, "OpenAI rejected the API key")]
     assert len(set(lit)) == 1
 
@@ -790,9 +824,13 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
         return min(near, key=near.get)  # type: ignore[arg-type]
 
     clock_right, _, meter_right = ov._readouts(False)
-    cy = ov.header.center[1]
-    assert wears((int(ov._meter_x(meter_right)), cy - 10, int(meter_right), cy + 10)) == "accent"
-    assert wears((int(clock_right - ov._clock_w), cy - 10, int(clock_right), cy + 10)) == "accent"
+    meter, clock = ov.row_top, ov.row_bottom
+    assert wears(
+        (int(ov._meter_x(meter_right)), meter - 10, int(meter_right), meter + 10)
+    ) == "accent"
+    assert wears(
+        (int(clock_right - ov._clock_w), clock - 12, int(clock_right), clock + 12)
+    ) == "accent"
     # The caption's marker takes the accent and its sentence does not - a running line in aqua
     # over a live camera is harder to read than the same line in phosphor. The slab hangs off
     # ov.caption_right and grows leftwards, so the marker is found by measuring back from there.
@@ -802,11 +840,10 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
     top = int(ov.caption_y) - 6  # caption_y is the bottom line's centre, and this one fits on it
     assert wears((at, top, at + marker_w, top + 14)) == "accent"
     assert wears((at + marker_w, top, at + marker_w + 60, top + 14)) == "phosphor"
-    # ...and the furniture: the SNAP glyph, well inside its cell, since the panel's own border
-    # runs along the bottom of it and that *is* accented.
-    snap = ov._cells["shutter"]
-    cx, gy, r = ov._glyph_at(snap)
-    assert wears((cx - r - 2, gy - r - 2, cx + r + 2, snap.bottom - ov.line - 1)) == "phosphor"
+    # ...and the furniture: the shutter's aperture, which means the same thing in every state and
+    # so wears the panel's own phosphor in all of them.
+    rows, cols = _glyph_box(ov, "shutter")
+    assert wears((cols.start, rows.start, cols.stop, rows.stop)) == "phosphor"
 
 
 def test_the_accent_belongs_to_the_same_tube_as_the_phosphor() -> None:
@@ -848,7 +885,7 @@ def test_the_rec_tag_is_red() -> None:
     _settle(ov, **shown)
     frame = ov.render(phase=10.0, **shown)
     _, rec_right, _ = ov._readouts(True)
-    cy = ov.header.center[1]
+    cy = ov.row_top
     box = frame[cy - 8 : cy + 8, int(rec_right - ov._rec_w) : int(rec_right)].astype(float)
     px = box[box[:, :, 3] > 200][:, :3]
     seen = px.mean(axis=0) / px.mean(axis=0).sum()
@@ -903,31 +940,34 @@ def test_the_border_breathes_while_he_is_up() -> None:
 # ---------------------------------------------------------------- the room he takes up
 
 
-@pytest.mark.parametrize("state", STATES)
-def test_the_middle_cell_carries_no_word(state: str) -> None:
-    # He is a face. A label under a face reads as a caption for it rather than as a name for the
-    # button, and the other two cells keep their words so the row still reads as a row.
-    assert overlay.tab_label("eye", state) == ""
-    assert overlay.tab_label("shutter", state)
-    assert overlay.tab_label("wake", state)
+@pytest.mark.parametrize(("width", "height"), SIZES)
+def test_he_rides_the_ramp_and_his_rim_is_off_the_bezel(width: int, height: int) -> None:
+    """Where he sits comes off the bracket's ramp and nothing else, at every window size.
+
+    Sunk EYE_SEAT of his swell below the rail's centreline, which is what sets the angle the rail
+    leaves the straight at. Move him off that line and the rail's swell stops being concentric
+    with him: it would still be drawn round *something*, just not round his face.
+    """
+    ov = overlay.Overlay(width, height)
+    bracket = ov.brackets["bl"]
+    want = bracket.on_ramp(0.0, ov.shoulder * overlay.EYE_SEAT)
+    assert ov.eye == (round(want[0]), round(want[1])), "he has come off his own ramp"
+    # Against the inward glow's own reach rather than against PAD. PAD is what keeps *text* out
+    # of the light; what has to hold for a face is that the border's bloom does not land on his
+    # rim, which is a smaller number and the one this is actually about.
+    reach = round((overlay.HALO_CORE + overlay.HALO_FALLOFF) * height)
+    for axis, edge in ((0, width), (1, height)):
+        assert ov.eye[axis] - ov.eye_r > reach, f"the rim glow is on his face at {width}x{height}"
+        assert ov.eye[axis] + ov.eye_r < edge - reach, f"the rim glow is on his face at {width}"
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
-def test_his_centre_is_on_the_rule_and_his_chin_is_off_the_bezel(width: int, height: int) -> None:
-    # The centre being *on* the rule is the whole join: a straight line meets a circle without a
-    # corner only at the circle's widest point, and that is where the shoulder's arcs start and
-    # finish. Move him off it and the two stop being tangent.
+def test_his_swell_stays_on_the_panel(width: int, height: int) -> None:
+    # The rail goes round him at `shoulder`, so that is the circle that has to fit - not his rim.
+    # A swell running off the edge is a bracket with a piece missing out of it.
     ov = overlay.Overlay(width, height)
-    assert ov.eye[1] == ov.footer.y
-    assert ov.eye[1] + ov.eye_r < ov.frame.bottom - ov.pad, f"his chin is on the bezel at {width}"
-    assert ov.eye[1] - ov.shoulder > ov.header.bottom, f"his shoulder is in the strip at {width}"
-
-
-@pytest.mark.parametrize(("width", "height"), SIZES)
-def test_he_fits_his_own_cell(width: int, height: int) -> None:
-    ov = overlay.Overlay(width, height)
-    cell = ov._cells["eye"]
-    assert cell.x < ov.eye[0] - ov.shoulder and ov.eye[0] + ov.shoulder < cell.right
+    for axis, edge in ((0, width), (1, height)):
+        assert 0 < ov.eye[axis] - ov.shoulder and ov.eye[axis] + ov.shoulder < edge
 
 
 def _bubble_mask(band: np.ndarray) -> np.ndarray:
@@ -960,7 +1000,7 @@ def test_the_bubble_comes_out_of_his_face_without_landing_on_it() -> None:
     widest - a bounding box would call that clear while the tail sat on his rim.
     """
     ov = _panel()
-    cx, cy, r = *ov.eye, ov.eye_r
+    cx, cy, r = *ov.eye, ov.shoulder
     top = int(ov.caption_bottom - overlay.CAPTION_LINES * ov.caption_h)
     bottom = int(ov.caption_bottom) + ov.caption_tail + 1
     for detail in (
@@ -975,9 +1015,10 @@ def test_the_bubble_comes_out_of_his_face_without_landing_on_it() -> None:
         assert mask.any(), "no bubble on the panel at all - this would pass on a blank line"
         ys, xs = np.nonzero(mask)
         reach = np.hypot(xs - cx, ys + top - cy).min() - r
-        # Both bounds are the gap itself, which is the one number here anybody chose. The tail's
-        # tip sits above his equator, so the distance out to it is always a little more than the
-        # nose measured straight across - but not twice it, or the tail is pointing at the room.
+        # Measured against his *swell* and not his rim: the rail goes round him out there, and a
+        # tail that stopped short of the rail would be coming out of the bracket's edge rather
+        # than out of him. Both bounds are the gap itself, which is the one number here anybody
+        # chose - the left edge is solved for so the tail's tip lands exactly on it.
         assert reach >= ov.caption_nose, (
             f"the bubble is {ov.caption_nose - reach:.1f}px inside its own gap: {detail[:30]!r}"
         )
@@ -1019,26 +1060,37 @@ def test_the_face_is_tappable_where_the_face_is(width: int, height: int) -> None
         assert not other.contains(cx, cy), "his face overlaps another tab's target"
 
 
-@pytest.mark.parametrize(("width", "height"), SIZES)
-def test_every_tab_label_fits_its_cell(width: int, height: int) -> None:
-    # The Mac and the Pi pick different faces, so this is a test and not a measurement.
-    ov = overlay.Overlay(width, height)
-    tracking = max(1.0, 2.4 * ov.scale)
-    for name in overlay.TABS:
-        for state in STATES:
-            text = overlay.tab_label(name, state)
-            room = ov._cells[name].w - 2 * max(1, round(3 * ov.scale))
-            assert ov._width(text, ov.font_tab, tracking) <= room, f"{text} at {width}x{height}"
+def _ramp_edge(ov: overlay.Overlay, name: str, y: int) -> float:
+    """How far a top bracket reaches at row *y*: its landing, or its ramp once past the knee.
+
+    The two top brackets are the only chrome on this panel with something written inside them,
+    so they are the only place a readout can run out of bracket - and they narrow as they climb,
+    which a straight bar never did.
+    """
+    _, flat, knee, _ = ov.spines[name]
+    reach = knee[0] if y <= knee[1] else knee[0] + (y - knee[1]) * (1 if flat[0] > knee[0] else -1)
+    return reach + ov.rail_w * (0.5 if flat[0] > knee[0] else -0.5)
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
-def test_the_mode_word_clears_the_readouts(width: int, height: int) -> None:
+def test_both_rows_of_a_top_bracket_stay_inside_it(width: int, height: int) -> None:
+    """The Mac and the Pi pick different faces, so this is a test and not a measurement.
+
+    The word used to have a whole strip to run out into and only had to clear SIG. It has a
+    bracket now, and a bracket that a nine-letter state word overruns is a rail with LISTENING
+    written through it.
+    """
     ov = overlay.Overlay(width, height)
     track = max(1.0, 2.0 * ov.scale)
-    start = ov.pad + ov._width("CYCLOPS", ov.font_brand, track) + round(11 * ov.scale) * 2
+    left = ov.read_pad
+    for word in set(overlay.LABELS.values()):
+        end = left + ov._width(word, ov.font_mode, track * 0.7)
+        assert end < _ramp_edge(ov, "tl", ov.row_bottom), f"{word} at {width}x{height}"
+    assert left + ov._width("CYCLOPS", ov.font_brand, track) < _ramp_edge(ov, "tl", ov.row_top)
     for taping in (False, True):
-        _, _, meter_right = ov._readouts(taping)
-        sig = ov._meter_x(meter_right) - round(9 * ov.scale) - ov._width("SIG", ov.font_micro, 0)
-        for word in set(overlay.LABELS.values()):
-            end = start + ov._width(word, ov.font_mode, track * 0.7)
-            assert end < sig, f"{word} runs into SIG at {width}x{height} (taping={taping})"
+        _, rec_right, meter_right = ov._readouts(taping)
+        start = ov._meter_x(meter_right) - round(9 * ov.scale)
+        start -= ov._rec_w + ov._gap if taping else ov._width("SIG", ov.font_micro, 0)
+        assert start > _ramp_edge(ov, "tr", ov.row_top), f"the meter row at {width} ({taping=})"
+        clock, _, _ = ov._readouts(taping)
+        assert clock - ov._clock_w > _ramp_edge(ov, "tr", ov.row_bottom), f"the clock at {width}"
