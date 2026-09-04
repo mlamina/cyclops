@@ -14,6 +14,7 @@ Everything here is pure: no camera, no key, no window. `Overlay` is PIL and nump
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 
 import numpy as np
@@ -69,10 +70,19 @@ def test_the_other_two_tabs_do_not_change_under_you(name: str) -> None:
     assert len({overlay.tab_label(name, state) for state in STATES}) == 1
 
 
-def test_the_resting_caption_names_a_button_that_is_actually_there() -> None:
-    # One line, and exactly the bug this invites: the caption said "tap SESSION to begin" for as
-    # long as the tab said SESSION, and would have gone on saying it afterwards.
-    assert overlay.tab_label("wake", overlay.IDLE) in overlay.CAPTIONS[overlay.IDLE]
+def test_no_caption_names_a_button_that_is_not_there() -> None:
+    """A caption may name a control, and then the control has to be on the panel.
+
+    The bug this invites, once: the resting line said "tap SESSION to begin" for as long as the
+    tab said SESSION, and would have gone on saying it afterwards. It said "tap WAKE UP" until
+    the line became a snore, so today nothing matches and nothing is checked - which is the point
+    of writing it as the rule rather than as that one string. The tab still says WAKE UP and
+    still breathes towards the colour it will turn; that was always the load-bearing half.
+    """
+    on_the_panel = {overlay.tab_label(name, s) for name in overlay.TABS for s in STATES}
+    for state, caption in overlay.CAPTIONS.items():
+        for shout in re.findall(r"[A-Z][A-Z ]+[A-Z]", caption):
+            assert shout in on_the_panel, f"the {state} line names {shout!r}, which is not a tab"
 
 
 @pytest.mark.parametrize("state", STATES)
@@ -354,25 +364,66 @@ def _asleep(ov: overlay.Overlay, state: str, detail: str = "") -> list[np.ndarra
     return [ov.render(phase=100.0 + i * 0.31, **shown) for i in range(40)]
 
 
-def test_nothing_moves_while_he_is_asleep_except_his_breath_and_the_way_out() -> None:
-    # The headline. Every animation on this panel is gated on there being a session, and this is
-    # the one assertion that notices when a new one is not - including the caption's breath,
-    # which used to run at IDLE and made a resting panel quietly pulse. Two exceptions and no
-    # more: the WAKE UP cell, which may beckon because it is the only thing left to press, and
-    # his own face, which may breathe because he is asleep rather than off. A fault gets
-    # neither, which is what keeps the rest of this honest - blanking his disc in both states
-    # would leave nobody watching the pixels he is drawn on.
+def _line_box(ov: overlay.Overlay) -> tuple[slice, slice]:
+    """Everywhere the caption bubble can reach: its tallest, plus the tail, out to the far edge."""
+    top = int(ov.caption_bottom - overlay.CAPTION_LINES * ov.caption_h)
+    bottom = int(ov.caption_bottom) + ov.caption_tail + 1
+    return slice(top, bottom), slice(int(ov.caption_left - ov.caption_lean), None)
+
+
+def test_only_three_things_move_while_he_is_asleep() -> None:
+    # The headline. Every animation on this panel is gated, and this is the one assertion that
+    # notices when a new one is not - it is how the caption's breath was caught running at IDLE
+    # and quietly pulsing a resting panel. Three exceptions and no more: the WAKE UP cell, which
+    # may beckon because it is the only thing left to press; his own face, which may move because
+    # he is asleep rather than off; and his line, which is a snore and has dots that walk.
+    #
+    # A fault gets none of the three, and that is what keeps this honest - blanking the same
+    # regions in both states would leave nobody watching the pixels they are drawn on.
     ov = _panel()
     keep = ov._cells["wake"]
     cx, cy, r = *ov.eye, ov.eye_r
+    rows, cols = _line_box(ov)
     for state, detail in ((overlay.IDLE, ""), (overlay.ERROR, "OpenAI rejected the API key")):
         frames = [f.copy() for f in _asleep(ov, state, detail)]
         for f in frames:
             f[keep.y : keep.bottom, keep.x : keep.right] = 0
             if state == overlay.IDLE:
                 f[cy - r : cy + r + 1, cx - r : cx + r + 1] = 0
+                f[rows, cols] = 0
         moved = [i for i, f in enumerate(frames) if not np.array_equal(f, frames[0])]
         assert not moved, f"{state} moved outside those at frames {moved[:5]}"
+
+
+def test_his_line_snores_while_he_is_asleep() -> None:
+    # The dots were gated on there being a session, so a sleeping panel's line was a printed
+    # label. It says a snore now, and a snore that holds still is not one.
+    ov = _panel()
+    assert overlay.CAPTIONS[overlay.IDLE].endswith(overlay.BUSY_MARK), "it would never animate"
+    rows, cols = _line_box(ov)
+    shown = dict(state=overlay.IDLE, level=0.0, elapsed=None)
+    _settle(ov, **shown)
+    step = overlay.DOT_PERIOD_S / (overlay.CAPTION_DOTS + 1)
+    bare = ov.render(phase=step / 2, **shown)[rows, cols]
+    full = ov.render(phase=3 * step + step / 2, **shown)[rows, cols]
+    assert not np.array_equal(bare, full), "the dots do not walk while he is asleep"
+    # ...and the line still does not brighten and dim doing it. The eye gave that up - brightness
+    # is how this panel says which state it is in - and a line that pulses under a face that has
+    # stopped is the same mistake one row further down.
+    def ink(phase: float) -> int:
+        """The brightest thing in the line. Its own text, in practice - nothing else out here is
+        anywhere near phosphor at full - so it is exactly GREEN unless the breath is sinking it.
+
+        Not `alpha == CAPTION_ALPHA`: PIL's glyph blending lands a pixel or two short of the ink
+        it was asked for, so that matches nothing at all and quietly measures an empty array.
+        """
+        crop = ov.render(phase=phase, **shown)[rows, cols]
+        return int(crop[:, :, :3][crop[:, :, 3] >= 200].astype(int).sum(axis=1).max())
+
+    # Whole dot periods apart, so the same dots are lit in every sample and the breath is the
+    # only thing left that could differ - and it runs at half the dot period, which puts these
+    # alternately at the top and the bottom of it.
+    assert len({ink(i * overlay.DOT_PERIOD_S) for i in range(4)}) == 1, "the line breathes"
 
 
 def _peak(crop: np.ndarray) -> int:

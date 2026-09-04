@@ -173,7 +173,9 @@ HEAT_WORD = "HOT"
 # project is being opened, which step of the teardown is running - and that wins; this is what the
 # panel falls back on. Every state has one, so the line is never blank while a session is up.
 CAPTIONS = {
-    IDLE: "asleep — tap WAKE UP",
+    IDLE: "zzZzzzZ…",  # he snores. The tab underneath still says WAKE UP and still breathes
+    # towards the colour it will turn, which is the half of this that was ever load-bearing - so
+    # the line is free to stop being an instruction and go back to being him.
     STARTING: "waking up…",
     STOPPING: "going to sleep…",
     CONNECTING: "waking up…",
@@ -248,10 +250,11 @@ MOODS = {
     ERROR: Mood(tint=RED, aperture=0.20, swell=0.0, breath_s=0.0, spin=0.0),
 }
 
-# A caption that ends in an ellipsis is a caption about work in flight, and that is the whole test
-# the line uses to decide whether to move: "searching the web…" walks its dots and breathes,
-# "listening — talk to me" holds still. Every phrase the controller publishes obeys the same rule,
-# which is why none of them has to say twice whether it is a job or a state.
+# A caption that ends in an ellipsis is a caption that moves, and that is the whole test the line
+# uses: "searching the web…" walks its dots, "listening — talk to me" holds still. Every phrase
+# the controller publishes obeys the same rule, which is why none of them has to say twice whether
+# it is a job or a state. Nearly always that means work in flight; the exception is the snore,
+# which is not work but is just as much a thing going on.
 BUSY_MARK = "…"
 MARKER = "› "  # what every caption opens with, and the smallest thing that wears the accent
 CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead. One line meant
@@ -1220,14 +1223,19 @@ class Overlay:
         top = bottom - len(lines) * self.caption_h
         self._bubble(d, x, right, top, bottom)
         # The breath runs under every caption of a session that is up - it is what makes the line
-        # read as a live tube rather than a printed label - and the dots only under one about work
-        # in flight, where they mean the thing everybody already reads them to mean.
+        # read as a live tube rather than a printed label - and the dots under any line that ends
+        # in an ellipsis, where they mean the thing everybody already reads them to mean.
         #
-        # With nothing running it stops, and that is the point rather than an economy: a sleeping
-        # creature's line does not breathe. It used to breathe unconditionally, which meant a
-        # panel with nothing on it was quietly pulsing 809 pixels of caption - and against that
-        # background an awake panel that pulses says nothing at all.
-        sunk, lit = caption_pulse(phase) if session_up(state) else (0.0, 0)
+        # Asleep the breath stops and the dots do not. The breath stopping is the point rather
+        # than an economy: it used to run unconditionally, so a panel with nothing on it was
+        # quietly pulsing 809 pixels of caption, and against that an awake panel that pulses says
+        # nothing at all - and brightness stopped being his register the day the sleeping face
+        # gave it up. The dots stay because what the line says while he is asleep is a snore, and
+        # a snore that holds still is a printed label. A fault gets neither: it is asking to be
+        # read, not watched.
+        sunk, walking = caption_pulse(phase)
+        sunk = sunk if session_up(state) else 0.0
+        lit = walking if session_up(state) or state == IDLE else 0
         colour = mix(halo if state == ERROR else GREEN, SCREEN, sunk)
         # The marker takes the accent and the sentence does not. A whole line of running text in
         # white over a live camera is harder to read than the same line in phosphor, and the
