@@ -10,6 +10,8 @@ touch goes, and about the column that comes up under it.
 
 from __future__ import annotations
 
+import threading
+
 import numpy as np
 import pytest
 
@@ -56,8 +58,11 @@ def test_the_column_stands_clear_of_everything_it_would_cover() -> None:
 
 
 class _Cues:
-    def play(self, name: str) -> None:
-        pass
+    def __init__(self) -> None:
+        self.played: list[str] = []
+
+    def play(self, name: str, *, loop: bool = False) -> None:
+        self.played.append(name)
 
     def stop(self) -> None:
         pass
@@ -69,6 +74,7 @@ class _Mixer:
     def __init__(self) -> None:
         self.levels: list[int] = []
         self.noted: list[int] = []
+        self.note: int | None = None  # what the page is supposed to have left us
 
     def set_level(self, percent: int) -> bool:
         self.levels.append(percent)
@@ -76,6 +82,10 @@ class _Mixer:
 
     def request(self, percent: int) -> None:
         self.noted.append(percent)
+        self.note = percent
+
+    def requested(self) -> int | None:
+        return self.note
 
 
 def _panel(monkeypatch: pytest.MonkeyPatch) -> tuple[kiosk_module.Kiosk, _Mixer]:
@@ -92,7 +102,14 @@ def _panel(monkeypatch: pytest.MonkeyPatch) -> tuple[kiosk_module.Kiosk, _Mixer]
     kiosk._slide_from = 0.0
     kiosk._wanted = None
     kiosk._volume = 50
+    kiosk._volume_at = 0.0
     kiosk._cues = _Cues()
+    # Up before a single test runs, which is the whole testing strategy here: with the latch
+    # already held, _slide never spawns a thread, so nothing in this file forks a pactl or opens
+    # PortAudio. The gesture is turned by hand instead, one _rung() at a time - which is why
+    # _rung is a method rather than three lines inside _walk.
+    kiosk._knob_busy = threading.Event()
+    kiosk._knob_busy.set()
     kiosk.opened: list[str] = []
     monkeypatch.setattr(kiosk, "_open_admin", lambda screen: kiosk.opened.append(screen))
     mixer = _Mixer()
@@ -116,7 +133,8 @@ def test_a_tap_on_the_knob_asks_for_nothing(monkeypatch: pytest.MonkeyPatch) -> 
     kiosk, mixer = _panel(monkeypatch)
     x, y = _knob(kiosk)
     kiosk._on_mouse(DOWN, x, y, 0, None)
-    assert kiosk._pressed == overlay.VOLUME and not kiosk._sliding, "the column came up on a tap"
+    assert kiosk._turning, "the column did not come up under the finger"
+    assert not kiosk._sliding and kiosk._wanted is None, "a tap asked for a level"
     kiosk._on_mouse(UP, x, y, 0, None)
     assert mixer.levels == [] and kiosk._volume == 50
     assert kiosk._pressed is None, "the knob stayed lit after the finger came off"
@@ -133,10 +151,13 @@ def test_a_press_that_barely_moves_is_still_a_tap(monkeypatch: pytest.MonkeyPatc
     assert mixer.levels == []
 
 
-def test_the_column_follows_the_finger_and_lands_on_the_lift(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The whole gesture: grab the knob, drag up the track to the level you want, let go."""
+def test_the_speaker_follows_the_finger_rung_by_rung(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The whole gesture: grab the knob, drag up the track, hear every rung on the way.
+
+    The speaker is asked *during* the drag now rather than on the lift, which is the only way
+    the beep can be at the level it is announcing - what you hear is the sink's own gain on a
+    tone of fixed amplitude, so a rung that has not been set yet cannot be heard at its level.
+    """
     kiosk, mixer = _panel(monkeypatch)
     x, y = _knob(kiosk)
     kiosk._on_mouse(DOWN, x, y, 0, None)
@@ -144,14 +165,14 @@ def test_the_column_follows_the_finger_and_lands_on_the_lift(
     for level in (20, 55, 80):
         kiosk._on_mouse(MOVE, x, _at(kiosk, level), HELD, None)
         seen.append(kiosk._wanted)
+        kiosk._rung()
     assert seen == [20, 55, 80], f"the column did not follow the finger: {seen}"
-    assert kiosk._sliding and mixer.levels == [], "the speaker was asked before the finger lifted"
+    assert kiosk._sliding and mixer.levels == [20, 55, 80], "the speaker lagged the column"
+    assert kiosk._cues.played == ["rung"] * 3, "a rung went by without a sound"
 
     kiosk._on_mouse(UP, x, _at(kiosk, 80), 0, None)
-    assert mixer.levels == [80], "the level you let go on is the level you meant"
-    assert mixer.noted == [80], "the page's slider was left where the column was not"
-    assert kiosk._volume == 80
-    assert not kiosk._sliding and kiosk._wanted is None, "the column stayed up"
+    assert kiosk._volume == 80, "the level you let go on is the level you meant"
+    assert not kiosk._sliding and not kiosk._turning, "the column stayed up"
 
 
 def test_the_level_is_snapped_to_the_step_the_page_uses(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -165,28 +186,39 @@ def test_the_level_is_snapped_to_the_step_the_page_uses(monkeypatch: pytest.Monk
         assert kiosk._wanted % overlay.VOLUME_STEP == 0, f"{kiosk._wanted} is off the step"
 
 
-def test_pactl_is_asked_once_for_a_whole_drag(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A subprocess a frame, on a board this layout already spends its corners keeping cool. It
-    is also why the grab is free: nothing you drag across on the way is ever heard."""
+def test_every_rung_is_a_pactl_and_a_beep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A subprocess a rung, which is what hearing where you are costs.
+
+    It used to be one for a whole drag, on the argument that a board which spends its corners
+    keeping cool should not fork a process a frame. The ladder is what makes the new bargain
+    affordable: there are only twenty rungs, so a sweep of the entire column is bounded at
+    twenty however long you take over it. And _walk only ever looks at where the finger is
+    *now*, so a flick spends fewer of them than a slow deliberate slide rather than more.
+
+    The grab is still free. This drag is a finger walking every rung on purpose, which is the
+    most expensive gesture the panel has and the one nobody makes twice.
+    """
     kiosk, mixer = _panel(monkeypatch)
     x, y = _knob(kiosk)
     kiosk._on_mouse(DOWN, x, y, 0, None)
     for level in range(0, 101, 5):
         kiosk._on_mouse(MOVE, x, _at(kiosk, level), HELD, None)
-    assert mixer.levels == []
-    kiosk._on_mouse(UP, x, _at(kiosk, 100), 0, None)
-    assert mixer.levels == [100]
+        kiosk._rung()
+    assert mixer.levels == list(range(0, 101, 5))
+    assert kiosk._cues.played == ["rung"] * 21
 
 
-def test_a_drag_that_lands_on_the_level_it_started_at_asks_for_nothing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_a_rung_the_sink_is_already_on_is_not_spent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What keeps a finger resting on one rung silent rather than a machine gun - and what lets
+    the walk run on a clock instead of waiting to be told the finger moved."""
     kiosk, mixer = _panel(monkeypatch)
     x, y = _knob(kiosk)
     kiosk._on_mouse(DOWN, x, y, 0, None)
-    kiosk._on_mouse(MOVE, x, _at(kiosk, 20), HELD, None)
-    kiosk._on_mouse(UP, x, _at(kiosk, 50), 0, None)
-    assert mixer.levels == [], "it was already at 50"
+    kiosk._on_mouse(MOVE, x, _at(kiosk, 50), HELD, None)
+    assert kiosk._wanted == 50
+    for _ in range(4):
+        assert not kiosk._rung(), "it was already at 50"
+    assert mixer.levels == [] and kiosk._cues.played == []
 
 
 def test_a_finger_that_landed_somewhere_else_does_not_open_the_column(
@@ -201,17 +233,26 @@ def test_a_finger_that_landed_somewhere_else_does_not_open_the_column(
     assert mixer.levels == []
 
 
-def test_a_release_that_never_arrived_sets_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A press with no release behind it means the release was lost, so nothing was ever let go
-    of. Acting on the column then would set a level from a gesture that is over."""
+def test_a_release_that_never_arrived_leaves_the_level_where_the_drag_put_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A press with no release behind it means the release was lost. What that costs you is the
+    column coming down, and nothing else: the level was set rung by rung, out loud, as the
+    finger crossed them, so putting it back where it started after you have heard it climb to a
+    hundred would be the surprise. What must not survive is the *drag* - the moves that follow
+    the new press do not carry where that press was."""
     kiosk, mixer = _panel(monkeypatch)
     x, y = _knob(kiosk)
     kiosk._on_mouse(DOWN, x, y, 0, None)
     kiosk._on_mouse(MOVE, x, _at(kiosk, 100), HELD, None)
+    kiosk._rung()
+    assert mixer.levels == [100] and kiosk._volume == 100
     kiosk._on_mouse(DOWN, *kiosk.overlay.hitboxes.eye.center, 0, None)  # no UP in between
-    assert not kiosk._sliding and mixer.levels == []
+    assert not kiosk._sliding and not kiosk._turning
     kiosk._on_mouse(MOVE, x, _at(kiosk, 0), HELD, None)
-    assert mixer.levels == [], "a drag off his face set the volume"
+    kiosk._rung()
+    assert mixer.levels == [100], "a drag off his face set the volume"
+    assert kiosk._volume == 100, "the level was taken back from a gesture that had landed it"
 
 
 def test_a_panel_with_no_sink_under_it_sets_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -223,8 +264,73 @@ def test_a_panel_with_no_sink_under_it_sets_nothing(monkeypatch: pytest.MonkeyPa
     kiosk._on_mouse(DOWN, x, y, 0, None)
     kiosk._on_mouse(MOVE, x, _at(kiosk, 100), HELD, None)
     assert not kiosk._sliding
+    assert not kiosk._rung() and kiosk._wanted is None
     kiosk._on_mouse(UP, x, _at(kiosk, 100), 0, None)
     assert mixer.levels == []
+
+
+# ------------------------------------------------------------------ the column, and the note
+
+
+def test_the_column_is_up_the_moment_the_knob_is_touched(monkeypatch: pytest.MonkeyPatch) -> None:
+    """It used to wait for six pixels of travel, which is a control you have to start using
+    blind. Up on the touch, showing the level the speaker is already at - so what you reach for
+    is a column standing where you left it rather than one that materialises under your thumb."""
+    kiosk, _ = _panel(monkeypatch)
+    kiosk._on_mouse(DOWN, *_knob(kiosk), 0, None)
+    assert kiosk._turning, "nothing put the column up"
+    assert not kiosk._sliding and kiosk._wanted is None, "it opened on a level nobody asked for"
+
+
+def test_the_speaker_waits_until_the_finger_is_on_the_ladder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The knob sits below the foot of its own column and the column reads absolutely, so the
+    first thing a drag off the disc reports is silence. Now that the sink follows the finger,
+    acting on that would cut him off mid-sentence every time you reached for the volume - and
+    you would climb back out of nothing. So the drag begins where the ladder does."""
+    kiosk, mixer = _panel(monkeypatch)
+    x, y = _knob(kiosk)
+    kiosk._on_mouse(DOWN, x, y, 0, None)
+    below = kiosk.overlay.slider.bottom + 1
+    assert y - below > kiosk_module.SLIDE_GRAB_PX, "the gap is too small to travel the floor in"
+    kiosk._on_mouse(MOVE, x, below, HELD, None)
+    assert not kiosk._sliding, "the drag began in the gap under the track"
+    assert not kiosk._rung() and mixer.levels == [], "he was cut off on the way to the ladder"
+    kiosk._on_mouse(MOVE, x, _at(kiosk, 40), HELD, None)
+    assert kiosk._sliding and kiosk._wanted == 40, "the ladder itself did not take the finger"
+
+
+def test_the_lift_lands_where_the_thread_left_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The walk's last pass, run here on the main thread. The gesture is already over, so it
+    sets the level one final time, leaves the note for the page's own slider, and goes - and it
+    is the note being written *inside* the latch that keeps _sync_volume from ever seeing it
+    before the sink it describes."""
+    kiosk, mixer = _panel(monkeypatch)
+    kiosk._turning = False
+    kiosk._wanted = 80
+    kiosk._walk()  # returns on the first pass: no clock, no sleep
+    assert mixer.levels == [80] and kiosk._volume == 80
+    assert mixer.noted == [80], "the page's slider was left where the column was not"
+    assert kiosk._wanted is None, "the walk left a level behind for the next grab to inherit"
+    assert not kiosk._knob_busy.is_set(), "the latch outlived the thread that held it"
+
+
+def test_a_finger_on_the_knob_outranks_the_note_the_page_left(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The note is the page's opinion, and it is stale for as long as somebody is setting the
+    sink by hand. Without this every drag is fought back down four hundred milliseconds at a
+    time, by a poll that reads the disagreement it is itself half of."""
+    kiosk, mixer = _panel(monkeypatch)
+    mixer.note = 50
+    kiosk._volume = 80  # where the finger has walked it, three rungs into a drag
+    kiosk._sync_volume()
+    assert mixer.levels == [] and kiosk._volume == 80, "the page took the knob back mid-drag"
+    kiosk._knob_busy.clear()  # the walk is done and has left its own note
+    mixer.note = 50
+    kiosk._sync_volume()
+    assert mixer.levels == [50], "the page stopped being able to set the volume at all"
 
 
 # ------------------------------------------------------------------ what the column shows
@@ -233,7 +339,7 @@ def test_a_panel_with_no_sink_under_it_sets_nothing(monkeypatch: pytest.MonkeyPa
 def _rungs(ov: overlay.Overlay, level: int) -> int:
     """How many rungs of the column are lit, counted off a rendered frame."""
     frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=10.0, volume=level,
-                      temp_c=58.0, pressed=overlay.VOLUME, sliding=True).astype(int)
+                      temp_c=58.0, pressed=overlay.VOLUME, turning=True).astype(int)
     track = ov.slider
     column = frame[track.y : track.bottom, track.center[0], :3]
     # Phosphor only. The thumb is white and sits across the top of the stack, so counting by
@@ -251,7 +357,7 @@ def test_the_column_is_only_up_while_a_finger_is_on_it() -> None:
     quiet = ov.render(**shown)  # type: ignore[arg-type]
     track = ov.slider
     band = (slice(track.y, track.bottom), slice(track.x, track.right))
-    assert not np.array_equal(quiet[band], ov.render(sliding=True, **shown)[band])  # type: ignore[arg-type]
+    assert not np.array_equal(quiet[band], ov.render(turning=True, **shown)[band])  # type: ignore[arg-type]
     assert ov.render(**shown)[band].tobytes() == quiet[band].tobytes()  # type: ignore[arg-type]
 
 

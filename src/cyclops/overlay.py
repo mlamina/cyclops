@@ -1443,7 +1443,7 @@ class Overlay:
         menu: bool = False,
         volume: int | None = None,
         temp_c: float | None = None,
-        sliding: bool = False,
+        turning: bool = False,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -1460,8 +1460,13 @@ class Overlay:
 
         ``volume`` is the level on the sink, 0 to 100, and ``temp_c`` the board's temperature -
         both ``None`` where the platform cannot say, which the dials draw as not reading rather
-        than as reading nothing. While ``sliding`` the level is the one *under the finger* rather
-        than the one on the sink: the column is a question, and it is only answered on the lift.
+        than as reading nothing.
+
+        ``turning`` is a finger on the knob, and it is what puts the column up - on the touch
+        rather than on the first movement, because a control you cannot see until you have
+        already started using it is one you start using blind. What the column *shows* is the
+        caller's business: the level on the sink until the finger reaches the track, and the
+        level under the finger after that.
 
         ``hold`` is how far a finger is through the long press on his face, 0 to 1, and ``menu``
         is whether that press has landed - the power menu, over everything else. The two are the
@@ -1480,7 +1485,7 @@ class Overlay:
         # read the other, so the knob answers a finger by going white under it and the gauge
         # answers the tap that opens its screen the same way.
         self._draw_hands(layer, d, volume, temp_c, pressed)
-        if sliding and volume is not None:
+        if turning and volume is not None:
             self._draw_slider(d, volume)
         # Him, last of everything in his corner. He is the one control that never inverts under
         # a thumb: a face in photographic negative is not the same face, and half of him is over
@@ -1906,9 +1911,9 @@ class Overlay:
         tile that is already being cached is the cheapest place on this panel to put a shape.
 
         White is the whole of what the knob does under a finger, and it says the right thing at
-        the right moment twice over: it acknowledges the grab before the column has decided the
-        grab is a drag, and once the column is up it is the pointer following the finger that
-        says the two are one control rather than two.
+        the right moment twice over: it and the column come up together on the touch, and once
+        the finger is on the track it is the pointer following it that says the two are one
+        control rather than two.
         """
         key = (level, turning)
         tile = self._knobs.get(key)
@@ -1968,7 +1973,7 @@ class Overlay:
                    (*colour, 255), align="c")
 
     def _draw_slider(self, d: ImageDraw.ImageDraw, level: int) -> None:
-        """The volume column, up only while a finger is dragging on the knob.
+        """The volume column, up for as long as a finger is on the knob.
 
         A ladder of rungs rather than a solid bar, and one rung per setting: the knob steps in
         fives like the page's slider does, so a column drawn continuously would show a level

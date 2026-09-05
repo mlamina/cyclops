@@ -125,6 +125,21 @@ CUES: dict[str, Callable[[int], np.ndarray]] = {
         tone(587, 45, rate=rate, amp=PEAK * 0.7),
         tone(880, 70, rate=rate, amp=PEAK * 0.7),
     ),
+    # One rung of the volume column, sounded as a finger crosses it. The other cue that answers a
+    # finger rather than the session, and at the same level as "menu" for that reason.
+    #
+    # The only cue here whose loudness is not ours. The sink is moved to the level under the
+    # finger *before* this sounds, so a rung near the foot of the ladder is genuinely faint and
+    # one near the head is genuinely loud. That is the whole message - you are not being told
+    # which rung you are on, you are being shown what it will sound like to live at it - and it
+    # is why nothing here scales the amplitude by the level.
+    #
+    # An octave over the ping, so it is the same instrument, and clear of every other pitch in
+    # this table. High because it has to still be there at the bottom of the sink's range, which
+    # is where a small speaker has the least to give. Short because twenty of them cross the
+    # whole column: at 25 ms they are a ladder run down with a stick rather than a tune with
+    # twenty notes in it, and being cut off mid-note by the next one costs nothing.
+    "rung": lambda rate: tone(1320, 25, rate=rate, amp=PEAK * 0.7),
 }
 
 # The shipped half. A recording arrives at its own fixed rate rather than being built at the

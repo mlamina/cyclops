@@ -114,6 +114,13 @@ def test_a_cue_says_which_rate_it_wants(name: str) -> None:
     assert sfx.cue(name, RATE)[1] == wanted
 
 
+def test_a_rung_is_short_enough_to_be_a_detent() -> None:
+    """Twenty of these cross the whole volume column, one per rung the finger passes. At this
+    length they read as a ladder being crossed; much longer and a sweep is a tune with twenty
+    notes in it, and the ticks start arriving before the one before them has finished."""
+    assert len(sfx.render("rung", RATE)) / RATE <= 0.04
+
+
 def test_render_follows_the_rate_it_is_given() -> None:
     """The rate is a parameter precisely so it cannot drift from the speaker's."""
     at_24 = sfx.render("ready", RATE)

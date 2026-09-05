@@ -152,11 +152,22 @@ MENU_TIMEOUT_S = 20.0  # a menu nobody chose from gives the panel back rather th
 # thing the screen does, and everything else on it has stopped being true.
 POWER_SAYS = {power.POWEROFF: "Shutting down…", power.REBOOT: "Restarting…"}
 
-# How far a finger has to travel off the knob before the grab is a drag and the column comes up.
-# It exists so that a tap on the knob is a tap and not a drag to silence: a touchscreen delivers
-# a pixel or two of travel on every press, and the column reads absolutely, so without a floor
-# under it the lightest tap would put the level wherever the knob happens to sit on the track.
+# What has to be true before a grab on the knob is a drag. The column is up either way - it comes
+# up on the touch - but until both of these hold, nothing is asked of the speaker.
+#
+# Two floors, guarding two different things. The travel floor is about the glass: a touchscreen
+# delivers a pixel or two on every press, and a tap that counted would be a tap that moved the
+# level. The track is about the geometry, and it is the one that matters now that the sink
+# follows the finger: the column reads *absolutely* and the knob sits below the foot of it, so
+# the first thing a drag off the disc reports is silence. Left ungated that would cut him off
+# mid-sentence every time you reached for the volume, and you would climb back out of nothing.
+# Waiting for the finger to arrive on the ladder means the column, the speaker and the beep agree
+# at every instant. Silence is still somewhere you can drag to, by going back down off the foot.
 SLIDE_GRAB_PX = 6
+# One rung of the column: the tick's own length and a beat. It is what makes a sweep read as
+# twenty detents rather than one buzz, and it is also the whole governor on what this gesture
+# costs - a pactl and a stream open per rung, capped near fourteen a second.
+SLIDE_RUNG_S = 0.045
 # Which screen the panel asks the page for, by what opened it. His face promises the recordings,
 # the gauge promises the rest of the numbers behind itself.
 SESSIONS_SCREEN, SYSTEM_SCREEN = "/sessions", "/"
@@ -442,13 +453,14 @@ class Kiosk:
         self._notice_until = 0.0
         self._volume: int | None = None  # the level we last put on the sink
         self._volume_at = 0.0  # when we last looked for a new one
-        self._turning = False  # a finger is on the knob and has not come off it yet
-        self._sliding = False  # ...and has moved far enough that the column is up; see _slide
+        self._turning = False  # a finger is on the knob: the column is up, and follows it
+        self._sliding = False  # ...and has reached the track, so the speaker follows it too
         self._slide_from = 0.0  # where that finger landed, which is what the floor is measured on
-        # What the column is showing, which is not what the speaker is doing. Nothing is asked of
-        # pactl until the finger comes off, so a grab that landed somewhere you did not mean is
-        # free to be dragged away from - and one drag costs one subprocess rather than one a frame.
+        # What the column is asking for. Written by the finger, read and answered by _walk, and
+        # cleared by _walk on its way out rather than by _let_go - which is what lets the last
+        # pass of a gesture see the reading the lift took.
         self._wanted: int | None = None
+        self._knob_busy = threading.Event()  # a thread is walking the sink to where the finger is
         # Which screen the page was last asked for. The warm browser holds whatever it was told
         # last, so a reveal only has to wait for a route when it is asking for a different one -
         # which is never the common case, his face being the button that gets pressed.
@@ -674,7 +686,7 @@ class Kiosk:
         # moves that follow a press do not carry where the press was.
         self._eye_down_at = None
         if self._turning:
-            self._let_go(apply=False)
+            self._let_go()
         if self._asleep:
             # The tap that wakes the panel is spent waking it. With the preview dark you cannot
             # see what you are aiming at, so it must not also fire whatever sits underneath.
@@ -687,10 +699,11 @@ class Kiosk:
             return
         boxes = self.overlay.hitboxes
         if boxes.volume.contains(x, y):
-            # Nothing is set yet. The knob lights to say it has been grabbed, and what the grab
-            # turns out to mean is decided by whether the finger goes anywhere - see _slide.
-            # Held rather than flashed: it stays lit for as long as the finger is on it, and
-            # _lifted puts it out.
+            # Nothing is set yet. The disc lights and the column comes up beside it showing
+            # where the speaker already is; what the grab turns out to *mean* is decided by
+            # whether the finger walks up onto the track - see _slide. Both held rather than
+            # flashed: they stay up for as long as the finger is on the glass, and _lifted
+            # puts them away.
             self._pressed = VOLUME
             self._press_until = float("inf")
             self._turning = True
@@ -716,12 +729,13 @@ class Kiosk:
     def _lifted(self, x: int, y: int) -> None:
         """A finger coming off the glass. His face, and the knob, have something left to do here.
 
-        The column is answered here and nowhere else: the level you let go on is the level you
-        meant, and everything before the lift was a question with a finger still on it.
+        For the knob this is the end of the gesture rather than the answer to it: the level has
+        been following the finger the whole way up the track. One last reading, in case highgui
+        never sent the move that got there, and then the column comes down.
         """
         if self._turning:
             self._slide(y)  # wherever it ended up, including a last move highgui never sent
-            self._let_go(apply=True)
+            self._let_go()
         down_at, self._eye_down_at = self._eye_down_at, None
         if down_at is None or self.overlay is None:
             return  # nothing was being held, or the hold already landed and opened the menu
@@ -1412,16 +1426,18 @@ class Kiosk:
             print("· panel taken back from the warm browser", flush=True)
 
     def _slide(self, y: int) -> None:
-        """Follow a finger that grabbed the knob. Puts the column up, and moves what it shows.
+        """Follow a finger that grabbed the knob, and set a thread walking the speaker after it.
 
-        The column stays down until the finger has actually gone somewhere (see
-        :data:`SLIDE_GRAB_PX`), so a tap on the knob is a tap: it lights the disc, asks nothing of
-        the speaker and leaves the level where it was. Past that floor the reading is where the
-        finger is on the track, snapped to the same 5 the page's slider steps in so the two
-        controls cannot disagree about what a level is.
+        The drag begins when the finger has gone somewhere *and* has arrived on the track - both
+        floors, for the two reasons in :data:`SLIDE_GRAB_PX`. Until then a grab on the knob is
+        free: the disc lights, the column is up showing where the speaker already is, and nothing
+        has been asked of anything. Past the floors the reading is where the finger is on the
+        track, snapped to the same 5 the page's slider steps in so the two controls cannot
+        disagree about what a level is.
 
-        Nothing is applied here. What this sets is the number on the column, which is a question;
-        :meth:`_let_go` is the answer.
+        Nothing is applied *here* - this runs on the render thread, out of highgui's callback,
+        and pactl is a subprocess. What this sets is the number the column is showing and the
+        number :meth:`_walk` is chasing.
 
         Nothing at all with no mixer under us - a Mac, or a Pi with no sink - because a column
         that fills and changes nothing is worse than one that never comes up.
@@ -1429,36 +1445,104 @@ class Kiosk:
         if self.overlay is None or self._volume is None:
             return
         if not self._sliding:
-            if abs(y - self._slide_from) < SLIDE_GRAB_PX:
+            if abs(y - self._slide_from) < SLIDE_GRAB_PX or y > self.overlay.slider.bottom:
                 return
             self._sliding = True
         value = self.overlay.slider_value(y) * 100
         self._wanted = max(0, min(100, round(value / VOLUME_STEP) * VOLUME_STEP))
+        # Spawned on the first rung rather than on the press, which is what keeps a tap on the
+        # knob costing nothing at all. A second grab arriving within a rung of the last one can
+        # find the latch still up under a thread on its way out; that drag is silent until its
+        # next move event, sixteen milliseconds it is not worth a handshake to save.
+        if not self._knob_busy.is_set():
+            self._knob_busy.set()
+            threading.Thread(target=self._walk, name="kiosk-knob", daemon=True).start()
 
-    def _let_go(self, *, apply: bool) -> None:
-        """The finger is off the knob. Put the column away, and if it was a drag, set the level.
+    def _walk(self) -> None:
+        """Walk the speaker up the ladder after the finger, one rung at a time, until it lifts.
 
-        *apply* is False for the one case that is not a lift: a fresh press arriving with no
-        release behind it, which means the release was lost and whatever the column was showing
-        was never let go of. Acting on it then would set a level from a gesture that is over.
+        Off the render thread because both halves of a rung are slow there: pactl is a subprocess
+        and ``sd.play`` opens a PortAudio stream, and twenty a second of either through highgui's
+        callback would be a preview that stutters whenever you touch the volume.
+
+        It only ever looks at where the finger is *now*. Everything it crossed on the way is
+        never asked for, so a flick up the track is *cheaper* than a slow deliberate slide rather
+        than more expensive - which is the right way round, and is the whole defence of doing
+        this at all on a board that heats in its case.
+
+        The read order is load-bearing. ``_turning`` is taken before the level, and
+        :meth:`_let_go` clears it last and never touches ``_wanted``, so a pass that finds the
+        gesture over is guaranteed to be looking at the reading the lift took. Taken the other
+        way round it drops the last rung of every drag. That rests on the GIL making these stores
+        visible in order, which is true of CPython and is a better bargain than a lock the render
+        thread would have to take on every mouse event.
         """
-        wanted, sliding = self._wanted, self._sliding
-        self._turning = self._sliding = False
-        self._wanted = None
+        landed: int | None = None
+        try:
+            while True:
+                turning = self._turning  # first: see the note above
+                if self._rung():
+                    landed = self._volume
+                if not turning:
+                    return
+                time.sleep(SLIDE_RUNG_S)
+        finally:
+            # Inside the latch, so the poll that reads this note can never see it before the sink
+            # it describes - see _sync_volume. One line per gesture rather than per rung, which
+            # is also the quick check from the log that this thread is exiting cleanly.
+            self._wanted = None
+            if landed is not None:
+                mixer.request(landed)
+                print(f"· volume {landed}% from the panel", flush=True)
+            self._knob_busy.clear()
+
+    def _rung(self) -> bool:
+        """One rung: put the speaker where the column is, and click. False if it was already there.
+
+        That short circuit is what keeps a finger resting on one rung silent rather than a
+        machine gun, and it is why the walk can run on a clock instead of waiting on an event.
+
+        The click sounds *after* the level lands, and at a fixed amplitude, because the sink it
+        is going out through is the very thing being set: a rung near the foot of the ladder is
+        meant to be faint. See the cue in :mod:`cyclops.sfx`.
+        """
+        wanted = self._wanted
+        if wanted is None or wanted == self._volume or not mixer.set_level(wanted):
+            return False
+        self._volume = wanted
+        self._cues.play("rung")
+        return True
+
+    def _let_go(self) -> None:
+        """The finger is off the knob. Put the column away and let the walk finish.
+
+        Nothing is set here, and nothing is taken back. :meth:`_walk` is the only thing that
+        writes the sink for the length of a gesture, which is what keeps two pactls from ever
+        being in flight at once - the loser of that race is the one that started first and lands
+        last, and what it leaves behind is a speaker at one level and a panel certain of another.
+
+        This is also why there is no longer anything to undo when the release was lost and a
+        fresh press arrives instead. The levels were set rung by rung, out loud, as the finger
+        crossed them; putting the volume back after you heard it climb to a hundred would be the
+        surprise. What a lost release costs you is the column coming down, and nothing else.
+        """
+        self._sliding = False
         if self._pressed == VOLUME:
             self._pressed, self._press_until = None, 0.0
-        if not (apply and sliding) or wanted is None or wanted == self._volume:
-            return
-        if not mixer.set_level(wanted):
-            return
-        self._volume = wanted
-        # The note as well as the sink, so the page's slider opens where the column left it - and
-        # so that _sync_volume, which reads that note, finds the level it already has.
-        mixer.request(wanted)
-        print(f"· volume {wanted}% from the panel", flush=True)
+        self._turning = False  # last, and _walk reads it first: see the note there
 
     def _sync_volume(self) -> None:
-        """Follow the level the page left for us. A few bytes, a couple of times a second."""
+        """Follow the level the page left for us. A few bytes, a couple of times a second.
+
+        Not while somebody is turning the knob. The note is the page's opinion and it is stale
+        for as long as a finger is setting the sink by hand, so without this every drag would be
+        fought back down four hundred milliseconds at a time. The latch rather than ``_turning``
+        because :meth:`_walk` outlives the lift by up to a rung and writes its note before
+        clearing the latch - so the first poll after any gesture, lift or abort, finds the note
+        and the sink already agreeing. Checked before the clock, so that poll is immediate.
+        """
+        if self._knob_busy.is_set():
+            return
         now = time.monotonic()
         if now - self._volume_at < VOLUME_POLL_S:
             return
@@ -1714,12 +1798,17 @@ class Kiosk:
                     hold=hold,
                     menu=self._menu,
                     # The two instruments in the corner. Both may be None - no sink, no thermal
-                    # zone - and both draw that as a dial that is not reading. While a finger is
-                    # on the column the knob shows what the column shows, because the two are one
-                    # control and a pointer left behind on the old level says they are not.
+                    # zone - and both draw that as a dial that is not reading.
+                    #
+                    # The knob's two flags, doing their two different jobs. `_turning` is a
+                    # finger on it, and puts the column up the instant you touch it, showing
+                    # where the speaker actually is. `_sliding` is that finger having reached the
+                    # track, which is when the reading becomes the one under it - knob and column
+                    # together, because the two are one control and a pointer left behind on the
+                    # old level says they are not.
                     volume=self._wanted if self._sliding else self._volume,
                     temp_c=self._temp_c,
-                    sliding=self._sliding,
+                    turning=self._turning,
                 )
                 self._paint(composite(canvas, chrome), width, height)
 
