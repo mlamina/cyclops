@@ -117,6 +117,13 @@ def uncaptioned(folder: Path) -> list[Path]:
     return [p for p in found if p.name not in known and card.written(p)]
 
 
+def _mark(path: Path) -> str:
+    """What this picture contains, for matching it against one described under another name."""
+    from .recall import content_hash
+
+    return content_hash(path)
+
+
 def departed(folder: Path, captions: dict[str, str]) -> list[str]:
     """Captions describing pictures that are no longer in the folder. The mirror of the above.
 
@@ -213,7 +220,13 @@ async def describe(path: Path, client: AsyncOpenAI) -> str:
     return text[: MAX_CAPTION_CHARS - 1].rsplit(" ", 1)[0] + "…"
 
 
-async def fill(folder: Path, settings: Settings, client: AsyncOpenAI) -> int:
+async def fill(
+    folder: Path,
+    settings: Settings,
+    client: AsyncOpenAI | None,
+    *,
+    known: dict[str, str] | None = None,
+) -> int:
     """Caption everything in one folder that has none. Returns how many were written.
 
     Writes once at the end rather than per picture: the map is rewritten whole (see :func:`write`),
@@ -230,14 +243,21 @@ async def fill(folder: Path, settings: Settings, client: AsyncOpenAI) -> int:
     stale = departed(folder, captions)
 
     pending = uncaptioned(folder)
-    if not settings.api_key:
+    if not settings.api_key and known is None:
         pending = []
     if not pending and not stale:
         return 0
 
     made = 0
     for path in pending:
-        text = await describe(path, client)
+        # A picture this card has already described somewhere else, under another name. Reusing
+        # the words costs nothing and is the only way the two copies can agree - see
+        # ``indexer._known_captions`` for what happens when they do not.
+        text = (known or {}).get(_mark(path), "")
+        if not text and client is not None:
+            text = await describe(path, client)
+            if text and known is not None:
+                known[_mark(path)] = text
         if text:
             captions[path.name] = text
             made += 1

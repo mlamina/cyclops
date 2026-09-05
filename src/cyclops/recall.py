@@ -28,6 +28,7 @@ Two constraints inherited from the neighbours, and for their reasons:
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import re
@@ -90,6 +91,7 @@ class Item:
     text: str  # what gets embedded
     mtime_ns: int
     size: int
+    mark: str = ""  # content_hash, for pictures only: the same photo in two folders is one thing
 
     @property
     def key(self) -> str:
@@ -107,6 +109,40 @@ class Item:
 
 
 # ------------------------------------------------------------------ reading the card
+
+
+# One picture's content, so that the same picture in two places is one thing. Keyed on the pair
+# that already means "this file changed", so a reconcile that finds nothing new re-reads nothing.
+# Per process and gone on restart, exactly like ``library._cache`` and for the same reasons.
+_hashes: dict[tuple[str, int, int], str] = {}
+
+
+def content_hash(path: Path) -> str:
+    """What is *in* a file, as a short digest. ``""`` if it cannot be read.
+
+    The filing curator copies a hero shot into a project, so the identical JPEG lives in both the
+    session folder and the project folder. Before this existed they were two items: they took the
+    top two slots of one search between them, and - worse - each got its own caption call, whose
+    two readings of one dense manual page disagreed about the numbers on it. Content is the only
+    identity that sees through that; a name cannot, because ``copy_photos`` renames as it copies.
+    """
+    try:
+        info = path.stat()
+    except OSError:
+        return ""
+    key = (str(path), info.st_mtime_ns, info.st_size)
+    found = _hashes.get(key)
+    if found is not None:
+        return found
+    digest = hashlib.blake2b(digest_size=16)
+    try:
+        with path.open("rb") as handle:
+            for block in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return ""
+    _hashes[key] = mark = digest.hexdigest()
+    return mark
 
 
 def _stat(path: Path) -> tuple[int, int]:
@@ -214,6 +250,7 @@ def _images_in(folder: Path, scope: str, log_captions: dict[str, str], kind: str
                 text=text[:MAX_ITEM_CHARS],
                 mtime_ns=mtime,
                 size=size,
+                mark=content_hash(path),
             )
         )
     return out
@@ -385,8 +422,14 @@ def session_items(folder: Path) -> list[Item]:
     return items
 
 
-def corpus(settings: Settings) -> list[Item]:
-    """Everything on the card, as items. One walk, no model, no network."""
+def corpus(settings: Settings, *, collapse: bool = True) -> list[Item]:
+    """Everything on the card, as items. One walk, no model, no network.
+
+    ``collapse=False`` keeps both copies of a duplicated picture. Only :func:`image_folders` wants
+    that, and it needs it: the folders are what the captioner is pointed at, and a folder whose
+    one photograph happens to be a duplicate of another still has to be visited - to caption it,
+    and to prune captions for pictures that have been deleted from it.
+    """
     items: list[Item] = []
     for root, reader in (
         (settings.projects_dir, project_items),
@@ -404,7 +447,32 @@ def corpus(settings: Settings) -> list[Item]:
                 items.extend(reader(one))
             except OSError:
                 continue  # one unreadable folder is never a reason to lose the rest
-    return items
+    return dedupe(items) if collapse else items
+
+
+def dedupe(items: list[Item]) -> list[Item]:
+    """One row per picture, however many folders it sits in. Everything else passes through.
+
+    ``copy_photos`` copies a hero shot into its project, so the identical JPEG is on the card
+    twice and was in the index twice - taking the first two places of one search between them and
+    telling the model about an alternative that was the photograph it had just put on the screen.
+
+    The project's copy wins. Both are the same pixels, so the tie is broken on which is the better
+    thing to hand somebody: a project folder is curated and kept, while a session folder is a
+    working record that :func:`cyclops.session.main` can be asked to delete.
+    """
+    best: dict[str, Item] = {}
+    out: list[Item] = []
+    for item in items:
+        if not item.showable or not item.mark:
+            out.append(item)
+            continue
+        found = best.get(item.mark)
+        if found is None or (
+            not found.scope.startswith("project:") and item.scope.startswith("project:")
+        ):
+            best[item.mark] = item
+    return out + list(best.values())
 
 
 def image_folders(settings: Settings) -> list[Path]:
@@ -414,7 +482,7 @@ def image_folders(settings: Settings) -> list[Path]:
     picture that can be indexed is by construction a picture that can be captioned.
     """
     seen: dict[Path, None] = {}
-    for item in corpus(settings):
+    for item in corpus(settings, collapse=False):
         if item.showable:
             seen.setdefault(Path(item.path).parent, None)
     return list(seen)

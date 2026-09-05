@@ -70,6 +70,13 @@ MAX_DATA_QUERY_CHARS = 120
 # this the user has been staring at "looking for…" long enough that no answer is the kinder one.
 RECALL_TIMEOUT_S = 8.0
 RECALL_HITS = 5
+# How many of those the model is told about at all. The first is already on the panel by the time
+# it reads this, so the rest are there to be offered aloud - "I've also got a caliper close-up" -
+# and three names is the most anybody wants read back at them.
+RECALL_OFFERED = 3
+# A photo's title is its whole caption, which for a page of specifications is a paragraph. Cut it:
+# these are labels in a result, not the answer, and the picture itself is going to the model.
+MAX_OTHER_CHARS = 90
 MAX_DATA_ENTRIES = 20  # one plate's worth of values, generously
 ACTIVITY_SUBJECT_CHARS = 40  # a subject on the caption, not a sentence
 # How long a finished job's sentence stays on the panel. A data tool is off the card and back in
@@ -413,7 +420,13 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
         "pic of the torque spec from the manual', 'what did we decide about the fork seals', "
         "'find that datasheet I put in there'. A photo appears on the panel and stays until "
         "they tap it, so say one short sentence and then stop; they can see it, so do not "
-        "describe it back at them unless they ask. "
+        "describe it back at them unless they ask - and you are shown it too, so answer "
+        "whatever they do ask about it by reading the picture. Read it off the picture and not "
+        "off this tool's result: the words in the result were written to find the photo, not to "
+        "describe it, and they are not reliable about numbers or small print. "
+        "It hands back the one best match and the names of a couple of near misses. Those are "
+        "not a menu to read out - they are there in case what you showed is plainly the wrong "
+        "thing, in which case offer one of them in a few words. "
         "Do NOT use it for: a number written down with save_data - find_data looks those up "
         "exactly and this only finds the words around them; a drawing you drew - find_diagram "
         "is faster and matches on the title; anything about the world rather than about their "
@@ -743,6 +756,10 @@ class VoiceAgent:
         # asking for another. Edits never pass through add_photo, so this is always a real
         # photograph - which is also the rule that stops a second change compounding a first.
         self._last_photo: Capture | None = None
+        # The picture a recall just put on the panel, waiting to be handed to the model. Held on
+        # the agent rather than returned, because it has to be sent *after* the tool output that
+        # mentions it - see _run_recall.
+        self._found_image: bytes | None = None
         # ...and, beside those three, the sentence the panel says underneath. The flags answer
         # "what mode is this?", which colours the border and picks the word on the strip, and
         # they stay a closed set of three. This answers "what is it doing?", which is open-ended
@@ -1483,6 +1500,7 @@ class VoiceAgent:
             await self._request_response()
             return
         turn = self._turn_serial
+        self._found_image = None
         try:
             output = await self._recall(query, project)
         except Exception as exc:  # never leave the model waiting for a tool result
@@ -1498,6 +1516,13 @@ class VoiceAgent:
                 "only mention this if it is still what they want."
             )
         await self._send_tool_output(call.call_id, output)
+        # The output first, so the call it answers is closed before anything else joins the
+        # conversation, and the picture after it - an image cannot ride in a function_call_output,
+        # so it has to be an item of its own. One response.create covers both. The same sequence
+        # `_run_edit_photo` uses, and for the same reasons.
+        found, self._found_image = self._found_image, None
+        if found is not None:
+            await self.add_found(found)
         await self._request_response()
 
     def _recall_scopes(self, project: str) -> set[str] | None:
@@ -1561,7 +1586,14 @@ class VoiceAgent:
             }
 
         best = hits[0]
-        others = [hit.item.title for hit in hits[1:3]]
+        # What else it could have been, for the model to offer aloud rather than to choose from -
+        # the picture is already going up by the time this is read. Titles are trimmed because a
+        # photo's title is its whole caption, which for a page of specifications runs to a
+        # paragraph and would drown the result it is a footnote to.
+        others = [
+            {"title": _shorten(hit.item.title, MAX_OTHER_CHARS), "kind": hit.item.kind}
+            for hit in hits[1:RECALL_OFFERED]
+        ]
         if not best.item.showable:
             # `what`, not `kind`: session.note takes the record's own type as its first
             # parameter and that parameter is called kind, so passing one as a field is a
@@ -1576,7 +1608,7 @@ class VoiceAgent:
                 "others": others,
             }
 
-        shown = await asyncio.to_thread(self._show_found, Path(best.item.path), best.item.title)
+        shown, seen = await asyncio.to_thread(self._show_found, Path(best.item.path))
         session.note(
             "recall",
             query=query[:120],
@@ -1589,35 +1621,88 @@ class VoiceAgent:
             "ok": True,
             "hits": len(hits),
             "kind": best.item.kind,
-            "title": best.item.title,
+            "title": _shorten(best.item.title, MAX_OTHER_CHARS),
             "shown": shown,
             "others": others,
         }
+        if others:
+            result["note"] = (
+                "The best match is on the panel. The others are near misses, not a menu - "
+                "mention one only if what you showed looks like the wrong thing."
+            )
         if not shown:
             result["note"] = (
                 "It was found but there is no panel free to show it on. Say what it is out loud "
                 "instead of pretending they can see it."
             )
+        self._found_image = seen  # picked up by _run_recall once the tool output is away
         return result
 
-    def _show_found(self, path: Path, title: str) -> bool:
-        """Put a picture already on the card onto the panel. Blocking; runs off the loop's thread.
+    def _show_found(self, path: Path) -> tuple[bool, bytes | None]:
+        """Put a picture already on the card onto the panel, and hand back what was shown.
 
-        ``imagine.for_panel`` hands back its input untouched when it is already small enough, and
+        The bytes come back for the same reason :meth:`_keep_and_show_edit` returns them: the
+        downscaled copy does two jobs, travelling to the panel and going to the model, and 1024 on
+        the long edge is what ``webcam.MAX_EDGE`` hands the model for a real photograph anyway.
+
+        ``imagine.for_panel`` returns its input untouched when it is already small enough, and
         ``diagram.offer_image`` labels whatever it is given ``data:image/jpeg``. That pairing is
-        safe for a photo and wrong for a small PNG - which is exactly what a picture dropped into
-        a project folder tends to be - so anything that is not already a JPEG is re-encoded first.
-        A mislabelled data URL renders as nothing at all, silently, on the one screen nobody can
-        see from here.
+        safe for a photo and wrong for a small PNG - which is what a picture dropped into a project
+        folder tends to be - so anything not already a JPEG is re-encoded first. A mislabelled data
+        URL renders as nothing at all, silently, on the one screen nobody can see from here.
         """
         try:
             blob = path.read_bytes()
         except OSError as exc:
             self._log(f"[tool] could not read {path}: {exc}", stream=sys.stderr)
-            return False
+            return False, None
         if path.suffix.lower() not in {".jpg", ".jpeg"}:
             blob = imagine.as_jpeg(blob)
-        return diagram.offer_image(imagine.for_panel(blob), title) and diagram.show()
+        small = imagine.for_panel(blob)
+        return bool(diagram.offer_image(small, path.stem) and diagram.show()), small
+
+    async def add_found(self, jpeg: bytes) -> None:
+        """Show the model the picture it just put on the panel. No response is asked for here.
+
+        The reason this exists rather than the caption being enough: the caption is *index text*,
+        written by a small model to make the picture findable, and it is not reliable about detail.
+        Measured on 2026-09-04, two passes over one identical manual page disagreed about the
+        numbers printed on it. So the caption is allowed to find a photograph and never to describe
+        one - if somebody asks what the torque figure actually is, the answer has to come off the
+        pixels, and this is what puts the pixels where the model can read them.
+
+        The same shape as :meth:`add_edit`, and not that method, because what it says about the
+        picture is the opposite: an edit is a drawing that must not be read as evidence, and this
+        is a photograph of their own bench that must be.
+        """
+        if not self.connected:
+            return
+        await self._send_item(
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "[The picture you just found, now on their screen. This is a real "
+                            "photograph from their own card, so you may read it and answer "
+                            "questions about what is in it - and prefer reading it to anything "
+                            "the search said about it, which was written to find the picture "
+                            "rather than to describe it accurately. They are looking at it too, "
+                            "so do not narrate it unprompted.]"
+                        ),
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": "data:image/jpeg;base64,"
+                        + base64.b64encode(jpeg).decode("ascii"),
+                        "detail": "auto",
+                    },
+                ],
+            }
+        )
+        self._log(f"[recall] showed the model {len(jpeg) // 1024} KB")
 
     # ---- imagined pictures ----
 
@@ -2126,6 +2211,14 @@ def _subject(text: str) -> str:
     if len(text) <= ACTIVITY_SUBJECT_CHARS:
         return text
     return text[:ACTIVITY_SUBJECT_CHARS].rsplit(" ", 1)[0]
+
+
+def _shorten(text: str, limit: int) -> str:
+    """One label, collapsed and cut on a word boundary. The same cut :func:`_subject` makes."""
+    text = " ".join(str(text).split())
+    if len(text) <= limit:
+        return text
+    return (text[:limit].rsplit(" ", 1)[0] or text[:limit]) + "…"
 
 
 def _phrase(verb: str, subject: str, bare: str) -> str:

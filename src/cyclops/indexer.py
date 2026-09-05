@@ -97,6 +97,25 @@ def held() -> object:
 # ------------------------------------------------------------------ one reconcile
 
 
+def _known_captions(folders: list[Path]) -> dict[str, str]:
+    """Every caption already written, keyed by what the picture *contains* rather than its name.
+
+    This is what stops one photograph being described twice. The filing curator copies a hero shot
+    into its project under a new name, so the identical JPEG is on the card in two folders - and
+    captioning each of them separately did not merely cost two calls, it produced two *different*
+    readings of the same picture. Measured on 2026-09-04 against one manual page: one pass read
+    the oil drain plug as "30 and 80" and the other as "N·m 10; in-lb 88". At least one of those
+    is wrong, and nothing downstream could tell which.
+    """
+    known: dict[str, str] = {}
+    for folder in folders:
+        for name, text in captions.read(folder).items():
+            mark = recall.content_hash(folder / name)
+            if mark and mark not in known:
+                known[mark] = text
+    return known
+
+
 async def caption_pass(settings: Settings) -> int:
     """Give every picture on the card that has none a caption. Returns how many were written.
 
@@ -108,19 +127,21 @@ async def caption_pass(settings: Settings) -> int:
     # captions for pictures that have been deleted, and a folder where that is the only work is
     # exactly a folder with nothing uncaptioned in it.
     folders = recall.image_folders(settings)
-    if not folders or not settings.api_key:
+    if not folders:
         return 0
+    known = _known_captions(folders)
     total = 0
-    client = captions.client_for(settings)
+    client = captions.client_for(settings) if settings.api_key else None
     try:
         for folder in folders:
-            made = await captions.fill(folder, settings, client)
+            made = await captions.fill(folder, settings, client, known=known)
             if made:
                 total += made
                 _say(f"captioned {made} in {folder}")
     finally:
-        with contextlib.suppress(Exception):
-            await client.close()
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.close()
     return total
 
 

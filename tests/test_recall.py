@@ -433,3 +433,53 @@ def test_an_emptied_captions_file_is_removed_rather_than_left_blank(card_dir, se
     captions.write(designs, {"vanished.png": "nothing"})
     asyncio.run(captions.fill(designs, settings, client=None))
     assert not (designs / card.CAPTIONS_NAME).exists()
+
+
+def test_the_same_picture_in_two_folders_is_one_item(settings) -> None:
+    """copy_photos puts an identical jpeg in the project, and it took two of five search slots."""
+    shots = [i for i in recall.corpus(settings) if i.kind == "photo"]
+    assert len({i.mark for i in shots}) == len(shots)
+
+
+def test_the_project_copy_is_the_one_that_survives(settings) -> None:
+    """Both are the same pixels, so it turns on which is the better thing to hand somebody."""
+    shot = next(i for i in recall.corpus(settings) if i.kind == "photo")
+    assert shot.scope == "project:BMW R80RT"
+
+
+def test_a_folder_whose_only_picture_is_a_duplicate_is_still_captioned(settings) -> None:
+    """image_folders drives the captioner, so a deduped folder must not vanish from it."""
+    assert (settings.sessions_dir / "2026-09-04_16-17-13_bmw-r80rt-build-status"
+            / card.PHOTOS) in recall.image_folders(settings)
+
+
+def test_different_pictures_are_never_collapsed(tmp_path) -> None:
+    items = [
+        recall.Item("photo", "/a.jpg", "project:P", "A", "a", 1, 1, mark="aaa"),
+        recall.Item("photo", "/b.jpg", "project:P", "B", "b", 1, 1, mark="bbb"),
+    ]
+    assert len(recall.dedupe(items)) == 2
+
+
+def test_an_unhashable_picture_is_kept_rather_than_merged(tmp_path) -> None:
+    """An empty mark means "could not read it", which must never collapse two real photos."""
+    items = [
+        recall.Item("photo", "/a.jpg", "project:P", "A", "a", 1, 1, mark=""),
+        recall.Item("photo", "/b.jpg", "project:P", "B", "b", 1, 1, mark=""),
+    ]
+    assert len(recall.dedupe(items)) == 2
+
+
+def test_one_picture_gets_one_caption_however_many_copies_exist(card_dir, settings) -> None:
+    """Two passes over the same page disagreed about the numbers on it. Describe it once."""
+    photos = card_dir / "projects" / "BMW R80RT" / "Photos"
+    session_photos = (
+        card_dir / "sessions" / "2026-09-04_16-17-13_bmw-r80rt-build-status" / card.PHOTOS
+    )
+    captions.write(photos, {"2026-09-04_16-22-00_you.jpg": "A torque table, 60-65 Nm"})
+
+    known = indexer._known_captions([photos, session_photos])
+    made = asyncio.run(captions.fill(session_photos, settings, client=None, known=known))
+
+    assert made == 1  # written without a model call, because the content was already described
+    assert captions.read(session_photos)["16-22-00_you.jpg"] == "A torque table, 60-65 Nm"
