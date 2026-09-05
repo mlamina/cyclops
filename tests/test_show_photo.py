@@ -136,6 +136,24 @@ def test_an_old_record_with_no_shown_key_still_reads_correctly():
     assert "never saw this one" in rendered
 
 
+def test_a_drawn_diagram_reads_as_a_drawing_not_a_snapshot():
+    """A diagram is a photo record now, so this arm is the only thing that tells them apart."""
+    rendered = session._render_photo(
+        {"by": "drawn", "request": "the relay wiring", "file": "photos/14-35-01_drawn.jpg"}, "0:05"
+    )
+    assert "Drew a diagram" in rendered
+    assert "the relay wiring" in rendered
+    assert "![Drew, " in rendered, "the picture itself, embedded the way an edit's is"
+
+
+def test_a_drawing_that_failed_says_so_without_a_broken_image():
+    rendered = session._render_photo(
+        {"by": "drawn", "request": "the relay wiring", "error": "the drawing failed"}, "0:05"
+    )
+    assert "Tried to draw" in rendered
+    assert "![" not in rendered
+
+
 def test_an_old_cyclops_photo_keeps_its_caption_and_focus():
     """The model no longer holds the shutter, but a card full of old sessions still says it did."""
     rendered = session._render_photo(
