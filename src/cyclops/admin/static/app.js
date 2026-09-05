@@ -27,7 +27,7 @@
 const WIDE = window.matchMedia(
   getComputedStyle(document.documentElement).getPropertyValue('--wide-q').trim().slice(1, -1));
 
-const VIEWS = ['view-status', 'view-sessions', 'view-session', 'view-media',
+const VIEWS = ['view-status', 'view-live', 'view-sessions', 'view-session', 'view-media',
                'view-projects', 'view-browse', 'view-file'];
 const FRESH = 20000;   // a listing is worth re-using for as long as nothing new can have ended
 
@@ -43,6 +43,11 @@ const stitle = document.getElementById('stitle');
 const smeta = document.getElementById('smeta');
 const ssum = document.getElementById('ssum');
 const talk = document.getElementById('talk');
+// Companion mode's three, and they are only on the page away from the panel ({% if not local %}
+// in the template), so everything below null-checks the way the controls in status.js do.
+const liveTalk = document.getElementById('livetalk');
+const liveTitle = document.getElementById('livetitle');
+const liveMark = document.getElementById('livemark');
 // The panel navigates with four tabs and every other client with one menu (see dashboard.html).
 // Only one of these is ever on the page, and the code below simply drives whichever it found.
 const tabs = [...document.querySelectorAll('.tab')];
@@ -102,6 +107,15 @@ const heft = (n) => !n ? '' : n < 1024 ? n + ' B'
 // A project's `updated` is a date with no time. new Date() reads a bare YYYY-MM-DD as UTC
 // midnight, which west of Greenwich is the day before - so it is pinned to local time first.
 const dated = (iso) => day(/^\d{4}-\d{2}-\d{2}$/.test(iso || '') ? iso + 'T00:00' : iso);
+
+// What a scratchpad said, in a few words. The markup the model wrote is one screenful of
+// headings and list items, so nothing here needs to be a parser - the answer only has to be
+// recognisable. Same job as session._scratchpad_gist, and the same 70 characters.
+const GIST = 70;
+const gist = (html) => {
+  const text = String(html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  return text.length > GIST ? text.slice(0, GIST - 1).trimEnd() + '…' : text;
+};
 
 async function grab(url) {
   const r = await fetch(url, { cache: 'no-store' });
@@ -179,6 +193,25 @@ function aside(record) {
     const query = '"' + esc(record.query || '') + '"';
     if (record.error) return 'Searched the web — ' + query + ' → failed';
     return 'Searched the web — ' + query + ' → ' + (record.chars || 0) + ' characters back';
+  }
+  if (kind === 'recall') {
+    // He went looking on the card for a picture somebody described out loud. Same words as
+    // session.md uses for it, and the reason this branch exists at all: `recall` has always been
+    // in library.SPOKEN, so without it every one of these read "Something went wrong — " with an
+    // empty message. Invisible in a finished transcript nobody re-reads; not invisible at all on
+    // a companion watching the line land.
+    const asked = '"' + esc(record.query || '') + '"';
+    if (!record.title) return 'Looked for — ' + asked + ' → nothing on the card matched';
+    return 'Looked for — ' + asked + ' → <b>' + esc(record.title || '') + '</b>' +
+           (record.shown ? ' and put it on the panel' : '');
+  }
+  if (kind === 'screen') {
+    // The scratchpad: the one thing he writes while he is still talking. What it said, out of the
+    // markup he wrote - the same gist session.py takes, taken here from the same field.
+    return 'Wrote on the scratchpad — ' + esc(gist(record.html || ''));
+  }
+  if (kind === 'transcript_failed') {
+    return 'You said something that could not be transcribed';
   }
   if (kind === 'project') {
     const verb = record.action === 'tracked' ? 'Started keeping notes on' : 'Looked up its notes on';
@@ -364,6 +397,111 @@ talk.addEventListener('click', (e) => {
   video.currentTime = parseFloat(el.dataset.t) || 0;
   video.play().catch(() => {});
 });
+
+// ---------------------------------------------------------------- following along
+
+/* Companion mode: the conversation arriving as it is spoken.
+
+   Every line here is drawn by the same line() the Sessions screen uses, out of the same records,
+   with the same CSS - it is the same conversation, and there is no second way of reading one.
+   What is different is that this one is not finished: the log is being appended to on the card
+   while we read it, so this asks for what it has not got yet rather than for the whole thing.
+
+   A poll and not a socket. The admin service is four gunicorn slots in front of a session it
+   shares no memory with (they are different processes; everything between them is a file), and
+   two seconds of latency on a line somebody has just said out loud is not a thing anybody can
+   feel. What would be felt is the Pi getting warmer. */
+
+const LIVE_EVERY = 2000, LIVE_SLOW = 10000;   // ...and slower still when nobody is looking
+let liveName = null;   // the session this screen is showing, as the server last named it
+let liveHeld = 0;      // how many of its lines we already have - the `since` we ask with
+let liveOver = false;  // ...and whether we have already said so; see the `!s.name` branch below
+let liveGen = 0;       // bumped on the way out, so a timer from a screen you left dies quietly
+
+function stopLive() {
+  liveGen++;
+  liveName = null;
+  liveHeld = 0;
+  liveOver = false;
+  if (liveTalk) liveTalk.innerHTML = '';
+}
+
+// Was the reader at the bottom before we added anything? Only then does the new line pull the
+// view down with it: reading back through what was said ten minutes ago must not be yanked
+// away every two seconds by a conversation still going on underneath.
+const PINNED = 40;   // u-independent: a line's worth of slack for a finger mid-scroll
+const atEnd = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < PINNED;
+
+function liveHead(title, on) {
+  if (liveTitle) liveTitle.textContent = title;
+  if (!liveMark) return;
+  liveMark.textContent = on ? 'recording' : '';
+  if (on) liveMark.dataset.on = '1'; else liveMark.removeAttribute('data-on');
+}
+
+async function liveTick(mine) {
+  if (mine !== liveGen) return;
+  try {
+    const s = await grab('/api/live?name=' + encodeURIComponent(liveName || '') +
+                         '&since=' + liveHeld);
+    if (mine !== liveGen) return;   // you left while this was in flight
+    if (!s.name) {
+      // He stopped talking. The folder's lock goes the moment the session closes and well before
+      // it is renamed and summarised, so this arrives seconds after the last word - and clearing
+      // the screen here would wipe the conversation you are still reading. Freeze it instead.
+      //
+      // Written once and not on every poll after it. `liveName` is deliberately kept: it is what
+      // says a conversation ended rather than never started, and the next session will differ
+      // from it and reset the screen through the ordinary branch below.
+      if (!liveOver) {
+        liveOver = true;
+        liveHead(liveName ? 'that session has ended' : 'nothing running', false);
+      }
+    } else {
+      liveOver = false;
+      if (s.name !== liveName) {
+        // A different session, or the first one. Start again, and put its name up: /api/session
+        // is the same route the Sessions screen opens with, asked once rather than polled.
+        liveName = s.name;
+        liveHeld = 0;
+        liveTalk.innerHTML = '';
+        liveHead('listening', true);
+        grab('/api/session/' + encodeURIComponent(s.name))
+          .then((one) => { if (liveName === s.name) liveHead(one.title, true); })
+          .catch(() => {});
+      } else if (s.n < liveHeld) {
+        // The log got shorter, which only happens when something rewrote it under us
+        // (`cyclops-sessions --fix`, which push.sh runs). Our index means nothing now.
+        liveHeld = 0;
+        liveTalk.innerHTML = '';
+      }
+      if (s.records.length) {
+        const follow = atEnd(liveTalk);
+        // Appended, never re-rendered. Replacing the lot every two seconds would throw away the
+        // scroll position and make every <img class="inline"> already on screen decode again.
+        liveTalk.insertAdjacentHTML('beforeend', s.records.map(line).join(''));
+        if (follow) liveTalk.scrollTop = liveTalk.scrollHeight;
+      }
+      liveHeld = s.n;
+      if (!liveTalk.childElementCount) {
+        liveTalk.innerHTML = '<div class="empty">he is listening; nothing said yet</div>';
+      }
+    }
+  } catch (e) { /* the service will come back; the lines already on screen are still true */ }
+  if (mine !== liveGen) return;
+  // Self-scheduling, like every other poll on this page: a slow Pi never stacks requests on
+  // itself. And nothing is asked for at all while a picture is covering this screen.
+  const hidden = document.visibilityState === 'hidden' ||
+                 document.body.classList.contains('drawing');
+  setTimeout(() => liveTick(mine), hidden ? LIVE_SLOW : LIVE_EVERY);
+}
+
+function showLive() {
+  if (!liveTalk) return;   // the panel has no such screen
+  stopLive();
+  liveHead('nothing running', false);
+  liveTick(liveGen);
+}
 
 // ---------------------------------------------------------------- the projects
 
@@ -810,11 +948,13 @@ function route() {
   const path = (location.hash || '#/').slice(1) || '/';
   if (path === at) return;
   if (at.startsWith('/s/')) letGo();
+  if (at === '/live') stopLive();   // a poll for a screen nobody is on is a warm Pi
   if (document.body.classList.contains('lit')) douse();
   at = path;
 
   let view = 'view-status', tab = '/';
-  if (path === '/sessions') { view = 'view-sessions'; tab = '/sessions'; showSessions(); }
+  if (path === '/live') { view = 'view-live'; tab = '/live'; showLive(); }
+  else if (path === '/sessions') { view = 'view-sessions'; tab = '/sessions'; showSessions(); }
   else if (path === '/media') { view = 'view-media'; tab = '/media'; showMedia(); }
   else if (path.startsWith('/s/')) {
     view = 'view-session'; tab = '/sessions';
@@ -842,6 +982,18 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 route();
+
+// Opening the page while he is talking should be the same gesture as looking up: you get the
+// conversation. Only on a fresh open with nothing asked for - a hash you typed, followed or were
+// left on is never overruled - and only away from the panel, whose browser is pointed at a screen
+// by the kiosk and boots with a hash already on it.
+//
+// One request, and it is the same one the screen would make anyway a moment later.
+if (!document.body.classList.contains('kiosk') && !location.hash) {
+  grab('/api/live')
+    .then((s) => { if (s.name && at === '/') location.hash = '#/live'; })
+    .catch(() => {});
+}
 
 // A drawing arriving outranks whatever you were reading - it is Cyclops answering out loud, and
 // the panel is where the answer goes. The view class is left alone throughout, so when the

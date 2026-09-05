@@ -34,6 +34,7 @@ from .card import (
     STAMP,
     SUMMARY_NAME,
     VIDEO,
+    locked,
     read_log,
     triage,
     written,
@@ -47,8 +48,26 @@ STAMP_LEN = len("0000-00-00_00-00-00")
 
 # What the transcript shows. `session`, `video` and `end` are the bookkeeping records that the
 # frontmatter is made of; they say nothing a reader wants in the middle of a conversation.
+#
+# `screen` and `transcript_failed` joined on 2026-09-05, when this transcript stopped being only
+# a thing you read afterwards. A scratchpad is the one thing Cyclops writes *while he is talking*,
+# so a companion following along live and not being told about it is the one gap you would
+# actually notice; and a turn that could not be transcribed leaves a hole in the conversation that
+# is better labelled than silently missing. Both have always been in `session.md`
+# (`session._render_record`) - this is the web transcript catching up with it.
 SPOKEN = frozenset(
-    {"you", "cyclops", "photo", "search", "project", "data", "recall", "error"}
+    {
+        "you",
+        "cyclops",
+        "photo",
+        "search",
+        "project",
+        "data",
+        "recall",
+        "screen",
+        "transcript_failed",
+        "error",
+    }
 )
 
 STREAM_LIMIT = 500
@@ -244,6 +263,23 @@ def resolve(sessions_dir: Path, name: str) -> Path | None:
     if found.parent != root or not found.is_dir():
         return None
     return found
+
+
+def live(sessions_dir: Path) -> str | None:
+    """The session being recorded right now, or None. Cheap enough to poll: no log is read.
+
+    A running session holds an exclusive ``flock`` on its own ``session.jsonl`` for its whole life
+    (``card.claim``), which is the same question :func:`card.triage` answers with ``verdict ==
+    "live"`` - asked here without the log read that goes with it.
+
+    The newest few folders rather than the newest one. Names begin with a sortable stamp and the
+    end-of-session rename only appends a slug, so the running one is first by construction; three
+    costs two more ``flock`` probes and stops that being an assumption.
+    """
+    for folder in _folders(sessions_dir)[:3]:
+        if locked(folder):
+            return folder.name
+    return None
 
 
 def records(sessions_dir: Path, name: str) -> list[dict]:

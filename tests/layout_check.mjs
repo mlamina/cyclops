@@ -137,9 +137,15 @@ const PROJECTS = {
   ],
 };
 
+// views.live(): a session being recorded right now, and its lines so far. The same records the
+// transcript above is made of, because it is the same renderer - what is measured here is the
+// screen around them on a device that is not the panel.
+const LIVE = { name: '2026-09-01_18-13-08', n: RECORDS.records.length, records: RECORDS.records };
+
 const STUBS = [
   ['**/api/status', STATUS], ['**/api/sessions', SESSIONS], ['**/api/media', MEDIA],
-  ['**/api/projects', PROJECTS], ['**/api/session/*/records', RECORDS], ['**/api/session/*', SESSION],
+  ['**/api/projects', PROJECTS], ['**/api/session/*/records', RECORDS],
+  ['**/api/live*', LIVE], ['**/api/session/*', SESSION],
 ];
 
 async function stub(ctx) {
@@ -264,6 +270,10 @@ const SCREENS = [
   ['media', '#/media'],
   ['projects', '#/projects'],
 ];
+// ...and companion mode's own screen, which only the LAN run visits. The panel has no LIVE tab
+// and its kiosk never asks for that hash - the markup is inside {% if not local %} - so putting
+// it in the list above would baseline a blank screen that cannot happen.
+const LAN_SCREENS = [...SCREENS, ['live', '#/live']];
 // Five shapes, chosen to be the ones in the house rather than a list of famous handsets: a
 // phone both ways up, a tablet upright, the smallest laptop worth naming, and a 15".
 const SIZES = [
@@ -305,7 +315,7 @@ for (const [name, hash] of SCREENS) {
 
 // --- every device on the LAN -------------------------------------------------------------------
 for (const [size, width, height] of SIZES) {
-  for (const [name, hash] of SCREENS) {
+  for (const [name, hash] of LAN_SCREENS) {
     const ctx = await browser.newContext({ viewport: { width, height },
       deviceScaleFactor: 2, isMobile: width < 900, hasTouch: width < 1200 });
     const { page, errors } = await visit(ctx, LAN, hash, `${size}-${name}`);

@@ -56,17 +56,19 @@ def test_a_scratchpad_is_offered_as_markup_and_not_as_a_picture(panel_file) -> N
     assert payload["id"]
 
 
-def test_a_scratchpad_carries_no_drawn_key(panel_file) -> None:
-    """Which is the whole of how it is dismissed - see ``show()`` in panel.js.
+def test_an_offer_carries_only_what_the_page_branches_on(panel_file) -> None:
+    """One kind of picture, one way out - see ``show()`` in panel.js.
 
-    ``drawn`` is what the page reads to choose between a corner square and a press anywhere. A
-    scratchpad went up unasked, over his eye and over the way out of the session, so the way
-    back has
-    to be the whole screen. Absent rather than False so there is one thing to change if that ever
-    stops being true.
+    There was a ``drawn`` key here until 2026-09-05 that chose between a corner square and a
+    press anywhere, so a diagram went away differently from a photograph. Everything the panel
+    shows is a picture now and a press anywhere puts any of it away, so the payload carries the
+    thing itself and its id and nothing to branch on but which door it came through.
     """
     panel.offer_scratchpad("<h1>25 Nm</h1>")
-    assert "drawn" not in json.loads(panel_file.read_text())
+    assert set(json.loads(panel_file.read_text())) == {"id", "scratchpad"}
+
+    panel.offer_image(_jpeg(), "the fuse box")
+    assert set(json.loads(panel_file.read_text())) == {"id", "title", "image"}
 
 
 def test_a_scratchpad_lands_quietly_and_leaves_the_cue_where_it_found_it(panel_file) -> None:
@@ -74,7 +76,7 @@ def test_a_scratchpad_lands_quietly_and_leaves_the_cue_where_it_found_it(panel_f
     panel.offer_scratchpad("<h1>25 Nm</h1>")
     assert panel.announces() is False, "he is still speaking over it; a cue would be one too many"
 
-    panel.offer_image(_jpeg(), "the fuse box", drawn=True)
+    panel.offer_image(_jpeg(), "the fuse box", announce=True)
     assert panel.announces() is True
 
     panel.offer_scratchpad("<h1>25 Nm</h1>")

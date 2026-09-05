@@ -10,10 +10,16 @@
    drawn as images now, so the library, the layout, the SVG serialiser and 527 KB of vendored
    bundles all came out on 2026-09-04. What is left is the half that was always about pictures.
 
-   Loaded only on the kiosk ({% if local %} in the template): a laptop on the LAN has no panel
-   to paint. */
+   Loaded on every client, and that is companion mode: a phone or an iPad open beside the bench
+   paints the same picture at the same moment, and a press on either screen puts it away on both.
+   Three things here really are the panel's alone and are gated on body.kiosk - the paint
+   handshake the kiosk waits on before it uncovers, the screen it steers its own browser to, and
+   the faster poll. Everything else is the same code doing the same job on two screens. */
 
 const stage = document.getElementById('stage');
+// Which screen this is. The server decides it (views._is_local) and the template stamps it on
+// <body>; status.js reads it the same way for the kiosk's input hardening.
+const KIOSK = document.body.classList.contains('kiosk');
 
 // Any press on a picture puts it away. On the press and not the click, because that is what
 // the kiosk's own tab row does and a screen with no travel has nothing else to answer with;
@@ -21,8 +27,19 @@ const stage = document.getElementById('stage');
 // body.drawing collapses the grid to one row and gives it the whole 800x480.
 // ...and so does any press on a scratchpad, which is why .scratchpad takes no pointer events.
 stage.addEventListener('pointerdown', (event) => {
-  if (!document.body.classList.contains('photo')) return;  // a drawing keeps its corner square
+  if (!document.body.classList.contains('photo')) return;  // nothing is up
   event.preventDefault();  // no synthetic click behind it, and no double-tap zoom
+  // On a companion, put our own copy away now and remember which one it was. The note we leave
+  // below has to travel to the kiosk, be noticed within ADMIN_POLL_S and come back as a withdraw
+  // before /api/panel stops naming this picture - the better part of a second - and a screen that
+  // sat there holding a picture you had already dismissed is a screen that ignored you. Drawn
+  // before the round trip, like the volume and the two switches in status.js.
+  //
+  // `showing` is deliberately left where it is. The next poll almost always still names this
+  // picture, and forgetting it would have watch() decide it is new and paint it straight back -
+  // a picture flashing back onto a screen you just dismissed it from. It is cleared for real when
+  // the withdraw lands, or replaced when a genuinely different picture arrives.
+  if (!KIOSK) drop();
   window.__leave();
 });
 // ---- a scratchpad's own document ----
@@ -84,7 +101,9 @@ const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
 `;
 const SCRATCHPAD_PAINT_MS = 500;  // long enough for a document with no subresources; see scratchpad() below
 
-const PANEL_EVERY = 400;   // one stat() on the server; the picture must not wait on a poll
+// One read on the server either way. The panel must not wait on a poll - the kiosk is holding a
+// window over this and uncovers on the strength of it - and a companion across the room can.
+const PANEL_EVERY = KIOSK ? 400 : 800;
 let showing = null;
 // ...and which screen the panel last asked this page to be on. The warm browser is loaded once at
 // boot and never navigated, so the two things on the panel that uncover it - his face, which
@@ -133,7 +152,13 @@ async function scratchpad(html) {
 
 async function show(id) {
   const r = await fetch('/api/picture/' + encodeURIComponent(id), { cache: 'no-store' });
-  if (!r.ok) return;
+  if (!r.ok) {
+    // The offer was withdrawn between the poll that named it and this fetch (/api/picture 404s on
+    // an id that is no longer pending). Forget it, or this screen never paints anything again.
+    // It cannot spin: both routes read the same file, so the next poll reports no picture at all.
+    showing = null;
+    return;
+  }
   const found = await r.json();
   // Cleared before it is decided, so a drawing arriving after a photo gets its button back -
   // and so a photograph landing on top of a drawing gets the bezel back with it.
@@ -141,29 +166,46 @@ async function show(id) {
   // The class before the picture: a stage that is still display:none has no size, and an image
   // fitted to a box of zero by zero paints nowhere at all.
   window.__drawing(true);
+  // Whatever it is, a press anywhere puts it away, so body.photo goes on before either branch.
+  // There was a `drawn` flag here until 2026-09-05 that gave a diagram a small square in the
+  // corner instead - a second way out for one gesture, and the one nobody finds on a screen they
+  // are not standing in front of. Everything the panel shows is a picture now. What makes the
+  // press work over a scratchpad is `pointer-events: none` on .scratchpad - see panel.css.
+  document.body.classList.add('photo');
   if (found.scratchpad) {
-    // A scratchpad puts itself away on any press, like a photograph and unlike a diagram. Cyclops
-    // put this up unasked while he was talking, over the eye and the way out of the session, so
-    // the way back has to be the whole screen rather than a corner somebody has to find first.
-    // What makes that work is `pointer-events: none` on .scratchpad - see panel.css.
-    document.body.classList.add('photo');
     await scratchpad(found.scratchpad);
   } else if (found.image) {
-    // A photograph puts itself away on any press; a diagram keeps the corner square. See
-    // system.css, and `drawn` in cyclops/panel.py's offer_image.
-    if (!found.drawn) document.body.classList.add('photo');
     await shot(found.image);
   }
   // Tell the kiosk it may uncover the panel. Sent even when there was no picture in the payload:
   // the alternative is a panel that never uncovers and a user who is told nothing.
+  //
+  // The kiosk's own browser only. This is the handshake that drops a window on the Pi, and it is
+  // the panel's paint it is waiting on - a companion's says nothing about whether there is
+  // anything to uncover onto. views.picture_painted refuses anyone else anyway; this is the same
+  // rule stated on the side that knows why.
+  if (!KIOSK) return;
   try { await fetch('/panel/painted', { method: 'POST', body: '' }); } catch (e) {}
+}
+
+// Nothing on the stage, and the page uncovered again. Let go of the image while we are here: on
+// the panel there is one browser and no tabs, so the next picture is the only thing that will
+// ever want this memory back.
+function drop() {
+  window.__drawing(false);
+  document.body.classList.remove('photo', 'paper');
+  stage.textContent = '';
 }
 
 async function watch() {
   try {
     const r = await fetch('/api/panel', { cache: 'no-store' });
     const s = await r.json();
-    if (s.screen && s.screen !== asked) {
+    // Which screen the kiosk wants *its own* browser on - his face promising the sessions, the
+    // heat gauge promising the numbers. A companion is not that browser and has its own reader
+    // pointing at things; yanking an iPad to another screen because somebody touched the panel is
+    // the opposite of following along.
+    if (KIOSK && s.screen && s.screen !== asked) {
       asked = s.screen;
       location.hash = '#' + s.screen;
     } else if (!s.screen) {
@@ -173,13 +215,9 @@ async function watch() {
       showing = s.picture;
       await show(s.picture);
     } else if (!s.picture && showing) {
-      // The kiosk took the panel back and cleared the offer. Go quiet, and let go of the image:
-      // on a box with one browser and no tabs, the next picture is the only thing that will ever
-      // want this memory.
+      // The kiosk took the panel back and cleared the offer.
       showing = null;
-      window.__drawing(false);
-      document.body.classList.remove('photo', 'paper');
-      stage.textContent = '';
+      drop();
     }
   } catch (e) { /* the service will come back, or the kiosk will time the page out */ }
   setTimeout(watch, PANEL_EVERY);

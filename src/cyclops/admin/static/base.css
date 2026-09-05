@@ -157,7 +157,7 @@ header {
    in silence. `min-width: 0` does not fix it: it caps the flex item's minimum and leaves the
    track sized by max-content. That is the bug tests/layout_check.mjs exists to catch, it caught
    this one on 2026-09-05, and the only honest answer for a readout that must never move anything
-   is to take it out of the layout entirely - the same move `body.drawing .close` already makes.
+   is to take it out of the layout entirely - the same move `body.solo .close` already makes.
 
    Capped at 22% so it can never reach the tabs, whose row ends around 76% of the header. It
    ellipsises rather than wrapping: this says *that* something is going on, and the sentence in

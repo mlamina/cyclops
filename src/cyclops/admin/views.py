@@ -33,6 +33,7 @@ from ..config import (
     PAGE_SERVED_FLAG,
     PANEL_FILE,
     PANEL_PAINTED_FLAG,
+    PICTURE_UP_FLAG,
     SAY_VOICE_FILE,
     ConfigError,
     Settings,
@@ -241,10 +242,21 @@ def status(request: HttpRequest) -> JsonResponse:
 def close_browser(request: HttpRequest) -> HttpResponse:
     """Ask the kiosk to take its panel back from this page - see ``BROWSER_CLOSE_FLAG``.
 
-    Only the kiosk's own browser is covering anything, so anything off-box is refused rather
-    than left as a way for a stranger on the LAN to poke at the panel.
+    Two callers, and they are asking for different things with the same note. The kiosk's own
+    browser is asking to close the page it is showing. A companion on the LAN is asking to put
+    away a picture, which it can only do while there is one to put away - anything else off-box
+    is refused rather than left as a way for a stranger on the LAN to poke at the panel.
     """
-    if not _is_local(request):
+    # A companion on the LAN answers for one gesture and one only: putting away a picture that
+    # is on the glass right now. That is the same gesture as pressing the panel, and it lands in
+    # the same place, so there is nothing here the person standing at the box could not do.
+    #
+    # PICTURE_UP_FLAG and not _pending(): an offer can outlive the moment anybody could see it -
+    # ``Kiosk.show_picture`` refuses one while the admin page has the panel and leaves the
+    # payload where it was - and honouring a note in that state reaches ``_sync_stranded``, which
+    # rebuilds the window over a panel that was already ours. The kiosk touches this one inside
+    # the latch that reveals a picture, so it means what this gate needs it to mean.
+    if not _is_local(request) and not PICTURE_UP_FLAG.exists():
         return HttpResponseForbidden("only the kiosk can close its own browser")
     BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
     BROWSER_CLOSE_FLAG.touch()
@@ -254,18 +266,36 @@ def close_browser(request: HttpRequest) -> HttpResponse:
 # ------------------------------------------------------------------ the panel
 
 
+# The last payload parsed, keyed on the file it came out of. Per gunicorn worker, and it holds
+# one picture at most, because there is only ever one offer.
+_pending_at: tuple[int, int] | None = None
+_pending_was: dict | None = None
+
+
 def _pending() -> dict | None:
     """The picture waiting to be shown, or None - see ``PANEL_FILE``.
 
     Never raises. A half-written file is not possible (they go through ``card.write_text``) but a
     truncated one from an older build, or none at all, both mean the same thing to the page: show
     the dashboard.
+
+    Memoised on the file's own ``(mtime_ns, size)``, which is what :func:`panel` is asked for
+    two and a half times a second by the kiosk and again by every companion on the LAN. Without
+    it each of those polls reads and JSON-parses the *whole* picture - a megabyte of base64 for a
+    1024px JPEG - to look at one twelve-character id. ``card.write_text`` renames a fresh inode
+    into place, so a new offer can never wear the old key.
     """
+    global _pending_at, _pending_was
     try:
-        found = json.loads(PANEL_FILE.read_text(encoding="utf-8"))
+        stat = PANEL_FILE.stat()
+        key = (stat.st_mtime_ns, stat.st_size)
+        if key != _pending_at:
+            found = json.loads(PANEL_FILE.read_text(encoding="utf-8"))
+            _pending_was = found if isinstance(found, dict) and found.get("id") else None
+            _pending_at = key
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
-        return None
-    return found if isinstance(found, dict) and found.get("id") else None
+        _pending_at, _pending_was = None, None
+    return _pending_was
 
 
 def _note_alive() -> None:
@@ -496,6 +526,42 @@ def session_records(request: HttpRequest, name: str) -> JsonResponse:
     if library.entry(_settings().sessions_dir, name) is None:
         raise Http404("no such session")
     return JsonResponse({"records": library.records(_settings().sessions_dir, name)})
+
+
+def live(request: HttpRequest) -> JsonResponse:
+    """The conversation happening right now, from ``since`` onwards - companion mode's feed.
+
+    This is the one route here that is polled while somebody watches, so it is built to answer
+    almost nothing most of the time. ``name`` is what the caller believes is running and
+    ``since`` how many lines of it they already hold; when the two agree, the answer is the
+    handful of lines that have landed since. When they do not - a session ended, another started,
+    or a log was rewritten under us - the whole thing comes back and the page starts again.
+
+    Reading a session that is still being written is safe by construction rather than by luck.
+    ``SessionLog`` appends and flushes each record as it lands and never rewrites one, and
+    ``card.read_log`` drops a half-written trailing line, so ``n`` only ever grows and an index
+    into it stays pointing at the same record.
+
+    ``library.records`` directly and not :func:`session_records`, which asks ``library.entry``
+    first: that is a second full read of the log plus a stat per photo, on the one folder the
+    entry cache deliberately never keeps.
+    """
+    sessions_dir = _settings().sessions_dir
+    name = library.live(sessions_dir)
+    if name is None:
+        return JsonResponse({"name": None, "n": 0, "records": []})
+    found = library.records(sessions_dir, name)
+    if not found and library.resolve(sessions_dir, name) is None:
+        # It ended and was renamed between the two calls above. Say nothing is running rather
+        # than describing an empty session the page would read as a fresh one starting.
+        return JsonResponse({"name": None, "n": 0, "records": []})
+    since = 0
+    if request.GET.get("name") == name:
+        try:
+            since = max(0, min(len(found), int(request.GET.get("since") or 0)))
+        except ValueError:
+            since = 0
+    return JsonResponse({"name": name, "n": len(found), "records": found[since:]})
 
 
 def media_stream(request: HttpRequest) -> JsonResponse:

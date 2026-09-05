@@ -1675,7 +1675,7 @@ class VoiceAgent:
 
         # One downscaled copy, doing the panel's job. The card keeps the full-size one.
         small = imagine.for_panel(jpeg)
-        shown = panel.offer_image(small, request, drawn=True) and panel.show()
+        shown = panel.offer_image(small, request, announce=True) and panel.show()
         if kept is not None and kept.path is not None:
             session.note(
                 "photo",

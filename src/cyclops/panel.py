@@ -8,8 +8,8 @@ payload and paints it; :func:`show` asks the kiosk to uncover the browser once i
 
 There are two doors, and they differ only in what they leave in the file. :func:`offer_image`
 carries a JPEG, and :func:`offer_scratchpad` carries markup. The page branches on which key is
-there; nothing between here and there - not ``_leave``, not ``/api/picture``, not the kiosk - looks
-inside the payload at all.
+there and on nothing else; nothing between here and there - not ``_leave``, not ``/api/picture``,
+not the kiosk - looks inside the payload at all. Whatever is up, a press anywhere puts it away.
 
 The picture travels *in* the file rather than as a path to one, and that is deliberate. The page
 is served by the admin process, which shares no memory with whoever made the picture, and a
@@ -94,23 +94,29 @@ def announces() -> bool:
     return _announce
 
 
-def offer_image(jpeg: bytes, title: str, *, drawn: bool = False) -> bool:
+def offer_image(jpeg: bytes, title: str, *, announce: bool = False) -> bool:
     """Leave a picture where the panel's page will find it. False if it could not be left.
 
-    ``drawn`` says this one is a diagram rather than a photograph, and two things read it. The
-    kiosk sounds the "shown" cue for it (see :func:`announces`), and the page keeps the corner
-    button instead of putting the picture away on any press - because a diagram is a thing you
-    read and point at while you talk about it, and a photograph of your own bench is a thing you
-    look at and are then done with. It defaults to False because three of the four callers are
-    photographs.
+    ``announce`` asks the kiosk to sound the "shown" cue as this one lands, and that is all it
+    does - see :func:`announces` for when it is worth it. It defaults to False because three of
+    the four callers are photographs, which the shutter already announced.
+
+    **There is one kind of picture.** This used to carry a second flag, ``drawn``, which rode all
+    the way to the page and made a diagram behave differently from a photograph: a press anywhere
+    put a photograph away, while a diagram kept a small square in the corner, on the argument that
+    a diagram is a thing you point at while you talk about it. Two dismissals for one gesture, and
+    the corner square was the one nobody could find on a second screen. A photo, a picture
+    recalled from the card, an edit and a diagram are all now simply pictures, and a press
+    anywhere puts any of them away. The scratchpad is the only other thing the panel shows, and
+    it is a different door (:func:`offer_scratchpad`) rather than a flag on this one.
 
     Downscale it first. The caller does that, because the caller knows what the full-size copy is
     for - see :func:`cyclops.imagine.for_panel`.
     """
     url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
     global _announce
-    _announce = drawn
-    return _leave({"title": title, "image": url, "drawn": drawn})
+    _announce = announce
+    return _leave({"title": title, "image": url})
 
 
 def offer_scratchpad(html: str) -> bool:

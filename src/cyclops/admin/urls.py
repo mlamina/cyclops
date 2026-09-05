@@ -20,6 +20,10 @@ urlpatterns = [
     path("api/sessions", views.sessions, name="sessions"),
     path("api/session/<str:name>", views.session, name="session"),
     path("api/session/<str:name>/records", views.session_records, name="session-records"),
+    # The conversation as it happens, for a phone or an iPad open beside the bench. The one route
+    # here that is polled while somebody watches it, which is why it takes `name` and `since` and
+    # usually answers with nothing at all.
+    path("api/live", views.live, name="live"),
     path("api/media", views.media_stream, name="media-stream"),
     # <path:> and not <str:>, so "photos/14-33-12_you.jpg" arrives in one piece. What makes that
     # safe is not the converter - it is the two resolutions in views._media_file.

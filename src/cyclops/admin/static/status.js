@@ -146,15 +146,23 @@ if (voicename) {
 
 const close = document.getElementById('close');
 const closeword = document.getElementById('closeword');
-// Named and hung on window, because the panel has a second way out: a picture is put away by
-// pressing it anywhere at all (see the diagram script below, which is a script of its own and
-// cannot see a const in this one). Both have to make the same journey - leave the kiosk its
-// note, put the button back, reset the hash - so there is one of it rather than two.
+// Named and hung on window, because there are three ways to reach it and only one of them is
+// this button. A picture is put away by pressing it anywhere at all, on the panel and on any
+// companion watching the same picture (panel.js, which is a script of its own and cannot see a
+// const in this one). All of them make the same journey - leave the kiosk its note - so there is
+// one of it rather than three.
+//
+// The button is the kiosk's alone; every companion finds nothing here and drives the fetch on
+// its own. So the in-flight guard is a variable rather than the button's own disabled state,
+// which used to be the first thing this read and would have made the whole function a no-op on
+// every screen but the panel.
+let leaving = false;
 async function leave() {
-  if (!close || close.disabled) return;  // a second press while the first is in flight
-  close.disabled = true;
-  // The word only, never the whole button: over a diagram the word is hidden and the glyph is
-  // the entire control, and replacing the button's text used to take the glyph with it.
+  if (leaving) return;  // a second press while the first is in flight
+  leaving = true;
+  if (close) close.disabled = true;
+  // The word only, never the whole button: the glyph is the rest of the control, and replacing
+  // the button's text used to take it with it.
   if (closeword) closeword.textContent = '\u00a0Closing…';
   // The kiosk owns the browser process; this only leaves it a note asking it to take its
   // panel back. It does not take this page down with it - the browser stays running behind
@@ -163,11 +171,16 @@ async function leave() {
   try { await fetch('/close', { method: 'POST' }); }
   catch (e) { /* the service is gone; the kiosk cannot be told, but the button still resets */ }
   finally {
-    close.disabled = false;
+    leaving = false;
+    if (close) close.disabled = false;
     if (closeword) closeword.textContent = '\u00a0Close';
     // Leaving the page leaves the screen too: the next tap of HISTORY should land where the
     // kiosk points the browser at boot, not wherever this was left three days ago.
-    location.hash = '#/sessions';
+    //
+    // The panel only. On a companion this is not leaving a page at all - it is putting a picture
+    // away - and the screen underneath is whatever the reader was following before Cyclops
+    // covered it, which is exactly where they should be put back.
+    if (document.body.classList.contains('kiosk')) location.hash = '#/sessions';
   }
 }
 window.__leave = leave;

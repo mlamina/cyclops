@@ -28,8 +28,15 @@ def selectors(css: str) -> list[str]:
 
     Blocks nested in an @media are found by the same pass: the prelude is skipped by the caller
     and the rules inside it are ordinary `selector { ... }` runs like any other.
+
+    @keyframes are cut out first, because the blocks inside one are not selectors at all - `0%`
+    and `from` name a point in an animation and match no element, so scoping them would be
+    meaningless and reading them as leaks is a false alarm. What actually decides whether an
+    animation can reach the panel is the rule that names it, and that is an ordinary selector
+    caught by the pass below.
     """
     css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    css = re.sub(r"@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", "", css, flags=re.S)
     found = []
     for block in re.finditer(r"([^{}]+)\{[^{}]*\}", css):
         prelude = block.group(1).strip()

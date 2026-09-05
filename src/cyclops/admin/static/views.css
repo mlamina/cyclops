@@ -11,12 +11,16 @@
    exactly the trick body.drawing already plays, with three more players. */
 .view { display: none; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 body.view-status   .system,
+body.view-live     #v-live,
 body.view-sessions .sessions,
 body.view-session  .watch,
 body.view-projects .projects,
 body.view-browse   .browse,
 body.view-file     .file,
 body.view-media    .media { display: grid; }
+/* #v-live by id and not `.live` like its six neighbours: `.rowsub.live` is the word "recording"
+   on a session row, and `body.view-live .live` would claim that too. */
+
 /* The volume used to need a rule here to keep it off the other six screens - it was a body
    row, and a row costs its 52 px whether or not anybody came to that screen to use it. It is
    inside the System view now, so it appears and disappears with the view it belongs to. */
@@ -246,8 +250,10 @@ body.solo .back { display: block; }
   color: var(--green); font: inherit; font-size: calc(30 * var(--u)); line-height: 1;
 }
 .back:active { background: var(--green); color: var(--ink); }
-/* Written with :not(.drawing) rather than left to the cascade: the drawing's own corner rule is
-   further up this file, and a tie on specificity would hand the panel to whichever came last. */
+/* Written with :not(.drawing) rather than left to the cascade. A picture arriving over a session
+   you were watching takes the whole panel, and this button is not part of that screen: it is
+   hidden there by `body.photo .close` in system.css, and pinning it to a corner as well would be
+   two files arguing about one element. */
 body.solo:not(.drawing) .close {
   position: fixed; top: auto; left: auto;
   bottom: calc(22 * var(--u)); right: calc(22 * var(--u)); z-index: 11;

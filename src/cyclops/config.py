@@ -46,6 +46,18 @@ PANEL_FILE = Path.home() / ".cache" / "cyclops" / "panel.json"
 # moment somebody is watching.
 PANEL_PAINTED_FLAG = Path.home() / ".cache" / "cyclops" / "panel-painted"
 
+# And where the kiosk says a picture is *on the glass* right now - not merely offered. The two
+# are not the same question, and only one of them is safe to hand to the LAN. PANEL_FILE can hold
+# an offer nothing is showing: ``Kiosk.show_picture`` refuses one while the admin page has the
+# panel and leaves the payload where it was, so "something is pending" outlives the moment a
+# person could be looking at it. This note is touched inside the latch that reveals a picture and
+# removed in the same ``finally`` that withdraws it, so it means exactly "somebody can see this".
+#
+# It exists for the companion: a phone or an iPad on the LAN may put away a picture that is up,
+# and may never close the panel's own page. That gate is this file - see
+# ``cyclops.admin.views.close_browser``.
+PICTURE_UP_FLAG = Path.home() / ".cache" / "cyclops" / "picture-up"
+
 # And where it leaves the output volume it wants. Same reason it cannot just set it itself:
 # the service runs with PrivateDevices=yes and has no /dev/snd, and at boot there is no user
 # session to reach PipeWire through. The kiosk, which has both, reads this and applies it.

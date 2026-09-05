@@ -230,24 +230,28 @@ def test_offer_image_writes_a_payload_the_page_can_read(panel_file) -> None:
     payload = json.loads(panel_file.read_text())
     assert payload["image"].startswith("data:image/jpeg;base64,")
     assert payload["title"] == "matt black doors"
-    assert payload["drawn"] is False, "a photograph; the page lets a press put it away"
+    assert "drawn" not in payload, "one kind of picture; a press anywhere puts any of it away"
     assert payload["id"]
 
 
 def test_the_panel_is_told_which_arrivals_are_worth_a_sound(panel_file) -> None:
-    """What the cue on arrival keys off, and what the page's corner button keys off with it.
+    """What the cue on arrival keys off, and the only thing that still varies between pictures.
 
     This is the test that stands where ``is_picture()`` used to. That asked whether the picture
     was a photograph rather than a drawing, which stopped being a question the moment drawings
     became photographs - it would have answered yes to everything and the panel would have gone
     silent for good. The caller now says what it wants.
+
+    The sound is all it says. ``announce`` used to be ``drawn`` and rode into the payload, where
+    it also decided how the picture was dismissed; that went on 2026-09-05 and the flag stayed
+    behind here, on this side of the file, where it only ever meant "make a noise".
     """
     panel.offer_image(jpeg(64, 48), "18-08-39_you")
     assert panel.announces() is False, "the shutter already said so a beat ago"
 
-    panel.offer_image(jpeg(64, 48), "the fuse box", drawn=True)
+    panel.offer_image(jpeg(64, 48), "the fuse box", announce=True)
     assert panel.announces() is True, "a drawing had nothing else to announce it"
-    assert json.loads(panel_file.read_text())["drawn"] is True
+    assert "drawn" not in json.loads(panel_file.read_text()), "and the page is told nothing"
 
     panel.offer_image(jpeg(64, 48), "paint the doors matt black")
     assert panel.announces() is False, "...and a photo back over that is quiet again"

@@ -10,8 +10,8 @@
  * So this checks what is left. A picture reaches #stage as an <img> with real pixels in it; a
  * scratchpad the model wrote reaches it as an <iframe> with a document of its own, laid out by that
  * document's own stylesheet and letting a press through to the stage behind it; the page posts
- * back so the kiosk may uncover; a drawing keeps its corner button while a photograph and a
- * scratchpad do not; and what the model wrote cannot run a script or reach the network.
+ * back so the kiosk may uncover; every one of them puts itself away on a press anywhere; and what
+ * the model wrote cannot run a script or reach the network.
  *
  * Not run by pytest, deliberately: pyproject says the suite must run anywhere in a second, and
  * this needs Chromium and a server. Run it when you touch the template, diagram.js or the CSS.
@@ -29,8 +29,8 @@
  */
 
 import { execSync } from 'node:child_process';
-import { mkdirSync, writeFileSync, unlinkSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdirSync, writeFileSync, unlinkSync, existsSync, statSync } from 'node:fs';
+import { homedir, networkInterfaces } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -49,6 +49,10 @@ const { chromium } = await loadPlaywright();
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8099';
 const PENDING = join(homedir(), '.cache', 'cyclops', 'panel.json');
+// The two notes the companion case below turns on: whether anybody can see the picture, and the
+// note a press leaves for the kiosk. See cyclops/config.py.
+const PICTURE_UP = join(homedir(), '.cache', 'cyclops', 'picture-up');
+const CLOSE_FLAG = join(homedir(), '.cache', 'cyclops', 'browser-close');
 const SHOTS = '/tmp/cyclops-render';
 
 // A real JPEG, inline rather than read off the card so the check needs no fixture: a plain
@@ -75,16 +79,16 @@ const CASES = [
   {
     name: 'drawing',
     kind: 'image',
-    payload: { title: 'Relay driven from GPIO 17', image: 'data:image/jpeg;base64,' + JPEG_B64,
-               drawn: true },
-    // A drawing is a thing you read and point at while you talk about it, so it keeps the corner
-    // button rather than putting itself away under the finger you are pointing with.
-    wantPhotoClass: false,
+    payload: { title: 'Relay driven from GPIO 17', image: 'data:image/jpeg;base64,' + JPEG_B64 },
+    // A diagram is a picture like any other. It carried a `drawn: true` here until 2026-09-05,
+    // which kept it a corner button instead - one gesture with two answers, and the corner is
+    // the answer nobody finds on a companion screen across the room.
+    wantPhotoClass: true,
   },
   {
     name: 'photo',
     kind: 'image',
-    payload: { title: '14-32-40_you', image: 'data:image/jpeg;base64,' + JPEG_B64, drawn: false },
+    payload: { title: '14-32-40_you', image: 'data:image/jpeg;base64,' + JPEG_B64 },
     wantPhotoClass: true,
   },
   {
@@ -241,7 +245,7 @@ for (const item of CASES) {
     }
     if (got.photo !== item.wantPhotoClass) {
       bad.push(`body.photo is ${got.photo}, wanted ${item.wantPhotoClass}` +
-               ' - the corner button and press-to-dismiss both key off it');
+               ' - press-to-dismiss keys off it, and it is the only way out of a picture');
     }
     if (got.overflow) bad.push('the page scrolls sideways behind the picture');
     if (!posted) bad.push('the page never told the kiosk it had painted; it would uncover late');
@@ -269,6 +273,89 @@ if (cleared.drawing || cleared.stage) {
   console.log(`FAIL withdraw: body.drawing=${cleared.drawing}, ${cleared.stage} left on the stage`);
 } else {
   console.log('ok   withdraw: the stage went back to the dashboard');
+}
+
+// ---- companion mode ----
+//
+// The same picture on a second screen, and the half no Python test can see. A phone or an iPad on
+// the LAN gets the identical document with `local` false, so it has no #close button, no volume
+// slider and no paint handshake - and it must still paint the picture and still put it away.
+//
+// Driven from a real LAN address rather than 127.0.0.1, because that address IS the feature:
+// views._is_local reads REMOTE_ADDR, and loopback would silently test the kiosk path again.
+const LAN = process.env.COMPANION || (() => {
+  for (const rows of Object.values(networkInterfaces())) {
+    for (const row of rows || []) {
+      if (row.family === 'IPv4' && !row.internal) return `http://${row.address}:${new URL(BASE).port}`;
+    }
+  }
+  return null;
+})();
+
+if (!LAN) {
+  console.log('skip companion: no non-loopback address on this machine');
+} else {
+  // A phone, not a panel: portrait, no fixed scale. If it works here it works on the iPad, and
+  // the narrow case is the one the wide-only transcript rules could have broken.
+  const phone = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  phone.on('console', (m) => { if (m.type() === 'error') errors.push('COMPANION: ' + m.text()); });
+  phone.on('pageerror', (e) => errors.push('COMPANION PAGEERROR: ' + e.message));
+  let painted = false;
+  phone.on('request', (r) => { if (r.url().endsWith('/panel/painted')) painted = true; });
+
+  // A picture is on the glass. Both notes, because they answer different questions and the
+  // dismissal below needs the second one: PENDING is what to paint, PICTURE_UP is whether
+  // anybody can see it - the gate views.close_browser holds the LAN to.
+  writeFileSync(PENDING, JSON.stringify({ id: 'companion-' + Date.now(),
+    title: 'Relay driven from GPIO 17', image: 'data:image/jpeg;base64,' + JPEG_B64 }));
+  writeFileSync(PICTURE_UP, '');
+  try { unlinkSync(CLOSE_FLAG); } catch { /* already gone */ }
+
+  await phone.goto(LAN, { waitUntil: 'domcontentloaded' });
+  await phone.waitForSelector('body.drawing', { timeout: 20000 });
+  await phone.waitForTimeout(1400);
+  await phone.screenshot({ path: join(SHOTS, 'companion.png') });
+
+  const got = await phone.evaluate(() => {
+    const img = document.querySelector('#stage img.shot');
+    return {
+      kiosk: document.body.classList.contains('kiosk'),
+      width: img ? img.naturalWidth : 0,
+      photo: document.body.classList.contains('photo'),
+      overflow: document.documentElement.scrollWidth > window.innerWidth,
+    };
+  });
+  const bad = [];
+  if (got.kiosk) bad.push('the LAN page came back wearing body.kiosk - REMOTE_ADDR was loopback');
+  if (!got.width) bad.push('the picture never decoded on the companion');
+  if (!got.photo) bad.push('no body.photo, so nothing on this screen can put the picture away');
+  if (got.overflow) bad.push('the picture hangs off the side of a 390px screen');
+  if (painted) bad.push('the companion posted /panel/painted - only the kiosk answers for a reveal');
+
+  // ...and the gesture. A press anywhere puts it away here and on the panel: the stage clears at
+  // once, and the note the kiosk is waiting on is left behind.
+  await phone.locator('#stage').dispatchEvent('pointerdown');
+  await phone.waitForTimeout(300);
+  const after = await phone.evaluate(() => ({
+    drawing: document.body.classList.contains('drawing'),
+    stage: document.getElementById('stage').childElementCount,
+  }));
+  if (after.drawing || after.stage) bad.push('the press left the picture on the companion');
+  if (!existsSync(CLOSE_FLAG)) bad.push('the press left the kiosk no note, so the panel keeps it');
+
+  // The picture is still offered - the kiosk has not withdrawn it yet - and this screen must not
+  // paint it back on the next poll. That regression is invisible in a screenshot taken too early.
+  await phone.waitForTimeout(1400);
+  const later = await phone.evaluate(() => document.body.classList.contains('drawing'));
+  if (later) bad.push('the picture flashed back on the next poll after being dismissed');
+
+  if (bad.length) { failed++; console.log('FAIL companion:', bad.join('; ')); }
+  else console.log('ok   companion: painted on the LAN, dismissed on a press, left the note');
+
+  try { unlinkSync(PENDING); } catch { /* already gone */ }
+  try { unlinkSync(PICTURE_UP); } catch { /* already gone */ }
+  try { unlinkSync(CLOSE_FLAG); } catch { /* already gone */ }
+  await phone.close();
 }
 
 await browser.close();

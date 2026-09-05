@@ -243,26 +243,13 @@ body:not(.kiosk) .meters { padding-left: 0; }
 }
 .close:active, .close:disabled { background: var(--green); color: var(--ink); border-color: var(--green); }
 
-/* Over a diagram it is a square in the corner instead. Still 58 of the panel's 480 px - about
-   11 mm, a thumb in a glove - because the point was to give the drawing the other 700 px of
-   width, not to make the way out harder to hit. */
-body.drawing .close {
-  position: fixed;
-  top: calc(22 * var(--u));
-  right: calc(22 * var(--u));
-  z-index: 8;
-  width: calc(58 * var(--u));
-  height: calc(58 * var(--u));
-  margin: 0;
-  font-size: calc(24 * var(--u));
-  letter-spacing: 0;
-  /* The drawing runs underneath, so this cannot be see-through the way the tab row is. */
-  background: var(--screen);
-}
-body.drawing .close .word { display: none; }
+/* A picture has no button at all, because pressing it anywhere puts it away - so the whole
+   800x480 is the way out rather than 1.5% of it in a corner.
 
-/* ...and a picture has no button at all, because pressing it anywhere puts it away. A drawing
-   keeps its square: it is a thing you read, and you point at a pin while you talk about it.
-   A picture of your own bench is a thing you look at and are then done with, so the whole
-   800x480 is the way out rather than 1.5% of it in a corner. */
+   There was a 58u square pinned to the top-right here until 2026-09-05, for diagrams only, on
+   the argument that a diagram is a thing you point at while you talk about it and so must not go
+   away under your finger. It meant two ways out of one screen depending on where the picture
+   came from, and the corner one is unfindable on a second screen across the room. Everything the
+   panel shows is a picture now (cyclops/panel.py's offer_image) and body.photo is always set
+   with it, so this rule is the whole of the way out. */
 body.photo .close { display: none; }

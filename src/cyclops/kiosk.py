@@ -61,6 +61,7 @@ from .config import (  # noqa: E402
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
     PANEL_PAINTED_FLAG,
+    PICTURE_UP_FLAG,
     SAY_VOICE_FILE,
     ConfigError,
     load_settings,
@@ -1191,6 +1192,12 @@ class Kiosk:
             print(f"· admin page open ({url})", flush=True)
             self._watch_page(shown_at)
         finally:
+            # Anything offered while this page had the panel was refused by show_picture and left
+            # where it was written, so it would still be pending after we let go - a picture on
+            # the warm browser that no thread of ours is watching and nothing will ever take
+            # down. The head of this method already withdraws for exactly that reason, one round
+            # too late; this is the same clean-up at the moment it stops being true.
+            panel.withdraw()
             if shown:
                 self._retake.set()
                 print("· admin page closed", flush=True)
@@ -1306,6 +1313,14 @@ class Kiosk:
             shown_at = time.time()
             shown = True
             self._panel_showing.set()  # from here a second picture swaps rather than being refused
+            # ...and say so where another process can read it. Inside the latch, so the note and
+            # the fact it stands for go up together: it is what lets a companion on the LAN put
+            # this picture away without also being able to close the panel's own page. See
+            # PICTURE_UP_FLAG.
+            try:  # the directory exists by here - PANEL_PAINTED_FLAG made it a moment ago
+                PICTURE_UP_FLAG.touch()
+            except OSError as exc:  # a picture on the glass beats a note about one
+                print(f"· could not leave the picture-up note ({exc})", flush=True)
             self._reveal.set()
             # A drawing was made and it is on the panel now: look up. Where one that takes an
             # empty panel says so - a picture drawn or found arrives here through panel.show(),
@@ -1325,6 +1340,7 @@ class Kiosk:
             # Cleared before the withdraw, so nothing can offer a picture into the gap between
             # this one coming down and the panel coming back.
             self._panel_showing.clear()
+            PICTURE_UP_FLAG.unlink(missing_ok=True)  # nobody can see it any more
             # The drawing goes before the panel comes back, so the page has already switched
             # itself off the picture by the time it is visible again behind the window.
             panel.withdraw()
@@ -1932,6 +1948,9 @@ def main() -> None:
     # page up, it would fire a window rebuild seconds into a boot that has nothing to take back.
     BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
     BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
+    # ...and the note that says a picture is on the glass, for the same reason pointed the other
+    # way: left armed by a killed kiosk it would let the LAN close a page this one put up.
+    PICTURE_UP_FLAG.unlink(missing_ok=True)
     kiosk.adopt_volume()
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
@@ -1986,6 +2005,7 @@ def main() -> None:
         kiosk.backlight.on()  # never leave the panel dark behind us
         panel.set_kiosk(None)
         panel.withdraw()  # nothing should be waiting for a panel that is gone
+        PICTURE_UP_FLAG.unlink(missing_ok=True)  # ...and nothing is on the glass either
         webcam.set_live_source(None)
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away
