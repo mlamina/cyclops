@@ -260,9 +260,10 @@ class Microphone:
         self._status = ""  # last PortAudio status flags, written on the audio thread
         self._warned = False
         self.level = 0.0  # smoothed RMS of the latest mic block (for the UI meter)
-        # Optional tap, called on the audio thread with (raw block, how many the guard admitted).
-        # Must not do I/O. Set by the recorder; see cyclops.record.
-        self.on_block: Callable[[bytes, int], None] | None = None
+        # Optional tap, called on the audio thread with every block, whatever the guard then
+        # does with it - the recording keeps the room, not the guard's verdict on it. Must not
+        # do I/O. Set by the recorder; see cyclops.record.
+        self.on_block: Callable[[bytes], None] | None = None
         # Which physical mic this is, decided here rather than once at startup: the kiosk process
         # outlives any number of sessions, so a lav clipped on between two of them is picked up by
         # the next one. Must precede the stream: that is when PULSE_SOURCE is read.
@@ -284,9 +285,9 @@ class Microphone:
         if self._compressor is not None:
             block = self._compressor.process(block)
         self.level = 0.6 * self.level + 0.4 * _rms(block)
-        blocks = self._guard.admit(block) if self._guard is not None else [block]
         if self.on_block is not None:
-            self.on_block(block, len(blocks))
+            self.on_block(block)
+        blocks = self._guard.admit(block) if self._guard is not None else [block]
         for admitted in blocks:
             self._loop.call_soon_threadsafe(self._enqueue, admitted)
 

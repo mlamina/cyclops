@@ -6,15 +6,20 @@ track carrying the user on the left channel and Cyclops on the right. Neither ch
 module: it is handed a :class:`FrameSource` and samples it, and the two answers are two objects
 that satisfy that one method.
 
-Keeping the two voices apart means neither is mixed into the other (listen to one side alone, or
-mix them down later), and it sidesteps the double-counting you would get from recording an open
-microphone that is also hearing the speaker.
+Keeping the two voices apart means neither is mixed into the other: listen to one side alone, or
+mix them down later. It does not mean the left channel is only you. That channel is an open
+microphone in a room with a loudspeaker in it, so Cyclops is on both - cleanly on the right,
+where it left the speaker, and again on the left as the room heard it. The alternative was
+muting the mic in the recording for as long as he was audible, which is what this used to do,
+and it cost every other thing the room was doing at the time. A session's audio is now a
+recording of the session rather than a transcript of what reached the model.
 
 Three streams have to line up, and each arrives on its own clock:
 
 * video is sampled here on the wall clock at a fixed rate - re-writing the previous frame when the
   source has not produced a new one, so video time never drifts away from wall time;
-* the user track is written one block per microphone callback, so it stays 1:1 with the input clock;
+* the user track is written one block per microphone callback, whatever the echo guard made of
+  that block, so it stays 1:1 with the input clock and holds everything the mic heard;
 * the agent track is taken from the speaker callback *after* its zero-fill, which makes it a
   continuous record of what actually came out of the speaker, the silence between utterances
   included - no timeline has to be reconstructed from response deltas.
@@ -38,7 +43,6 @@ import sys
 import threading
 import time
 import wave
-from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -46,7 +50,7 @@ from typing import Protocol
 import cv2
 
 from . import card
-from .audio import BYTES_PER_FRAME, SAMPLE_RATE, EchoGuard
+from .audio import BYTES_PER_FRAME, SAMPLE_RATE
 
 DEFAULT_FPS = 15
 # 0 means "whatever the source hands us", which is the only width that is right for both of the
@@ -54,9 +58,6 @@ DEFAULT_FPS = 15
 # native size worth keeping. It is a ceiling when set, never an upscale - see _output_size.
 DEFAULT_WIDTH = 0
 CRF = "26"
-# The guard releases up to PREROLL_BLOCKS at once on a barge-in; the delay line has to be able to
-# reach back over all of them, so it is exactly that deep.
-DELAY_BLOCKS = EchoGuard.PREROLL_BLOCKS
 DRAIN_INTERVAL_S = 0.25
 FIRST_FRAME_TIMEOUT_S = 1.0
 JOIN_TIMEOUT_S = 5.0
@@ -255,8 +256,6 @@ class SessionRecorder:
         self._log_file = None
         self._user: _Track | None = None
         self._agent: _Track | None = None
-        self._delay: deque[list] = deque()  # [raw_block, admitted] slots, newest last
-        self._delay_lock = threading.Lock()
         self._mic_at = 0.0  # capture time of the very first mic block
         self._reported = False
 
@@ -296,10 +295,6 @@ class SessionRecorder:
         for thread in self._threads:
             thread.join(timeout=JOIN_TIMEOUT_S)
         self._threads.clear()
-        try:
-            self._flush_delay()
-        except Exception as exc:
-            self._give_up(f"{type(exc).__name__}: {exc}")
         self._close_parts()
         self._report()
         if self.failed:
@@ -333,30 +328,22 @@ class SessionRecorder:
 
     # ---------------------------------------------------------------- audio hooks
 
-    def on_mic_block(self, block: bytes, admitted: int) -> None:
+    def on_mic_block(self, block: bytes) -> None:
         """Hook for :meth:`cyclops.audio.Microphone._callback`. Runs on the audio thread.
 
-        ``admitted`` is how many blocks the echo guard let through for this one input block: 0
-        while Cyclops is talking, 1 normally, and a whole run of them when a barge-in releases
-        its pre-roll. Exactly one slot is recorded per callback either way, so the track stays
-        locked to the input clock - a release only goes back and un-mutes slots already queued.
+        Every block, with no opinion about it. What the echo guard did with the same block is
+        the agent's business and not the recording's: the guard decides what OpenAI is allowed
+        to hear, so that Cyclops does not answer his own voice, and there is nothing in that
+        decision worth writing a hole in a recording for. This used to write the guard's
+        verdict instead - zeros wherever it had held the mic shut - which on a Pi in speaker
+        mode meant three quarters of the track was digital silence rather than a room.
         """
         if self.failed or self._user is None:
             return
         try:
-            now = time.monotonic()
             if self._mic_at == 0.0:
-                self._mic_at = now
-            drained: list[tuple[bytes, bool]] = []
-            with self._delay_lock:
-                self._delay.append([block, admitted > 0])
-                for i in range(1, min(admitted, len(self._delay))):
-                    self._delay[-1 - i][1] = True  # the pre-roll did reach the server after all
-                while len(self._delay) > DELAY_BLOCKS:
-                    raw, ok = self._delay.popleft()
-                    drained.append((raw, ok))
-            for raw, ok in drained:
-                self._user.append(raw if ok else bytes(len(raw)), self._mic_at)
+                self._mic_at = time.monotonic()
+            self._user.append(block, self._mic_at)
         except Exception as exc:
             self.failed = self.failed or f"{type(exc).__name__}: {exc}"
 
@@ -368,16 +355,6 @@ class SessionRecorder:
             self._agent.append(block, time.monotonic())
         except Exception as exc:
             self.failed = self.failed or f"{type(exc).__name__}: {exc}"
-
-    def _flush_delay(self) -> None:
-        """Push the last few hundred ms still sitting in the delay line."""
-        if self._user is None:
-            return
-        with self._delay_lock:
-            remaining = list(self._delay)
-            self._delay.clear()
-        for raw, ok in remaining:
-            self._user.append(raw if ok else bytes(len(raw)), self._mic_at)
 
     # ---------------------------------------------------------------- video
 

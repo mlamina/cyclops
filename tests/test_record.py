@@ -1,10 +1,11 @@
-"""What a session's video is of, and at what size - the two things the switch actually settles.
+"""What a session's video is of, at what size, and what reaches its microphone track.
 
-Neither half needs ffmpeg, a camera or a panel. The note is a file, the panel source is one
-attribute, and the size the encoder is opened at is arithmetic on a frame's shape. What is being
-guarded here is a set of silent failures: a recording that is quietly of the wrong thing, one
-that is quietly resampled to mush, and a frame the render loop goes on writing into after the
-recorder has been handed it.
+None of it needs ffmpeg, a camera or a panel. The note is a file, the panel source is one
+attribute, the size the encoder is opened at is arithmetic on a frame's shape, and the mic hook
+is handed a stand-in track that only remembers what it was given. What is being guarded here is
+a set of silent failures: a recording that is quietly of the wrong thing, one that is quietly
+resampled to mush, a frame the render loop goes on writing into after the recorder has been
+handed it, and a microphone track with holes cut in it.
 """
 
 from __future__ import annotations
@@ -206,3 +207,52 @@ def test_with_no_note_the_tap_follows_the_environment(tmp_path, monkeypatch) -> 
     assert frames is kiosk.panel
     frames, kiosk = tap(ENV_CAMERA, note, monkeypatch)
     assert frames is kiosk.camera
+
+
+# ---- the microphone track ----
+
+
+class Track:
+    """A stand-in for the recorder's ``_Track``: it remembers, and it does no I/O."""
+
+    def __init__(self) -> None:
+        self.written: list[bytes] = []
+
+    def append(self, pcm: bytes, at: float) -> None:
+        self.written.append(pcm)
+
+
+def recorder_with_a_track() -> tuple[SessionRecorder, Track]:
+    recorder = SessionRecorder(PanelSource(), Path("unused"))
+    track = Track()
+    recorder._user = track  # what start() would have opened, minus the wave file
+    return recorder, track
+
+
+def test_every_block_the_microphone_heard_reaches_the_track() -> None:
+    """Whatever the echo guard did with a block, the recording keeps it - see cyclops.record.
+
+    The guard is the model's business: it stops Cyclops answering his own voice. It used to be
+    the recording's too, and three quarters of a session's mic track came out digital silence.
+    """
+    recorder, track = recorder_with_a_track()
+    blocks = [bytes([n]) * 960 for n in range(1, 6)]
+    for block in blocks:
+        recorder.on_mic_block(block)
+    assert track.written == blocks, "no block dropped, none replaced with silence, none reordered"
+
+
+def test_a_block_is_written_on_the_callback_that_brought_it() -> None:
+    """There is no delay line any more: nothing is held back waiting to be un-muted."""
+    recorder, track = recorder_with_a_track()
+    recorder.on_mic_block(b"\x01\x02" * 480)
+    assert len(track.written) == 1
+
+
+def test_a_broken_track_disables_the_recording_rather_than_the_session() -> None:
+    """An audio thread may not raise: it sets the flag, and the writer thread reports it."""
+    recorder, _ = recorder_with_a_track()
+    recorder._user = object()  # no append(); the next block is going to hurt
+    recorder.on_mic_block(b"\x00" * 960)
+    assert recorder.failed
+    recorder.on_mic_block(b"\x00" * 960)  # and it stays quiet about it afterwards
