@@ -92,18 +92,23 @@ MAX_REQUEST_CHARS = 600
 MAX_TITLE_CHARS = 70
 MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TOOL
 
-# High, and unlike QUALITY this one is not a compromise either way. Measured from a laptop on
-# 2026-09-04 over five requests - a relay wiring, the NS4168 amp on the Pi's header, the 40-pin
-# pinout, a block diagram and a state machine - against the JointJS pipeline this replaced:
-# "high" took 76-88 s and drew every wire onto the pin its own caption named; "low" took 19-22 s,
-# looked just as handsome, and on the I2S diagram routed two wires out of the wrong rows of the
-# header while the summary table beside them stayed correct.
+# High, and it buys less than you would like. Measured on 2026-09-04 over five requests - a relay
+# wiring, the NS4168 amp on the Pi's header, the 40-pin pinout, a block diagram and a state
+# machine: "low" took 19-22 s and put two of the I2S wires on the wrong rows of the header;
+# "high" takes 76-88 s and made one such mistake in the same drawing (LRCLK labelled "pin 35" and
+# drawn from pin 36, on the Pi, first try). Fewer, not none.
 #
-# That is the failure mode worth paying eighty seconds to avoid. Nothing downstream checks a
-# generated diagram - there is no schema left to check it against - so the picture is the whole
-# answer, and a wire drawn to the wrong pin is worse than no diagram at all. The cost is bearable
-# only because nothing is waiting on it: the tool has returned, the overlay says "drawing…", and
-# the conversation carries on. If that ever stops being true, fix the lifecycle, not this line.
+# So this is a reduction in a failure rate and not a fix, and the rest of the mitigation is
+# elsewhere on purpose: DRAW_DIAGRAM_TOOL tells the model to say a connection out loud when
+# getting it wrong would cost somebody a part. Nothing downstream can check a generated diagram -
+# there is no schema left to check it against - and a wire drawn to the pin next to the right one
+# is the one error a person cannot catch by looking, because the label beside it still reads
+# correctly.
+#
+# Eighty seconds is bearable only because nothing is waiting on it: the tool has returned, the
+# overlay says "drawing…", and the conversation carries on. If that stops being true, fix the
+# lifecycle rather than this line. If the error rate turns out not to justify the wait, "low" is
+# a one-word change and the honest one.
 DRAW_QUALITY = "high"
 DRAW_TIMEOUT_S = 180.0  # the documented worst case, with room; see EDIT_TIMEOUT_S
 
