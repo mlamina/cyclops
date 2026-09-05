@@ -44,6 +44,15 @@ DIAGRAM_FILE = Path.home() / ".cache" / "cyclops" / "diagram.json"
 # is the one moment somebody is watching.
 DIAGRAM_SHOWN_FLAG = Path.home() / ".cache" / "cyclops" / "diagram-shown"
 
+# And where it leaves the drawing itself, once, for the recording rather than for the panel. A
+# session recording the screen samples what the kiosk paints, and while a diagram is up the kiosk
+# paints nothing - so the minutes somebody spent reading it used to watch back as black. The page
+# is the only thing that knows what the drawing looks like, because it is the one that laid it
+# out, and it already hands the SVG back in the note above; this is that copy, kept where the
+# kiosk can reach it without going near the card. See :mod:`cyclops.still`. A photo needs no
+# equivalent: it is already in DIAGRAM_FILE, whole.
+PANEL_SVG_FILE = Path.home() / ".cache" / "cyclops" / "panel.svg"
+
 # And where it leaves the output volume it wants. Same reason it cannot just set it itself:
 # the service runs with PrivateDevices=yes and has no /dev/snd, and at boot there is no user
 # session to reach PipeWire through. The kiosk, which has both, reads this and applies it.

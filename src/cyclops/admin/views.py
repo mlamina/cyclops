@@ -33,6 +33,7 @@ from ..config import (
     PAGE_ALIVE_FLAG,
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
+    PANEL_SVG_FILE,
     ConfigError,
     Settings,
     load_settings,
@@ -325,9 +326,10 @@ def diagram(request: HttpRequest, ident: str) -> JsonResponse:
 def diagram_shown(request: HttpRequest) -> HttpResponse:
     """The page has painted the diagram: keep the picture, and tell the kiosk it may uncover.
 
-    Two jobs in one request on purpose. The kiosk is waiting on ``DIAGRAM_SHOWN_FLAG`` before it
-    drops its window, and this is also the only moment the rendered SVG exists anywhere - the
-    panel draws it, so the panel is the only thing that can hand it back for the card.
+    Three jobs in one request on purpose. The kiosk is waiting on ``DIAGRAM_SHOWN_FLAG`` before
+    it drops its window, and this is also the only moment the rendered SVG exists anywhere - the
+    panel draws it, so the panel is the only thing that can hand it back, for the card and for
+    the video the session is recording of the screen it is about to disappear behind.
 
     The destination comes from our own pending file and never from the request. The body is one
     anonymous blob of bytes; letting it choose where those bytes land would make this the one
@@ -340,6 +342,14 @@ def diagram_shown(request: HttpRequest) -> HttpResponse:
         return HttpResponseBadRequest("no diagram is waiting")
 
     svg = request.body[:MAX_SVG_BYTES]
+    if svg:
+        # For the recording first, and unconditionally: a session recording the screen is
+        # sampling a panel the kiosk has stopped painting, and this is the only copy of what is
+        # actually on it. Landed rather than written, so the kiosk can never read half of one.
+        try:
+            card.write_bytes(PANEL_SVG_FILE, svg)
+        except OSError as exc:  # the drawing is on the panel either way, which is the point
+            print(f"· could not keep the panel's picture for the video ({exc})", flush=True)
     target = found.get("svg")
     if svg and target:
         try:

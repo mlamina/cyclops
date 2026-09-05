@@ -6,7 +6,10 @@ There are two honest answers and the box cannot know which one you want.
 cropped to the panel's 5:3, with the halo, the timer, the caption, the REC tag and the tab row on
 it. Watching it back is watching the session happen - you can see when Cyclops was thinking, when
 you interrupted him, and where the shutter went off. It is the default because it is what you
-were looking at.
+were looking at. Including the minutes a drawing or a photo has the whole panel, which the kiosk
+is not the one painting: the picture is rebuilt for the recording from what the page was handed
+(:mod:`cyclops.still`), because a video that went black over the wiring diagram would be missing
+the part worth watching twice.
 
 **CAMERA** records the sensor: what the lens saw, at its own resolution and its own shape, with
 nothing drawn over it and nothing trimmed off the sides. Both read the right way round - the

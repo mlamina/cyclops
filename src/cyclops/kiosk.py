@@ -36,7 +36,18 @@ os.environ.setdefault("QT_LOGGING_RULES", "*.warning=false")
 import cv2  # noqa: E402 - must follow the QT_LOGGING_RULES default above
 import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
-from . import barge, diagram, filming, mixer, power, session, sfx, stats, webcam  # noqa: E402
+from . import (  # noqa: E402
+    barge,
+    diagram,
+    filming,
+    mixer,
+    power,
+    session,
+    sfx,
+    stats,
+    still,
+    webcam,
+)
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
 from .button import RING_ACTIVE, RING_ERROR, RING_IDLE, ShutterButton  # noqa: E402
@@ -47,6 +58,7 @@ from .config import (  # noqa: E402
     PAGE_ALIVE_FLAG,
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
+    PANEL_SVG_FILE,
     ConfigError,
     load_settings,
 )
@@ -457,6 +469,10 @@ class Kiosk:
         self._reveal = threading.Event()  # asks the render loop to uncover the admin page
         self._retake = threading.Event()  # ... and to take the panel back off it
         self._hidden = False  # the admin page has the panel; nothing we draw can be seen
+        # What is on that panel while it is not ours, for a session recording the screen to
+        # sample - see cyclops.still. None whenever there is nothing to say, which is the
+        # dashboard and every failure; the render loop publishes black for it as it always did.
+        self._page_still: np.ndarray | None = None
         self._window_up = False  # whether highgui currently has a window for us
         # Whether the panel's light has been turned on for this run. It comes on with the first
         # fully drawn frame rather than at startup, because everything before that - the browser
@@ -530,6 +546,16 @@ class Kiosk:
             cv2.imshow(WINDOW, image)
         else:
             self.open_window(image, width, height)
+
+    def _panel_size(self) -> tuple[int, int]:
+        """The size a frame has to be to stand in for the panel, before or after the first one.
+
+        (0, 0) is what ``self._size`` says until the loop has drawn once, and a 0x0 frame is one
+        the recorder cannot resize and gives up over - so it is answered with the panel's own
+        size rather than passed on. ``all`` and not ``or``: a truthy tuple of zeroes would sail
+        straight through.
+        """
+        return self._size if all(self._size) else NO_CAMERA_SIZE
 
     def _apply_fullscreen(self) -> None:
         cv2.setWindowProperty(
@@ -1148,12 +1174,21 @@ class Kiosk:
                 return
             DIAGRAM_SHOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
             DIAGRAM_SHOWN_FLAG.unlink(missing_ok=True)  # a stale note must not answer for this one
+            # ...and no more may the drawing that came with it: the page posts the two together,
+            # so a picture left from the last diagram would be exactly the wrong one to put in
+            # the video of this one. Absent is a black frame, which is honest.
+            PANEL_SVG_FILE.unlink(missing_ok=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
             asked_at = time.time()
             if not _wait_for_flag(DIAGRAM_SHOWN_FLAG, asked_at, DIAGRAM_WAIT_S):
                 # Uncover anyway. The page polls, so it is probably a slow layout rather than a
                 # dead browser, and a diagram arriving a moment late beats one that never comes.
                 print("· diagram: the page was slow to draw; showing anyway", flush=True)
+            # Before the reveal and on this thread, not the render loop's: rasterising a drawing
+            # costs a third of a second on this box, which is a frame the panel would drop and a
+            # third of a second nobody notices at the end of the ten this drawing already took.
+            # By now the page has posted what it painted, which is the whole reason we waited.
+            self._page_still = still.of_panel(*self._panel_size())
             shown_at = time.time()
             shown = True
             self._reveal.set()
@@ -1441,16 +1476,21 @@ class Kiosk:
                 self._drop_window()  # the warm browser has been behind us all along
                 self._hidden = True
                 # A session recording the screen is still sampling, and the screen is no longer
-                # ours to hand it. Black rather than the frame we happened to stop on: a diagram
-                # can hold the panel for a quarter of an hour mid-session, and a frozen halo over
-                # a running timer watches back as a hung encoder rather than as what happened.
-                # `or` would not do: (0, 0) before the first frame is a truthy tuple, and
-                # a 0x0 frame is one the recorder cannot resize and gives up over.
-                self.panel.publish(_black(*(self._size if all(self._size) else NO_CAMERA_SIZE)))
+                # ours to hand it. What is on it, when the page was handed a picture and we could
+                # rebuild it (see cyclops.still), and black otherwise. Black rather than the frame
+                # we happened to stop on: a diagram can hold the panel for a quarter of an hour
+                # mid-session, and a frozen halo over a running timer watches back as a hung
+                # encoder rather than as what happened.
+                self.panel.publish(
+                    self._page_still
+                    if self._page_still is not None
+                    else _black(*self._panel_size())
+                )
             if self._retake.is_set():
                 self._retake.clear()
                 self._drop_window()  # ... and the next frame builds a window on top of it again
                 self._hidden = False
+                self._page_still = None  # the panel is ours again; it speaks for itself
                 self._touched_at = time.monotonic()  # closing the page is a touch like any other
             self._sync_volume()  # the page sets the volume, so keep reading it while it is up
             self._sync_barge_in()  # ...and whether it may be interrupted, on the same beat
