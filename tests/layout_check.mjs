@@ -166,7 +166,7 @@ async function stub(ctx) {
 // the handful of properties that decide it. Not all of getComputedStyle: that is 340 properties
 // per element of which 330 never move, and a diff nobody reads is a check nobody runs.
 
-const WATCH = ['body', 'header', '.brand', '.nav', '.tab', '.link', '.system', '.controls', '.ctl',
+const WATCH = ['body', 'header', '.brand', '.nav', '.tab', '.pick', '.system', '.controls', '.ctl',
   '.meters', '.meter', '.mtrack', '.mrow', '.mlabel', '.mvalue', '.vslider', '.sw', '.close',
   '.view', '.row', '.shot', '.rowtext', '.rowtitle', '.rowsum', '.rowwhen', '.grid', '.cell',
   '.watch', '.playing', '.video', '.talk', '.line', '.caption', '.stitle', '.smeta', '.ssum',
@@ -214,19 +214,26 @@ async function overflows(page) {
   });
 }
 
-async function tabsReachable(page) {
+async function navReachable(page) {
   return page.evaluate(() => {
     const bad = [];
     // A recording gets the whole screen and the header goes with it - that is body.solo doing
     // what it is for, not a tab that has gone missing. See the `.solo` rules in the stylesheet.
     if (document.body.classList.contains('solo')) return bad;
-    for (const tab of document.querySelectorAll('.tab')) {
-      const r = tab.getBoundingClientRect();
-      if (r.width < 1 || r.height < 1) { bad.push(`${tab.textContent} has no box`); continue; }
+    // The panel gets four tabs and everything else one menu, and only one of them is ever in the
+    // document. Both are matched here rather than one, because a check that iterates a selector
+    // the page no longer has passes by finding nothing - which is the failure it was written to
+    // catch, wearing a tick.
+    const found = [...document.querySelectorAll('.tab, .pick')];
+    if (!found.length) return ['there is no navigation on this page at all'];
+    for (const el of found) {
+      const name = el.tagName === 'SELECT' ? 'the menu' : el.textContent;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) { bad.push(`${name} has no box`); continue; }
       if (r.right > innerWidth + 1 || r.bottom > innerHeight + 1 || r.left < -1 || r.top < -1)
-        bad.push(`${tab.textContent} is outside the viewport ` +
+        bad.push(`${name} is outside the viewport ` +
                  `(${Math.round(r.left)},${Math.round(r.top)} to ${Math.round(r.right)},${Math.round(r.bottom)})`);
-      if (r.height < 40) bad.push(`${tab.textContent} is only ${Math.round(r.height)}px tall`);
+      if (r.height < 40) bad.push(`${name} is only ${Math.round(r.height)}px tall`);
     }
     return bad;
   });
@@ -289,7 +296,7 @@ for (const [size, width, height] of SIZES) {
       failures.push(`${size}/${name}: LAN=${LAN} resolved to loopback - measuring the panel twice`);
     found[`${size}/${name}`] = await probe(page);
     for (const line of await overflows(page)) failures.push(`${size}/${name}: ${line}`);
-    for (const line of await tabsReachable(page)) failures.push(`${size}/${name}: tab ${line}`);
+    for (const line of await navReachable(page)) failures.push(`${size}/${name}: ${line}`);
     for (const e of errors) failures.push(`${size}/${name}: console: ${e}`);
     await ctx.close();
   }

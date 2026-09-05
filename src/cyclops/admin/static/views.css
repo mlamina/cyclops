@@ -24,6 +24,9 @@ body.view-media    .media { display: grid; }
 body.drawing .view, body.drawing .lightbox { display: none !important; }
 
 /* ---- the tabs ---- */
+/* The panel's, in practice: off the kiosk the nav holds one select instead and there is no .tab
+   on the page at all (see dashboard.html and the menu block in lan.css). .nav still applies to
+   both, which is why the select sits inside it rather than beside it. */
 .nav { display: flex; gap: calc(4 * var(--u)); margin-left: calc(4 * var(--u)); }
 .tab {
   appearance: none; -webkit-appearance: none;

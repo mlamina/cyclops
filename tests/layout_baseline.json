@@ -190,29 +190,6 @@
     }
    },
    {
-    "sel": ".link",
-    "i": 0,
-    "x": 684.55,
-    "y": 34.95,
-    "w": 82.48,
-    "h": 16,
-    "sw": 82,
-    "cw": 82,
-    "style": {
-     "display": "block",
-     "grid-template-columns": "none",
-     "grid-template-rows": "none",
-     "flex-wrap": "nowrap",
-     "font-size": "13.9978px",
-     "padding": "0px",
-     "gap": "normal",
-     "align-content": "normal",
-     "overflow-x": "visible",
-     "overflow-y": "visible",
-     "position": "static"
-    }
-   },
-   {
     "sel": ".system",
     "i": 0,
     "x": 16.98,
@@ -1394,29 +1371,6 @@
     }
    },
    {
-    "sel": ".link",
-    "i": 0,
-    "x": 684.55,
-    "y": 34.95,
-    "w": 82.48,
-    "h": 16,
-    "sw": 82,
-    "cw": 82,
-    "style": {
-     "display": "block",
-     "grid-template-columns": "none",
-     "grid-template-rows": "none",
-     "flex-wrap": "nowrap",
-     "font-size": "13.9978px",
-     "padding": "0px",
-     "gap": "normal",
-     "align-content": "normal",
-     "overflow-x": "visible",
-     "overflow-y": "visible",
-     "position": "static"
-    }
-   },
-   {
     "sel": ".close",
     "i": 0,
     "x": 16.98,
@@ -2261,29 +2215,6 @@
     }
    },
    {
-    "sel": ".link",
-    "i": 0,
-    "x": 684.55,
-    "y": 34.95,
-    "w": 82.48,
-    "h": 16,
-    "sw": 82,
-    "cw": 82,
-    "style": {
-     "display": "block",
-     "grid-template-columns": "none",
-     "grid-template-rows": "none",
-     "flex-wrap": "nowrap",
-     "font-size": "13.9978px",
-     "padding": "0px",
-     "gap": "normal",
-     "align-content": "normal",
-     "overflow-x": "visible",
-     "overflow-y": "visible",
-     "position": "static"
-    }
-   },
-   {
     "sel": ".close",
     "i": 0,
     "x": 16.98,
@@ -2652,29 +2583,6 @@
      "flex-wrap": "nowrap",
      "font-size": "13.9978px",
      "padding": "0px 13.9978px",
-     "gap": "normal",
-     "align-content": "normal",
-     "overflow-x": "visible",
-     "overflow-y": "visible",
-     "position": "static"
-    }
-   },
-   {
-    "sel": ".link",
-    "i": 0,
-    "x": 684.55,
-    "y": 34.95,
-    "w": 82.48,
-    "h": 16,
-    "sw": 82,
-    "cw": 82,
-    "style": {
-     "display": "block",
-     "grid-template-columns": "none",
-     "grid-template-rows": "none",
-     "flex-wrap": "nowrap",
-     "font-size": "13.9978px",
-     "padding": "0px",
      "gap": "normal",
      "align-content": "normal",
      "overflow-x": "visible",

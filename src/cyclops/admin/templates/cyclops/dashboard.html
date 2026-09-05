@@ -14,6 +14,10 @@ The volume bar, the two switches and the close bar exist only for the kiosk's ow
 a laptop on the LAN has nothing to close, everything else here is a read-only copy of what is on
 the card, and the panel is meant to be the one place the box is set - a slider and a switch on
 every device on the network is exactly the sprawl this replaced.
+
+The navigation forks on the same flag, and it is the one fork that is about the screen rather
+than about what the client is allowed to do: the panel is a known 800x480 that can hold four
+tabs, and a phone is not, so everywhere else the four screens are one menu instead.
 {% endcomment %}<!doctype html>
 <html lang="en">
 <head>
@@ -46,12 +50,30 @@ every device on the network is exactly the sprawl this replaced.
     <span class="brand">CYCLOPS</span>
     <span class="bar"></span>
     <nav class="nav">
+      {% if local %}
+      <!-- The panel: four tabs, because it has 766 px of header and one screen it never leaves. -->
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
       <button class="tab" type="button" data-go="/projects">Projects</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
+      {% else %}
+      <!-- Everywhere else: one control. Four monospace words at this tracking do not share a
+           390 px row, and the header used to wrap into a ragged second line to hold them. A
+           native select is what "a menu" already means on a phone - the platform draws its own
+           sheet under the thumb, and there is no popup of ours to place, clip or dismiss.
+
+           Labels are written in caps here rather than transformed in CSS, so the closed control
+           and the platform's own list agree about what they say. No `selected`: route() sets the
+           value on load and on every hash change, so the menu always reads the screen you are on
+           even when you arrived by a link. -->
+      <select class="pick" id="pick" aria-label="Screen">
+        <option value="/sessions">SESSIONS</option>
+        <option value="/projects">PROJECTS</option>
+        <option value="/media">MEDIA</option>
+        <option value="/">SYSTEM</option>
+      </select>
+      {% endif %}
     </nav>
-    <span class="link"></span>
   </header>
   <!-- Outside the header on purpose: a diagram hides the header, and this has to outlive it. -->
   <span class="dtitle" id="dtitle"></span>

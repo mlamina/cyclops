@@ -36,28 +36,46 @@ body:not(.kiosk) {
    a session titled with one unbroken 44-character word is min-content all by itself. */
 body:not(.kiosk) .view { min-width: 0; }
 
-/* ---- the header wraps ---- */
-/* Four monospace words at .2em tracking cannot share a 390 px row at any size worth reading -
-   the nav's min-content is 430u, and still 344u with the tracking halved and the padding gone.
-   So it wraps, which is the ordinary app-bar-over-a-tab-row every phone already has, and which
-   decides where to break by measuring the actual glyphs rather than by guessing at a width. */
-body:not(.kiosk) header { position: relative; flex-wrap: wrap; }
-body:not(.kiosk) .nav { flex-wrap: wrap; min-width: 0; }
-/* Tighter than the panel's, which is the same argument --u makes: .2em tracking and 14u of
-   padding either side exist so a word can be read across a workshop, and nothing held in a hand
-   needs them. The 44u target is untouched - that is what a thumb needs, and it is not a
-   typographic measurement.
+/* ---- the header is one row, and the four screens are a menu ---- */
+/* This block used to make the header wrap. Four monospace words at .2em tracking cannot share a
+   390 px row at any size worth reading - the nav's min-content is 430u, and still 344u with the
+   tracking halved and the padding gone - so the tabs took a second, ragged line of their own and
+   LINK OK had to be pinned into the corner to keep off a third. Two workarounds holding up a
+   layout that did not fit.
 
-   An auto-fit grid was tried here and is wrong: .nav is a flex item with no definite width, so
-   the track count resolves against its own max-content and collapses to a single column - four
-   tabs stacked down a phone. Wrapping flex measures the actual glyphs instead, which is also
-   the only thing that can answer "do these four words fit" correctly at every width. */
-body:not(.kiosk) .tab { letter-spacing: .12em; padding: 0 calc(9 * var(--u)); }
-/* Pinned to the corner rather than pushed there by an auto margin: when the tabs take a line of
-   their own, LINK OK has to stay up on the brand's line instead of claiming a third. */
-body:not(.kiosk) .link {
-  position: absolute; top: calc(4 * var(--u)); right: calc(16 * var(--u));
-  margin: 0; line-height: calc(44 * var(--u));
+   Off the panel the nav is one control instead. A native select and not a panel of our own: it
+   is what "a menu" already means on a phone, the platform draws its own sheet under the thumb,
+   and there is nothing here to open, place, clip, dismiss or z-index. The markup is forked in
+   dashboard.html rather than hidden here, so a phone never downloads four buttons it cannot see.
+
+   No width query, for the reason at the top of this file: this is not a phone rule that a laptop
+   grows out of. The panel is one known screen with four tabs on it and every other client is a
+   range, and one control is right across the whole range. */
+body:not(.kiosk) .nav { position: relative; min-width: 0; }
+/* The phosphor treatment .newdir already gives a native control, at .tab's thumb target. */
+body:not(.kiosk) .pick {
+  appearance: none; -webkit-appearance: none;
+  background: var(--screen); color: var(--green);
+  border: calc(1 * var(--u)) solid var(--dim); font: inherit;
+  font-size: calc(14 * var(--u)); letter-spacing: .12em;
+  min-height: calc(44 * var(--u));
+  padding: 0 calc(28 * var(--u)) 0 calc(12 * var(--u));
+  /* Not decoration. A select is sized by its widest option, and an item in the header forcing
+     the body's implicit column wider than the phone is exactly the bug at the top of this file. */
+  min-width: 0; max-width: 100%;
+}
+body:not(.kiosk) .pick:focus { outline: none; border-color: var(--green); }
+/* The caret the platform stops drawing the moment appearance goes away. Borders rather than a
+   glyph: the font stack is four monospace fallbacks deep and none of them owes us a triangle.
+   On .nav because a select cannot carry a pseudo-element of its own; absolute, so being a flex
+   item of .nav costs nothing. */
+body:not(.kiosk) .nav::after {
+  content: ""; position: absolute; right: calc(11 * var(--u)); top: 50%;
+  width: 0; height: 0; margin-top: calc(-2 * var(--u));
+  border-left: calc(5 * var(--u)) solid transparent;
+  border-right: calc(5 * var(--u)) solid transparent;
+  border-top: calc(5 * var(--u)) solid var(--dim);
+  pointer-events: none;
 }
 
 /* ---- the four readings ---- */

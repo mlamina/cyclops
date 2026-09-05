@@ -129,7 +129,9 @@ body::after {
    wearing them. The border stays either way: that is the bezel, not a filter. */
 body.lit::after, body.drawing::after { content: none; }
 body.lit::before, body.drawing::before { box-shadow: none; }
-/* The server went away; what is on screen is stale, and says so up in the header. */
+/* The server went away, and every number on this page is now whatever it was when it last
+   answered. The whole screen goes half-lit rather than a badge going amber in a corner: stale
+   is a property of the page, not of one word in the header, and the page should look it. */
 body.offline { opacity: .5; }
 
 /* ---- header ---- */
@@ -142,7 +144,3 @@ header {
 }
 .brand { color: var(--dim); font-size: calc(14 * var(--u)); letter-spacing: .3em; }
 .bar { width: calc(2 * var(--u)); height: calc(18 * var(--u)); background: var(--dim); }
-.link { margin-left: auto; font-size: calc(14 * var(--u)); letter-spacing: .24em; color: var(--mid); }
-.link::after { content: "LINK OK"; }
-body.offline .link { color: var(--amber); }
-body.offline .link::after { content: "NO LINK"; }
