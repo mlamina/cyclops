@@ -103,22 +103,27 @@ const CASES = [
   {
     name: 'sketch',
     kind: 'scratchpad',
-    // Verbatim, as Cyclops drew it the first time he was asked for a sketch on 2026-09-05. Every
-    // shape carries stroke="black", because line art is a thing you do on paper - and on a
-    // #050f0a screen the whole drawing landed invisible. It was correct and unlit.
+    // His own bench sketch from 2026-09-05, verbatim: every shape stroke="black". It was
+    // invisible when a drawing was drawn straight onto the #050f0a screen. It is correct now
+    // because a drawing gets white paper, which is the whole of the fix - so what this pins is
+    // the paper, not the ink.
     payload: { scratchpad:
-      '<h1>Made-up sketch</h1><svg viewBox="0 0 200 120">' +
+      '<h2>Bench</h2><svg viewBox="0 0 200 120">' +
       '<rect x="10" y="80" width="180" height="25" fill="none" stroke="black"/>' +
       '<circle cx="57.5" cy="15" r="7" fill="none" stroke="black"/>' +
       '<rect x="125" y="35" width="45" height="45" fill="none" stroke="#c33"/></svg>' },
     wantPhotoClass: true,
-    // The rescue, and its limit: black becomes his own green, and a colour he actually chose is
-    // left alone. Both halves matter - the second is why this is an attribute selector and not a
-    // blanket `svg * { stroke: currentColor }`.
-    wantStroke: [
-      { sel: 'rect[stroke="black"]', is: 'rgb(86, 255, 140)' },
-      { sel: 'rect[stroke="#c33"]', is: 'rgb(204, 51, 51)' },
-    ],
+    wantPaper: {
+      // The sheet itself. Without it a black-inked drawing is black on near-black, which is
+      // exactly what shipped for one commit and what nobody can see on a bench.
+      sheet: { sel: 'svg', prop: 'backgroundColor', is: 'rgb(255, 255, 255)' },
+      ink: [
+        // Ink is dark by default, and a colour he chose is still his. Black is no longer
+        // rescued into green: on paper it is simply the right answer.
+        { sel: 'rect[stroke="black"]', is: 'rgb(0, 0, 0)' },
+        { sel: 'rect[stroke="#c33"]', is: 'rgb(204, 51, 51)' },
+      ],
+    },
   },
   {
     name: 'hostile',
@@ -182,12 +187,19 @@ for (const item of CASES) {
       if (got.clickThrough === false) {
         bad.push('the frame takes the press itself, so nothing can put the scratchpad away');
       }
-      for (const want of item.wantStroke || []) {
-        const got = await page.frameLocator('#stage iframe.scratchpad').locator(want.sel).first()
-          .evaluate((el) => getComputedStyle(el).stroke).catch(() => null);
-        if (got !== want.is) {
-          bad.push(`${want.sel} strokes ${got}, wanted ${want.is}` +
-                   ' - a drawing nobody can see is the failure this case exists for');
+      if (item.wantPaper) {
+        const inside = page.frameLocator('#stage iframe.scratchpad');
+        const { sheet, ink } = item.wantPaper;
+        const got = await inside.locator(sheet.sel).first()
+          .evaluate((el, p) => getComputedStyle(el)[p], sheet.prop).catch(() => null);
+        if (got !== sheet.is) {
+          bad.push(`the drawing's ${sheet.prop} is ${got}, wanted ${sheet.is}` +
+                   ' - without paper, dark ink on a dark screen is a drawing nobody can see');
+        }
+        for (const want of ink) {
+          const stroke = await inside.locator(want.sel).first()
+            .evaluate((el) => getComputedStyle(el).stroke).catch(() => null);
+          if (stroke !== want.is) bad.push(`${want.sel} strokes ${stroke}, wanted ${want.is}`);
         }
       }
       if (item.wantTall) {

@@ -213,6 +213,25 @@ def test_the_page_still_refuses_to_run_what_the_model_wrote() -> None:
     assert "default-src 'none'" in source
 
 
+def test_the_scratchpads_stylesheet_is_still_a_string() -> None:
+    """SCRATCHPAD_HEAD is a JS template literal, so one backtick in it ends the page.
+
+    Written after doing exactly that: a CSS comment saying `color` is set... closed the literal,
+    panel.js stopped parsing, and the panel served a page with no paint loop at all. Nothing on
+    the Python side noticed, and the browser check that did notice only said "timed out waiting
+    for body.drawing", which is a long way from the cause.
+
+    A millisecond here, in the spirit of ``test_panel_css.py``: the thing that fails silently on a
+    screen nobody is watching start is the thing worth a cheap test.
+    """
+    source = PANEL_JS.read_text(encoding="utf-8")
+    opened = source.index("const SCRATCHPAD_HEAD = `")
+    body = source[opened + len("const SCRATCHPAD_HEAD = `") :]
+    assert "`" in body, "the literal must be closed at all"
+    assert "`" not in body[: body.index("`")], "no backtick may appear inside it"
+    assert body[: body.index("`")].count("${") == 0, "and nothing may interpolate into it"
+
+
 def test_a_scratchpad_does_not_eat_the_press_that_dismisses_it() -> None:
     """The press belongs to the iframe unless this says otherwise, and then there is no way out.
 

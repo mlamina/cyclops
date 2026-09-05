@@ -57,8 +57,11 @@ const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
     background: #050f0a; color: #56ff8c;
     font-family: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", "Noto Color Emoji", monospace;
     font-size: 4vh; line-height: 1.35;
-    display: grid; place-content: center; justify-items: center; text-align: center;
-    gap: 0.6em; padding: 4vh 5vw; overflow: hidden;
+    /* A column rather than a centred grid, and the difference is one case: a drawing under a
+       heading. Grid tracks size to their content and then overflow, so the sheet was clipped off
+       the bottom of the panel. A flex column lets it shrink to what is left instead. */
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; gap: 0.6em; padding: 4vh 5vw; overflow: hidden;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   ::-webkit-scrollbar { width: 0; height: 0; }
@@ -68,19 +71,31 @@ const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
      left edge, and ragged-centre numbering is unreadable at arm's length. */
   ol, ul { text-align: left; margin: 0; padding-left: 1.4em; }
   li { margin: 0.15em 0; }
-  /* An <svg> with no width attribute is 300x150 by default, and one with a viewBox and no bounds
-     overflows the screen. Both are the model's likeliest mistake, and both stop here. */
-  svg { max-width: 80vw; max-height: 60vh; fill: none; stroke: currentColor; }
-  /* ...and this is the likeliest mistake of all, seen the first time one was asked for a sketch.
-     A model drawing SVG writes stroke="black", because line art is a thing you do on paper. On a
-     #050f0a screen that lands invisible - the drawing was there, correct, and unlit.
+  /* A drawing gets paper. Everything else here is his own phosphor green, because everything
+     else here is talk - but a sketch is not talk, and green line art on black is a readout
+     rather than a drawing. A wiring run wants the wires in the colours they actually are, and
+     you cannot draw a brown wire on a screen that only does green.
 
-     So black is read as "I did not choose a colour" rather than as a colour, and becomes his own
-     green. Any other colour it names is left exactly as asked, which is the whole point of the
-     attribute selector: a red bar stays red. Presentation attributes lose to any CSS rule that
-     matches the element itself, which is why these have to name the shapes and not just <svg>. */
-  svg [stroke="black"], svg [stroke="#000"], svg [stroke="#000000"] { stroke: currentColor; }
-  svg [fill="black"], svg [fill="#000"], svg [fill="#000000"] { fill: currentColor; }
+     So the <svg> is a white sheet with dark ink, sitting on the panel the way a drawn diagram
+     already does (those arrive as jpgs of paper - see cyclops.imagine). That also settles what
+     stroke="black" means, which was invisible here a commit ago and is now simply correct: on
+     paper, black ink is what an unstyled shape SHOULD be. Nothing has to rescue it.
+
+     White as a sheet and not as the whole screen, deliberately. It keeps his own face around the
+     drawing, it matches how every other picture reaches the glass, and 800x480 of pure white on
+     a bench at night is a torch rather than a panel.
+
+     The color property is set so currentColor inside the sheet is ink, and height:auto lets the
+     viewBox pick the paper's shape - a wide diagram gets a wide sheet, not a letterboxed one.
+     No backticks in here: this whole block is a JS template literal, and one would end it. */
+  svg {
+    width: 88vw; height: auto; max-height: 74vh;
+    /* Shrinkable, with min-height:0 to allow it: a heading and a drawing together are taller
+       than the panel, and the sheet is the part that should give way rather than run off it. */
+    flex: 0 1 auto; min-height: 0;
+    background: #fff; color: #111; border-radius: 4px; padding: 1.5vh;
+    fill: none; stroke: currentColor;
+  }
   svg text { fill: currentColor; stroke: none; }
 </style>
 `;

@@ -403,9 +403,14 @@ the whole point — this is the tool he reaches for by default, and [Diagrams](#
 expensive exception for when the answer really is a drawing.
 
 It lands in a document of its own — an `<iframe srcdoc>` on the same stage a photo lands on — so
-his `<style>` cannot reach the dashboard behind it. That document gets his own green-on-black, his
-font, and headings, lists and SVG already sized for 800x480, so plain markup with no styling at
-all comes out looking like Cyclops. Two things it does not get: scripts do not run, and nothing
+his `<style>` cannot reach the dashboard behind it. Text gets his own green-on-black and his font,
+sized for 800x480, so plain markup with no styling at all comes out looking like Cyclops.
+
+**A drawing gets paper.** An `<svg>` is put on a white sheet with dark ink, because green line art
+on black is a readout rather than a drawing — and you cannot draw a brown wire on a screen that
+only does green. So a sketch is coloured the way it would be on paper, sitting on the panel the
+way a [drawn diagram](#diagrams) already does. White as a sheet and not as the whole screen: it
+keeps his face around the drawing, and 800x480 of pure white on a bench at night is a torch. Two things it does not get: scripts do not run, and nothing
 loads from the network. Both are cheap insurance and one of them is about speed rather than
 safety — the frame's `load` event waits on subresources, so a hallucinated
 `<img src="https://…">` would stall the paint for as long as DNS takes.
