@@ -266,6 +266,60 @@ body:not(.kiosk) #v-live {
   align-content: start;
 }
 body:not(.kiosk) .livetalk { display: block; overflow-y: auto; min-height: 0; }
+
+/* ---- and what it is when nothing is running ---- */
+/* Which on a companion is most of the day, so it is a screen rather than a leftover. It was one
+   dim line in the top-left corner under a rule, over a page of black - which says "empty" when
+   what is true is "awake, and waiting for you to press the button".
+
+   So: the boot mark, centred, and three lines. The mark is doing the work a spinner would do
+   badly - it is the same eye the panel comes up with and the same one on the front of the box,
+   so the screen you are holding is visibly the same machine, idle rather than broken.
+
+   [data-idle] is set by app.js on the view, and it takes the head and the transcript out
+   together: with nothing said there is no session to name and nothing to scroll. */
+body:not(.kiosk) #v-live[data-idle] { grid-template-rows: minmax(0, 1fr); }
+body:not(.kiosk) #v-live[data-idle] .livehead,
+body:not(.kiosk) #v-live[data-idle] .livetalk { display: none; }
+body:not(.kiosk) #v-live:not([data-idle]) .idle { display: none; }
+body:not(.kiosk) .idle {
+  display: grid; place-content: center; justify-items: center; text-align: center;
+  gap: calc(9 * var(--u)); padding: calc(24 * var(--u));
+}
+/* The mark, painted rather than drawn: static/eye.png carries the shape in its alpha channel and
+   this fills it with the page's own green, so it is the palette's colour and not the file's. Held
+   well under half the short edge, because it is the quietest thing on the screen and not the
+   subject of it. */
+body:not(.kiosk) .idle-eye {
+  width: min(calc(190 * var(--u)), 38vmin); aspect-ratio: 1;
+  background: var(--green); opacity: .7;
+  -webkit-mask: url("/static/eye.png") center / contain no-repeat;
+  mask: url("/static/eye.png") center / contain no-repeat;
+  margin-bottom: calc(6 * var(--u));
+}
+body:not(.kiosk) .idle-what, body:not(.kiosk) .idle-lost {
+  font-size: calc(15 * var(--u)); letter-spacing: .24em; text-transform: uppercase;
+}
+body:not(.kiosk) .idle-what { color: var(--green); }
+body:not(.kiosk) .idle-lost { color: var(--red); }
+body:not(.kiosk) .idle-do { color: var(--mid); font-size: calc(14 * var(--u)); line-height: 1.5;
+                            max-width: calc(320 * var(--u)); }
+body:not(.kiosk) .idle-then, body:not(.kiosk) .idle-gone {
+  color: var(--dim); font-size: calc(12 * var(--u)); letter-spacing: .1em; line-height: 1.5;
+  max-width: calc(320 * var(--u));
+}
+/* The one thing a blank screen cannot tell you apart: nothing running, and nothing answering.
+   "Nothing running" is a claim about Cyclops, and a screen that cannot reach him is in no
+   position to make it - so the whole block swaps rather than only the line underneath.
+
+   body.offline is already set by status.js when its own poll fails, so this costs no second
+   check and no state of its own. */
+body:not(.kiosk):not(.offline) .idle-lost,
+body:not(.kiosk):not(.offline) .idle-gone { display: none; }
+body:not(.kiosk).offline .idle-what,
+body:not(.kiosk).offline .idle-do,
+body:not(.kiosk).offline .idle-then { display: none; }
+body:not(.kiosk).offline .idle-eye { opacity: .25; }
 /* Who is talking, and the fact that he still is. The head stays put while the lines scroll under
    it: on a screen you are glancing at, "is this still running" is the question, and an answer
    that scrolls away is not an answer. */

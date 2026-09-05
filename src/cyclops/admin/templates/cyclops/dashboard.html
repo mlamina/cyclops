@@ -208,7 +208,22 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
   {% endcomment %}
   <main class="view live" id="v-live">
     <div class="livehead">
-      <span class="livetitle" id="livetitle">nothing running</span>
+      <span class="livetitle" id="livetitle"></span>
+    </div>
+    {% comment %}
+    What this screen is when there is nothing on it, which on a companion is most of the day. It
+    is the boot mark - the same eye the panel comes up with, and the same one on the front of the
+    box - saying the screen is awake and pointed at Cyclops, plus the one thing you would do next.
+    Markup rather than a string in app.js because none of it changes; the script only shows and
+    hides it, and swaps which of the last two lines is true.
+    {% endcomment %}
+    <div class="idle" id="liveidle">
+      <div class="idle-eye"></div>
+      <span class="idle-what">nothing running</span>
+      <span class="idle-do">press the button on Cyclops to start a session</span>
+      <span class="idle-then">it appears here as he talks</span>
+      <span class="idle-lost">not answering</span>
+      <span class="idle-gone">this screen cannot reach Cyclops &mdash; it picks up again on its own</span>
     </div>
     <div class="talk livetalk" id="livetalk"></div>
   </main>

@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
+import re
 
 import pytest
 
@@ -225,3 +227,33 @@ def test_an_old_log_still_reads_back_without_a_url(sessions) -> None:
                       "what": "photo", "file": "16-18-02_you.jpg", "shown": True}])
     line = library.records(sessions, folder.name)[0]
     assert "url" not in line
+
+
+# ------------------------------------------------------------------ the files the page asks for
+
+
+def test_every_file_the_page_asks_for_is_one_the_server_will_hand_over() -> None:
+    """The failure this catches is silent, and the idle screen is why it now matters.
+
+    ``views.static_file`` serves from a flat allow-list, so a file that is not in ``OURS`` is a
+    404 - no error anywhere, just a stylesheet that never arrives or, on the screen this feature
+    added, a mark that never paints. The panel has no address bar and no console, and the kiosk
+    caches ``immutable``, so nobody finds out until somebody walks over to the bench.
+
+    Both directions: nothing is referenced that is not served, and nothing is served that is not
+    on disk (``_asset_version`` hashes the list at import, and a missing file quietly hashes as
+    nothing).
+    """
+    static = pathlib.Path(views.STATIC_DIR)
+    missing = [name for name in views.OURS if not (static / name).is_file()]
+    assert not missing, f"in OURS but not on disk: {missing}"
+
+    page = (
+        pathlib.Path(views.__file__).parent / "templates/cyclops/dashboard.html"
+    ).read_text()
+    css = "\n".join((static / name).read_text() for name in views.OURS if name.endswith(".css"))
+    # A name with an extension, so the prose in these files - which says "admin/static/." and
+    # "static/*.css" while explaining itself - is not read as a request for a file.
+    asked = set(re.findall(r"/static/([A-Za-z0-9_-]+\.[A-Za-z0-9]+)", page + css))
+    assert asked, "nothing matched - the reference shape changed and this test stopped looking"
+    assert not (asked - set(views.OURS)), f"asked for but never served: {asked - set(views.OURS)}"

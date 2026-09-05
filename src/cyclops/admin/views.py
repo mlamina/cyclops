@@ -67,6 +67,11 @@ OURS = {
     "status.js": "text/javascript; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "panel.js": "text/javascript; charset=utf-8",
+    # The boot mark, for the one screen that has nothing else to show: a companion waiting for a
+    # session to start. Derived from assets/eye.png, which is the same mark drawn white on black -
+    # its luminance moved into the alpha channel, so CSS can use it as a mask and paint it in the
+    # page's own green rather than in whatever colour the file happened to be.
+    "eye.png": "image/png",
 }
 STATIC_FILES = OURS
 

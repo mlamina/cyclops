@@ -48,6 +48,7 @@ const talk = document.getElementById('talk');
 const liveTalk = document.getElementById('livetalk');
 const liveTitle = document.getElementById('livetitle');
 const liveBar = document.getElementById('livebar');
+const liveView = document.getElementById('v-live');
 // The panel navigates with four tabs and every other client with one menu (see dashboard.html).
 // Only one of these is ever on the page, and the code below simply drives whichever it found.
 const tabs = [...document.querySelectorAll('.tab')];
@@ -448,12 +449,23 @@ function prepend(el, html) {
 // a whole goes above everything already on screen, so reversing the block is the whole of it.
 const newestFirst = (records) => records.slice().reverse().map(line).join('');
 
+// What the screen is between sessions: the boot mark and what to press, centred, instead of a
+// named session with nothing under it. The markup is in the template and never changes - this
+// only says which of the two the screen is. Idle is *nothing to show*, not merely nothing
+// running: a conversation that ended a minute ago is still worth reading, so it keeps the screen.
+function liveIdle(on) {
+  if (!liveView) return;
+  if (on) liveView.dataset.idle = '1'; else liveView.removeAttribute('data-idle');
+}
+
 function liveHead(title, on) {
   if (liveTitle) liveTitle.textContent = title;
-  if (!liveBar) return;
-  // The header's own bottom rule, lit and travelling. Nothing to write and nothing to read: it
-  // is either moving or it is not there. See .livebar in lan.css.
-  if (on) liveBar.dataset.on = '1'; else liveBar.removeAttribute('data-on');
+  if (liveBar) {
+    // The header's own bottom rule, lit and travelling. Nothing to write and nothing to read: it
+    // is either moving or it is not there. See .livebar in lan.css.
+    if (on) liveBar.dataset.on = '1'; else liveBar.removeAttribute('data-on');
+  }
+  if (liveTalk) liveIdle(!on && !liveTalk.childElementCount);
 }
 
 async function liveTick(mine) {
@@ -472,7 +484,7 @@ async function liveTick(mine) {
       // from it and reset the screen through the ordinary branch below.
       if (!liveOver) {
         liveOver = true;
-        liveHead(liveName ? 'that session has ended' : 'nothing running', false);
+        liveHead(liveName ? 'that session has ended' : '', false);
       }
     } else {
       liveOver = false;
@@ -498,6 +510,8 @@ async function liveTick(mine) {
         prepend(liveTalk, newestFirst(s.records));
       }
       liveHeld = s.n;
+      // He is up but has not been spoken to yet. Not the idle screen - that one says "press the
+      // button", and the button has been pressed.
       if (!liveTalk.childElementCount) {
         liveTalk.innerHTML = '<div class="empty">he is listening; nothing said yet</div>';
       }
@@ -514,7 +528,10 @@ async function liveTick(mine) {
 function showLive() {
   if (!liveTalk) return;   // the panel has no such screen
   stopLive();
-  liveHead('nothing running', false);
+  // Opened on the idle screen rather than on an empty transcript, because until the first poll
+  // lands that is the honest answer and it is the commoner one.
+  liveIdle(true);
+  liveHead('', false);
   liveTick(liveGen);
 }
 
