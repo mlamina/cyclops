@@ -70,7 +70,18 @@ const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
   li { margin: 0.15em 0; }
   /* An <svg> with no width attribute is 300x150 by default, and one with a viewBox and no bounds
      overflows the screen. Both are the model's likeliest mistake, and both stop here. */
-  svg { max-width: 80vw; max-height: 60vh; }
+  svg { max-width: 80vw; max-height: 60vh; fill: none; stroke: currentColor; }
+  /* ...and this is the likeliest mistake of all, seen the first time one was asked for a sketch.
+     A model drawing SVG writes stroke="black", because line art is a thing you do on paper. On a
+     #050f0a screen that lands invisible - the drawing was there, correct, and unlit.
+
+     So black is read as "I did not choose a colour" rather than as a colour, and becomes his own
+     green. Any other colour it names is left exactly as asked, which is the whole point of the
+     attribute selector: a red bar stays red. Presentation attributes lose to any CSS rule that
+     matches the element itself, which is why these have to name the shapes and not just <svg>. */
+  svg [stroke="black"], svg [stroke="#000"], svg [stroke="#000000"] { stroke: currentColor; }
+  svg [fill="black"], svg [fill="#000"], svg [fill="#000000"] { fill: currentColor; }
+  svg text { fill: currentColor; stroke: none; }
 </style>
 `;
 const SCRATCHPAD_PAINT_MS = 500;  // long enough for a document with no subresources; see scratchpad() below

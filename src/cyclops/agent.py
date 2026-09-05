@@ -222,7 +222,13 @@ SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
                     "elements. A number is '<h1>25 Nm</h1>'. Steps are an <ol> of short <li>. "
                     "You may use <style> or inline style= to override anything. Emoji are just "
                     "characters and can go anywhere. Scripts do not run and nothing is loaded "
-                    "from the network, so images must be inline SVG rather than a src."
+                    "from the network, so images must be inline SVG rather than a src. "
+                    "The scratchpad is near-black, so NEVER draw in black - an SVG with "
+                    "stroke='black' on it is a drawing nobody can see. Leave stroke and fill "
+                    "off your shapes entirely and they come out in his own green; name a "
+                    "colour only when the colour means something. "
+                    "Do not write instructions on it either - no 'tap to clear', no 'press to "
+                    "close'. They already know, and it is a line of your screen spent saying so."
                 ),
             },
         },

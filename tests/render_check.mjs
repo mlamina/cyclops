@@ -101,6 +101,26 @@ const CASES = [
     wantTall: { sel: 'h1', px: 48 },
   },
   {
+    name: 'sketch',
+    kind: 'scratchpad',
+    // Verbatim, as Cyclops drew it the first time he was asked for a sketch on 2026-09-05. Every
+    // shape carries stroke="black", because line art is a thing you do on paper - and on a
+    // #050f0a screen the whole drawing landed invisible. It was correct and unlit.
+    payload: { scratchpad:
+      '<h1>Made-up sketch</h1><svg viewBox="0 0 200 120">' +
+      '<rect x="10" y="80" width="180" height="25" fill="none" stroke="black"/>' +
+      '<circle cx="57.5" cy="15" r="7" fill="none" stroke="black"/>' +
+      '<rect x="125" y="35" width="45" height="45" fill="none" stroke="#c33"/></svg>' },
+    wantPhotoClass: true,
+    // The rescue, and its limit: black becomes his own green, and a colour he actually chose is
+    // left alone. Both halves matter - the second is why this is an attribute selector and not a
+    // blanket `svg * { stroke: currentColor }`.
+    wantStroke: [
+      { sel: 'rect[stroke="black"]', is: 'rgb(86, 255, 140)' },
+      { sel: 'rect[stroke="#c33"]', is: 'rgb(204, 51, 51)' },
+    ],
+  },
+  {
     name: 'hostile',
     kind: 'scratchpad',
     // What the model will write by accident sooner or later, and what has to happen to it. The
@@ -161,6 +181,14 @@ for (const item of CASES) {
       if (!got.frame) bad.push('the scratchpad never reached the stage as an iframe');
       if (got.clickThrough === false) {
         bad.push('the frame takes the press itself, so nothing can put the scratchpad away');
+      }
+      for (const want of item.wantStroke || []) {
+        const got = await page.frameLocator('#stage iframe.scratchpad').locator(want.sel).first()
+          .evaluate((el) => getComputedStyle(el).stroke).catch(() => null);
+        if (got !== want.is) {
+          bad.push(`${want.sel} strokes ${got}, wanted ${want.is}` +
+                   ' - a drawing nobody can see is the failure this case exists for');
+        }
       }
       if (item.wantTall) {
         // Read through the frame tree and not page.evaluate, because the frame is sandboxed. This
