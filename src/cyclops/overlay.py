@@ -464,9 +464,10 @@ DIAL_LABEL = 0.66  # where the reading sits in the gap under the hub, clear of t
 # The reticle: four arcs on the lens axis and nothing else. It was a cross with graduations for
 # about an hour, which is exactly as long as it took somebody to say it looked like a gun sight -
 # and they were right. A broken ring says "lens" and says nothing else.
-RETICLE_R = 0.135  # 65 px at 480
-RETICLE_ARC = 58.0  # degrees of ring per quadrant; the rest is gap
+RETICLE_R = 0.112  # 54 px at 480
+RETICLE_ARC = 44.0  # degrees of ring per quadrant; the rest is gap
 RETICLE_TILT = 45.0  # ...and the gaps land on the axes rather than the diagonals
+RETICLE_W = 1.4  # of a hairline: short arcs need the weight back to read as drawn marks
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -1261,8 +1262,9 @@ class Overlay:
         is built once so the tile costs nothing at a frame.
         """
         r = max(8, round(RETICLE_R * self.height))
+        stroke = max(1.0, self.line * RETICLE_W)
         cx, cy = self.width // 2, self.height // 2
-        span = r + self.line * 2
+        span = r + round(stroke) * 2
 
         def paint(t: ImageDraw.ImageDraw) -> None:
             middle, reach = at(span), at(r)
@@ -1271,7 +1273,7 @@ class Overlay:
                 t.arc(
                     [middle - reach, middle - reach, middle + reach, middle + reach],
                     start=start, end=start + RETICLE_ARC, fill=linear(GREEN_MID, 195),
-                    width=round(wide(self.line)),
+                    width=round(wide(stroke)),
                 )
 
         layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
