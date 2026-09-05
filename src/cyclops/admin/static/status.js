@@ -81,7 +81,7 @@ if (barge) {
     // was for a moment is a switch you press twice.
     barge.setAttribute('aria-checked', on ? 'true' : 'false');
     barge.textContent = on ? 'ON' : 'OFF';
-    hint.textContent = on ? 'talk over Cyclops to cut in' : 'wait for Cyclops to finish';
+    hint.textContent = on ? 'talk over Cyclops to cut in' : 'tap the screen to cut in';
     try {
       await fetch('/barge-in', {
         method: 'POST',

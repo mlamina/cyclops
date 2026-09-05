@@ -513,6 +513,25 @@ class EchoGuard:
         self._margin = margin
         self._consec = 0
 
+    def cut(self) -> int:
+        """Stop playback on somebody's say-so rather than the room's. Returns ms already heard.
+
+        Deliberately *not* :meth:`_trigger`: it drops the buffer and stops there, leaving the
+        mic to the ordinary ``is_audible`` gate below. _trigger can afford to force the mic open
+        with ``_open_serial`` because of what it took to get there - the room was measured at
+        several times the predicted echo, so somebody is provably talking over the speaker and
+        the next block is theirs.
+
+        A tap proves nothing of the kind. It says only that a finger touched glass, and
+        :meth:`flush` cannot recall the audio already handed to the device: that goes on sounding
+        for AUDIBLE_TAIL_S, which is the whole reason that constant exists. Forcing the mic open
+        across it feeds Cyclops his own last words back as if they were yours, and he answers his
+        own echo - which is exactly what he did the first time this shipped. So the gate opens
+        when the room is actually quiet, a third of a second later, and not a moment sooner.
+        """
+        self._consec = 0  # any run of loud blocks belonged to the sentence just ended
+        return self._speaker.flush()
+
     def admit(self, block: bytes) -> list[bytes]:
         """Audio-thread hook: return the mic blocks to forward for this 20 ms input block."""
         if not self._half and self._margin is not None:

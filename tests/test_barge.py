@@ -112,3 +112,32 @@ def test_the_switch_lands_in_a_session_already_running(half_duplex: bool) -> Non
     assert live.admit(SILENCE) == [], "flipped off mid-sentence, the mic shuts on the next block"
     live.set_barge_in(8.0)
     assert live.barge_in_enabled
+
+
+def _tapped() -> tuple[EchoGuard, FakeSpeaker]:
+    """A guard with the switch off, mid-sentence, and the stand-in speaker it is watching."""
+    speaker = FakeSpeaker(True)
+    loop = asyncio.new_event_loop()
+    loop.close()
+    return EchoGuard(loop, speaker, half_duplex=True, margin_db=None), speaker
+
+
+def test_a_tap_does_not_open_the_mic_onto_a_speaker_still_sounding() -> None:
+    """The regression this pair exists for, and it is not a hypothetical one.
+
+    `cut` empties our buffer, but audio already handed to the device keeps coming out of the
+    speaker for AUDIBLE_TAIL_S. The first version of the tap forced the mic open across that
+    gap, so Cyclops's own last words went up as if they were yours - he answered his own echo,
+    and every sentence after a tap arrived chopped into fragments.
+    """
+    shut, _ = _tapped()
+    shut.cut()
+    assert shut.admit(SILENCE) == [], "he is still sounding; nothing of it may go up as you"
+
+
+def test_the_mic_opens_once_the_tap_has_made_the_room_quiet() -> None:
+    """And the other half: the wait is the tail and nothing longer."""
+    shut, speaker = _tapped()
+    shut.cut()
+    speaker.is_audible = False  # AUDIBLE_TAIL_S later: the room is genuinely quiet
+    assert shut.admit(SILENCE) == [SILENCE], "he was stopped; the next thing said must be heard"

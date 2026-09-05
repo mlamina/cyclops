@@ -1326,6 +1326,23 @@ class VoiceAgent:
             BARGE_IN_CONFIRM_S, self._reject_local_barge_in
         )
 
+    def stop_talking(self, played_ms: int) -> None:
+        """A finger on the glass stopped him. Playback is already cut; finish the job here.
+
+        :meth:`local_barge_in` without its confirming timer, and the missing timer is the point.
+        That one is there to ask the server whether the room really spoke, so a trigger that was
+        only echo can raise EchoGuard's bar. Nobody spoke here. Arming it would have
+        ``_reject_local_barge_in`` punish the room for a gesture it never made.
+        """
+        item_id = self._current_item_id
+        if item_id is None:
+            return  # nothing of his is in the air; the tap has nothing to take back
+        self._current_item_id = None
+        self._dead_item_ids.add(item_id)
+        self._end_assistant_line()
+        self._log(f"(stopped by a tap after {played_ms} ms)")
+        self._spawn(self._truncate_and_cancel(item_id, played_ms))
+
     async def _truncate_and_cancel(self, item_id: str, played_ms: int) -> None:
         if played_ms > 0:
             await self.conn.conversation.item.truncate(

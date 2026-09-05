@@ -601,7 +601,11 @@ filesystem to upload from and no file picker worth opening at 800×480. The slid
 does not spend a fifth of the panel's 480 px carrying controls you did not come for.
 
 INTERRUPT is barge-in: **ON** and you can talk over Cyclops to cut it off, **OFF** and the mic is
-shut until it has finished. It is a note on the card (`~/.cache/cyclops/barge-in`), which the
+shut until it has finished — or until you tap the panel. With the switch off, a press anywhere
+that is not the knob, his eye or the heat gauge stops him mid-word and opens the microphone on the
+spot; those three are under 6% of the screen between them, so the gesture is "anywhere", and it
+costs the controls nothing because it is only reached by a press that missed all of them. It is a
+note on the card (`~/.cache/cyclops/barge-in`), which the
 kiosk reads twice a second and hands to the session holding the microphone — so flipping it lands
 on the next 20 ms of audio, not at the end of the turn, which is the point: you reach for it
 having just been cut off by your own voice. Closing the page returns it to

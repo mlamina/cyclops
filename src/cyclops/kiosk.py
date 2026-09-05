@@ -665,6 +665,11 @@ class Kiosk:
         turn nothing on it was worth a second event; they are now read while - and only while -
         a finger that landed on the knob is still down, so the level follows it and you hear
         where you are rather than having to look.
+
+        The fourth target is everything that is not the other three, and it only exists while
+        INTERRUPT is off: a press on the bare picture stops him talking. It is deliberately the
+        fall-through rather than a box of its own, so it can never take a tap away from a
+        control - it is only ever reached by one that missed all of them.
         """
         if self.overlay is None:
             return
@@ -725,6 +730,14 @@ class Kiosk:
             # numbers on it. The tap opens that screen rather than the recordings his face opens.
             self._press(HEAT)
             self._open_admin(SYSTEM_SCREEN)
+        elif self._barge_margin is None:
+            # None of the three, which is most of the panel: "stop, my turn". With INTERRUPT off
+            # the mic is held shut for as long as he is audible, so a finger on the picture is
+            # the only way back into a sentence you have heard enough of. Gated on the switch
+            # because with INTERRUPT on you simply talk over him, and a second answer to a
+            # settled question is one more rule to carry. Nothing sounds and nothing lights:
+            # what this does is make the room quiet, which no cue could say more plainly.
+            self.controller.interrupt()
 
     def _lifted(self, x: int, y: int) -> None:
         """A finger coming off the glass. His face, and the knob, have something left to do here.

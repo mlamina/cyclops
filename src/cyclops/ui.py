@@ -172,6 +172,36 @@ class SessionController:
             return False  # the loop closed in the moment between the guard and the call
         return True
 
+    def interrupt(self) -> bool:
+        """Stop what is being said now. False when there was nothing to stop.
+
+        The same shape as :meth:`show_photo` - snapshot under the lock, then dispatch - with one
+        difference worth the words: the audio is cut *here*, on the caller's thread, and only the
+        tidying up is handed to the loop. That is EchoGuard's own bargain (cut where you noticed,
+        finish on the loop), and it is what makes a tap feel like a switch rather than a request:
+        the sound goes with the finger, not a round trip later.
+
+        Called from the kiosk's mouse callback, where a press that missed all three controls
+        means "stop, my turn".
+        """
+        with self._lock:
+            loop, agent = self._loop, self._agent
+            guard, speaker = self._guard, self._speaker
+        if loop is None or agent is None or guard is None or speaker is None:
+            return False
+        if loop.is_closed() or not loop.is_running():
+            return False
+        if not agent.ready.is_set() or not agent.connected:
+            return False
+        if not speaker.is_audible:
+            return False  # he is not talking, so the tap has nothing to interrupt
+        played_ms = guard.cut()
+        try:
+            loop.call_soon_threadsafe(agent.stop_talking, played_ms)
+        except RuntimeError:
+            return False  # the loop closed between the guard and the call
+        return True
+
     def join(self, timeout: float) -> None:
         """Wait for a stopping session to finish - it may still be muxing its recording."""
         thread = self._thread
