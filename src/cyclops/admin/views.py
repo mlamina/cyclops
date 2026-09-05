@@ -31,6 +31,7 @@ from ..config import (
     DIAGRAM_FILE,
     DIAGRAM_SHOWN_FLAG,
     PAGE_ALIVE_FLAG,
+    PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
     ConfigError,
     Settings,
@@ -289,7 +290,23 @@ def panel(request: HttpRequest) -> JsonResponse:
     if _is_local(request):  # a laptop on the LAN must not answer for the kiosk's own browser
         _note_alive()
     found = _pending()
-    return JsonResponse({"diagram": found["id"] if found else None})
+    return JsonResponse({"diagram": found["id"] if found else None, "screen": _screen()})
+
+
+def _screen() -> str | None:
+    """Which screen the panel wants this page on, or None if it has not said - PAGE_SCREEN_FILE.
+
+    An ``exists`` first and a read only when there is something to read, the way :func:`_note_alive`
+    keeps its own cost down: the note is written for the half-second either side of a reveal and is
+    absent the rest of the day, and this is asked two and a half times a second for as long as the
+    browser is warm, which is all of it.
+    """
+    try:
+        if not PAGE_SCREEN_FILE.exists():
+            return None
+        return PAGE_SCREEN_FILE.read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
 
 
 def diagram(request: HttpRequest, ident: str) -> JsonResponse:

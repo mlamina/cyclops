@@ -16,8 +16,8 @@ nothing but picture and a four-arc reticle on the lens axis.
 
 What made that affordable was giving up the words. SNAP, WAKE UP and GO TO SLEEP were what
 forced the controls into a row across the bottom: a cell has to be as wide as its label. Two
-glyphs and a face need a disc each, and a disc can go in a corner. What the words used to say is
-said by the microphone filling in while he is up, by the border's colour, and by the line under
+dials and a face need a disc each, and a disc can go in a corner. What the words used to say is
+said by the ring in the button, by the border's colour, and by the line under
 the picture - which can say "searching the web…" where a word could only say SEARCH. The state
 word went the same way and for the same reason: three things were already saying it better.
 
@@ -40,12 +40,14 @@ opens what the box has kept, because what you ask a face is what it remembers.
 
 His bracket's rail leaves the straight, goes round him and comes back. That shoulder is the
 join: it is what makes him part of the bracket rather than a badge sitting on it, and it is why
-his corner is the big one - a face wants room, and the two switches opposite are bolted straight
-through their rail and take a third of the space. While he is asleep the only things on this
-panel that move are his own breath and the microphone: no ring turns, nothing blinks, no readout
-changes. That is what makes any of the rest of it read as awake - the *mechanism* stopping,
-rather than the creature holding its breath. The switch breathes because it is the only control
-left to press, and a control nobody finds is worse than one that beckons.
+his corner is the big one - a face wants room, and the two instruments opposite are bolted
+straight through their rail and take a third of the space. Those two were a shutter and a
+microphone until the box grew a button of its own, which does both without anybody having to
+find a 12 mm target on glass; they are a volume knob and a heat gauge now, which is the pair of
+things this panel could not otherwise be told or asked. While he is asleep the only thing on
+this panel that moves is his own breath: no ring turns, nothing blinks, no readout changes, and
+nothing beckons - there is nothing left in that corner to press. That is what makes any of the
+rest of it read as awake: the *mechanism* stopping, rather than the creature holding its breath.
 
 Everything that holds still while the state does - the halo, the brackets and their bolts, the
 reticle, the pod's tags, the switches at rest - is built once and cached, keyed on the state. A
@@ -74,6 +76,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .eye import EyeEngine, Mood, at, breath, linear, mix, smoothed, wide
+from .stats import HOT_C, WARN_C, temp_band, temp_percent
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
     "idle",
@@ -173,6 +176,10 @@ HALOS = {
 # it murmurs. Unlike REC it is not red at the first step: red is the fault colour here, and a warm
 # Pi is not yet a broken one.
 HEAT_LAMP = {"hot": AMBER, "throttled": RED}
+# ...and the gauge's own three, which are a band wider than the lamp's on purpose: the lamp is an
+# interruption and only lights once the board is taking something away, and the gauge is a thing
+# you went and looked at, so it may go amber where cyclops.stats.temp_band does.
+HEAT_INK = {"ok": GREEN, "warn": AMBER, "hot": RED}
 HEAT_WORD = "HOT"
 
 # ... and the resting line underneath: what is true about a state when nothing finer is known.
@@ -405,29 +412,60 @@ EYE_SEAT = 0.5
 EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on purpose: this
 # one sits over the middle of the picture, and a porthole you cannot see through is a hole
 
-# The two switches, bolted straight through the small bracket's rail rather than sitting in a
-# plate of their own. Neither has a word: a glyph that needs a label is the wrong glyph, and the
+# The two instruments, bolted straight through the small bracket's rail rather than sitting in a
+# plate of their own. Neither has a word: a dial that needs a label is the wrong dial, and the
 # words were what forced the controls into a row across the bottom in the first place.
 #
-# Shutter nearer the middle of the panel, microphone nearer the corner, so the left-to-right
-# order the tab row taught still holds on a diagonal.
+# They used to be a shutter and a microphone. The button beside the panel now does both - a tap
+# is the photo, a hold is the session - so two of the best-placed targets on the glass were a
+# second copy of a control your hand can already find without looking. These are the two things
+# the panel could not otherwise say or be told: how loud he is, and how hot the board is.
+#
+# The knob nearer the middle of the panel and the gauge nearer the corner, because the one you
+# reach for should be the one a thumb gets to first and the one you only read can sit further out.
 BTN_R = 36.0
 BTN_SPACING = 52.0  # along the ramp, either side of its middle
-SWITCHES = ("shutter", "wake")
+VOLUME, HEAT = "volume", "heat"
+SWITCHES = (VOLUME, HEAT)
+
+# Both dials sweep 270 degrees with the gap at the bottom, which is where the gap is on every knob
+# anybody has ever turned and every gauge anybody has ever read. PIL measures clockwise from three
+# o'clock, so that is 135 (down-left, empty) through the top and round to 405 (down-right, full),
+# and the bottom quarter is left free for the reading to sit in.
+DIAL_FROM = 135.0
+DIAL_SWEEP = 270.0
+DIAL_TICKS = 7  # graduations across the sweep, both ends included
+# The scale runs well inside the bezel, with the graduations between the two: a green arc drawn up
+# against a green chamfer is a green chamfer, and that is what the first cut of this looked like.
+DIAL_TRACK = 0.64
+DIAL_TICK_IN = 0.75
+DIAL_TICK_OUT = 0.87
+DIAL_HAND = 0.50  # the pointer's tip, kept short of the reading printed in the gap below it
+DIAL_HUB = 0.15
+VOLUME_STEP = 5  # what one setting of the knob is worth, matching the page's own slider
+
+# What a drag on the knob opens. A dial is the right shape to *read* a level off and the wrong one
+# to set with a finger: the hand covering it covers the pointer, the number and the scale at once,
+# which is the whole of what you came to look at. So the drag leaves the disc behind and becomes a
+# column standing well clear of it - the value is where your finger is, and nothing is asked of
+# the speaker until you let go, so a grab that landed somewhere you did not mean costs nothing.
+SLIDER_W = 34.0  # the track, in reference pixels
+SLIDER_TOP = 54.0  # its top edge, down from the panel's own
+SLIDER_GAP = 12.0  # ...and between its foot and the knob the finger came off
+SLIDER_RUNGS = 100 // VOLUME_STEP  # one rung per setting, so the step you get is the step you see
+SLIDER_RUNG_GAP = 0.30  # of a rung, left dark between one and the next
+SLIDER_THUMB = 5.0  # the bar across the top of what is lit: the indicator proper
+SLIDER_EAR = 7.0  # ...and how far it stands out either side of the track, so it reads as a grip
+DIAL_OFF = 0.95  # how far an unlit stretch of scale is stirred out of the screen's own black
+DIAL_LABEL = 0.66  # where the reading sits in the gap under the hub, clear of the pointer's
+# reach: a needle at either end of the sweep points down into that quarter, and a number it
+# grazes on the way past is a number you read twice to be sure of
 
 # The reticle: four arcs on the lens axis and nothing else. It was a cross with graduations for
 # about an hour, which is exactly as long as it took somebody to say it looked like a gun sight -
 # and they were right. A broken ring says "lens" and says nothing else.
 RETICLE_R = 0.1625  # 78 px at 480
 RETICLE_ARC = 68.0  # degrees of ring per quadrant; the rest is gap
-
-# The other thing that moves on a sleeping panel, his breath being the first. Everything else
-# holds still - that stillness is what makes awake read as awake - but the button that ends it may
-# say so, because a control that does nothing until you find it is worth pointing at. A slow
-# swell, not a flash: this is an invitation, and a panel blinking at you across a workshop is an
-# alarm.
-WAKE_PERIOD_S = 2.9  # seconds a breath takes, and not a multiple of any other on this panel
-WAKE_GLOW = 1.0  # how far the glyph and its bezel travel towards the colour he will be
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -438,7 +476,6 @@ METER_SEGMENTS = 8  # steps in the signal bar
 # are mixes rather than alphas on purpose - see _mix: drawing them translucently would not dim
 # them, it would open a window onto whatever the camera is pointed at.
 METER_OFF = 0.45  # an unlit signal segment
-RING_MIX = 0.55  # the ring around the live microphone
 STEEL = 0.58  # how far the rail's body is stirred towards SCREEN out of GREEN_MID
 
 # ---- the power menu ----
@@ -689,9 +726,9 @@ class Rect:
 class Hitboxes:
     """Where the interactive elements ended up, for the mouse callback to test against."""
 
-    shutter: Rect
-    eye: Rect  # the middle cell, which is his face and opens what the box has kept
-    wake: Rect
+    volume: Rect  # the knob, and the only control on this panel you turn rather than press
+    eye: Rect  # his face, which opens what the box has kept
+    heat: Rect  # the gauge, which is read - and, tapped, opens the screen the rest of it is on
 
 
 def halo_alpha(width: int, height: int) -> np.ndarray:
@@ -847,11 +884,23 @@ class Overlay:
 
         # ...and the two switches, sunk into the small bracket's rail rather than parting it.
         self.btn_r = max(8, px(BTN_R))
+        self._dial_stroke = max(3.0, 3.6 * scale)  # the scale both dials are read against
         spacing = max(self.btn_r + 4, px(BTN_SPACING))
         self.switches = {
             name: self.brackets["br"].on_ramp(offset)
             for name, offset in zip(SWITCHES, (-spacing, spacing), strict=True)
         }
+        # ...and the column a drag on the knob opens, standing in the knob's own column so that a
+        # hand travelling up from it stays beside what it is setting rather than across the panel.
+        # It stops short of the disc it came out of: the two are one control, and a track running
+        # into the bezel would read as a thermometer bolted to a dial.
+        knob_x, knob_y = self.switches[VOLUME]
+        track_w = max(8, px(SLIDER_W))
+        track_top = max(2, px(SLIDER_TOP))
+        track_foot = round(knob_y - self.btn_r - max(2, px(SLIDER_GAP)))
+        self.slider = Rect(round(knob_x - track_w / 2), track_top, track_w,
+                           max(track_w, track_foot - track_top))
+        self._rung = self.slider.h / SLIDER_RUNGS
 
         # What makes the status line a bubble rather than a slab is the tail, and only the tail.
         # The corners were rounded for a while and it was the wrong borrowing: every other edge on
@@ -904,6 +953,11 @@ class Overlay:
         # easing out of, which is why it is built here and not per frame.
         self.engine = EyeEngine(self.eye_r, self.line, SCREEN, MOODS[IDLE])
         self._bases: dict[tuple[str, bool, str], Image.Image] = {}
+        # The moving half of each instrument, one tile per appearance it can have. A level moves
+        # when a finger moves it and a temperature moves once every five seconds, so at 25 frames
+        # a second almost every frame asks for the tile the frame before it already built.
+        self._knobs: dict[tuple[int | None, bool], Image.Image] = {}
+        self._needles: dict[tuple[int | None, str, bool], Image.Image] = {}
         self._dots_w = self.font_caption.getlength("." * CAPTION_DOTS)
         self.hitboxes = self._layout()
         self.menu_card, self.menu_cells = self._menu_layout()
@@ -932,9 +986,9 @@ class Overlay:
         corner shared by two controls would silently belong to whichever was tested first.
         """
         return Hitboxes(
-            shutter=self._disc(self.switches["shutter"], self.btn_r),
+            volume=self._disc(self.switches[VOLUME], self.btn_r),
             eye=self._disc(self.eye, self.eye_r),
-            wake=self._disc(self.switches["wake"], self.btn_r),
+            heat=self._disc(self.switches[HEAT], self.btn_r),
         )
     def _menu_layout(self) -> tuple[Rect, dict[str, Rect]]:
         """The power menu's card and its rows, sized off the panel like everything else here.
@@ -1071,6 +1125,12 @@ class Overlay:
         for bracket in self.brackets.values():
             self._draw_bracket(layer, bracket)
         self._draw_reticle(layer)
+        # The two dial faces, which used to be baked once per state with the switches they
+        # replace. Neither wears the state's accent - a volume and a board temperature are true
+        # whether or not anybody is talking to him - so neither has any business being rebuilt
+        # every time the state changes, and they belong here with the rail they are bolted to.
+        for name in SWITCHES:
+            self._draw_instrument(layer, name)
         return layer
 
     def _chrome(self, tags: int) -> Image.Image:
@@ -1243,8 +1303,6 @@ class Overlay:
 
         d = ImageDraw.Draw(image)
         self._bake_header(d, state, recording, heat)
-        for name in SWITCHES:
-            self._draw_switch(d, name, state, halo, pressed=False)
 
         # The state light, falling inwards from the border over everything drawn so far - a tube
         # blooms in front of what it is showing, not behind it. It reaches about 13 px at 480,
@@ -1383,6 +1441,9 @@ class Overlay:
         heat: str = "",
         hold: float = 0.0,
         menu: bool = False,
+        volume: int | None = None,
+        temp_c: float | None = None,
+        sliding: bool = False,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -1392,10 +1453,15 @@ class Overlay:
         without a clock - the same shape as ``flash``, which the kiosk has always computed.
 
         Almost nothing here moves while he is asleep, and that is deliberate and half the
-        design: no ring turns, the eye stays shut, the border holds still, the caption stops
-        breathing and the readouts have nothing to count. What is left is his breath and the
-        microphone - the creature, and the way out of him. Against a panel that was quietly
-        pulsing whatever it was doing, an awake one that pulses says nothing.
+        design: the eye stays shut, the border holds still, the caption stops breathing and the
+        readouts have nothing to count. What is left is his breath and two instruments telling
+        the truth about a box nobody is talking to. Against a panel that was quietly pulsing
+        whatever it was doing, an awake one that pulses says nothing.
+
+        ``volume`` is the level on the sink, 0 to 100, and ``temp_c`` the board's temperature -
+        both ``None`` where the platform cannot say, which the dials draw as not reading rather
+        than as reading nothing. While ``sliding`` the level is the one *under the finger* rather
+        than the one on the sink: the column is a question, and it is only answered on the lift.
 
         ``hold`` is how far a finger is through the long press on his face, 0 to 1, and ``menu``
         is whether that press has landed - the power menu, over everything else. The two are the
@@ -1409,16 +1475,13 @@ class Overlay:
         self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat))
         self._draw_caption(d, state, halo, detail, phase)
         held = pressed == "eye"
-        if pressed in SWITCHES and not held:
-            # Redrawn over the switch the base has at rest: an inverted control is the only
-            # feedback a screen with no travel can give, and it lasts a handful of frames.
-            self._draw_switch(d, pressed, state, halo, pressed=True)
-        # After the pressed switch, not before it: the ring used to be drawn, painted over by an
-        # inverted cell and then drawn again in ink. One order, one draw, one colour.
-        if awake(state):
-            inverted = pressed == "wake"
-            ring = mix(halo, INK, RING_MIX) if inverted else mix(SCREEN, halo, 1.0 - RING_MIX)
-            self._draw_ring(d, ring, level)
+        # The pointers, over the faces the chrome laid down once. Neither inverts under a thumb
+        # the way the switches here used to: you do not press an instrument, you turn one and
+        # read the other, so the knob answers a finger by going white under it and the gauge
+        # answers the tap that opens its screen the same way.
+        self._draw_hands(layer, d, volume, temp_c, pressed)
+        if sliding and volume is not None:
+            self._draw_slider(d, volume)
         # Him, last of everything in his corner. He is the one control that never inverts under
         # a thumb: a face in photographic negative is not the same face, and half of him is over
         # the picture anyway, where there is nothing to invert. He acknowledges a tap by coming
@@ -1446,8 +1509,6 @@ class Overlay:
             # but the box is still working, and a panel that went stone still the moment you
             # pressed stop would look like it had stopped rather than like it was finishing.
             self._draw_rim(d, halo, phase)
-        elif state == IDLE and pressed != "wake":
-            self._draw_invite(d, phase)
         if menu:
             # Last of everything, because it is the only thing here that is asked a question
             # rather than told one: nothing behind it is live while it is up.
@@ -1661,100 +1722,6 @@ class Overlay:
         d.line([root, tip], fill=edge, width=line)
         d.line([tip, (x, bottom)], fill=edge, width=line)
 
-    # ---- the two switches ----
-
-    def _draw_switch(
-        self, d: ImageDraw.ImageDraw, name: str, state: str, halo: tuple, pressed: bool
-    ) -> None:
-        """One switch, sunk through the small bracket's rail: a well, a bezel, and a glyph.
-
-        Three appearances, and they have to stay distinguishable without a word between them.
-        At rest it is a dark well with a chrome bezel and a phosphor glyph. While a session is
-        up the microphone fills in and takes the state's colour, which is now the whole of what
-        that control says about itself - the row it came from said GO TO SLEEP, and there is
-        nothing to read here. Under a thumb it inverts, which is the only feedback a touchscreen
-        with no travel can give.
-
-        The bezel is drawn as five rings stepping down the rail's own profile rather than as one
-        stroke, so a switch reads as the same piece of metal the bracket is made of. It is the
-        cheapest way to make two discs sitting on a diagonal look bolted through it instead of
-        parked on it.
-        """
-        cx, cy = self.switches[name]
-        r = self.btn_r
-        live = name == "wake" and session_up(state)
-        ink = halo if name == "wake" and state != IDLE else GREEN_MID
-        glyph = INK if pressed else ink
-        d.ellipse([cx - r - 2, cy - r, cx + r + 2, cy + r + 3], fill=(0, 0, 0, 120))
-        d.ellipse([cx - r, cy - r, cx + r, cy + r],
-                  fill=(*halo, 255) if pressed else (*SCREEN, SWITCH_ALPHA))
-        if not pressed:
-            for step in range(5):
-                edge = r - step
-                d.ellipse([cx - edge, cy - edge, cx + edge, cy + edge],
-                          outline=(*self._rail_colour(1.0 - step / 6.0), 255), width=2)
-            d.ellipse([cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2],
-                      outline=(*mix(GREEN_MID, GREEN, 0.5), 255), width=2)
-        radius = round(self.btn_r * 0.5)
-        if name == "shutter":
-            self._glyph_aperture(d, round(cx), round(cy), radius, glyph)
-        else:
-            self._glyph_mic(d, round(cx), round(cy), radius + 2, glyph, state if live else IDLE)
-
-
-    def _glyph_aperture(self, d: ImageDraw.ImageDraw, cx: int, cy: int, r: int, c: tuple) -> None:
-        """Take a photo now. A six-bladed aperture, swept the one way round."""
-        stroke = max(2, round(3 * self.scale))
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=(*c, 255), width=stroke)
-        for blade in range(6):
-            outer = math.radians(blade * 60)
-            inner = outer + math.radians(60)  # the sweep is what makes it read as an iris
-            d.line(
-                [
-                    cx + r * math.cos(outer),
-                    cy + r * math.sin(outer),
-                    cx + r * 0.34 * math.cos(inner),
-                    cy + r * 0.34 * math.sin(inner),
-                ],
-                fill=(*c, 255),
-                width=stroke,
-            )
-
-    def _draw_invite(self, d: ImageDraw.ImageDraw, phase: float) -> None:
-        """Breathe the microphone switch, because it is the only thing left to do.
-
-        Drawn per frame over the switch the base baked at rest, which is why the well goes down
-        first and the bezel and the glyph on top of it: the base's own copies are underneath, and
-        this covers them.
-
-        It swells towards the accent rather than up the green, so the glyph and its bezel change
-        colour and not just brightness - which is the point of the accent everywhere else on this
-        panel, and here it is also a promise: the switch wears the colour the whole screen turns
-        when you press it. The one white thing on a sleeping panel is the way off it.
-
-        It matters more than it did. The control this replaces had the words WAKE UP written
-        across a third of the panel and the breath was a flourish on top of them; this one is a
-        36 px microphone in a corner with nothing written anywhere, so the breath is now most of
-        how anybody finds it.
-
-        Only while he is asleep proper. Not on a fault - a red panel with a green button
-        beckoning at you is a machine asking to be prodded rather than read, and the line under
-        the picture is where a fault has something to say.
-        """
-        cx, cy = self.switches["wake"]
-        r = self.btn_r
-        swell = breath(phase, WAKE_PERIOD_S)
-        colour = mix(GREEN_MID, WHITE, WAKE_GLOW * swell)
-        d.ellipse([cx - r, cy - r, cx + r, cy + r], fill=(*SCREEN, SWITCH_ALPHA))
-        for step in range(5):
-            edge = r - step
-            d.ellipse([cx - edge, cy - edge, cx + edge, cy + edge],
-                      outline=(*self._rail_colour(1.0 - step / 6.0), 255), width=2)
-        d.ellipse([cx - r + 2, cy - r + 2, cx + r - 2, cy + r - 2],
-                  outline=(*colour, 255), width=2)
-        self._glyph_mic(d, round(cx), round(cy), round(r * 0.5) + 2, colour, IDLE)
-
-
     def _draw_rim(self, d: ImageDraw.ImageDraw, halo: tuple, phase: float) -> None:
         """Re-stroke the border, sunk by one breath. Only ever called while a session is up.
 
@@ -1774,63 +1741,288 @@ class Overlay:
             width=self.line,
         )
 
-    def _draw_ring(self, d: ImageDraw.ImageDraw, colour: tuple, level: float) -> None:
-        """The ring around the microphone, which swells with your voice as the eye's pupil does.
+    # ---- the two instruments ----
 
-        Drawn per frame rather than baked with the switch, for the obvious reason that it is the
-        only part of that corner with anything to say between one frame and the next. It sits
-        *outside* the switch's own bezel now rather than inside its glyph: the switch is a disc
-        with a machined edge, and a ring drawn within that edge would be read as part of it and
-        would stop being a meter.
+    def _dial_angle(self, value: float) -> float:
+        """Where *value*, 0 to 1, lands on the sweep, in PIL's clockwise-from-three-o'clock."""
+        return DIAL_FROM + DIAL_SWEEP * max(0.0, min(1.0, value))
+
+    def slider_value(self, py: float) -> float:
+        """What a finger at height *py* is asking the volume column for, 0 to 1.
+
+        Absolute rather than relative: the level is *where your finger is*, not how far it has
+        moved from wherever it happened to land. Relative was tried on paper and does not survive
+        the geometry - the knob sits 70 px off the bottom edge of a 480 px panel, so a finger that
+        grabbed it at 95 per cent would have had three quarters of the range above it and no room
+        at all below.
+
+        Clamped at both ends, which is what makes the grab itself harmless: the finger starts
+        below the foot of the column and so starts at silence, and it is somewhere you have to
+        drag *away* from rather than a value anybody arrived at by accident.
         """
-        cx, cy = self.switches["wake"]
-        ring = round(self.btn_r + 5 * self.scale + 7 * self.scale * max(0.0, min(1.0, level)))
-        d.ellipse(
-            [cx - ring, cy - ring, cx + ring, cy + ring],
-            outline=(*colour, 255),
-            width=max(1, self.line // 2),
-        )
+        track = self.slider
+        return max(0.0, min(1.0, (track.bottom - py) / max(1.0, track.h)))
 
-    def _glyph_mic(
-        self, d: ImageDraw.ImageDraw, cx: int, cy: int, r: int, c: tuple, state: str
-    ) -> None:
-        """Start or stop the agent. Hollow while it is down, filled in while it is listening.
+    @property
+    def dial_span(self) -> int:
+        """Half-width of the tile either instrument is drawn into, in panel pixels."""
+        return round(self.btn_r) + max(2, round(4 * self.scale))
 
-        A microphone rather than the eye that was here: what this tab starts is a conversation,
-        and the camera it also opens is the shutter's business - the aperture beside this shows
-        Cyclops a picture, and the panel behind both is already a viewfinder. An eye over the word
-        SESSION said the wrong one of the two things this box does, and the eye is a face in the
-        opposite corner now rather than a control at all.
+    def _draw_instrument(self, layer: Image.Image, name: str) -> None:
+        """One dial face: the well it is sunk into, its machined bezel, and the scale round it.
 
-        Filled is the whole state indicator, and there is no word beside it any more, so it has
-        to carry the whole message at 36 px on a panel seen from across a bench: an outline that
-        gained a detail when live would read as neither.
+        All of it holds still for the life of the window - a bezel is the rail's own profile seen
+        end-on, and a scale is a scale - so it goes into the chrome once and is never drawn again.
+        What moves is a pointer, and that is a tile of its own; see :meth:`_hand`.
+
+        Drawn through :func:`eye.smoothed`, unlike the two switches this replaces, and that is
+        half of why it replaces them. Six concentric rings and a swept scale at 72 px is nothing
+        but curves, PIL anti-aliases none of it, and the pair of them were the last stepped edges
+        left on a panel whose eye, reticle and collar are all smooth.
         """
-        stroke = max(2, round(3 * self.scale))
-        live = awake(state)
+        cx, cy = (round(v) for v in self.switches[name])
+        span, r = self.dial_span, self.btn_r
 
-        # Four parts, and they must not overlap. The first cut of this made the head 1.84 r tall,
-        # which left the cradle and the stem drawn straight through it - at 32 px that reads as a
-        # bullet with fins rather than as a microphone. The head gets the top half and stops; the
-        # cradle's arms rise past its waist without reaching its crown; the stand has the rest.
-        half = round(r * 0.44)
-        head = [cx - half, cy - round(r * 0.94), cx + half, cy + round(r * 0.19)]
-        if live:
-            d.rounded_rectangle(head, radius=half, fill=(*c, 255))
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            middle = at(span)
+
+            def box(rad: float, drop: float = 0.0) -> list[float]:
+                reach = at(rad)
+                return [middle - reach, middle - reach + at(drop) - at(0.0),
+                        middle + reach, middle + reach + at(drop) - at(0.0)]
+
+            # Something dark under it first: a disc with a chamfer and no shadow is a drawing of a
+            # dial, and the same disc with something falling out from under it sits *in* the rail.
+            t.ellipse(box(r + 1, 2), fill=linear(SCREEN, 140))
+            t.ellipse(box(r), fill=linear(SCREEN, SWITCH_ALPHA))
+            # Rings stepping down the rail's own profile rather than one stroke, so a dial reads
+            # as the same piece of metal the bracket is made of. Half the stroke the switches here
+            # used to carry: those had a glyph filling the well and could afford a fat rim, and a
+            # dial cannot - the brightest ring inside a dial has to be its scale, or the eye reads
+            # the bezel as the reading and the scale as decoration on it.
+            for step in range(5):
+                t.ellipse(box(r - step * 0.9), outline=linear(self._rail_colour(1.0 - step / 6.0)),
+                          width=round(wide(1.2)))
+            t.ellipse(box(r - 1.2), outline=linear(mix(GREEN_MID, GREEN, 0.4)),
+                      width=round(wide(1.2)))
+            self._paint_scale(t, span, name)
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
+
+    def _paint_scale(self, t: ImageDraw.ImageDraw, span: int, name: str) -> None:
+        """The graduated arc a pointer is read against, inside the tile *name* is being drawn in.
+
+        The knob's is one dim track, because a volume has no regions - it is loud where you put
+        it. The gauge's is the board's own three: green until the clock starts being capped, amber
+        to where it is capped in earnest, red past that. Those two breaks are
+        :data:`~cyclops.stats.WARN_C` and :data:`~cyclops.stats.HOT_C` put through the very scale
+        the admin page's bar uses, so the panel and the page cannot drift apart by hand.
+        """
+        r = self.btn_r
+        middle, reach = at(span), at(r * DIAL_TRACK)
+        box = [middle - reach, middle - reach, middle + reach, middle + reach]
+        stroke = round(wide(self._dial_stroke))
+        if name == HEAT:
+            edges = (0.0, temp_percent(WARN_C) / 100.0, temp_percent(HOT_C) / 100.0, 1.0)
+            for (lo, hi), colour in zip(
+                zip(edges, edges[1:], strict=False), (GREEN_MID, AMBER, RED), strict=True
+            ):
+                t.arc(box, start=self._dial_angle(lo), end=self._dial_angle(hi),
+                      fill=linear(mix(SCREEN, colour, 0.85)), width=stroke)
         else:
-            d.rounded_rectangle(head, radius=half, outline=(*c, 255), width=stroke)
+            t.arc(box, start=DIAL_FROM, end=DIAL_FROM + DIAL_SWEEP,
+                  fill=linear(mix(SCREEN, GREEN_DIM, DIAL_OFF)), width=stroke)
+        for i in range(DIAL_TICKS):
+            angle = math.radians(self._dial_angle(i / (DIAL_TICKS - 1)))
+            cos_a, sin_a = math.cos(angle), math.sin(angle)
+            t.line(
+                [at(span + r * DIAL_TICK_IN * cos_a), at(span + r * DIAL_TICK_IN * sin_a),
+                 at(span + r * DIAL_TICK_OUT * cos_a), at(span + r * DIAL_TICK_OUT * sin_a)],
+                fill=linear(mix(SCREEN, GREEN_MID, 0.7)), width=round(wide(max(1.0, self.scale))),
+            )
 
-        # An arc over an ellipse wider than the head, so its arms end beside the head and not
-        # under it. Drawn 0 to 180, which is the lower half.
-        arms = round(r * 0.69)
-        d.arc(
-            [cx - arms, cy - round(r * 0.69), cx + arms, cy + round(r * 0.56)],
-            start=0, end=180, fill=(*c, 255), width=stroke,
+    def _hand(
+        self,
+        name: str,
+        value: float | None,
+        colour: tuple[int, int, int],
+        speaker: tuple[int, int, int] | None = None,
+    ) -> Image.Image:
+        """The half of an instrument that moves: a pointer, its hub, and what it has covered.
+
+        A tile rather than strokes on the frame, for the same reason the collar and the reticle
+        are tiles: these are curves and a diagonal, and both read as a staircase drawn flat. It is
+        cached on the value it is drawn for - see :meth:`_knob` and :meth:`_needle` - because a
+        level moves when a finger moves it and a temperature moves once every five seconds, so at
+        25 frames a second almost every frame wants the tile the last one had.
+
+        ``None`` is a dial with nothing behind it - no mixer, no thermal zone - and draws its hub
+        and no pointer at all, which is a gauge that is not reading rather than one reading zero.
+
+        Both caches are bounded by what a reading can be: a whole percent for the needle and a
+        step of the knob for the pointer, so a few hundred tiles of six thousand pixels is the
+        worst either can come to. Against the per-state bases in :meth:`_base`, which are
+        full-screen, that is not a number worth managing.
+        """
+        span, r = self.dial_span, self.btn_r
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            middle = at(span)
+
+            def hub(rad: float) -> list[float]:
+                reach = at(rad)
+                return [middle - reach, middle - reach, middle + reach, middle + reach]
+
+            if value is not None:
+                if name == VOLUME:
+                    # What the knob has been turned past, lit over the dim track underneath it.
+                    reach = at(r * DIAL_TRACK)
+                    t.arc([middle - reach, middle - reach, middle + reach, middle + reach],
+                          start=DIAL_FROM, end=self._dial_angle(value), fill=linear(colour),
+                          width=round(wide(self._dial_stroke)))
+                angle = math.radians(self._dial_angle(value))
+                cos_a, sin_a = math.cos(angle), math.sin(angle)
+                # A taper rather than a line: a needle with a wide root and a point is what says
+                # "read the tip of this", and a stick of even width says "this is a spoke".
+                root = math.radians(self._dial_angle(value) + 90.0)
+                half = r * 0.075
+                t.polygon(
+                    [(at(span + r * DIAL_HAND * cos_a), at(span + r * DIAL_HAND * sin_a)),
+                     (at(span + half * math.cos(root)), at(span + half * math.sin(root))),
+                     (at(span - half * math.cos(root)), at(span - half * math.sin(root)))],
+                    fill=linear(colour),
+                )
+            t.ellipse(hub(r * DIAL_HUB), fill=linear(colour if value is not None else GREEN_DIM))
+            t.ellipse(hub(r * DIAL_HUB), outline=linear(SCREEN), width=round(wide(1)))
+            if speaker is not None:
+                self._paint_speaker(t, span, speaker)
+
+        return smoothed(2 * span + 1, paint)
+
+    def _knob(self, level: int | None, turning: bool) -> Image.Image:
+        """The volume pointer at *level*, white while a finger is on it. Cached per appearance.
+
+        The speaker rides in the same tile, because it is part of the same still picture and a
+        tile that is already being cached is the cheapest place on this panel to put a shape.
+
+        White is the whole of what the knob does under a finger, and it says the right thing at
+        the right moment twice over: it acknowledges the grab before the column has decided the
+        grab is a drag, and once the column is up it is the pointer following the finger that
+        says the two are one control rather than two.
+        """
+        key = (level, turning)
+        tile = self._knobs.get(key)
+        if tile is None:
+            colour = WHITE if turning else GREEN
+            tile = self._knobs[key] = self._hand(
+                VOLUME,
+                None if level is None else level / 100.0,
+                colour,
+                speaker=GREEN_DIM if level is None else (WHITE if turning else GREEN_MID),
+            )
+        return tile
+
+    def _needle(self, temp_c: float | None, lit: bool) -> Image.Image:
+        """The heat needle for *temp_c*, in the band's own colour. Cached per whole percent."""
+        percent = temp_percent(temp_c)
+        band = temp_band(temp_c)
+        key = (percent, band, lit)
+        tile = self._needles.get(key)
+        if tile is None:
+            colour = WHITE if lit else HEAT_INK.get(band, GREEN_DIM)
+            tile = self._needles[key] = self._hand(
+                HEAT, None if percent is None else percent / 100.0, colour
+            )
+        return tile
+
+    def _draw_hands(
+        self,
+        layer: Image.Image,
+        d: ImageDraw.ImageDraw,
+        volume: int | None,
+        temp_c: float | None,
+        pressed: str | None,
+    ) -> None:
+        """Both pointers, and the one reading each instrument prints in the gap under its hub.
+
+        The gap is the quarter of the sweep neither dial uses, which is where a knob's own scale
+        has always left room for a label. The knob keeps a speaker there, because its number is on
+        the column a drag opens and one reading in two places is one of them being read twice. The
+        gauge shows its degrees always: that is the whole of what a gauge is for, and a needle
+        without a number is a mood ring.
+
+        The words go on flat rather than into a tile: PIL renders glyphs through FreeType and they
+        arrive anti-aliased already. Only the shapes need the tile.
+        """
+        turning = pressed == VOLUME
+        for name, tile in ((VOLUME, self._knob(volume, turning)),
+                           (HEAT, self._needle(temp_c, pressed == HEAT))):
+            cx, cy = (round(v) for v in self.switches[name])
+            layer.alpha_composite(tile, (cx - self.dial_span, cy - self.dial_span))
+
+        cx, cy = (round(v) for v in self.switches[HEAT])
+        band = temp_band(temp_c)
+        colour = WHITE if pressed == HEAT else HEAT_INK.get(band, GREEN_DIM)
+        word = "--" if temp_c is None else f"{round(temp_c)}°"
+        self._text(d, cx, cy + round(self.btn_r * DIAL_LABEL), word, self.font_micro,
+                   (*colour, 255), align="c")
+
+    def _draw_slider(self, d: ImageDraw.ImageDraw, level: int) -> None:
+        """The volume column, up only while a finger is dragging on the knob.
+
+        A ladder of rungs rather than a solid bar, and one rung per setting: the knob steps in
+        fives like the page's slider does, so a column drawn continuously would show a level
+        between two it can actually take. It is the pod's signal meter stood on end, in the same
+        two colours, because a panel with two ways of drawing "how much of something" has one too
+        many.
+
+        Only what is lit follows the finger. The thumb is the bar across the top of the stack,
+        with an ear either side of the track so it reads as something being held rather than as
+        the last rung being brighter than the one under it; the number stands above the column,
+        where it is out from under the hand and never moves.
+
+        Flat, like every other filled slab here - the tag, the menu card, the pod. There is not a
+        curve in it, and a stepped edge on a rectangle is not a step.
+        """
+        track = self.slider
+        lit = round(max(0, min(100, level)) / 100.0 * SLIDER_RUNGS)
+        d.rectangle([track.x - 1, track.y - 1, track.right, track.bottom],
+                    fill=(*SCREEN, SWITCH_ALPHA), outline=(*GREEN_DIM, 255), width=self.line // 2)
+        gap = max(1.0, self._rung * SLIDER_RUNG_GAP)
+        for rung in range(SLIDER_RUNGS):
+            top = track.bottom - (rung + 1) * self._rung
+            d.rectangle(
+                [track.x + 2, round(top), track.right - 2, round(top + self._rung - gap)],
+                fill=(*GREEN, 255) if rung < lit else (*mix(SCREEN, GREEN_DIM, METER_OFF), 255),
+            )
+        ear = max(2, round(SLIDER_EAR * self.scale))
+        half = max(2, round(SLIDER_THUMB * self.scale / 2))
+        at_y = round(track.bottom - track.h * max(0, min(100, level)) / 100.0)
+        d.rectangle([track.x - ear, at_y - half, track.right + ear, at_y + half],
+                    fill=(*WHITE, 255))
+        self._text(d, track.center[0], track.y - round(18 * self.scale), str(level),
+                   self.font_mode, (*WHITE, 255), align="c")
+
+    def _paint_speaker(self, t: ImageDraw.ImageDraw, span: int, c: tuple[int, int, int]) -> None:
+        """A cone and its throat, in the knob's gap. Says which of the two dials this is.
+
+        The gauge's half of that gap is a number in degrees; a knob's reading is the pointer, so
+        what goes here instead is the one mark that says what is being turned. Inside the tile
+        rather than on the frame: the cone is two diagonals, and a diagonal drawn flat at eleven
+        pixels is the staircase this whole corner was rebuilt to be rid of.
+        """
+        r = max(3.0, self.btn_r * 0.17)
+        mid = span + self.btn_r * DIAL_LABEL
+        # One silhouette rather than a throat and a cone drawn separately: two shapes that share
+        # an edge each own half of the pixels along it, and the shrink out of the tile averages
+        # that pair into a seam down the middle of what is supposed to be one solid mark.
+        t.polygon(
+            [(at(span - r), at(mid - r / 3)), (at(span - r / 3), at(mid - r / 3)),
+             (at(span + r * 0.9), at(mid - r)), (at(span + r * 0.9), at(mid + r)),
+             (at(span - r / 3), at(mid + r / 3)), (at(span - r), at(mid + r / 3))],
+            fill=linear(c),
         )
-        d.line([cx, cy + round(r * 0.56), cx, cy + round(r * 0.88)], fill=(*c, 255), width=stroke)
-        # The foot is what stops it reading as a pill hung on a hook.
-        foot, base = round(r * 0.38), cy + round(r * 0.88)
-        d.line([cx - foot, base, cx + foot, base], fill=(*c, 255), width=stroke)
+
 
     # ---- the long press, and what it opens ----
 

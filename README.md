@@ -552,6 +552,10 @@ not a bug in the page; it means the board wants better cooling.
 On the kiosk, **tapping Cyclops' eye** opens the same page fullscreen in Chromium on the panel — same
 green terminal chrome, so it reads as the next screen of the same device — and the page grows a
 volume slider, an INTERRUPT switch and a full-width **Close** bar to get you back to the camera.
+(Tapping the **heat gauge** in the bottom-right corner opens the same browser on **SYSTEM**
+instead. The browser is warm from boot and is never navigated, so the panel leaves the screen it
+wants in `~/.cache/cyclops/page-screen` and the page routes itself off the poll it already runs
+several times a second — see `views.panel`.)
 All three appear only for the Pi's own browser: from a laptop there is nothing to close, and the
 panel is meant to be the one place the box is set. The split runs the other way too — the project
 browser's **+ Folder** and **↑ Upload** are sent to everything *except* the panel, which has no
@@ -867,16 +871,21 @@ CYCLOPS_HALF_DUPLEX=1
 `pulse` avoids that.) Then `uv run cyclops` works from the terminal.
 
 **The panel.** `cyclops-kiosk` is the whole front-end and needs no browser: it opens the camera,
-draws the live picture fullscreen, and lays a green terminal bezel over it — a readout strip
-along the top (mode, signal meter, `REC`, session clock), the picture through the middle, and a
-row of three tabs along the bottom sized for a thumb in a glove, with Cyclops himself standing in
-the middle of them:
+draws the live picture fullscreen, and lays a green terminal bezel over it — a status pod hanging
+off the middle of the top edge (signal meter, `REC`, `HOT`, session clock), the picture and a
+four-arc reticle through the middle, and two corner mounts carrying three round controls sized
+for a thumb in a glove:
 
-| Tab | What it does |
+| Control | What it does |
 | --- | --- |
-| **SNAP** | takes a photo and shows it to Cyclops, which answers out loud — into the running session's `photos/`, or into `captures/` and seen by nobody if there is no session |
-| **the eye** | Cyclops, in the middle of the row, centred on the bar's own top rule. No label — he is a face, and you tap a face to ask what it remembers: the [admin page](#admin-page) fullscreen on the panel, on the sessions list. **Hold him** and you get the power menu instead — see below |
-| **WAKE UP** | wakes Cyclops and starts the conversation; it says **GO TO SLEEP** while he is up, and the tab stays lit |
+| **the eye**, bottom left | Cyclops himself, half-sunk into the big mount. No label — he is a face, and you tap a face to ask what it remembers: the [admin page](#admin-page) fullscreen on the panel, on the sessions list. **Hold him** and you get the power menu instead — see below |
+| **the knob**, bottom right | the output volume. Press it and drag, and a column comes up the right-hand side of the panel: the level is where your finger is on it, the knob's own pointer follows, and the number stands above the track where your hand is not. Nothing reaches the speaker until you let go — so the grab costs nothing, and a tap on the knob is just a tap. It writes the same note the admin page's slider does, so the two always agree |
+| **the gauge**, in the corner | the board's temperature, on the Pi 5's own scale — green, amber from where the clock starts being capped, red past it. Tap it and the admin page opens on **SYSTEM**, which is the rest of the numbers behind the same reading |
+
+Taking a photo and starting a session are the button beside the panel, not the glass: a tap is
+the photo, a hold is the conversation. That is what freed the two discs in the bottom-right
+corner — they were an aperture and a microphone, which is a second copy of a control your hand
+can already find without looking.
 
 **Holding his eye shuts the box down.** Press and hold him for 0.7 s and a power menu comes up
 over the picture: **SHUT DOWN**, **RESTART**, **CANCEL**, with anywhere off the card being a

@@ -81,8 +81,8 @@ def test_the_header_says_which_of_the_two_sleeps_this_is() -> None:
 def test_a_tap_off_the_card_is_the_way_out() -> None:
     ov = overlay.Overlay(800, 480)
     assert ov.menu_hit(5, 5) == overlay.CANCEL
-    assert ov.menu_hit(*ov.hitboxes.shutter.center) == overlay.CANCEL, "a tab reached through"
-    assert ov.menu_hit(*ov.hitboxes.wake.center) == overlay.CANCEL
+    assert ov.menu_hit(*ov.hitboxes.volume.center) == overlay.CANCEL, "a dial reached through"
+    assert ov.menu_hit(*ov.hitboxes.heat.center) == overlay.CANCEL
 
 
 def test_every_row_answers_to_its_own_middle() -> None:
@@ -163,13 +163,17 @@ def _panel(monkeypatch: pytest.MonkeyPatch) -> kiosk_module.Kiosk:
     kiosk._power_at = 0.0
     kiosk._pressed = None
     kiosk._press_until = 0.0
+    kiosk._turning = False
+    kiosk._turned_at = 0.0
+    kiosk._volume = None  # no mixer under this panel, so the knob turns nothing
     kiosk._touched_at = 0.0
     kiosk._asleep = False
     kiosk._notice = ""
     kiosk._notice_until = 0.0
     kiosk._cues = Cues()
     kiosk.opened: list[str] = []
-    monkeypatch.setattr(kiosk, "_open_admin", lambda: kiosk.opened.append("admin"))
+    sessions = kiosk_module.SESSIONS_SCREEN
+    monkeypatch.setattr(kiosk, "_open_admin", lambda screen=sessions: kiosk.opened.append(screen))
     monkeypatch.setattr(kiosk, "_snap", lambda: kiosk.opened.append("snap"))
     monkeypatch.setattr(kiosk, "_toggle_session", lambda: kiosk.opened.append("session"))
     return kiosk
@@ -184,14 +188,14 @@ def test_a_tap_on_his_face_still_opens_what_the_box_has_kept(
     kiosk._on_mouse(DOWN, x, y, 0, None)
     assert kiosk.opened == [], "the page opened before the finger came off"
     kiosk._on_mouse(UP, x, y, 0, None)
-    assert kiosk.opened == ["admin"]
+    assert kiosk.opened == [kiosk_module.SESSIONS_SCREEN]
     assert not kiosk._menu
 
 
 def test_a_finger_that_slides_off_takes_the_tap_back(monkeypatch: pytest.MonkeyPatch) -> None:
     kiosk = _panel(monkeypatch)
     kiosk._on_mouse(DOWN, *kiosk.overlay.hitboxes.eye.center, 0, None)
-    kiosk._on_mouse(UP, *kiosk.overlay.hitboxes.shutter.center, 0, None)
+    kiosk._on_mouse(UP, *kiosk.overlay.hitboxes.volume.center, 0, None)
     assert kiosk.opened == []
     assert kiosk._cues.stopped == 1, "the sound is the press, so it ends wherever the finger did"
 
@@ -257,8 +261,8 @@ def test_the_press_that_opened_the_menu_cannot_choose_from_it(
 def test_the_menu_is_modal(monkeypatch: pytest.MonkeyPatch) -> None:
     kiosk = _panel(monkeypatch)
     kiosk._menu = True
-    kiosk._on_mouse(DOWN, *kiosk.overlay.hitboxes.shutter.center, 0, None)
-    assert kiosk.opened == [], "the shutter fired through the menu"
+    kiosk._on_mouse(DOWN, *kiosk.overlay.hitboxes.heat.center, 0, None)
+    assert kiosk.opened == [], "the gauge opened its screen through the menu"
     assert not kiosk._menu, "a tap off the card is a way out"
 
 

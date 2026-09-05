@@ -206,6 +206,12 @@ stage.addEventListener('pointerdown', (event) => {
 });
 const PANEL_EVERY = 400;   // one stat() on the server; the drawing must not wait on a poll
 let showing = null;
+// ...and which screen the panel last asked this page to be on. The warm browser is loaded once at
+// boot and never navigated, so the two things on the panel that uncover it - his face, which
+// promises the sessions, and the heat gauge, which promises the numbers behind itself - say which
+// through the same poll. Remembered rather than compared against location.hash, so that a hash the
+// *user* changed by tapping a tab is never yanked back to whatever the kiosk asked for last.
+let asked = null;
 
 async function show(id) {
   const r = await fetch('/api/diagram/' + encodeURIComponent(id), { cache: 'no-store' });
@@ -253,6 +259,12 @@ async function watch() {
   try {
     const r = await fetch('/api/panel', { cache: 'no-store' });
     const s = await r.json();
+    if (s.screen && s.screen !== asked) {
+      asked = s.screen;
+      location.hash = '#' + s.screen;
+    } else if (!s.screen) {
+      asked = null;
+    }
     if (s.diagram && s.diagram !== showing) {
       showing = s.diagram;
       await show(s.diagram);

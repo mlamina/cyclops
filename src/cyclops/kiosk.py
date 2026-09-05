@@ -4,7 +4,7 @@
 (via :class:`~cyclops.camera.CameraSource`), draws each frame into a fullscreen OpenCV window
 with a PIL-rendered overlay on top, and turns taps into session control. The agent itself runs
 on a background thread inside a :class:`~cyclops.ui.SessionController`, and the photos the
-shutter switch feeds it are borrowed from the very camera you are watching.
+button beside the panel feeds it are borrowed from the very camera you are watching.
 
 highgui must own the main thread, so the render loop lives here and everything else is off-thread.
 """
@@ -45,16 +45,20 @@ from .config import (  # noqa: E402
     BROWSER_CLOSE_FLAG,
     DIAGRAM_SHOWN_FLAG,
     PAGE_ALIVE_FLAG,
+    PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
     ConfigError,
     load_settings,
 )
 from .overlay import (  # noqa: E402
     CANCEL,
+    HEAT,
     IDLE,
     POWER_OFF,
     STARTING,
     STOPPING,
+    VOLUME,
+    VOLUME_STEP,
     Overlay,
     composite,
     fit_to_window,
@@ -133,6 +137,16 @@ MENU_TIMEOUT_S = 20.0  # a menu nobody chose from gives the panel back rather th
 # What the panel says while it finishes the session and goes. Not a caption: this is the last
 # thing the screen does, and everything else on it has stopped being true.
 POWER_SAYS = {power.POWEROFF: "Shutting down…", power.REBOOT: "Restarting…"}
+
+# How far a finger has to travel off the knob before the grab is a drag and the column comes up.
+# It exists so that a tap on the knob is a tap and not a drag to silence: a touchscreen delivers
+# a pixel or two of travel on every press, and the column reads absolutely, so without a floor
+# under it the lightest tap would put the level wherever the knob happens to sit on the track.
+SLIDE_GRAB_PX = 6
+# Which screen the panel asks the page for, by what opened it. His face promises the recordings,
+# the gauge promises the rest of the numbers behind itself.
+SESSIONS_SCREEN, SYSTEM_SCREEN = "/sessions", "/"
+PAGE_ROUTE_S = 0.5  # one poll of /api/panel, plus a little: how long the page has to route itself
 
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
 SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
@@ -402,6 +416,11 @@ class Kiosk:
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._heat = ""  # stats.heat_alarm(), re-read on TEMP_POLL_S; drives the lamp on the strip
         self._heat_at = 0.0
+        # The reading the lamp is derived from, kept now that the panel has a gauge to put it on.
+        # One sysfs read still answers both: the lamp wants a step with hysteresis on it and the
+        # gauge wants the degrees, and throwing the degrees away was only ever because nothing
+        # was showing them.
+        self._temp_c: float | None = None
         # The kiosk's own voice in the caption, for the things that happen to it rather than to
         # the session - a shutter that could not take a photo being the one that matters. The
         # controller owns that line the rest of the time and knows nothing about any of this.
@@ -409,6 +428,17 @@ class Kiosk:
         self._notice_until = 0.0
         self._volume: int | None = None  # the level we last put on the sink
         self._volume_at = 0.0  # when we last looked for a new one
+        self._turning = False  # a finger is on the knob and has not come off it yet
+        self._sliding = False  # ...and has moved far enough that the column is up; see _slide
+        self._slide_from = 0.0  # where that finger landed, which is what the floor is measured on
+        # What the column is showing, which is not what the speaker is doing. Nothing is asked of
+        # pactl until the finger comes off, so a grab that landed somewhere you did not mean is
+        # free to be dragged away from - and one drag costs one subprocess rather than one a frame.
+        self._wanted: int | None = None
+        # Which screen the page was last asked for. The warm browser holds whatever it was told
+        # last, so a reveal only has to wait for a route when it is asking for a different one -
+        # which is never the common case, his face being the button that gets pressed.
+        self._screen: str | None = None
         # The switch's position as we last read it, so a session in progress is only told when
         # it actually changes. Seeded from the note rather than from nothing: at boot the page
         # and the session already agree, and there is nothing to say.
@@ -574,14 +604,26 @@ class Kiosk:
     def _on_mouse(self, event: int, x: int, y: int, flags: int, _param: object) -> None:
         """Touchscreen taps arrive here as ordinary mouse events via XWayland.
 
-        Both switches act on the press, which is what a screen with no travel should do:
-        the flash and the shutter belong to the moment your finger lands. His face is the one
-        exception, because it now carries two things - a tap for what the box has kept, a hold
-        for the power menu - and the release is the only event that can tell them apart. That is
-        the bargain every phone makes, and it costs the eye nothing anybody can feel: what the
-        tap does is uncover a browser that has been warm since boot.
+        Everything but his face acts on the press, which is what a screen with no travel should
+        do: the pointer belongs under the finger that landed. His face is the exception, because
+        it carries two things - a tap for what the box has kept, a hold for the power menu - and
+        the release is the only event that can tell them apart. That is the bargain every phone
+        makes, and it costs the eye nothing anybody can feel: what the tap does is uncover a
+        browser that has been warm since boot.
+
+        The knob is the one control here that also cares what happens *between* the two events.
+        Moves were thrown away for the life of this panel, because until there was something to
+        turn nothing on it was worth a second event; they are now read while - and only while -
+        a finger that landed on the knob is still down, so the level follows it and you hear
+        where you are rather than having to look.
         """
         if self.overlay is None:
+            return
+        if event == cv2.EVENT_MOUSEMOVE:
+            # No wake, no touch clock, nothing else: this is a finger already on the glass, and
+            # everything that a press means was decided when it landed.
+            if self._turning and flags & cv2.EVENT_FLAG_LBUTTON:
+                self._slide(y)
             return
         if event == cv2.EVENT_LBUTTONUP:
             self._lifted(x, y)
@@ -590,8 +632,12 @@ class Kiosk:
             return
         self._touched_at = time.monotonic()
         # Whatever was being held, this is not it any more. A press whose release never arrived
-        # would otherwise sit there and turn the next tap into a hold that was already half done.
+        # would otherwise sit there and turn the next tap into a hold that was already half done -
+        # or, for the knob, leave a drag that began on his face turning the volume, because the
+        # moves that follow a press do not carry where the press was.
         self._eye_down_at = None
+        if self._turning:
+            self._let_go(apply=False)
         if self._asleep:
             # The tap that wakes the panel is spent waking it. With the preview dark you cannot
             # see what you are aiming at, so it must not also fire whatever sits underneath.
@@ -603,9 +649,15 @@ class Kiosk:
             self._choose(self.overlay.menu_hit(x, y))
             return
         boxes = self.overlay.hitboxes
-        if boxes.shutter.contains(x, y):
-            self._press("shutter")
-            self._snap()
+        if boxes.volume.contains(x, y):
+            # Nothing is set yet. The knob lights to say it has been grabbed, and what the grab
+            # turns out to mean is decided by whether the finger goes anywhere - see _slide.
+            # Held rather than flashed: it stays lit for as long as the finger is on it, and
+            # _lifted puts it out.
+            self._pressed = VOLUME
+            self._press_until = float("inf")
+            self._turning = True
+            self._slide_from = y
         elif boxes.eye.contains(x, y):
             # His face, and what it opens: everything the box has kept. The eye moved into the
             # middle of the row and took the gear's job with it, which is the right way round -
@@ -618,12 +670,21 @@ class Kiosk:
             # over before you have finished pressing it.
             self._cues.play("pressed")
             self._eye_down_at = self._touched_at
-        elif boxes.wake.contains(x, y):
-            self._press("wake")
-            self._toggle_session()
+        elif boxes.heat.contains(x, y):
+            # A gauge is a thing you read, and this one is the corner of a screen with three more
+            # numbers on it. The tap opens that screen rather than the recordings his face opens.
+            self._press(HEAT)
+            self._open_admin(SYSTEM_SCREEN)
 
     def _lifted(self, x: int, y: int) -> None:
-        """A finger coming off the glass. Only his face has anything left to do here."""
+        """A finger coming off the glass. His face, and the knob, have something left to do here.
+
+        The column is answered here and nowhere else: the level you let go on is the level you
+        meant, and everything before the lift was a question with a finger still on it.
+        """
+        if self._turning:
+            self._slide(y)  # wherever it ended up, including a last move highgui never sent
+            self._let_go(apply=True)
         down_at, self._eye_down_at = self._eye_down_at, None
         if down_at is None or self.overlay is None:
             return  # nothing was being held, or the hold already landed and opened the menu
@@ -700,7 +761,7 @@ class Kiosk:
         self._press_until = time.monotonic() + PRESS_SECONDS
 
     def _pressed_now(self) -> str | None:
-        """Which control to draw as held - a switch, his face, or a row of the power menu.
+        """Which control to draw as held - the knob, the gauge, his face, or a row of the menu.
 
         He stays lit while his page is up, and for as long as a finger is on him: a hold
         that is going somewhere should look held for all of the second it takes, not for the
@@ -747,7 +808,6 @@ class Kiosk:
             return
         if self._menu:
             return  # modal, and two of its three rows end the box: this is no answer to it
-        self._press("shutter")
         self._snap()
 
     def button_held(self) -> None:
@@ -765,17 +825,18 @@ class Kiosk:
         never clears :attr:`_asleep`, so a session started on a dark panel would otherwise run
         its whole length behind one.
 
-        No cue of its own, and no ring state of its own. ``_pending`` makes :meth:`_effective`
-        report STARTING at once, which is a session as far as :meth:`_ring_state` is concerned,
-        so the ring lights as the hold lands - and after it the connecting ping and the closing
-        pair say the rest, which is the half of this a head under a bench can hear.
+        No cue of its own, and no ring state of its own, and nothing on the glass to invert:
+        the two switches that used to answer this button are a knob and a gauge now. ``_pending``
+        makes :meth:`_effective` report STARTING at once, which is a session as far as
+        :meth:`_ring_state` is concerned, so the ring lights as the hold lands - and after it the
+        connecting ping and the closing pair say the rest, which is the half of this a head under
+        a bench can hear.
         """
         self._touched_at = time.monotonic()
         if self._menu:
             return  # modal, exactly as it is for the tap above
         if self._asleep:
             self._wake()
-        self._press("wake")  # the switch on the glass inverts, so you can see which one you hit
         self._toggle_session()
 
     def _ring_state(self, state: str) -> str:
@@ -849,13 +910,39 @@ class Kiosk:
     # ---- admin page ----
 
     def _admin_url(self) -> str:
-        """The page, opened on the sessions list rather than on the four numbers.
+        """The page as the browser is *started* on it: the sessions list, not the four numbers.
 
-        Tapping his face asks what he remembers, so it had better land on some. The hash is what
-        the page routes on and it never navigates, so this only decides which screen the warm
-        browser is holding when it is uncovered - the numbers are one tap away inside it.
+        Tapping his face asks what he remembers, so it had better land on some. The hash is only
+        read once, when Chromium is launched - it never navigates afterwards - so anything that
+        wants a different screen out of the same warm browser asks for it through
+        :meth:`_ask_for_screen` instead of through here.
         """
-        return f"http://127.0.0.1:{self.controller.settings.admin_port}/#/sessions"
+        return f"http://127.0.0.1:{self.controller.settings.admin_port}/#{SESSIONS_SCREEN}"
+
+    def _ask_for_screen(self, screen: str) -> None:
+        """Leave word for the page to route itself to *screen*, and give it time to.
+
+        The panel has two things on it that uncover one browser and they promise different
+        screens - his face the recordings, the gauge the numbers behind itself - and the browser
+        is warm precisely because nobody ever navigates it. So the page is told, on the poll it
+        already runs two and a half times a second, and routes itself before it is uncovered.
+
+        The wait is skipped whenever the page is already holding the screen being asked for,
+        which is nearly always: his face is the button that gets pressed, and it asks for the
+        screen Chromium was launched on. Only the odd tap that changes screens pays for a poll,
+        and paying for it here is the whole point - uncovering first and letting the page swap
+        underneath somebody is exactly the flicker :meth:`_diagram_session` waits to avoid.
+        """
+        if screen == self._screen:
+            return
+        try:
+            PAGE_SCREEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+            PAGE_SCREEN_FILE.write_text(screen, encoding="utf-8")
+        except OSError as exc:  # the page stays where it is; a wrong screen beats no page
+            print(f"· could not ask the page for {screen} ({exc})", file=sys.stderr, flush=True)
+            return
+        self._screen = screen
+        time.sleep(PAGE_ROUTE_S)
 
     def warm_browser(self) -> bool:
         """Get the admin browser up and painting, before this kiosk has a window at all.
@@ -943,6 +1030,10 @@ class Kiosk:
         if not self.running:  # we are on our way out; do not leave a window covering the panel
             _stop_browser(proc)
             return False
+        # A browser that has just been launched is holding the hash it was launched with, whatever
+        # the last one had been asked for. Said here rather than by the caller because this is the
+        # only place a URL is ever handed to Chromium.
+        self._screen = SESSIONS_SCREEN
         return True
 
     def _ensure_browser(self, url: str) -> bool:
@@ -955,8 +1046,8 @@ class Kiosk:
         # itself, which is exactly where the uncovering below wants it.
         return self._start_browser(url)
 
-    def _open_admin(self) -> None:
-        """Uncover the admin page, off-thread - highgui owns the main one.
+    def _open_admin(self, screen: str = SESSIONS_SCREEN) -> None:
+        """Uncover the admin page on *screen*, off-thread - highgui owns the main one.
 
         Same shape as :meth:`_snap`. The busy flag means a second tap while the page is up is
         ignored rather than starting a second browser: sharing a profile directory, the second
@@ -967,10 +1058,11 @@ class Kiosk:
             return
         self._page_busy.set()
         self._admin_busy.set()
-        threading.Thread(target=self._admin_session, name="kiosk-admin", daemon=True).start()
+        threading.Thread(target=self._admin_session, args=(screen,),
+                         name="kiosk-admin", daemon=True).start()
 
-    def _admin_session(self) -> None:
-        """The whole life of the visible page: probe, uncover, wait, take the panel back."""
+    def _admin_session(self, screen: str = SESSIONS_SCREEN) -> None:
+        """The whole life of the visible page: probe, route, uncover, wait, take the panel back."""
         url = self._admin_url()
         shown = False
         try:
@@ -993,6 +1085,7 @@ class Kiosk:
             diagram.withdraw()
             BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)  # a stale note must not close this one
+            self._ask_for_screen(screen)
             shown_at = time.time()
             shown = True
             self._reveal.set()
@@ -1003,6 +1096,10 @@ class Kiosk:
                 self._retake.set()
                 print("· admin page closed", flush=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
+            # The note is for the half-second either side of a reveal and no longer: left lying
+            # about, it would be a stat with an answer in it on every poll for the rest of the day,
+            # and the page would refuse to route the next time it was asked for the same screen.
+            PAGE_SCREEN_FILE.unlink(missing_ok=True)
             self._admin_busy.clear()
             self._page_busy.clear()
 
@@ -1088,9 +1185,10 @@ class Kiosk:
     def _toggle_session(self) -> None:
         """Act on the tap and record what we asked for, so the UI can show it at once."""
         state = self.controller.status()["state"]
-        # The same question the microphone's own fill answers, so what the switch shows and what
-        # the switch does cannot drift. It is the only thing left saying which way the tap goes -
-        # the words that used to say it went with the tab row.
+        # The same question the halo, the strip and the ring in the button all answer, so what
+        # the panel shows and what the button does cannot drift. There is nothing on the glass
+        # left saying which way this goes: the switch that used to went the way the words that
+        # used to say it went before it.
         starting = not session_up(str(state))
         self._pending = "start" if starting else "stop"
         self._pending_at = time.monotonic()
@@ -1182,6 +1280,52 @@ class Kiosk:
             self._retake.set()
             print("· panel taken back from the warm browser", flush=True)
 
+    def _slide(self, y: int) -> None:
+        """Follow a finger that grabbed the knob. Puts the column up, and moves what it shows.
+
+        The column stays down until the finger has actually gone somewhere (see
+        :data:`SLIDE_GRAB_PX`), so a tap on the knob is a tap: it lights the disc, asks nothing of
+        the speaker and leaves the level where it was. Past that floor the reading is where the
+        finger is on the track, snapped to the same 5 the page's slider steps in so the two
+        controls cannot disagree about what a level is.
+
+        Nothing is applied here. What this sets is the number on the column, which is a question;
+        :meth:`_let_go` is the answer.
+
+        Nothing at all with no mixer under us - a Mac, or a Pi with no sink - because a column
+        that fills and changes nothing is worse than one that never comes up.
+        """
+        if self.overlay is None or self._volume is None:
+            return
+        if not self._sliding:
+            if abs(y - self._slide_from) < SLIDE_GRAB_PX:
+                return
+            self._sliding = True
+        value = self.overlay.slider_value(y) * 100
+        self._wanted = max(0, min(100, round(value / VOLUME_STEP) * VOLUME_STEP))
+
+    def _let_go(self, *, apply: bool) -> None:
+        """The finger is off the knob. Put the column away, and if it was a drag, set the level.
+
+        *apply* is False for the one case that is not a lift: a fresh press arriving with no
+        release behind it, which means the release was lost and whatever the column was showing
+        was never let go of. Acting on it then would set a level from a gesture that is over.
+        """
+        wanted, sliding = self._wanted, self._sliding
+        self._turning = self._sliding = False
+        self._wanted = None
+        if self._pressed == VOLUME:
+            self._pressed, self._press_until = None, 0.0
+        if not (apply and sliding) or wanted is None or wanted == self._volume:
+            return
+        if not mixer.set_level(wanted):
+            return
+        self._volume = wanted
+        # The note as well as the sink, so the page's slider opens where the column left it - and
+        # so that _sync_volume, which reads that note, finds the level it already has.
+        mixer.request(wanted)
+        print(f"· volume {wanted}% from the panel", flush=True)
+
     def _sync_volume(self) -> None:
         """Follow the level the page left for us. A few bytes, a couple of times a second."""
         now = time.monotonic()
@@ -1254,7 +1398,7 @@ class Kiosk:
     def _wake(self) -> None:
         """Light the panel, reopen the camera, and start drawing again.
 
-        This wakes the *panel*; the microphone switch wakes Cyclops. The two senses never contradict
+        This wakes the *panel*; a hold on the button wakes Cyclops. The two senses never contradict
         each other on screen because they nest: :meth:`_sleeping` only ever blanks the glass
         while the session is down, so the panel can only be dark when he is already asleep, and
         the tap that lights it is spent doing that and fires no button underneath.
@@ -1341,7 +1485,8 @@ class Kiosk:
             # seconds into it.
             if started - self._heat_at >= TEMP_POLL_S:
                 self._heat_at = started
-                self._heat = stats.heat_alarm(stats.cpu_temp_c(), self._heat)
+                self._temp_c = stats.cpu_temp_c()
+                self._heat = stats.heat_alarm(self._temp_c, self._heat)
 
             frame = None  # nothing to draw: the camera is off, absent, or still coming back
             stalled = False  # ...or open, enumerated, and no longer delivering anything
@@ -1404,6 +1549,13 @@ class Kiosk:
                     heat=self._heat,
                     hold=hold,
                     menu=self._menu,
+                    # The two instruments in the corner. Both may be None - no sink, no thermal
+                    # zone - and both draw that as a dial that is not reading. While a finger is
+                    # on the column the knob shows what the column shows, because the two are one
+                    # control and a pointer left behind on the old level says they are not.
+                    volume=self._wanted if self._sliding else self._volume,
+                    temp_c=self._temp_c,
+                    sliding=self._sliding,
                 )
                 self._paint(composite(canvas, chrome), width, height)
 
@@ -1477,8 +1629,8 @@ def main() -> None:
         camera.wait_for_frame()
     except WebcamError as exc:
         # A missing camera is a degraded panel, not a dead one. Everything else still works -
-        # The microphone starts a session, the eye opens the admin page, the light and the volume
-        # behave - and a Pi showing nothing at all reads as broken hardware, which sends
+        # The button starts a session, the eye opens the admin page, the knob and the gauge
+        # read - and a Pi showing nothing at all reads as broken hardware, which sends
         # someone looking for a keyboard. Say so on the screen and carry on looking.
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
 
@@ -1527,8 +1679,8 @@ def main() -> None:
         f" · button: {kiosk.button.note}"
         f" · volume: {'—' if kiosk.volume is None else f'{kiosk.volume}%'}\n"
         "  the two bottom corners: his eye on the left - tap it for the recordings and\n"
-        "  pictures, and for the volume · the aperture shows him a photo, the microphone\n"
-        "  wakes him and puts him back to sleep\n"
+        "  pictures · on the right, a knob for the volume - drag it and a column comes up -\n"
+        "  and a gauge reading the board, which opens the rest of the numbers when tapped\n"
         f"  hold his eye for {LONG_PRESS_S:g}s to shut the box down or restart it\n"
         f"{button_note}"
         f"{idle_note}"

@@ -53,11 +53,17 @@ def _pinless(**handlers: object) -> ShutterButton:
 
 
 def test_a_press_takes_a_photo(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The whole point of it, and the aperture's own path: the same _snap the screen calls."""
+    """The whole point of it, and now the only path: the glass has no aperture on it any more.
+
+    Nothing is lit on the panel to say so, and nothing needs to be. The flash and the click
+    belong to _snap, they are what a shutter has always answered with, and the two discs that
+    used to invert under a thumb are a volume knob and a heat gauge - neither of which has
+    anything to say about a photograph.
+    """
     kiosk = _panel(monkeypatch)
     kiosk.shutter_pressed()
     assert kiosk.did == ["snap"]
-    assert kiosk._pressed == "shutter", "the aperture on screen should look pressed too"
+    assert kiosk._pressed is None, "nothing on the glass is this button's twin any more"
 
 
 def test_a_press_on_a_dark_panel_is_spent_waking_it(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -89,11 +95,16 @@ def test_the_power_menu_swallows_it(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_hold_wakes_him_and_puts_him_back_to_sleep(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The microphone switch's own path, so there is no second way for a session to begin."""
+    """The only way into a session from the panel now, and still the one _toggle_session.
+
+    What says it landed is the ring in the button, the halo round the picture and the strip
+    saying STARTING - all of which _pending has true before this returns. The microphone that
+    used to light up beside the aperture is a heat gauge.
+    """
     kiosk = _panel(monkeypatch)
     kiosk.button_held()
     assert kiosk.did == ["toggle"]
-    assert kiosk._pressed == "wake", "the switch on the glass should show which one you hit"
+    assert kiosk._pressed is None, "nothing on the glass is this button's twin any more"
 
 
 def test_a_hold_on_a_dark_panel_lands_as_well_as_lighting_it(

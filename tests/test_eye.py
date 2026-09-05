@@ -23,7 +23,7 @@ from dataclasses import replace
 import numpy as np
 import pytest
 
-from cyclops import eye, overlay
+from cyclops import eye, overlay, stats
 
 STATES = (
     overlay.IDLE,
@@ -59,51 +59,14 @@ def _settle(ov: overlay.Overlay, **shown: object) -> None:
 # ---------------------------------------------------------------- the words
 
 
-def _mic_core(ov: overlay.Overlay, state: str) -> float:
-    """How lit the middle of the microphone's head is - the whole of what "filled in" means.
-
-    The head is a rounded rectangle: an outline while he is down, a solid while he is up. Its
-    strokes are in the same place either way, so the only honest place to ask is inside it.
-    """
-    shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
-    _settle(ov, **shown)
-    frame = ov.render(phase=10.0, **shown).astype(float)
-    cx, cy = (round(v) for v in ov.switches["wake"])
-    r = round(ov.btn_r * 0.5) + 2
-    box = frame[cy - round(r * 0.55) : cy - round(r * 0.15), cx - 3 : cx + 3]
-    return float((box[:, :, :3].sum(axis=2) * box[:, :, 3] / 255).mean())
-
-
 @pytest.mark.parametrize("state", STATES)
-def test_the_microphone_says_what_the_tap_will_do(state: str) -> None:
-    """Filled while he is up, hollow while he is down, and that is now the whole of the message.
-
-    The control this replaces had GO TO SLEEP or WAKE UP written across a third of the panel, and
-    the fill was a detail on top of the word. There is no word any more, so a fill that stopped
-    tracking `awake` would leave the panel with nothing at all saying which way the switch goes.
+def test_the_state_still_has_somewhere_to_be_read(state: str) -> None:
+    """The microphone used to carry it in the corner, filled while he was up. It is a heat gauge
+    now, so the question this asks is the one that outlived it: the panel and the kiosk have to
+    agree about what "a session is running" means, or the halo says one thing and the button
+    beside the panel does another.
     """
-    ov = _panel()
-    hollow, filled = _mic_core(ov, overlay.IDLE), _mic_core(ov, overlay.LISTENING)
-    assert filled > hollow * 2, "the microphone looks the same up as it does down"
-    assert (_mic_core(ov, state) > (hollow + filled) / 2) == overlay.awake(state)
-    # ...and the same question the kiosk asks before deciding to start or stop, so what the
-    # switch shows and the action behind it cannot drift apart.
     assert overlay.session_up(state) == (state not in (overlay.IDLE, overlay.ERROR))
-
-
-def test_the_shutter_does_not_change_under_you() -> None:
-    # The one control that means the same thing in every state, so it has to look the same in
-    # every state. Byte-for-byte: it sits far enough inside the panel that the border's glow
-    # never reaches it, so there is nothing legitimate to differ.
-    ov = _panel()
-    box = ov.hitboxes.shutter
-    seen = set()
-    for state in STATES:
-        shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
-        _settle(ov, **shown)
-        crop = ov.render(phase=10.0, **shown)[box.y : box.bottom, box.x : box.right]
-        seen.add(crop.tobytes())
-    assert len(seen) == 1, "the shutter changed with a state it has nothing to do with"
 
 
 def test_no_caption_names_a_button_that_is_not_there() -> None:
@@ -173,8 +136,8 @@ def test_the_sleeping_face_moves_slowly_and_by_moving() -> None:
     # to. What this pins is that the thing it wanders around is the gentlest in the table.
     assert abs(mood.spin) < min(abs(m.spin) for m in working), "he turns faster than a working eye"
     # ...and, like every other period on this panel, out of step with all of them - see
-    # WAKE_PERIOD_S. His is the longest, so it can only lock by being a multiple of one of them.
-    for period in (overlay.WAKE_PERIOD_S, overlay.RIM_PERIOD_S, overlay.BREATH_PERIOD_S):
+    # RIM_PERIOD_S. His is the longest, so it can only lock by being a multiple of one of them.
+    for period in (overlay.RIM_PERIOD_S, overlay.BREATH_PERIOD_S, overlay.DOT_PERIOD_S):
         assert mood.breath_s % period > 1e-6, f"his breath locks to the {period}s one"
 
 
@@ -433,23 +396,25 @@ def _line_box(ov: overlay.Overlay) -> tuple[slice, slice]:
     return slice(top, bottom), slice(left, int(ov.caption_right) + 2)
 
 
-def test_only_three_things_move_while_he_is_asleep() -> None:
+def test_only_two_things_move_while_he_is_asleep() -> None:
     # The headline. Every animation on this panel is gated, and this is the one assertion that
     # notices when a new one is not - it is how the caption's breath was caught running at IDLE
-    # and quietly pulsing a resting panel. Three exceptions and no more: the WAKE UP cell, which
-    # may beckon because it is the only thing left to press; his own face, which may move because
-    # he is asleep rather than off; and his line, which is a snore and has dots that walk.
+    # and quietly pulsing a resting panel. Two exceptions and no more: his own face, which may
+    # move because he is asleep rather than off, and his line, which is a snore and has dots
+    # that walk.
     #
-    # A fault gets none of the three, and that is what keeps this honest - blanking the same
+    # It was three. The third was the microphone beckoning, which could because it was the only
+    # thing left to press; the corner it was in holds a knob and a gauge now, and neither of them
+    # has any business moving while nothing is happening to the thing it is reading.
+    #
+    # A fault gets neither of the two, and that is what keeps this honest - blanking the same
     # regions in both states would leave nobody watching the pixels they are drawn on.
     ov = _panel()
-    keep = ov.hitboxes.wake
     cx, cy, r = *ov.eye, ov.eye_r
     rows, cols = _line_box(ov)
     for state, detail in ((overlay.IDLE, ""), (overlay.ERROR, "OpenAI rejected the API key")):
         frames = [f.copy() for f in _asleep(ov, state, detail)]
         for f in frames:
-            f[keep.y : keep.bottom, keep.x : keep.right] = 0
             if state == overlay.IDLE:
                 f[cy - r : cy + r + 1, cx - r : cx + r + 1] = 0
                 f[rows, cols] = 0
@@ -586,118 +551,135 @@ def test_the_spark_always_covers_a_whole_pixel() -> None:
             )
 
 
-def _glyph_box(ov: overlay.Overlay, name: str) -> tuple[slice, slice]:
-    """Just the glyph inside a switch, which is the part that wears a colour."""
-    cx, cy = (round(v) for v in ov.switches[name])
-    r = round(ov.btn_r * 0.5) + 2
-    return slice(cy - r, cy + r), slice(cx - r, cx + r)
-
-
-def _invite(ov: overlay.Overlay, phase: float) -> float:
-    """How bright the microphone glyph's strokes are, off a rendered frame.
-
-    The brightest pixel in the box rather than its mean: ImageDraw does not anti-alias, so the
-    strokes are exactly the colour they were drawn in, and a mean would be dragged around by the
-    bezel swelling behind them - which moves the other way.
-    """
-    rows, cols = _glyph_box(ov, "wake")
-    frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=phase)
-    crop = frame[rows, cols]
-    return float(crop[crop[:, :, 3] > 150][:, 1].max())
-
-
-def test_the_way_out_glows_while_he_is_asleep() -> None:
-    # It matters more than it did. The control this replaces had WAKE UP written across a third
-    # of the panel and the breath was a flourish on top of it; this one is a microphone in a
-    # corner with nothing written anywhere, so the breath is now most of how anybody finds it.
-    ov = _panel()
-    box = ov.hitboxes.wake
-    lit = [_glow(f[box.y : box.bottom, box.x : box.right]) for f in _asleep(ov, overlay.IDLE)]
-    assert max(lit) > min(lit), "the microphone held still - nothing invites the tap"
-
-
-def test_the_glow_swells_rather_than_flashing() -> None:
-    # A swell, not a blink: a panel flashing at you across a workshop is an alarm, and a control
-    # that switches between two brightnesses reads as a fault light rather than as an invitation.
-    # Same raised-cosine argument the caption's breath makes.
-    ov = _panel()
-    sweep = [_invite(ov, i * overlay.WAKE_PERIOD_S / 24) for i in range(24)]
-    steps = {round(v) for v in sweep}
-    assert len(steps) > 8, f"it steps rather than swelling: {sorted(steps)}"
-    assert min(sweep) > 0.55 * max(sweep), "it goes dark at the bottom of the breath"
-    assert max(sweep) > 1.15 * min(sweep), "the swell is too slight to notice"
-    for t in (0.0, 1.3, 86_400.7):  # ...and it comes back round
-        assert eye.breath(t + overlay.WAKE_PERIOD_S, overlay.WAKE_PERIOD_S) == pytest.approx(
-            eye.breath(t, overlay.WAKE_PERIOD_S), abs=1e-6
-        )
-
-
-def _glyph_hue(ov: overlay.Overlay, phase: float) -> str:
-    """Whether the microphone glyph's strokes are nearer the phosphor or nearer the accent."""
-    rows, cols = _glyph_box(ov, "wake")
-    frame = ov.render(state=overlay.IDLE, level=0.0, elapsed=None, phase=phase)
-    crop = frame[rows, cols].astype(float)
-    px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 250)][:, :3]
-    seen = px.mean(axis=0) / px.mean(axis=0).sum()
-    near = {
-        name: float(np.abs(seen - np.array(c) / sum(c)).sum())
-        for name, c in (("phosphor", overlay.GREEN_MID), ("accent", overlay.WHITE))
-    }
-    return min(near, key=near.get)  # type: ignore[arg-type]
-
-
-def _word_colour(ov: overlay.Overlay, state: str, phase: float) -> np.ndarray:
-    """The microphone glyph, as a colour, normalised so brightness is out of the question.
-
-    It used to be the word underneath it. There is no word, so the glyph carries the state on its
-    own - which is a stronger claim than the one this made before, not a weaker one.
-    """
-    rows, cols = _glyph_box(ov, "wake")
-    shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
-    _settle(ov, **shown)
-    crop = ov.render(phase=phase, **shown)[rows, cols].astype(float)
-    px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 250)][:, :3]
-    assert len(px), f"nothing lit on the microphone in {state}"
-    return px.mean(axis=0) / px.mean(axis=0).sum()
-
-
 def _nearest(seen: np.ndarray, *options: tuple[str, tuple[int, int, int]]) -> str:
+    """Which of *options* a normalised colour is closest to. Hue, with brightness divided out."""
     near = {n: float(np.abs(seen - np.array(c) / sum(c)).sum()) for n, c in options}
     return min(near, key=near.get)  # type: ignore[arg-type]
 
 
+# ------------------------------------------------------------ the two instruments
+
+
+def _ring(ov: overlay.Overlay, frame: np.ndarray, name: str, lo: float, hi: float
+          ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The lit pixels of dial *name* between *lo* and *hi* of its radius: dy, dx and colour.
+
+    An annulus rather than a box, because a dial is a stack of concentric things and the only way
+    to ask about one of them is to cut the ring it lives on: the bezel outside, the graduations
+    under it, the scale at DIAL_TRACK, the pointer inside that and the reading below the hub. A
+    box measures all five at once and can be satisfied by any of them.
+    """
+    cx, cy = (round(v) for v in ov.switches[name])
+    span = ov.dial_span
+    crop = frame[cy - span : cy + span + 1, cx - span : cx + span + 1].astype(float)
+    ys, xs = np.mgrid[-span : span + 1, -span : span + 1]
+    reach = np.hypot(ys, xs)
+    lit = (
+        (crop[:, :, 3] > 200)
+        & (crop[:, :, :3].sum(axis=2) > 250)
+        & (reach >= lo * ov.btn_r)
+        & (reach <= hi * ov.btn_r)
+    )
+    return ys[lit], xs[lit], crop[:, :, :3][lit]
+
+
+def _hand(ov: overlay.Overlay, frame: np.ndarray, name: str
+          ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Just the pointer: everything lit between the hub and the tip, where nothing else is."""
+    got = _ring(ov, frame, name, overlay.DIAL_HUB + 0.08, overlay.DIAL_HAND)
+    assert len(got[0]), f"nothing lit between the hub and the tip of the {name} dial"
+    return got
+
+
+def _scale_lit(ov: overlay.Overlay, frame: np.ndarray, name: str) -> int:
+    """How much of the dial's scale is lit, in pixels. The knob's whole reading, measured."""
+    _, _, rgb = _ring(ov, frame, name, overlay.DIAL_TRACK - 0.08, overlay.DIAL_TRACK + 0.08)
+    return int((rgb[:, 1] > 180).sum())
+
+
+def _hand_angle(ov: overlay.Overlay, frame: np.ndarray, name: str) -> float:
+    """Which way the pointer is pointing, in the degrees the overlay lays it out in.
+
+    The mean position of the taper, which for a shape symmetrical about its own axis with nothing
+    else in the annulus is a point on that axis.
+    """
+    ys, xs, _ = _hand(ov, frame, name)
+    return math.degrees(math.atan2(ys.mean(), xs.mean())) % 360.0
+
+
+def _hand_hue(ov: overlay.Overlay, frame: np.ndarray, name: str) -> str:
+    """Which of the panel's colours the pointer is drawn in."""
+    _, _, rgb = _hand(ov, frame, name)
+    seen = rgb.mean(axis=0)
+    return _nearest(
+        seen / seen.sum(),
+        ("ok", overlay.GREEN),
+        ("warn", overlay.AMBER),
+        ("hot", overlay.RED),
+        ("held", overlay.WHITE),
+    )
+
+
+def _dialled(ov: overlay.Overlay, **kwargs: object) -> np.ndarray:
+    shown = dict(state=overlay.IDLE, level=0.0, elapsed=None, phase=10.0)
+    return ov.render(**{**shown, **kwargs})  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("level", [0, 25, 60, 100])
+def test_the_knob_shows_where_it_has_been_turned_to(level: int) -> None:
+    """A knob's whole job. The pointer says it once and the lit stretch of scale says it again,
+    because on a 72 px disc across a bench the second one is what carries at all."""
+    ov = _panel()
+    frame = _dialled(ov, volume=level)
+    want = overlay.DIAL_FROM + overlay.DIAL_SWEEP * level / 100.0
+    assert _hand_angle(ov, frame, overlay.VOLUME) == pytest.approx(want % 360.0, abs=6.0)
+
+
+def test_the_lit_scale_grows_with_the_level() -> None:
+    ov = _panel()
+    lit = [_scale_lit(ov, _dialled(ov, volume=v), overlay.VOLUME) for v in (0, 25, 60, 100)]
+    assert lit == sorted(lit), f"the knob's scale did not follow the level: {lit}"
+    assert lit[-1] > lit[0] * 3, "turning it all the way lit almost nothing"
+
+
+def test_the_gauge_reads_the_board_and_not_the_session() -> None:
+    """The needle is on the board's own scale: COOL_C empty, THROTTLE_C full, and the two colour
+    breaks where cyclops.stats puts them - the same numbers the admin page's bar is given."""
+    ov = _panel()
+    for temp, band in ((stats.COOL_C, "ok"), (stats.WARN_C + 2, "warn"), (stats.HOT_C + 2, "hot")):
+        frame = _dialled(ov, temp_c=temp)
+        want = overlay.DIAL_FROM + overlay.DIAL_SWEEP * stats.temp_percent(temp) / 100.0
+        assert _hand_angle(ov, frame, overlay.HEAT) == pytest.approx(want % 360.0, abs=6.0)
+        assert _hand_hue(ov, frame, overlay.HEAT) == band, f"{temp} C did not read as {band}"
+
+
+def test_a_dial_with_nothing_behind_it_is_not_a_dial_reading_zero() -> None:
+    """No sink, no thermal zone: off the Pi both are None, and a pointer parked at the bottom of
+    the scale would be a panel claiming silence and a cold board rather than admitting ignorance.
+    """
+    ov = _panel()
+    frame = _dialled(ov, volume=None, temp_c=None)
+    for name in (overlay.VOLUME, overlay.HEAT):
+        ys, _, _ = _ring(ov, frame, name, overlay.DIAL_HUB + 0.08, overlay.DIAL_HAND)
+        assert not len(ys), f"the {name} dial drew a pointer with no reading"
+
+
 @pytest.mark.parametrize("state", STATES)
-def test_the_button_wears_the_state_it_is_in(state: str) -> None:
-    # It is the only cell on the row carrying a state, so it is the only one that takes a colour
-    # - and it has to do it in every state, not only the ones somebody happened to look at.
-    # Asleep is the exception and the reason for it: green is the floor the glow lifts off.
+def test_neither_instrument_changes_with_the_session(state: str) -> None:
+    """Byte for byte, in every state. A volume and a board temperature are true whether or not
+    anybody is talking to him, and this is what keeps them out of the per-state bake: the two
+    switches they replace *did* carry the state, and rebuilt a full-screen layer to say so.
+    """
     ov = _panel()
-    seen = _word_colour(ov, state, phase=overlay.WAKE_PERIOD_S)
-    if state == overlay.IDLE:
-        assert _nearest(seen, ("resting", overlay.GREEN_MID), ("state", overlay.WHITE)) == "resting"
-    else:
-        assert _nearest(
-            seen, ("resting", overlay.GREEN_MID), ("state", overlay.HALOS[state])
-        ) == "state", f"the word stayed green in {state}"
-
-
-def test_the_glow_changes_colour_and_not_only_brightness() -> None:
-    # It breathes towards the accent, which is a promise as well as a signal: the button wears
-    # the colour the whole screen turns when you press it. Brightness alone was the complaint
-    # the accent was introduced to answer, and it would be the same complaint here.
-    ov = _panel()
-    assert _glyph_hue(ov, overlay.WAKE_PERIOD_S) == "phosphor", "it starts somewhere else"
-    assert _glyph_hue(ov, overlay.WAKE_PERIOD_S * 1.5) == "accent", "it only got brighter"
-
-
-def test_a_fault_does_not_beckon() -> None:
-    # A red panel with a green button pulsing at you is a machine asking to be prodded rather
-    # than read, and a fault has something to say on the line under the picture.
-    ov = _panel()
-    box = ov.hitboxes.wake
-    lit = [_glow(f[box.y : box.bottom, box.x : box.right])
-           for f in _asleep(ov, overlay.ERROR, "OpenAI rejected the API key")]
-    assert len(set(lit)) == 1
+    seen: dict[str, set[bytes]] = {overlay.VOLUME: set(), overlay.HEAT: set()}
+    for one in STATES:
+        shown = dict(state=one, level=0.0, elapsed=None if one == overlay.IDLE else 12.0,
+                     volume=60, temp_c=58.0)
+        _settle(ov, **shown)
+        frame = ov.render(phase=10.0, **shown)  # type: ignore[arg-type]
+        for name, box in ((overlay.VOLUME, ov.hitboxes.volume), (overlay.HEAT, ov.hitboxes.heat)):
+            seen[name].add(frame[box.y : box.bottom, box.x : box.right].tobytes())
+    assert [len(v) for v in seen.values()] == [1, 1], f"a dial changed with the state ({state})"
 
 
 def test_the_rings_turn_while_he_is_awake() -> None:
@@ -806,7 +788,7 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
     # A panel where everything is an accent has none. The brand, the rules and the two tabs that
     # do not change stay phosphor whatever he is doing.
     ov = _panel()
-    shown = dict(state=overlay.LISTENING, level=0.8, elapsed=73.0)
+    shown = dict(state=overlay.LISTENING, level=0.8, elapsed=73.0, volume=60, temp_c=58.0)
     _settle(ov, **shown)
     frame = ov.render(phase=10.0, **shown)
 
@@ -843,10 +825,10 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
     top = int(ov.caption_y) - 6  # caption_y is the bottom line's centre, and this one fits on it
     assert wears((at, top, at + marker_w, top + 14)) == "accent"
     assert wears((at + marker_w, top, at + marker_w + 60, top + 14)) == "phosphor"
-    # ...and the furniture: the shutter's aperture, which means the same thing in every state and
-    # so wears the panel's own phosphor in all of them.
-    rows, cols = _glyph_box(ov, "shutter")
-    assert wears((cols.start, rows.start, cols.stop, rows.stop)) == "phosphor"
+    # ...and the furniture: the volume knob, which reads the same number in every state and so
+    # wears the panel's own phosphor in all of them.
+    box = ov.hitboxes.volume
+    assert wears((box.x, box.y, box.right, box.bottom)) == "phosphor"
 
 
 def test_the_accent_belongs_to_the_same_tube_as_the_phosphor() -> None:
@@ -1059,8 +1041,8 @@ def test_the_face_is_tappable_where_the_face_is(width: int, height: int) -> None
     cx, cy = ov.eye
     assert ov.hitboxes.eye.contains(cx, cy)
     assert ov.hitboxes.eye.contains(cx, cy - ov.eye_r + 1)
-    for other in (ov.hitboxes.shutter, ov.hitboxes.wake):
-        assert not other.contains(cx, cy), "his face overlaps another tab's target"
+    for other in (ov.hitboxes.volume, ov.hitboxes.heat):
+        assert not other.contains(cx, cy), "his face overlaps an instrument's target"
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
