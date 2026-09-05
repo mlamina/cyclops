@@ -107,6 +107,25 @@ class Item:
     def showable(self) -> bool:
         return self.kind in {"photo", "image"}
 
+    @property
+    def within(self) -> str:
+        """Where this file sits inside the folder its ``scope`` names, as a relative path.
+
+        The pair ``(scope, within)`` is enough to find a picture again from a session log alone,
+        which the absolute path in :attr:`path` is not: the card gets moved, and a log is meant to
+        be readable off it on another machine. The session log writes both, and
+        ``library.records`` turns them back into the URL the transcript shows the picture at.
+
+        Derived rather than stored, because it is derivable: ``scope`` names the folder the item
+        was read out of, and that folder is on this path. Falls back to the bare filename if it
+        somehow is not, which is what the log used to carry and costs a broken thumbnail at worst.
+        """
+        _, _, folder = self.scope.partition(":")
+        parts = Path(self.path).parts
+        if folder and folder in parts:
+            return "/".join(parts[len(parts) - parts[::-1].index(folder):])
+        return Path(self.path).name
+
 
 # ------------------------------------------------------------------ reading the card
 

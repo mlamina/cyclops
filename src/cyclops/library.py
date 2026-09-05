@@ -300,6 +300,10 @@ def records(sessions_dir: Path, name: str) -> list[dict]:
         line = dict(record)
         if kind == "photo" and record.get("file"):
             line["url"] = media_url(name, str(record["file"]))
+        elif kind == "recall":
+            line["url"] = recalled_url(record)
+            if not line["url"]:
+                line.pop("url")
         out.append(line)
     return out
 
@@ -307,6 +311,31 @@ def records(sessions_dir: Path, name: str) -> list[dict]:
 def media_url(name: str, relative: str) -> str:
     """Where the page fetches one file out of one session."""
     return f"/media/{name}/{relative}"
+
+
+def recalled_url(record: dict) -> str:
+    """Where the page fetches a picture Cyclops found on the card, or "" if it cannot.
+
+    A recalled picture is the one thing in a transcript that is not the conversation's own: it was
+    already on the card, in some earlier session's ``photos/`` or in a project folder, and it is
+    shown in the line that found it the way every other picture in the transcript is shown in
+    its own. So this is the second URL shape here, and it picks between the page's two media
+    routes on the scope the record carries (``recall.Item.within`` writes the pair).
+
+    Empty for anything else: a recall that found a *file* rather than a picture, one that found
+    nothing, and every log written before 2026-09-05, which recorded the filename alone and so
+    cannot say which folder it was in. A line with no picture is what all three have always
+    looked like.
+    """
+    relative = str(record.get("file") or "")
+    where, _, folder = str(record.get("scope") or "").partition(":")
+    if not relative or not folder or record.get("what") not in {"photo", "image"}:
+        return ""
+    if where == "session":
+        return media_url(folder, relative)
+    if where == "project":
+        return f"/project-media/{folder}/{relative}"
+    return ""
 
 
 # ------------------------------------------------------------------ the picture stream

@@ -1833,7 +1833,13 @@ class VoiceAgent:
             query=query[:120],
             title=best.item.title,
             what=best.item.kind,  # never `kind`; see above
-            file=Path(best.item.path).name,
+            # Where it is, not just what it is called. A recalled picture is somebody else's -
+            # another session's photos, or a project folder - so the filename alone was never
+            # enough to find it again, and the transcript showed the line with no picture under
+            # it while every other picture in the conversation had one. The pair is what
+            # library.records turns into a URL.
+            file=best.item.within,
+            scope=best.item.scope,
             shown=shown,
         )
         result: dict[str, Any] = {

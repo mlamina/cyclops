@@ -278,12 +278,37 @@ body:not(.kiosk) .livetitle {
   color: var(--green); font-size: calc(16 * var(--u)); line-height: 1.3;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
-/* The same word, in the same red, that marks a recording row in the Sessions list - because it
-   is the same fact. It blinks here and does not there: a list is a record of what happened, and
-   this is a light on a machine that is on. */
-body:not(.kiosk) .livemark {
-  color: var(--red); font-size: calc(11 * var(--u)); letter-spacing: .24em;
-  text-transform: uppercase; white-space: nowrap; margin-left: auto;
+/* That he is still going, said as a thing that is moving rather than as a word that is not.
+   This was the word RECORDING in small red caps beside the title, which is what a *list* of
+   sessions says about a row - correct there, because a list is a record of what already
+   happened. A screen you glance at while you work is not a list, and the question it answers is
+   "is this thing on".
+
+   It rides the header's own bottom rule: 2u tall, edge to edge, at the top of the page. That rule
+   is already drawn and already spans the page, so this is a light travelling along something that
+   was there rather than a band added above the content - no row of layout, and nothing below it
+   moves when a session starts.
+
+   translateX and not `left`, so the sweep is composited and never lays the page out again. It
+   only ever runs on a companion; the panel is never sent this element at all. */
+body:not(.kiosk) .livebar {
+  position: absolute; left: 0; right: 0; bottom: calc(-2 * var(--u));
+  height: calc(2 * var(--u)); overflow: hidden; display: none;
 }
-body:not(.kiosk) .livemark[data-on] { animation: livepulse 2s steps(1, end) infinite; }
-@keyframes livepulse { 0%, 60% { opacity: 1; } 61%, 100% { opacity: .35; } }
+body:not(.kiosk) .livebar[data-on] { display: block; }
+body:not(.kiosk) .livebar::after {
+  content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  animation: livesweep 2.2s linear infinite;
+}
+/* -110% to 345%: the bar is 30% of the track, so 333% carries it exactly off the far end, and
+   the few points either side are the fade at each tip clearing the edge. */
+@keyframes livesweep {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(345%); }
+}
+/* Somebody who would rather nothing moved still gets the answer, held still. */
+@media (prefers-reduced-motion: reduce) {
+  body:not(.kiosk) .livebar::after { animation: none; width: 100%;
+    background: var(--green); opacity: .5; }
+}

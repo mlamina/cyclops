@@ -30,7 +30,7 @@ django.setup()
 
 from django.test import RequestFactory  # noqa: E402
 
-from cyclops import card, library  # noqa: E402
+from cyclops import card, library, recall  # noqa: E402
 from cyclops.admin import views  # noqa: E402
 from cyclops.config import Settings  # noqa: E402
 
@@ -172,3 +172,56 @@ def test_a_log_still_being_written_reads_back_clean(sessions) -> None:
         handle.write('ne"}\n')
         handle.flush()
         assert live()["n"] == 4, "...and counted once it lands whole"
+
+
+# ------------------------------------------------------------------ a picture he found
+
+
+def found(path: str, scope: str, kind: str = "photo") -> recall.Item:
+    return recall.Item(kind=kind, path=path, scope=scope, title="Crank arm", text="", mtime_ns=0,
+                       size=0)
+
+
+def test_a_recalled_picture_says_where_it_is_and_not_only_what_it_is_called() -> None:
+    """The filename alone was never enough. A recalled picture belongs to some *other* session or
+    to a project, so the folder it is in is the half that was missing - and without it the line
+    that found the picture was the one line in a transcript with no picture under it."""
+    item = found("/home/cyclops/cyclops/sessions/2026-09-04_16-17-13_bmw/photos/16-18-02_you.jpg",
+                 "session:2026-09-04_16-17-13_bmw")
+    assert item.within == "photos/16-18-02_you.jpg"
+
+    deep = found("/home/cyclops/cyclops/projects/BMW R80RT/Photos/tank/rust.png",
+                 "project:BMW R80RT", kind="image")
+    assert deep.within == "Photos/tank/rust.png", "a project picture can be nested"
+
+
+def test_a_recalled_picture_is_fetched_from_the_route_its_scope_belongs_to() -> None:
+    assert library.recalled_url(
+        {"what": "photo", "scope": "session:2026-09-04_16-17-13", "file": "photos/a.jpg"}
+    ) == "/media/2026-09-04_16-17-13/photos/a.jpg"
+    assert library.recalled_url(
+        {"what": "image", "scope": "project:BMW R80RT", "file": "Photos/a.png"}
+    ) == "/project-media/BMW R80RT/Photos/a.png"
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        {"what": "photo", "file": "16-18-02_you.jpg"},  # a log from before the scope was written
+        {"what": "entry", "scope": "project:BMW", "file": "Log.md"},  # not a picture at all
+        {"what": "photo", "scope": "session:x"},  # found nothing
+    ],
+)
+def test_a_recall_with_nothing_to_show_shows_nothing(record) -> None:
+    """All three have always rendered as a line on its own, and still do - the transcript never
+    gets an <img> pointed at a URL that will 404."""
+    assert library.recalled_url(record) == ""
+
+
+def test_an_old_log_still_reads_back_without_a_url(sessions) -> None:
+    """The whole card is full of these, and a missing key must not become a broken thumbnail."""
+    folder = sessions / "2026-09-05_14-00-00"
+    written(folder, [{"t": 1.0, "type": "recall", "query": "the crank", "title": "Crank arm",
+                      "what": "photo", "file": "16-18-02_you.jpg", "shown": True}])
+    line = library.records(sessions, folder.name)[0]
+    assert "url" not in line

@@ -84,6 +84,15 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
          box with nothing to report has the header it always had. The panel's own caption says
          this too, in the same words - this is the copy you can read from a laptop. -->
     <b class="job" data-field="task">{{ task }}</b>
+    {% if not local %}
+    {% comment %}
+    That a session is running, said as a thing rather than as a word. It is the header's own
+    bottom rule with a light travelling along it - so it is the full width of the page, at the top
+    of it, and it costs no row of layout because that rule was already there. See .livebar in
+    lan.css.
+    {% endcomment %}
+    <div class="livebar" id="livebar" role="presentation"></div>
+    {% endif %}
   </header>
 
   <main class="view system">
@@ -200,7 +209,6 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
   <main class="view live" id="v-live">
     <div class="livehead">
       <span class="livetitle" id="livetitle">nothing running</span>
-      <span class="livemark" id="livemark"></span>
     </div>
     <div class="talk livetalk" id="livetalk"></div>
   </main>

@@ -47,7 +47,7 @@ const talk = document.getElementById('talk');
 // in the template), so everything below null-checks the way the controls in status.js do.
 const liveTalk = document.getElementById('livetalk');
 const liveTitle = document.getElementById('livetitle');
-const liveMark = document.getElementById('livemark');
+const liveBar = document.getElementById('livebar');
 // The panel navigates with four tabs and every other client with one menu (see dashboard.html).
 // Only one of these is ever on the page, and the code below simply drives whichever it found.
 const tabs = [...document.querySelectorAll('.tab')];
@@ -426,17 +426,34 @@ function stopLive() {
   if (liveTalk) liveTalk.innerHTML = '';
 }
 
-// Was the reader at the bottom before we added anything? Only then does the new line pull the
-// view down with it: reading back through what was said ten minutes ago must not be yanked
-// away every two seconds by a conversation still going on underneath.
+// Newest first, which is the other way up from the recording this transcript was written for.
+// There you are reading a conversation that finished, from the beginning. Here it has not
+// finished: the line worth seeing is the one he just said, and a screen propped against a vice
+// should be showing it without being touched. So the newest lands at the top and the older ones
+// go down, the way anything you follow rather than read does.
+//
+// Which turns the scroll question over with it. At the top, we stay at the top and the new line
+// simply appears. Anywhere else, the reader has scrolled back to something and inserting above
+// them would slide it out from under their eyes - so the insert's own height is added back to
+// keep what they are reading exactly where it was.
 const PINNED = 40;   // u-independent: a line's worth of slack for a finger mid-scroll
-const atEnd = (el) => el.scrollHeight - el.scrollTop - el.clientHeight < PINNED;
+
+function prepend(el, html) {
+  const held = el.scrollTop > PINNED ? el.scrollHeight : 0;
+  el.insertAdjacentHTML('afterbegin', html);
+  el.scrollTop = held ? el.scrollTop + (el.scrollHeight - held) : 0;
+}
+
+// The lines of one poll, newest first. They arrive oldest first - it is a log - and the block as
+// a whole goes above everything already on screen, so reversing the block is the whole of it.
+const newestFirst = (records) => records.slice().reverse().map(line).join('');
 
 function liveHead(title, on) {
   if (liveTitle) liveTitle.textContent = title;
-  if (!liveMark) return;
-  liveMark.textContent = on ? 'recording' : '';
-  if (on) liveMark.dataset.on = '1'; else liveMark.removeAttribute('data-on');
+  if (!liveBar) return;
+  // The header's own bottom rule, lit and travelling. Nothing to write and nothing to read: it
+  // is either moving or it is not there. See .livebar in lan.css.
+  if (on) liveBar.dataset.on = '1'; else liveBar.removeAttribute('data-on');
 }
 
 async function liveTick(mine) {
@@ -476,11 +493,9 @@ async function liveTick(mine) {
         liveTalk.innerHTML = '';
       }
       if (s.records.length) {
-        const follow = atEnd(liveTalk);
-        // Appended, never re-rendered. Replacing the lot every two seconds would throw away the
+        // Inserted, never re-rendered. Replacing the lot every two seconds would throw away the
         // scroll position and make every <img class="inline"> already on screen decode again.
-        liveTalk.insertAdjacentHTML('beforeend', s.records.map(line).join(''));
-        if (follow) liveTalk.scrollTop = liveTalk.scrollHeight;
+        prepend(liveTalk, newestFirst(s.records));
       }
       liveHeld = s.n;
       if (!liveTalk.childElementCount) {
