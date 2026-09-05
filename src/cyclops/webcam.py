@@ -23,6 +23,8 @@ WARMUP_SECONDS = 0.4
 MAX_EDGE = 1024
 JPEG_QUALITY = 85
 PROBE_INDICES = 3
+FRAME_WIDTH, FRAME_HEIGHT = 1280, 720
+FRAME_RATE = 15  # asked of the camera, not the reader; see the format note in open_camera
 USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
@@ -151,9 +153,27 @@ def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture | _UseeplusCapt
     A useeplus endoscope is looked for only once no ``/dev/video*`` has answered, because it
     cannot be probed the same way - it has no node to probe - and because a real webcam, when
     one is plugged in, should stay the camera you get.
+
+    The format is asked for explicitly because the default is expensive. Left alone, V4L2 hands
+    out the driver's first format - uncompressed YUYV - and 720p of that is 1.8 MB a frame,
+    which is 10 fps and nothing more on a USB 2.0 bus. That is the whole reason the preview used
+    to step: the panel redraws about 25 times a second and only had ten new frames to draw. MJPG
+    frames are a tenth the size, so the wire stops deciding, and the rate we ask for is the rate
+    we get. 15 is a deliberate middle: it fills most of the panel's redraws and gives
+    :meth:`~cyclops.camera.CameraSource.snapshot` half again as many frames to pick the sharpest
+    from, without paying for 30 fps of JPEG decode on a Pi that already runs warm.
     """
     backend = cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
-    params = [cv2.CAP_PROP_FRAME_WIDTH, 1280, cv2.CAP_PROP_FRAME_HEIGHT, 720]
+    params = [
+        cv2.CAP_PROP_FOURCC,
+        cv2.VideoWriter_fourcc(*"MJPG"),  # before the size: the format decides what sizes fit
+        cv2.CAP_PROP_FRAME_WIDTH,
+        FRAME_WIDTH,
+        cv2.CAP_PROP_FRAME_HEIGHT,
+        FRAME_HEIGHT,
+        cv2.CAP_PROP_FPS,
+        FRAME_RATE,
+    ]
     candidates = _candidate_indices(preferred)
     with _quiet_probe():
         for index in candidates:
