@@ -110,6 +110,27 @@ def session_up(state: str) -> bool:
     return state not in (IDLE, ERROR, WORKING)
 
 
+def working_over(state: str, busy: bool) -> str:
+    """*state*, or WORKING when something is running in the background that it does not cover.
+
+    Two states get replaced and the second one is the whole reason this is a function rather than
+    a comparison. IDLE is the obvious half: nobody is talking to him and the child is filing a
+    session, so a panel that snores through it is lying. DRAWING is the half that was missed on
+    the first attempt, and it is the commonest case by far - you ask for a diagram *in* a
+    conversation, so the state during those ninety seconds is DRAWING and never IDLE, and gating
+    on IDLE alone meant the one path anybody would actually take never showed the face.
+
+    DRAWING is replaced rather than kept alongside because since the picture stopped blocking its
+    tool call the two say the same thing: ``agent.drawing_active`` is true exactly while a picture
+    is being made in the background, which is what a row in :mod:`cyclops.tasks` is. Given the
+    same condition twice, the one with the face wins.
+
+    Nothing else is touched. Listening, speaking and looking are things he is doing *with you*
+    and outrank a job running behind them.
+    """
+    return WORKING if busy and state in (IDLE, DRAWING) else state
+
+
 def awake(state: str) -> bool:
     """Is Cyclops himself up - eye open, listening, able to answer?
 

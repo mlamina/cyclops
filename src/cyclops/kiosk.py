@@ -74,13 +74,13 @@ from .overlay import (  # noqa: E402
     STOPPING,
     VOLUME,
     VOLUME_STEP,
-    WORKING,
     Overlay,
     composite,
     fit_to_window,
     message,
     platform_font_note,
     session_up,
+    working_over,
 )
 from .record import PanelSource  # noqa: E402
 from .ui import ERROR, SessionController  # noqa: E402
@@ -1736,14 +1736,11 @@ class Kiosk:
 
             status = self.controller.status()
             state = self._effective(str(status["state"]))
-            # Nobody is talking to him, but something is running - a drawing that outlived the
-            # tool call that asked for it, or the child tidying up after a session that has
-            # already ended (cyclops.tasks). Only ever over IDLE: a session says what it is doing
-            # for itself, in states that are about a conversation, and this one is not. Read once
-            # here and used twice - it picks the mood, and it is the caption's last fallback below.
+            # Something is running in the background - a picture being made, or the child
+            # tidying up after a session that has already ended (cyclops.tasks). Read once here
+            # and used twice: it picks the face, and it is the caption's last fallback below.
             job = tasks.line()
-            if job and state == IDLE:
-                state = WORKING
+            state = working_over(state, bool(job))
             asleep = self._sleeping(state)
 
             # What the ring is saying. Handed over every frame because what it reflects is a

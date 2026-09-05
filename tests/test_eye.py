@@ -205,6 +205,27 @@ def test_a_mood_that_asks_for_no_wander_gets_the_turn_it_always_had() -> None:
     assert all(overlay.MOODS[state].sway > 0.0 for state in wanders), "or the row says nothing"
 
 
+def test_a_job_in_the_background_puts_the_working_face_up() -> None:
+    """The bug this is here for: it shipped gated on IDLE alone, and a diagram is asked for in a
+    conversation - so the state for the whole ninety seconds is DRAWING, and the one path anybody
+    would actually take never showed the face."""
+    assert overlay.working_over(overlay.DRAWING, True) == overlay.WORKING, "the commonest case"
+    assert overlay.working_over(overlay.IDLE, True) == overlay.WORKING, "and the quiet one"
+
+
+def test_nothing_running_leaves_every_state_alone() -> None:
+    for state in (*STATES, overlay.WORKING):
+        assert overlay.working_over(state, False) == state
+
+
+def test_a_job_never_takes_the_face_off_something_he_is_doing_with_you() -> None:
+    # Listening, speaking and looking outrank a job running behind them: those are things he is
+    # doing *with* somebody, and a shut machine face in the middle of one is a lie about it.
+    for state in (overlay.LISTENING, overlay.SPEAKING, overlay.LOOKING, overlay.SEARCHING,
+                  overlay.CONNECTING, overlay.STARTING, overlay.STOPPING, overlay.ERROR):
+        assert overlay.working_over(state, True) == state, state
+
+
 def test_the_states_do_not_all_look_the_same() -> None:
     # A table of nine identical rows would pass every other test in this file.
     assert len({tuple(vars(m).values()) for m in overlay.MOODS.values()}) >= 6
