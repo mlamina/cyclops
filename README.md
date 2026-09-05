@@ -119,6 +119,19 @@ records, and now for two reasons: `cyclops` opens the camera per photo instead o
 so there is no continuous video for it to record — and it has no panel, which is the other thing
 there is to record.
 
+**Your channel is levelled, and it is muted while Cyclops talks.** Two different things, and
+both are audible on the left channel. The levelling is a compressor on the way into the session
+(`cyclops.audio.Compressor`): a lavalier on a shirt is 20–30 dB down on a mic at the mouth and
+swings wildly as you turn away from the panel, so quiet speech is lifted about 20 dB, loud speech
+is pulled back down, and nothing clips. It sits ahead of everything, so what
+the model hears and what the recording keeps are the same audio. `CYCLOPS_MIC_COMPRESS=0` turns
+it off and `CYCLOPS_MIC_GAIN_DB` adds a fixed gain in front of it.
+
+The muting is [speaker mode](#macos-notes), and it is why a recording has stretches of **digital
+silence** rather than a quiet room: with barge-in off the mic is shut for as long as Cyclops is
+audible, and `cyclops.record` writes those blocks as zeros rather than inventing audio nobody
+captured. Turn INTERRUPT back on and the mic stays open, and the room comes back with it.
+
 **Which of the two is a switch on the settings screen** — tap the eye, and it sits under
 INTERRUPT. It settles what the *next* session records; an encoder is opened once, at one frame
 size, so a recording already running cannot be handed something else halfway through.
@@ -601,6 +614,8 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_HALF_DUPLEX`  | `auto`         | `auto`: speaker mode on when the output device is a speaker. `1`/`0` force it. |
 | `CYCLOPS_BARGE_IN_DB`  | `8`            | In speaker mode, how many dB over the echo your voice must be to interrupt. Lower = easier to interrupt, but risks the assistant cutting itself off; `off` disables barge-in. The panel's INTERRUPT switch overrides this once it has been touched. |
 | `CYCLOPS_LANG`         | `en`           | Language hint (ISO-639-1) for transcribing what you say; `auto` to let it detect. Set this to your spoken language for accurate transcripts. |
+| `CYCLOPS_MIC_COMPRESS` | `1`            | Even out how loud you are on the way in: quiet speech up about 20 dB, loud speech pulled down, nothing clipping. Applies to what the model hears *and* what the recording keeps; `0` leaves the microphone exactly as it is. |
+| `CYCLOPS_MIC_GAIN_DB`  | `0`            | A fixed gain in front of the compressor, for a microphone that is quiet before anything else has an opinion. Both plus and minus. |
 | `CYCLOPS_INPUT_DEVICE` | default        | Microphone: a device index or name substring (from `uv run cyclops-devices`). Needed when there's no default mic (e.g. a Raspberry Pi). |
 | `CYCLOPS_OUTPUT_DEVICE`| default        | Speaker: a device index or name substring. |
 | `CYCLOPS_SESSIONS_DIR` | `sessions`     | Where session folders are written (relative to the CWD; `~` ok). |

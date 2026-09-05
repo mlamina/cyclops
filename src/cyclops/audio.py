@@ -138,8 +138,107 @@ def list_devices() -> str:
     return str(sd.query_devices())
 
 
+# ---- making a quiet microphone usable ----
+#
+# A lavalier clipped to a shirt hears you 20-30 dB quieter than a mic held at the mouth, and what
+# it does hear swings: the same sentence is loud facing the panel and thin turned towards the
+# bench. Nothing downstream fixes that - the realtime API takes whatever level it is given, and a
+# recording is whatever reached the disk - so the levelling happens here, on the way in, before
+# anything else sees a block: the guard, the queue, the meter and the recorder all get the same
+# audio, and there is one place to look when it sounds wrong.
+
+
+class Compressor:
+    """Input gain, then compression with makeup: quiet speech comes up, loud speech stays put.
+
+    Downward compression above ``THRESHOLD_DBFS`` plus a fixed ``MAKEUP_DB`` is the whole idea.
+    The loudest speech is pushed back down by roughly what the makeup adds, so it lands about
+    where it already was, while anything under the threshold is simply lifted - which closes the
+    gap between the word you said into the panel and the one you said over your shoulder.
+
+    Block-rate rather than per-sample, which is what makes it cheap enough for the Pi: one RMS,
+    one peak and one interpolated ramp per 20 ms, instead of an envelope follower running at
+    24 kHz. The ramp is not decoration - a gain that stepped at the block boundary would put a
+    click in the waveform fifty times a second.
+
+    Attack is one block and release is ``RELEASE_S``, so a shout is caught at once and the gain
+    crawls back afterwards rather than pumping between syllables. Whatever the compressor asks
+    for, the block's own peak has the last word: the gain is capped so nothing clips.
+
+    Both halves are optional and independent - ``gain_db`` alone is a plain input gain, and
+    compression alone is the usual case, because the makeup *is* the gain most rooms need.
+
+    :class:`EchoGuard` sees the levelled block too, which is deliberate but worth knowing. Its
+    echo estimate is a *ratio* learnt from the same signal it is later tested against, so it
+    stays self-consistent; its one absolute number, ``MIC_FLOOR``, does not, and a room this
+    quiet now clears it easily. If barge-in starts firing on nothing, that is the first thing
+    to raise - or raise ``CYCLOPS_BARGE_IN_DB``, which is the knob already in the environment.
+    """
+
+    # Set against a real session rather than a rule of thumb. Measured over the speaking blocks
+    # of a recorded conversation on the Pi's lavalier, a 20 ms block runs -54 dBFS at the fifth
+    # percentile to -22 at the ninety-ninth, with the median at -41 - so the threshold sits down
+    # among ordinary speech, not up at shouting. A threshold placed at the loud end would only
+    # ever catch the loudest syllable of the loudest sentence, and the quiet half of what you
+    # said would come back exactly as quiet as it went in, which is the complaint.
+    THRESHOLD_DBFS = -45.0  # above this the compressor starts pulling down
+    RATIO = 4.0  # 4 dB in over the threshold buys 1 dB out
+    MAKEUP_DB = 20.0  # what everything gains afterwards; the point of the exercise
+    RELEASE_S = 0.25  # how long the gain takes to crawl back after a loud passage
+    CEILING = 0.98  # of full scale: the last word, so a block never clips on our account
+    FULL_SCALE = 32768.0
+
+    def __init__(self, *, gain_db: float = 0.0, compress: bool = True) -> None:
+        self.gain_db = gain_db
+        self.compress = compress
+        self._gain = 10 ** (gain_db / 20)
+        self._release = 1 - math.exp(-(BLOCK_FRAMES / SAMPLE_RATE) / self.RELEASE_S)
+        self._envelope = self.THRESHOLD_DBFS  # dBFS, smoothed across blocks
+        self._applied = self._gain  # gain at the end of the last block, so the ramp is continuous
+
+    def process(self, block: bytes) -> bytes:
+        """One block in, the same block levelled. Runs on the audio thread: no I/O, no locks."""
+        samples = np.frombuffer(block, dtype=np.int16).astype(np.float32)
+        if not samples.size:
+            return block
+        target = self._gain * self._factor(samples * self._gain)
+        # Ramped on the way up, immediate on the way down. Sliding a rising gain across the block
+        # is what keeps a release from clicking; sliding a *falling* one would leave the first
+        # samples of the block still carrying the old, higher gain - and the reason the gain is
+        # falling is that this block has a peak in it that the old gain would clip. So a cut
+        # lands at once, which is what a limiter's attack is, and the step it makes is under the
+        # transient that caused it.
+        start = self._applied if target >= self._applied else target
+        self._applied = target
+        ramp = np.linspace(start, target, samples.size, dtype=np.float32)
+        return np.clip(samples * ramp, -32768.0, 32767.0).astype(np.int16).tobytes()
+
+    def _factor(self, hot: np.ndarray) -> float:
+        """What to multiply the already-gained block by: makeup, less any compression."""
+        if not self.compress:
+            return 1.0
+        rms = math.sqrt(float(np.mean(hot * hot)))
+        level = 20 * math.log10(max(rms, 1.0) / self.FULL_SCALE)  # floored at one LSB, not -inf
+        if level > self._envelope:
+            self._envelope = level  # attack: a loud block is caught immediately
+        else:
+            self._envelope += (level - self._envelope) * self._release
+        over = self._envelope - self.THRESHOLD_DBFS
+        reduction = over * (1 - 1 / self.RATIO) if over > 0 else 0.0
+        factor = 10 ** ((self.MAKEUP_DB - reduction) / 20)
+        peak = float(np.max(np.abs(hot)))
+        ceiling = self.CEILING * self.FULL_SCALE
+        return ceiling / peak if peak * factor > ceiling and peak > 0 else factor
+
+
 class Microphone:
-    """Streams raw PCM16 chunks from the chosen input device into an asyncio queue."""
+    """Streams PCM16 chunks from the chosen input device into an asyncio queue.
+
+    Levelled on the way through unless that is turned off - see :class:`Compressor`. That is
+    upstream of everything: the echo guard judges the levelled block, the recorder's tap gets
+    it, and it is what goes to the model, so there is never a version of a session's audio that
+    only one of them heard.
+    """
 
     def __init__(
         self,
@@ -147,9 +246,16 @@ class Microphone:
         *,
         guard: EchoGuard | None = None,
         device: int | str | None = None,
+        gain_db: float = 0.0,
+        compress: bool = True,
     ) -> None:
         self._loop = loop
         self._guard = guard  # decides which blocks get through while the speaker is audible
+        # Levelling comes first, so everything below sees one version of the audio. Skipped
+        # entirely when there is nothing to do, rather than run as an expensive no-op.
+        self._compressor = (
+            Compressor(gain_db=gain_db, compress=compress) if gain_db or compress else None
+        )
         self._queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=MIC_QUEUE_MAX)
         self._status = ""  # last PortAudio status flags, written on the audio thread
         self._warned = False
@@ -175,6 +281,8 @@ class Microphone:
         if status:
             self._status = str(status)
         block = bytes(indata)  # copy: PortAudio reuses the buffer
+        if self._compressor is not None:
+            block = self._compressor.process(block)
         self.level = 0.6 * self.level + 0.4 * _rms(block)
         blocks = self._guard.admit(block) if self._guard is not None else [block]
         if self.on_block is not None:
@@ -194,6 +302,17 @@ class Microphone:
         if not self._warned:
             self._warned = True
             print(f"[mic] {message}", file=sys.stderr)
+
+    @property
+    def levelling(self) -> str:
+        """How the input is being treated, for the startup line; empty when it is left alone."""
+        shaping = self._compressor
+        if shaping is None:
+            return ""
+        said = [f"{shaping.gain_db:+g} dB"] if shaping.gain_db else []
+        if shaping.compress:
+            said.append(f"compressed +{Compressor.MAKEUP_DB:g} dB")
+        return f" ({', '.join(said)})" if said else ""
 
     def drain(self) -> None:
         """Discard everything captured so far (e.g. audio from before the session was ready)."""

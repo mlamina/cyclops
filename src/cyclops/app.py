@@ -139,8 +139,15 @@ async def _run(settings: Settings) -> None:
         )
     else:
         print(f"· full duplex with barge-in — {why}", flush=True)
-    mic = Microphone(loop, guard=guard, device=in_dev)
-    print(f"· mic: {mic.source or 'whatever PipeWire calls the default'}", flush=True)
+    mic = Microphone(
+        loop,
+        guard=guard,
+        device=in_dev,
+        gain_db=settings.mic_gain_db,
+        compress=settings.mic_compress,
+    )
+    source = mic.source or "whatever PipeWire calls the default"
+    print(f"· mic: {source}{mic.levelling}", flush=True)
     agent = VoiceAgent(settings, mic=mic, speaker=speaker, guard=guard)
     guard.on_barge_in = agent.local_barge_in
 

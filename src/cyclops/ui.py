@@ -288,8 +288,11 @@ class SessionController:
         # thing that holds the mic shut until Cyclops has finished, and that switch is on the
         # settings screen, which can be reached in the middle of a session. See cyclops.barge.
         guard = EchoGuard(loop, speaker, half_duplex=half, margin_db=barge.margin_db(s))
-        mic = Microphone(loop, guard=guard, device=in_dev)
-        print(f"· mic: {mic.source or 'whatever PipeWire calls the default'}", flush=True)
+        mic = Microphone(
+            loop, guard=guard, device=in_dev, gain_db=s.mic_gain_db, compress=s.mic_compress
+        )
+        source = mic.source or "whatever PipeWire calls the default"
+        print(f"· mic: {source}{mic.levelling}", flush=True)
         agent = VoiceAgent(replace(s, half_duplex=half), mic=mic, speaker=speaker, guard=guard)
         guard.on_barge_in = agent.local_barge_in
         with self._lock:

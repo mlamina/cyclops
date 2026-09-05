@@ -61,6 +61,14 @@ BARGE_IN_FILE = Path.home() / ".cache" / "cyclops" / "barge-in"
 # CYCLOPS_RECORD_SOURCE is left to decide - see :mod:`cyclops.filming`.
 RECORD_SOURCE_FILE = Path.home() / ".cache" / "cyclops" / "record-source"
 
+# The one note that goes the other way: which screen the panel wants the page it is about to
+# uncover to be on. The warm browser is loaded once at boot and never navigated, and there are two
+# things on the panel that open it - his face, which promises the sessions, and the heat gauge,
+# which promises the numbers behind itself - so somebody has to say which. It is answered on
+# /api/panel, the poll the page already runs several times a second, and it exists only while a
+# reveal is being set up: the kiosk writes it, the page routes on it, the kiosk deletes it.
+PAGE_SCREEN_FILE = Path.home() / ".cache" / "cyclops" / "page-screen"
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
@@ -78,6 +86,8 @@ class Settings:
     half_duplex: bool | None = None  # None: auto-detect from the output device
     barge_in_db: float | None = 8.0  # how much louder than the echo you must be; None = off
     transcribe_lang: str | None = "en"  # ISO-639-1 hint for the input transcriber; None = auto
+    mic_gain_db: float = 0.0  # fixed gain on the way in, before compression; for a quiet mic
+    mic_compress: bool = True  # even out how loud you are - see :class:`cyclops.audio.Compressor`
     input_device: str | None = None  # sounddevice mic: index or name substring; None = default
     output_device: str | None = None  # sounddevice speaker: index or name substring; None = default
     sessions_dir: Path = Path("sessions")  # one folder per session; everything it produced
@@ -177,6 +187,18 @@ def _barge_in_db(name: str) -> float | None:
         raise ConfigError(f"{name} must be a number of dB or 'off', got {raw!r}") from exc
 
 
+def _decibels(name: str, default: float) -> float:
+    """A number of dB, plus or minus. Unclamped on purpose: a lav can want a lot, and the
+    compressor's ceiling is what stops any of it clipping."""
+    raw = _env(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a number of dB, got {raw!r}") from exc
+
+
 def _volume(name: str) -> float:
     raw = _env(name)
     if raw is None:
@@ -235,6 +257,8 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         half_duplex=_tristate(_env("CYCLOPS_HALF_DUPLEX")),
         barge_in_db=_barge_in_db("CYCLOPS_BARGE_IN_DB"),
         transcribe_lang=_lang("CYCLOPS_LANG"),
+        mic_gain_db=_decibels("CYCLOPS_MIC_GAIN_DB", Settings.mic_gain_db),
+        mic_compress=_flag("CYCLOPS_MIC_COMPRESS", Settings.mic_compress),
         input_device=_env("CYCLOPS_INPUT_DEVICE"),
         output_device=_env("CYCLOPS_OUTPUT_DEVICE"),
         sessions_dir=Path(_env("CYCLOPS_SESSIONS_DIR") or Settings.sessions_dir).expanduser(),
