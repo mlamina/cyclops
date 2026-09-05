@@ -660,6 +660,32 @@ uv sync                                       # fetches Python 3.12 + aarch64 wh
 uv run cyclops-smoke                          # camera + API check, no audio needed
 ```
 
+**The frame rate is a format choice, not a camera limit.** A UVC webcam is opened for MJPG at
+1280×720, 15 fps, and the format matters more than it looks. Ask for no format and V4L2 hands over
+its first one — uncompressed YUYV — which at 720p is 1.8 MB a frame. A USB 2.0 bus carries about
+60 MB/s, so the camera negotiates itself down to exactly 10 fps and no code ever mentions a frame
+rate. That was the old behaviour, and it is why the preview stepped: the panel redraws about 25
+times a second and only had ten new frames to draw. MJPG frames are a tenth the size, the bus
+stops deciding, and `CAP_PROP_FPS` is then honoured exactly. Measured on a Pi 5 at 720p:
+
+| format | fps | read + decode | focus scoring | one reader thread |
+|---|---|---|---|---|
+| YUYV   | 10 (bus-capped) | 5.7 ms | ~4 ms | ~10% of a core |
+| MJPG   | 10 | 8.4 ms | 4.3 ms | 13% of a core |
+| MJPG   | 15 | 8.1 ms | 4.4 ms | 19% of a core |
+| MJPG   | 30 | 5.7 ms | 3.6 ms | 28% of a core |
+| MJPG 1080p | 30 | 14.4 ms | — | 43% of a core |
+
+Whole-kiosk cost of the switch, same measurement both ways: 83% → 93% of one core, panel
+temperature unchanged. The frames buy two things — a preview that fills most of the panel's
+redraws, and half again as many candidates for `CameraSource.snapshot()`, which hands out the
+sharpest frame of the last 0.7 s rather than the newest.
+
+That last point ties `FRAME_RATE` in `webcam.py` to `HISTORY` in `camera.py`: the history is a
+frame *count* and the window it feeds is a *duration*. Twelve frames is 0.8 s at 15 fps, which
+just covers the 0.7 s window. Raise the rate to 30 without raising `HISTORY` and the picker only
+ever sees the last 0.4 s — more frames, but a smaller slice of time to pick from.
+
 **Cameras that aren't webcams.** Most USB cameras are UVC devices: the kernel binds them, a
 `/dev/video*` node appears, and `CYCLOPS_CAMERA_INDEX=auto` finds them. Some aren't. The cheap
 endoscopes sold as *supercamera* (Geek szitman, and the Oasis/Depstech rebadges) expose two

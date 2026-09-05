@@ -32,7 +32,9 @@ from .webcam import WebcamError, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
 RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
-HISTORY = 12  # frames kept for the sharpest-of-recent pick (~0.5 s at 25 fps)
+HISTORY = 12  # frames kept for the sharpest-of-recent pick - 0.8 s at the 15 fps we ask for
+# HISTORY is a count and SHARP_WINDOW_S is a duration, so the two are tied to webcam.FRAME_RATE:
+# twelve frames just covers the window at 15 fps, and at 30 fps would cover only half of it.
 SHARP_WINDOW_S = 0.7  # only frames this fresh compete; older ones may show a different scene
 FOCUS_WIDTH, FOCUS_HEIGHT = 320, 180  # score on a downscale: same ranking, ~1.5 ms on a Pi 5
 
