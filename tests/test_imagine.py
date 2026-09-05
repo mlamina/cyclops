@@ -16,6 +16,7 @@ import base64
 import io
 import json
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from PIL import Image
@@ -121,6 +122,39 @@ def test_a_missing_photo_is_a_sayable_error_and_not_an_OSError(tmp_path) -> None
     with pytest.raises(imagine.ImagineError) as raised:
         asyncio.run(imagine.edit(tmp_path / "gone.jpg", "paint it black", Settings(api_key="")))
     assert "card" in str(raised.value), "the message is read out loud, so it has to be a sentence"
+
+
+def test_a_png_off_the_card_reaches_the_model_as_a_jpeg(tmp_path, monkeypatch) -> None:
+    """Whatever is on the panel is what gets edited, and that is no longer always a camera JPEG.
+
+    A picture dropped into a project folder is very often a PNG, and `edit` posts what it reads
+    as `image/jpeg`. Sending PNG bytes under that name is a lie the API is entitled to reject,
+    so the source is normalised on the way past.
+    """
+    out = io.BytesIO()
+    Image.new("RGBA", (320, 180), (90, 120, 90, 255)).save(out, format="PNG")
+    source = tmp_path / "dropped.png"
+    source.write_bytes(out.getvalue())
+
+    handed: list[bytes] = []
+
+    class FakeImages:
+        async def edit(self, **kwargs):
+            handed.append(kwargs["image"][1])
+            return FakeResponse([FakeImage(base64.b64encode(jpeg(64, 48)).decode())])
+
+    class FakeClient:
+        def __init__(self, **kwargs) -> None:
+            self.images = FakeImages()
+
+        async def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(imagine, "AsyncOpenAI", FakeClient)
+    asyncio.run(imagine.edit(source, "paint it black", Settings(api_key="")))
+
+    assert handed, "the request never went"
+    assert handed[0][:3] == b"\xff\xd8\xff", "a JPEG, whatever the card was holding"
 
 
 # ---------------------------------------------------------------- what lands
@@ -246,17 +280,84 @@ def test_the_model_is_shown_the_picture_it_had_made(voice) -> None:
     assert label.startswith("[") and label.endswith("]"), "flat, so it is not read out verbatim"
 
 
-def test_being_shown_an_edit_does_not_move_what_the_next_edit_starts_from(voice) -> None:
-    """The rule that stops a second change compounding the first.
+def test_showing_the_model_an_edit_is_not_what_records_it(voice) -> None:
+    """A second change now carries on from the first - but add_edit is not where that is said.
 
-    `_last_photo` is the last thing the *camera* saw. An edit is not that, however much it looks
-    like it, so add_edit must leave it exactly where add_photo left it.
+    This method is handed bytes and has no path, and it runs whether or not the picture reached
+    the card. `_run_edit_photo` records the edit on the loop, from the path it was written to.
+    Pinning it here so the bookkeeping cannot quietly migrate back into the method that only
+    knows how to show something.
     """
     made, _ = voice
-    camera_shot = object()
-    made._last_photo = camera_shot
+    before = agent.Panel(Path("/cyclops/photos/12-00-00_you.jpg"), "photo")
+    made._on_panel = before
     asyncio.run(made.add_edit(jpeg(320, 180), "paint the doors matt black"))
-    assert made._last_photo is camera_shot
+    assert made._on_panel is before
+
+
+# ---------------------------------------------------------------- what gets edited
+
+
+class Called:
+    """As much of a Realtime function call as `_run_edit_photo` reads."""
+
+    def __init__(self, arguments: str) -> None:
+        self.name = "edit_photo"
+        self.call_id = "call_1"
+        self.arguments = arguments
+
+
+def edit_result(made) -> dict:
+    """Drive `_run_edit_photo` and hand back the tool output it sent."""
+    sent: list[dict] = []
+
+    async def _send_tool_output(call_id, output):
+        sent.append(output)
+
+    made._send_tool_output = _send_tool_output
+    made._request_response = _nothing
+    asyncio.run(made._run_edit_photo(Called('{"request": "paint the doors matt black"}')))
+    return sent[0]
+
+
+async def _nothing() -> None:
+    return None
+
+
+def test_nothing_shown_yet_still_asks_for_the_shutter(voice) -> None:
+    made, _ = voice
+    assert made._on_panel is None, "a session starts with nothing in front of them"
+    output = edit_result(made)
+    assert output["ok"] is False
+    assert "SNAP" in output["note"], "the one thing they can do about it"
+
+
+def test_a_drawing_on_the_panel_is_not_edited_as_if_it_were_a_photo(voice) -> None:
+    """The failure this slot exists to prevent.
+
+    A diagram takes the panel through the same show() a photo does. If it left the previous
+    photograph in the slot, "change that" would redraw a picture nobody is looking at and put the
+    result up as though it had answered - and it would be an image model painting over a drawing
+    whose whole value is that it was checked against a schema.
+    """
+    made, _ = voice
+    made._on_panel = agent.Panel(Path("/cyclops/photos/12-00-00_you.jpg"), "photo")
+    made._note_panel({"ok": True, "title": "the fuse box", "shown": True})
+    assert made._on_panel == agent.Panel(None, "diagram")
+
+    output = edit_result(made)
+    assert output["ok"] is False
+    assert "draw_diagram" in output["note"], "it names the tool that can change it"
+
+
+def test_a_drawing_nobody_could_see_leaves_the_photo_where_it_was(voice) -> None:
+    """No panel free means no drawing on it, so the photograph is still the thing in front of
+    them - and still the thing to edit."""
+    made, _ = voice
+    photo = agent.Panel(Path("/cyclops/photos/12-00-00_you.jpg"), "photo")
+    made._on_panel = photo
+    made._note_panel({"ok": True, "title": "the fuse box", "shown": False})
+    assert made._on_panel is photo
 
 
 def test_nothing_is_sent_once_the_socket_has_gone(voice) -> None:

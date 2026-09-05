@@ -201,6 +201,11 @@ async def edit(source: Path, request: str, settings: Settings) -> bytes:
         raise ImagineError("that photo is not on the card any more") from exc
     if not data:
         raise ImagineError("that photo is empty")
+    # Whatever is on the panel is what gets edited, and that is no longer always a camera JPEG:
+    # a recalled picture can be a PNG somebody dropped into a project folder. The bytes go up as
+    # image/jpeg below, so a mislabelled blob would reach the API as something it is not.
+    # as_jpeg checks the format itself and hands a JPEG straight back, so this is not a branch.
+    data = as_jpeg(data)
 
     width, height = _dimensions(data)
     client = AsyncOpenAI(api_key=settings.api_key, timeout=EDIT_TIMEOUT_S, max_retries=0)

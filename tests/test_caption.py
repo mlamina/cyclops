@@ -105,7 +105,7 @@ def test_every_tool_the_model_is_offered_has_something_to_say() -> None:
         ),
         (
             Call("edit_photo", '{"request": "paint the doors matt black"}'),
-            "editing your photo to paint the doors matt black…",
+            "editing the picture to paint the doors matt black…",
         ),
         (Call("open_project", '{"name": "Kitchen Tap"}'), "opening Kitchen Tap…"),
         (Call("track_project", '{"name": "Kitchen Tap"}'), "starting to track Kitchen Tap…"),

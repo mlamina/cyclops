@@ -11,6 +11,7 @@ import sys
 import time
 import uuid
 from collections.abc import Callable, Coroutine
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -169,12 +170,15 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "edit_photo",
     "description": (
-        "Redraw the last photo they took with a change made to it, and put it on the "
-        "touchscreen. Use it when the answer is 'like this' about the actual thing in front of "
+        "Redraw the photo on the touchscreen with a change made to it, and put the result up "
+        "in its place. Use it when the answer is 'like this' about the actual thing in front of "
         "them and saying it would take a paragraph: a colour or a finish, a part moved or taken "
         "away, a shelf on that wall, the half-built thing shown finished, that corner tidied. "
-        "It works on the last photo they took, so if that is not the picture you want, ask them "
-        "to hit SNAP first. It takes up to a minute and fills the panel when it lands, so say "
+        "It works on whichever photo is on the panel - one they just took, one you found for "
+        "them, or one you already edited, so a second change carries on from the first. If "
+        "nothing has been up at all yet, ask them to hit SNAP. If what is up is a DIAGRAM, this "
+        "is not the tool: say so and offer draw_diagram, which is the one that can change it. "
+        "It takes up to a minute and fills the panel when it lands, so say "
         "one short sentence out loud first and then keep talking. You are shown the result when "
         "it lands, but so are they: do not narrate it back at them unprompted. Volunteer "
         "something only if it did not do what they asked or there is something worth flagging - "
@@ -516,9 +520,10 @@ SHOWING THEM SOMETHING
   connections or a layout, draw it rather than saying it - see draw_diagram for what it can and
   cannot draw. Say one short sentence first, because it takes a few seconds to appear.
 - When the answer is what something would LOOK like - a colour, a finish, a part moved, a thing
-  that is not there yet - edit their last photo rather than describing it; see edit_photo. It can
-  take a minute, so say what you are doing and carry on talking. What comes back is a drawing of
-  their photo and not a photograph: never treat it as evidence and never measure anything off it.
+  that is not there yet - edit the picture in front of them rather than describing it; see
+  edit_photo. It can take a minute, so say what you are doing and carry on talking. What comes
+  back is a drawing of their photo and not a photograph: never treat it as evidence and never
+  measure anything off it.
 - Once it is up, stop describing it. They can see it. Answer what they ask about it.
 
 THE PROJECTS YOU KEEP
@@ -724,6 +729,26 @@ class _Doing:
         self.until = float("inf")  # monotonic; infinite while the work is actually running
 
 
+@dataclass(frozen=True)
+class Panel:
+    """The last picture put in front of them, and what made it.
+
+    One slot rather than the ``_last_photo`` this replaced, which only ever meant "the last thing
+    the *camera* saw". A picture reaches the panel three ways now - the shutter, a recall off the
+    card, and an edit - and ``edit_photo`` works on whichever of them is up, because the thing
+    somebody means by "change that" is the thing they are looking at.
+
+    ``path`` is None when what is on the panel is not a photograph. That is the diagram case, and
+    it is the reason this is not simply a ``Path``: a drawing goes up through the same
+    ``diagram.show()`` everything else does, so a slot that only tracked photographs would still
+    be naming the picture from *before* the drawing, and an edit would quietly redraw something
+    that is no longer on the screen.
+    """
+
+    path: Path | None
+    what: str  # "photo" | "found" | "edit" | "diagram" - for the log and the tool's own error
+
+
 class VoiceAgent:
     """Owns one Realtime session: streams mic audio up, plays audio down, shows it the photos.
 
@@ -749,13 +774,12 @@ class VoiceAgent:
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
         self.drawing_active = False  # True while a picture is being made (UI 'drawing')
-        # The last photo the model has actually been shown, which is what edit_photo works on.
+        # The picture on the panel, which is what edit_photo works on. See :class:`Panel`.
         # Kept here rather than found by scanning photos/ for the newest file, because those two
         # are not the same thing: a shutter pressed before the session was ready writes a jpg
         # nothing ever saw, and editing a picture the model cannot reason about is worse than
-        # asking for another. Edits never pass through add_photo, so this is always a real
-        # photograph - which is also the rule that stops a second change compounding a first.
-        self._last_photo: Capture | None = None
+        # asking for another.
+        self._on_panel: Panel | None = None
         # The picture a recall just put on the panel, waiting to be handed to the model. Held on
         # the agent rather than returned, because it has to be sent *after* the tool output that
         # mentions it - see _run_recall.
@@ -1021,7 +1045,8 @@ class VoiceAgent:
                     ],
                 }
             )
-            self._last_photo = capture  # only now: this means "shown", not "taken"
+            # Only now: this means "shown", not "taken".
+            self._on_panel = Panel(capture.path, "photo")
             await self._request_response()
         finally:
             self.tool_active = False
@@ -1034,11 +1059,13 @@ class VoiceAgent:
     async def add_edit(self, jpeg: bytes, request: str) -> None:
         """Show the model the picture it just had made. No response is asked for here.
 
-        Deliberately not :meth:`add_photo`, for two reasons that both matter. It must not touch
-        ``_last_photo`` - that is the last thing the *camera* saw, and it is what keeps a second
-        change starting from the real picture rather than compounding the first. And it must not
+        Deliberately not :meth:`add_photo`, for two reasons that both still matter. It must not
         ask for a response of its own: this rides inside a tool call whose output is still to be
-        sent, and ``_run_edit_photo`` issues the one ``response.create`` for the pair.
+        sent, and ``_run_edit_photo`` issues the one ``response.create`` for the pair. And it must
+        not move ``_on_panel`` - not because an edit is the wrong thing to edit next, which it no
+        longer is, but because ``_run_edit_photo`` owns that bookkeeping and does it on the loop
+        with the path the picture was actually written to. This method is handed bytes and has no
+        path to record.
 
         The label is flat and unquotable for the reason :meth:`add_photo`'s is - a caption
         written as speech comes back out of the speaker verbatim - and it says twice over what
@@ -1387,6 +1414,7 @@ class VoiceAgent:
         finally:
             self.drawing_active = False
 
+        self._note_panel(output)
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
@@ -1404,6 +1432,7 @@ class VoiceAgent:
         except Exception as exc:  # a card that will not read is not a reason to hang the model
             self._log(f"[tool] find_diagram failed: {exc!r}", stream=sys.stderr)
             output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        self._note_panel(output)
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
@@ -1421,6 +1450,21 @@ class VoiceAgent:
 
             folders.extend(p.diagrams_dir for p in store.catalog(self.settings))
         return folders
+
+    def _note_panel(self, output: dict[str, Any]) -> None:
+        """A drawing reached the glass, so the photograph that was there is not on it any more.
+
+        Called on the loop from the two diagram runners rather than from the two blocking methods
+        that actually show one, which run in a thread - the slot is read by ``edit_photo`` on this
+        same loop, and there is no reason to write it from anywhere else.
+
+        It exists because ``edit_photo`` works on whatever is on the panel. Leave a photograph in
+        the slot while a drawing is up and "change that" redraws a picture nobody is looking at,
+        and puts the result on the panel as though it had answered. Clearing it turns that into a
+        sentence: see :meth:`_run_edit_photo`, which offers ``draw_diagram`` instead.
+        """
+        if output.get("shown"):
+            self._on_panel = Panel(None, "diagram")
 
     def _keep_and_show(self, spec: dict[str, Any]) -> dict[str, Any]:
         """Write the drawing down, then ask for the panel. Blocking; runs off the loop's thread.
@@ -1609,6 +1653,11 @@ class VoiceAgent:
             }
 
         shown, seen = await asyncio.to_thread(self._show_found, Path(best.item.path))
+        if shown:
+            # It is the picture in front of them now, so it is the one edit_photo works on. The
+            # path is the file on the card, not the downscaled copy that went to the panel: an
+            # edit should start from the best pixels there are, not from the panel's 800x480.
+            self._on_panel = Panel(Path(best.item.path), "found")
         session.note(
             "recall",
             query=query[:120],
@@ -1707,7 +1756,7 @@ class VoiceAgent:
     # ---- imagined pictures ----
 
     async def _run_edit_photo(self, call: RealtimeConversationItemFunctionCall) -> None:
-        """Redraw the last photo with a change, keep it, and put it on the panel.
+        """Redraw the picture on the panel with a change, keep it, and put it up.
 
         The same lifecycle as :meth:`_run_draw_diagram` - the module does the work, this does the
         bookkeeping - with one thing added that the diagram does not need. An edit can take a
@@ -1726,13 +1775,28 @@ class VoiceAgent:
             await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing described"})
             await self._request_response()
             return
-        shot = self._last_photo
+        shot = self._on_panel
         if shot is None:
             await self._send_tool_output(call.call_id, {
                 "ok": False,
                 "error": "no photo to edit",
                 "note": (
                     "They have not shown you a photo yet. Ask them to hit SNAP, in a few words."
+                ),
+            })
+            await self._request_response()
+            return
+        if shot.path is None:
+            # A drawing is on the panel. Not a failure and not a photograph: the tool that can
+            # change it is draw_diagram, whose output is checked against a schema we own, and
+            # painting over a wiring diagram with an image model is the one thing this module
+            # exists to refuse.
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": "what is on the panel is a drawing, not a photo",
+                "note": (
+                    "You cannot edit a diagram with this. Say so in a few words and offer to "
+                    "draw it again with the change - that is draw_diagram."
                 ),
             })
             await self._request_response()
@@ -1745,18 +1809,25 @@ class VoiceAgent:
             # Inside the try rather than an else, for the reason _run_draw_diagram's comment
             # gives: a failure in the bookkeeping must not leave the model waiting for a result.
             jpeg = await imagine.edit(shot.path, request, self.settings)
-            output, seen = await asyncio.to_thread(self._keep_and_show_edit, jpeg, request)
+            output, seen, kept = await asyncio.to_thread(self._keep_and_show_edit, jpeg, request)
             self._log(f"[tool] edit: {len(jpeg) // 1024} KB in {time.monotonic() - started:.1f}s")
         except imagine.ImagineError as exc:
             session.note("photo", by="edit", request=request[:80], error=str(exc))
             self._log(f"[tool] edit failed: {exc}", stream=sys.stderr)
-            output, seen = {"ok": False, "error": str(exc)}, None
+            output, seen, kept = {"ok": False, "error": str(exc)}, None, None
         except Exception as exc:  # never leave the model waiting for a tool result
             session.note("photo", by="edit", request=request[:80], error=f"{type(exc).__name__}")
             self._log(f"[tool] edit failed: {exc!r}", stream=sys.stderr)
-            output, seen = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None
+            output, seen, kept = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None, None
         finally:
             self.drawing_active = False
+
+        if kept is not None:
+            # The edit is the picture on the panel now, so it is what the next change starts
+            # from: "now make it blue instead" means the one they are looking at. Set on the loop
+            # from the path it was actually written to, and only when it was written - an edit
+            # that reached no card is not a file anything can open again.
+            self._on_panel = Panel(kept, "edit")
 
         if output.get("ok") and self._turn_serial != turn:
             output["stale"] = True
@@ -1773,7 +1844,9 @@ class VoiceAgent:
             await self.add_edit(seen, request)
         await self._request_response()
 
-    def _keep_and_show_edit(self, jpeg: bytes, request: str) -> tuple[dict[str, Any], bytes]:
+    def _keep_and_show_edit(
+        self, jpeg: bytes, request: str
+    ) -> tuple[dict[str, Any], bytes, Path | None]:
         """Write the picture down, ask for the panel, and hand back the copy to be shown.
 
         Written before it is shown, and shown whether or not writing worked - the same order and
@@ -1782,6 +1855,10 @@ class VoiceAgent:
         the same thing - no more than 1024 on the long edge - and 1024 is exactly what
         ``webcam.MAX_EDGE`` hands the model for a real photograph, so the model sees an edit at
         the size it sees everything else.
+
+        The third thing handed back is where the full-size copy landed, or None if it landed
+        nowhere. This runs in a thread, and ``_run_edit_photo`` is the one that records it as the
+        picture on the panel - on the loop, where the slot is read.
         """
         live = session.current()
         kept: imagine.Edit | None = None
@@ -1827,7 +1904,11 @@ class VoiceAgent:
                 "they have nothing to look at. It is a drawing of their photo, so never read a "
                 "measurement off it or treat anything in it as a fact about their hardware."
             )
-        return {"ok": True, "request": request, "shown": shown, "note": note}, small
+        return (
+            {"ok": True, "request": request, "shown": shown, "note": note},
+            small,
+            kept.path if kept is not None else None,
+        )
 
     async def _run_project_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Open a project's notes, or start keeping some. Both are reads and writes of the card.
@@ -2249,8 +2330,8 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return _phrase("looking for a drawing of", _tool_data_query(args), "looking for a drawing")
     if call.name == "edit_photo":
         return _phrase(
-            "editing your photo to", _tool_string(args, "request", MAX_QUERY_CHARS),
-            "editing your photo",
+            "editing the picture to", _tool_string(args, "request", MAX_QUERY_CHARS),
+            "editing the picture",
         )
     if call.name == "open_project":
         return _phrase("opening", _tool_name(args), "opening a project")

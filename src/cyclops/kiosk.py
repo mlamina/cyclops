@@ -40,6 +40,7 @@ from . import (  # noqa: E402
     barge,
     diagram,
     filming,
+    imagine,
     mixer,
     power,
     session,
@@ -466,6 +467,14 @@ class Kiosk:
         # browser and a lie about what you are looking at. Both still gate _open_admin, so the
         # two can never be up at once.
         self._page_busy = threading.Event()  # any page has the panel: the admin one or a diagram
+        # ...and a third, narrower than either: a picture of ours is not merely on its way to the
+        # panel but actually visible on it. _page_busy goes up when the thread is *spawned*, and
+        # _diagram_session then waits up to DIAGRAM_WAIT_S for the page to paint and may give up
+        # without ever uncovering - so it cannot answer "is something of ours on the glass now?".
+        # show_diagram needs that exact question: the page polls, so a second picture offered
+        # while one is up swaps itself in, and refusing it would tell the model nobody can see a
+        # picture that everybody can. See show_diagram.
+        self._panel_showing = threading.Event()
         self._reveal = threading.Event()  # asks the render loop to uncover the admin page
         self._retake = threading.Event()  # ... and to take the panel back off it
         self._hidden = False  # the admin page has the panel; nothing we draw can be seen
@@ -916,6 +925,11 @@ class Kiosk:
             self._shutter_error_until = time.monotonic() + NOTICE_S
             print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
         else:
+            # Up on the glass first, then off to Cyclops. The panel is a file write away and the
+            # model is a network round trip, and the picture belongs on the screen either way:
+            # with no session running there is nobody to show it to and it should still go up.
+            # The same two lines every other picture reaches the panel through.
+            panel = self._show_snapped(shot.path)
             # The whole point of the button: the photo goes to Cyclops, which answers out loud.
             # False means there was no live session to show it to - it is still on the card.
             shown = self.controller.show_photo(shot)
@@ -927,11 +941,39 @@ class Kiosk:
                 height=shot.height,
                 bytes=shot.jpeg_bytes,
                 shown=shown,
+                # Whether it reached the *panel*, which is the other question - `shown` answers
+                # whether Cyclops was shown it. The edit record already splits the two this way.
+                panel=panel,
             )
-            print(f"· snapped {shot.path}{'' if shown else ' (nothing live to show it to)'}",
-                  flush=True)
+            print(f"· snapped {shot.path}{'' if shown else ' (nothing live to show it to)'}"
+                  f"{'' if panel else ' (no panel free)'}", flush=True)
         finally:
             self._snap_busy.clear()
+
+    def _show_snapped(self, path: Path) -> bool:
+        """Put the photo just taken on the panel. False if there is no panel free for it.
+
+        The one picture somebody was deliberate about used to be the one they could not see: the
+        shutter flashed, the photo went to Cyclops, and the panel carried on showing the live
+        camera. It now goes up exactly the way a recalled picture does, through the same two
+        lines and the same offer file - which is also what makes it editable, because
+        ``edit_photo`` works on whatever is on the panel.
+
+        ``for_panel`` is close to a no-op here, ``webcam._save`` having already capped the long
+        edge at the same 1024, but it is what the other callers use and it is what keeps this
+        honest whatever the camera hands over. Read from the card rather than reusing
+        ``Capture.data_url``: that one is the model's copy, and ``offer_image`` wants raw bytes
+        and builds its own.
+
+        Never raises. A photo that will not go on the panel is still on the card and still went
+        to Cyclops, and the shutter is not the place to find that out the hard way.
+        """
+        try:
+            small = imagine.for_panel(path.read_bytes())
+        except OSError as exc:
+            print(f"· could not read {path} for the panel ({exc})", file=sys.stderr, flush=True)
+            return False
+        return bool(diagram.offer_image(small, path.stem) and diagram.show())
 
     # ---- admin page ----
 
@@ -1147,16 +1189,49 @@ class Kiosk:
     # ---- diagrams ----
 
     def show_diagram(self) -> bool:
-        """Put the diagram waiting in ``DIAGRAM_FILE`` on the panel. False if the panel is busy.
+        """Put the picture waiting in ``DIAGRAM_FILE`` on the panel. False if the panel is busy.
 
         Called from the agent's thread, so it does nothing here but set a flag and start a
         thread: highgui belongs to the render loop and this is not it.
+
+        A picture of ours already being up is not busy - it is the ordinary case. Snapping a
+        photo puts one on the panel, and the edit asked for a minute later arrives while it is
+        still there. The page polls ``/api/panel`` several times a second and repaints on any new
+        payload id, and the caller has already written one, so the swap has effectively happened
+        by the time this returns: saying False would have the model announce out loud that nobody
+        can see a picture that is about to be on the glass in 400 ms. Only the admin page really
+        has no room, because that is a different page and not ours to paint over.
         """
+        if self._panel_showing.is_set():
+            self._cues.play("shown")  # something new arrived; the other one is in _diagram_session
+            print("· picture swapped on the panel", flush=True)
+            # A recording is being handed the picture on the panel rather than the black the
+            # kiosk is painting behind the browser (see cyclops.still), and that hand-off happens
+            # once, at the reveal. A swap never goes past the reveal, so without this the video
+            # would hold the first picture for as long as the panel kept showing others. Off on
+            # a thread of its own because rasterising a drawing shells out to ffmpeg, and this
+            # method is called from the agent's and promises to do nothing slow.
+            threading.Thread(target=self._restill, name="kiosk-restill", daemon=True).start()
+            return True
         if self._page_busy.is_set():
-            return False  # the admin page is up, or a diagram already is; do not stack them
+            return False  # the admin page is up, or a picture is on its way; do not stack them
         self._page_busy.set()
         threading.Thread(target=self._diagram_session, name="kiosk-diagram", daemon=True).start()
         return True
+
+    def _restill(self) -> None:
+        """Rebuild the panel's stand-in frame after a picture was swapped for another.
+
+        Reads the offer file, which the caller has already written, so it does not have to wait
+        for the page to repaint to know what the page is about to show.
+
+        Checks the latch again on the way out: a picture that came down while this was rendering
+        would otherwise republish itself over the black that replaced it.
+        """
+        frame = still.of_panel(*self._panel_size())
+        if frame is not None and self._panel_showing.is_set():
+            self._page_still = frame
+            self.panel.publish(frame)
 
     def _diagram_session(self) -> None:
         """The whole life of one diagram: wait for it to be drawn, show it, wait, take it back.
@@ -1191,15 +1266,21 @@ class Kiosk:
             self._page_still = still.of_panel(*self._panel_size())
             shown_at = time.time()
             shown = True
+            self._panel_showing.set()  # from here a second picture swaps rather than being refused
             self._reveal.set()
-            # Something was made and it is on the panel now: look up. The one place that is true
-            # for both kinds, since a diagram drawn or found and a photo he imagined all arrive
-            # here through diagram.show(). Pointedly not _admin_session's reveal, which is his
-            # eye opening the dashboard and already has a sound of its own.
+            # Something was made and it is on the panel now: look up. Where a picture that takes
+            # an empty panel says so - a diagram drawn or found, a photo snapped and a photo he
+            # imagined all arrive here through diagram.show(). One replacing another says it in
+            # show_diagram instead, which is the path that does not come back through here.
+            # Pointedly not _admin_session's reveal, which is his eye opening the dashboard and
+            # already has a sound of its own.
             self._cues.play("shown")
             print("· diagram on the panel", flush=True)
             self._watch_page(shown_at)
         finally:
+            # Cleared before the withdraw, so nothing can offer a picture into the gap between
+            # this one coming down and the panel coming back.
+            self._panel_showing.clear()
             # The drawing goes before the panel comes back, so the page has already switched
             # itself off the diagram by the time it is visible again behind the window.
             diagram.withdraw()
