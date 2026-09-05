@@ -97,7 +97,7 @@ const SESSION = {
   title: 'Planned to swap a USB webcam and speaker for a Raspberry Pi camera module',
   summary: 'Worked through the case cut-out, the ribbon length and whether the official module or the Arducam clone is the one to buy. Settled on the official Camera Module 3 Wide.',
   started: '2026-09-01T18:13:08', seconds: 88, video: true, verdict: 'finished',
-  photos: ['photos/18-13-40_bracket.jpg', 'photos/18-14-02_ribbon.jpg'], diagrams: [],
+  photos: ['photos/18-13-40_bracket.jpg', 'photos/18-14-02_ribbon.jpg'],
 };
 // The shape library.records() actually returns - `type` and `t` and `text`, not a prose
 // invention. A fixture that does not match renders as a column of "Something went wrong", which
@@ -108,22 +108,23 @@ const RECORDS = {
     { type: 'cyclops', t: 6.5, text: 'The Camera Module 3 Wide is the one that fits the case without a new cut-out, and it is the official part, so libcamera already knows it. The Arducam clone wants a libcamera fork on the Pi, which is a maintenance bill rather than a purchase.' },
     { type: 'you', t: 19.2, text: 'Fine. Order it.', interrupted: true },
     { type: 'photo', t: 21.0, shown: true, file: 'photos/18-13-40_bracket.jpg' },
-    { type: 'diagram', t: 44.0, title: 'Ribbon routing', found: false },
+    { type: 'photo', t: 44.0, by: 'drawn', request: 'the ribbon routing to the header',
+      file: 'photos/18-14-44_drawn.jpg' },
     { type: 'error', t: 61.0, message: 'the camera stopped answering for nine seconds' },
   ],
 };
-// library.Item, under the key media_stream() actually uses. A `drawn: false` diagram is in
-// here because it is the one tile that renders text instead of a picture.
-const shot = (kind, title, when, drawn) => ({
-  kind, session: '2026-09-01_18-13-08', session_title: 'Planned to swap a USB webcam',
-  title, when, url: `/media/2026-09-01_18-13-08/photos/${when.slice(11, 13)}.jpg`, drawn });
+// library.Item, under the key media_stream() actually uses. Every tile is a picture now - a
+// diagram included, which is what makes the grid one kind of thing rather than two.
+const shot = (title, when) => ({
+  kind: 'photo', session: '2026-09-01_18-13-08', session_title: 'Planned to swap a USB webcam',
+  title, when, url: `/media/2026-09-01_18-13-08/photos/${when.slice(11, 13)}.jpg` });
 const MEDIA = {
   items: [
-    shot('photo', 'a bracket', '2026-09-01T18:13:40', true),
-    shot('photo', 'the ribbon, seated', '2026-09-01T18:14:02', true),
-    shot('diagram', 'Ribbon routing from the module to the header', '2026-08-30T21:16:00', true),
-    shot('diagram', 'A drawing the panel never sent back', '2026-08-30T21:18:00', false),
-    shot('photo', 'the case, cut', '2026-08-30T21:20:00', true),
+    shot('a bracket', '2026-09-01T18:13:40'),
+    shot('the ribbon, seated', '2026-09-01T18:14:02'),
+    shot('Ribbon routing from the module to the header', '2026-08-30T21:16:00'),
+    shot('the header, drawn', '2026-08-30T21:18:00'),
+    shot('the case, cut', '2026-08-30T21:20:00'),
   ],
 };
 // shelf.projects(): name, title, tagline, status, updated, sessions, photos, thumb.

@@ -71,7 +71,6 @@ sessions/
       14-33-05_edit.jpg      one of those redrawn with a change - see Imagining a change
       14-32-40_cyclops.jpg   (only on older cards - Cyclops used to hold its own shutter)
       14-35-01_drawn.jpg     a diagram it drew - see Diagrams
-    diagrams/                (only on older cards - a diagram used to be a spec and an svg)
 ```
 
 `session.md` opens in any markdown viewer with both images inline and every line stamped as an
@@ -420,8 +419,7 @@ where the shutter's `14-33-12_you.jpg` goes, and everything downstream already k
 with it: the index service captions it, `session.md` embeds it, the Media grid lists it, and the
 project sweep files it with the rest. There is no `diagrams/` folder any more and no second
 search path — ask *"put that relay wiring back up"* and `recall` finds it by meaning, like any
-other picture. Old cards keep their `diagrams/` and `Diagrams/` folders and the page still reads
-them; nothing new is written there.
+other picture.
 
 Because it is a photo, `edit_photo` works on it too — *"drop the status LED"* edits the drawing
 in front of you. Bear in mind that an edit redraws every pixel including the lettering, so for

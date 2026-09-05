@@ -320,12 +320,6 @@ def _files_in(root: Path, scope: str) -> list[Item]:
 
     Walked recursively, because ``Datasheets/bolts.txt`` is the shape a person actually files
     things in. ``Photos/`` is skipped because its contents are read as pictures above.
-
-    ``Diagrams/`` is skipped for a sharper reason, and the skip must outlive the drawings: those
-    folders hold the JSON specs of the old schema, ``.json`` is in :data:`TEXT_SUFFIXES`, and
-    reading one as text would put a wall of layout coordinates into the index. Nothing writes
-    them any more and they are no longer indexed as drawings either - but they are still on the
-    card, so this still has to step over them.
     """
     out: list[Item] = []
     try:
@@ -337,7 +331,7 @@ def _files_in(root: Path, scope: str) -> list[Item]:
             continue
         if path.name in SKIP_NAMES or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
-        if any(part in {"Photos", "Diagrams", card.PHOTOS, card.DIAGRAMS} for part in path.parts):
+        if any(part in {"Photos", card.PHOTOS} for part in path.parts):
             continue
         text = _text_of(path)
         if not text.strip():
@@ -367,13 +361,13 @@ def project_items(folder: Path) -> list[Item]:
     items += _images_in(folder / "Photos", scope, log_captions, "photo")
     items += _files_in(folder, scope)
     # Pictures a person dropped into a folder of their own - "Eye Designs/", say. Photos/ is
-    # already done above, and Diagrams/ holds nothing this can read, so both are skipped.
+    # already done above, so it is skipped rather than re-read.
     try:
         others = [p for p in sorted(folder.iterdir()) if p.is_dir()]
     except OSError:
         others = []
     for sub in others:
-        if sub.name in {"Photos", "Diagrams"}:
+        if sub.name == "Photos":
             continue
         items += _images_in(sub, scope, log_captions, "image")
     return items

@@ -113,14 +113,9 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
   display: block; width: 100%;
 }
 .cell:active, .cell:focus-visible { border-color: var(--green); outline: none; }
-/* contain, not cover: a drawing cropped to a tile is a drawing you cannot read, and a photo
+/* contain, not cover: a diagram cropped to a tile is a diagram you cannot read, and a photo
    off this camera is 4:3 already, so it loses nothing by it. */
 .cell img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; background: #000; }
-.cell .undrawn {
-  aspect-ratio: 4 / 3; display: grid; place-content: center; background: #000;
-  color: var(--dim); font-size: calc(11 * var(--u)); letter-spacing: .18em; text-align: center;
-  padding: 0 calc(8 * var(--u));
-}
 .cellcap {
   font-size: calc(11 * var(--u)); color: var(--mid); letter-spacing: .1em;
   padding: calc(5 * var(--u)) calc(6 * var(--u));

@@ -108,11 +108,10 @@ MEDIA_TYPES = {
     ".mp4": "video/mp4",
     ".jpg": "image/jpeg",
     ".jpeg": "image/jpeg",
-    ".svg": "image/svg+xml",
 }
 # The only sub-directories of a session a browser is ever given. video.mp4 sits in the root, which
 # is the third case and the reason this is a set of names rather than a single one.
-MEDIA_DIRS = frozenset({card.PHOTOS, card.DIAGRAMS})
+MEDIA_DIRS = frozenset({card.PHOTOS})
 RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 CHUNK = 64 * 1024
 
@@ -547,15 +546,15 @@ def _serve(request: HttpRequest, path: Path, kind: str) -> HttpResponse:
     response["Accept-Ranges"] = "bytes"
     if partial:
         response["Content-Range"] = f"bytes {start}-{end}/{size}"
-    # Not `immutable` like the vendored bundles: a diagram's picture can land after its spec, and
-    # a session being recorded right now grows. An hour is long enough to scrub a video without
-    # re-fetching it and short enough that nothing goes stale for a day.
+    # Not `immutable`: a session being recorded right now grows. An hour is long enough to scrub
+    # a video without re-fetching it and short enough that nothing goes stale for a day.
     response["Cache-Control"] = "private, max-age=3600"
     response["X-Content-Type-Options"] = "nosniff"
     if kind == "image/svg+xml":
-        # Our own panel drew it, from our own spec, on a private LAN - and it is still the one
-        # thing here that a browser would happily execute. It is rendered through <img>, which
-        # never runs script in one; this is the belt to that's braces.
+        # Only reachable through the project file browser now - somebody's own dropped file, on a
+        # private LAN, and still the one thing here a browser would happily execute. It is
+        # rendered through <img>, which never runs script in one; this is the belt to that's
+        # braces.
         response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     return response
 

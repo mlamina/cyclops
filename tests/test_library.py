@@ -17,7 +17,7 @@ from cyclops import card, library
 
 
 def make(root, name, *, log=None, summary=None, page="done", video=None, receipt=None,
-         photos=(), diagrams=()):
+         photos=()):
     """One session folder, in whatever state the test needs it."""
     folder = root / name
     folder.mkdir(parents=True)
@@ -34,9 +34,6 @@ def make(root, name, *, log=None, summary=None, page="done", video=None, receipt
     for shot in photos:
         (folder / card.PHOTOS).mkdir(exist_ok=True)
         (folder / card.PHOTOS / shot).write_bytes(b"\xff\xd8jpeg")
-    for drawing, spec in diagrams:
-        (folder / card.DIAGRAMS).mkdir(exist_ok=True)
-        (folder / card.DIAGRAMS / drawing).write_text(json.dumps(spec), encoding="utf-8")
     return folder
 
 
@@ -175,13 +172,6 @@ def test_a_photo_record_carries_the_url_that_serves_it(tmp_path):
     assert shot["url"] == "/media/2026-08-26_14-32-05/photos/14-32-30_you.jpg"
 
 
-def test_a_diagram_the_panel_never_drew_has_no_url(tmp_path):
-    make(tmp_path, "2026-08-26_14-32-05",
-         log='{"t": 1.0, "type": "diagram", "file": "diagrams/a.json", "svg": "diagrams/a.svg"}\n')
-    line = library.records(tmp_path, "2026-08-26_14-32-05")[0]
-    assert line["url"] == ""
-
-
 def test_records_of_a_session_that_is_not_there(tmp_path):
     assert library.records(tmp_path, "nope") == []
 
@@ -196,26 +186,6 @@ def test_the_stream_runs_across_every_session_newest_first(tmp_path):
     got = library.stream(tmp_path)
     assert [i.when for i in got] == [
         "2026-08-26T14:33:00", "2026-08-26T14:32:30", "2026-08-25T09:01:00"]
-
-
-def test_a_drawing_is_listed_by_its_own_title_and_says_whether_it_was_drawn(tmp_path):
-    folder = make(tmp_path, "2026-08-26_14-32-05", log=LOG,
-                  diagrams=[("14-35-01_relay.json", {"title": "Relay driven from GPIO"})])
-    (folder / card.DIAGRAMS / "14-35-01_relay.svg").write_text("<svg/>")
-    make(tmp_path, "2026-08-25_09-00-00", log=LOG,
-         diagrams=[("09-05-00_bus.json", {"title": "Bus"})])
-    drawn, spec_only = library.stream(tmp_path)
-    assert (drawn.kind, drawn.title, drawn.drawn) == ("diagram", "Relay driven from GPIO", True)
-    assert (spec_only.title, spec_only.drawn) == ("Bus", False)
-    assert drawn.url == "/media/2026-08-26_14-32-05/diagrams/14-35-01_relay.svg"
-
-
-def test_a_diagram_is_listed_once_not_twice(tmp_path):
-    """The spec is the drawing; its picture is not a second one."""
-    folder = make(tmp_path, "2026-08-26_14-32-05", log=LOG,
-                  diagrams=[("14-35-01_relay.json", {"title": "Relay"})])
-    (folder / card.DIAGRAMS / "14-35-01_relay.svg").write_text("<svg/>")
-    assert len(library.stream(tmp_path)) == 1
 
 
 def test_a_picture_taken_after_midnight_belongs_to_the_next_day(tmp_path):

@@ -23,14 +23,12 @@ that is not in them, so deleting it costs a rebuild and never an answer.
 
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
 from .card import (
-    DIAGRAMS,
     LOG_NAME,
     PHOTOS,
     STAMP,
@@ -41,8 +39,8 @@ from .card import (
     written,
 )
 
-# A photo or a diagram is named for the moment it was taken, to the second - see session.py's
-# photo_target and diagram_target. That prefix is the only timestamp either file carries.
+# A picture is named for the moment it was made, to the second - see session.py's photo_target.
+# That prefix is the only timestamp the file carries.
 AT = re.compile(r"^(\d{2})-(\d{2})-(\d{2})_")
 
 STAMP_LEN = len("0000-00-00_00-00-00")
@@ -50,7 +48,7 @@ STAMP_LEN = len("0000-00-00_00-00-00")
 # What the transcript shows. `session`, `video` and `end` are the bookkeeping records that the
 # frontmatter is made of; they say nothing a reader wants in the middle of a conversation.
 SPOKEN = frozenset(
-    {"you", "cyclops", "photo", "diagram", "search", "project", "data", "recall", "error"}
+    {"you", "cyclops", "photo", "search", "project", "data", "recall", "error"}
 )
 
 STREAM_LIMIT = 500
@@ -69,22 +67,20 @@ class Entry:
     video: bool
     video_bytes: int
     photos: int
-    diagrams: int
     verdict: str  # card.State.verdict: live | finished | unfinished | empty
     filed: str  # the project it was filed under, "" if none
 
 
 @dataclass(frozen=True)
 class Item:
-    """One picture or one drawing, for the stream that runs across every session."""
+    """One picture, for the stream that runs across every session."""
 
-    kind: str  # "photo" | "diagram"
+    kind: str  # "photo" - the only kind there is; a diagram is a photo too
     session: str
     session_title: str
     title: str
     when: str  # ISO-8601
     url: str
-    drawn: bool  # a diagram whose svg never came back from the panel is still a diagram
 
 
 # ------------------------------------------------------------------ reading one folder
@@ -179,7 +175,6 @@ def _read(folder: Path) -> Entry:
         video=state.video,
         video_bytes=_size(folder / VIDEO) if state.video else 0,
         photos=state.photos,
-        diagrams=state.diagrams,
         verdict=state.verdict,
         filed=_project(folder) if state.filed else "",
     )
@@ -269,9 +264,6 @@ def records(sessions_dir: Path, name: str) -> list[dict]:
         line = dict(record)
         if kind == "photo" and record.get("file"):
             line["url"] = media_url(name, str(record["file"]))
-        elif kind == "diagram":
-            svg = record.get("svg")
-            line["url"] = media_url(name, str(svg)) if svg and written(folder / svg) else ""
         out.append(line)
     return out
 
@@ -324,31 +316,6 @@ def stream(sessions_dir: Path, limit: int = STREAM_LIMIT) -> list[Item]:
                         title=found.title,
                         when=when.isoformat() if when else found.started,
                         url=media_url(folder.name, f"{PHOTOS}/{picture.name}"),
-                        drawn=True,
-                    )
-                )
-
-        # Old cards only. Nothing has written diagrams/ since 2026-09-04 - a diagram is a jpg in
-        # photos/ and is listed by the loop above - but the ones already there are still worth
-        # browsing, and this is the only screen that shows them.
-        diagrams = folder / DIAGRAMS
-        if diagrams.is_dir():
-            # The spec, not the picture: a drawing the panel never returned an svg for is still a
-            # drawing, and globbing both would list every one of them twice.
-            for spec in diagrams.glob("*.json"):
-                if not written(spec):
-                    continue
-                picture = spec.with_suffix(".svg")
-                when = _at(start, spec.name)
-                made.append(
-                    Item(
-                        kind="diagram",
-                        session=folder.name,
-                        session_title=found.title,
-                        title=_title_of(spec) or spec.stem,
-                        when=when.isoformat() if when else found.started,
-                        url=media_url(folder.name, f"{DIAGRAMS}/{picture.name}"),
-                        drawn=written(picture),
                     )
                 )
 
@@ -357,15 +324,6 @@ def stream(sessions_dir: Path, limit: int = STREAM_LIMIT) -> list[Item]:
         if len(out) >= limit:
             return out[:limit]
     return out
-
-
-def _title_of(spec: Path) -> str:
-    """A drawing's own name, out of its sidecar. Never raises: a title is not worth a 500."""
-    try:
-        found = json.loads(spec.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ""
-    return str(found.get("title", "")) if isinstance(found, dict) else ""
 
 
 def as_dicts(found: list[Entry] | list[Item]) -> list[dict]:

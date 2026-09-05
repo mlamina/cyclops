@@ -8,10 +8,8 @@
    of JointJS this used to mention came out with the drawing schema - and the panel has no
    internet to reach a CDN over.
 
-   Publishes window.__drawing, which diagram.js calls when a picture takes the panel.
-
-   The `kind === 'diagram'` branches below are for records already on the card. Nothing writes
-   one now; a diagram is a photo record with by="drawn". */
+   Publishes window.__drawing, which panel.js calls when a picture takes the panel.
+ */
 
 // ---------------------------------------------------------------- the card, in the browser
 //
@@ -210,11 +208,6 @@ function aside(record) {
     const seen = record.shown ? 'Cyclops looked at it.' : 'Cyclops never saw this one.';
     return 'You took a photo — the shutter button. ' + seen;
   }
-  if (kind === 'diagram') {
-    if (record.error) return 'Tried to draw — ' + esc(record.title || '') + ' → failed';
-    if (record.found) return 'Showed a diagram again — <b>' + esc(record.title || '') + '</b>';
-    return 'Drew a diagram — <b>' + esc(record.title || '') + '</b>';
-  }
   return 'Something went wrong — ' + esc(record.message || '');
 }
 
@@ -231,8 +224,6 @@ function line(record) {
   if (record.url) {
     shot = '<img class="inline" loading="lazy" draggable="false" src="' +
            esc(record.url) + '" alt="">';
-  } else if (kind === 'diagram' && !record.error && !record.found) {  // old cards only
-    shot = '<div class="who">the panel never sent the picture back</div>';
   }
   return '<div class="line ' + (kind === 'error' ? 'bad' : '') + '" data-t="' + (record.t || 0) + '">' +
     at + '<span><span class="aside">' + aside(record) + '</span>' + shot + '</span></div>';
@@ -692,11 +683,9 @@ async function showMedia() {
     vMedia.innerHTML = shots.length
       ? '<div class="grid">' + shots.map((one, i) =>
           '<button class="cell" type="button" data-shot="' + i + '">' +
-          (one.drawn
-            ? '<img loading="lazy" draggable="false" src="' + esc(one.url) +
-              '" alt="' + esc(one.title) + '">'
-            : '<div class="undrawn">not drawn</div>') +
-          '<div class="cellcap">' + esc(one.kind === 'diagram' ? one.title : day(one.when) + ' ' + time(one.when)) +
+          '<img loading="lazy" draggable="false" src="' + esc(one.url) +
+          '" alt="' + esc(one.title) + '">' +
+          '<div class="cellcap">' + esc(day(one.when) + ' ' + time(one.when)) +
           '</div></button>').join('') + '</div>'
       : '<div class="empty">no pictures yet</div>';
   } catch (e) {
@@ -715,9 +704,8 @@ function light(i) {
   if (!shots.length) return;
   lit = (i + shots.length) % shots.length;
   const one = shots[lit];
-  litshot.innerHTML = one.drawn
-    ? '<img draggable="false" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">'
-    : '<div class="empty">the panel never sent this picture back</div>';
+  litshot.innerHTML =
+    '<img draggable="false" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">';
   litcap.textContent = one.title + ' · ' + day(one.when) + ' ' + time(one.when) +
     ' · ' + (lit + 1) + ' of ' + shots.length;
   document.body.classList.add('lit');

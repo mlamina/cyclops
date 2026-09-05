@@ -8,7 +8,7 @@
    The controls are all null-checked rather than gated: they only exist on the kiosk's own
    browser ({% if local %} in the template), and a laptop simply finds nothing to bind.
 
-   Loaded before app.js, and it publishes window.__leave for diagram.js to reach. */
+   Loaded before app.js, and it publishes window.__leave for panel.js to reach. */
 
 const fields = document.querySelectorAll('[data-field]');
 const meters = document.querySelectorAll('[data-meter]');

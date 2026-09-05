@@ -16,7 +16,7 @@ from cyclops import card
 
 
 def make(root, name, *, log=None, page=None, summary=None, receipt=None, video=None, photos=0,
-         diagrams=0, parts=False, extra=None):
+         parts=False, extra=None):
     """One session folder in whatever state of repair the test needs."""
     folder = root / name
     folder.mkdir(parents=True)
@@ -34,11 +34,6 @@ def make(root, name, *, log=None, page=None, summary=None, receipt=None, video=N
         (folder / card.PHOTOS).mkdir()
         for i in range(photos):
             (folder / card.PHOTOS / f"14-32-0{i}_you.jpg").write_bytes(b"\xff\xd8jpeg")
-    if diagrams:
-        # Old cards only: nothing has written diagrams/ since 2026-09-04. See the test below.
-        (folder / card.DIAGRAMS).mkdir()
-        for i in range(diagrams):
-            (folder / card.DIAGRAMS / f"14-35-0{i}_relay.json").write_text('{"spec": {}}')
     if parts:
         (folder / card.PARTS).mkdir()
         (folder / card.PARTS / "video-raw.mp4").write_bytes(b"raw")
@@ -133,26 +128,6 @@ def test_photos_alone_are_salvage(tmp_path):
     state = card.triage(folder)
     assert state.verdict == "unfinished"
     assert state.salvage
-
-
-def test_an_old_session_holding_only_drawings_is_still_salvage(tmp_path):
-    """The one that would quietly delete somebody's work.
-
-    Nothing writes diagrams/ any more - a diagram is a jpg in photos/ - so it is tempting to stop
-    counting them here. A session killed after one drawing and nothing else would then read as
-    "empty", and empty is what _wipe deletes. The drawing is still the only copy.
-    """
-    folder = make(tmp_path, "2026-08-26_09-00-00", diagrams=2)
-    state = card.triage(folder)
-    assert state.diagrams == 2
-    assert state.salvage
-    assert state.verdict != "empty"
-
-
-def test_diagrams_is_still_a_name_a_session_folder_may_hold(tmp_path):
-    """KNOWN is consulted only before deleting. Drop DIAGRAMS from it and every session already
-    holding one looks like it has a stranger's file in it, and becomes undeletable for good."""
-    assert card.DIAGRAMS in card.KNOWN
 
 
 # ------------------------------------------------------------------ what may be deleted

@@ -79,7 +79,6 @@ PAGE_NAME = card.PAGE_NAME
 SUMMARY_NAME = card.SUMMARY_NAME
 RECEIPT_NAME = card.RECEIPT_NAME
 PHOTOS = card.PHOTOS
-DIAGRAMS = card.DIAGRAMS
 PARTS = card.PARTS
 VIDEO = card.VIDEO
 STAMP = card.STAMP
@@ -735,8 +734,6 @@ def _render_record(record: dict) -> str:
         return f"*Looked up its notes on* ({at}) — **{name}**"
     if kind == "data":
         return _render_data(record, at)
-    if kind == "diagram":
-        return _render_diagram(record, at)
     if kind == "transcript_failed":
         return f"*You said something that could not be transcribed* ({at})"
     if kind == "error":
@@ -766,39 +763,11 @@ def _render_data(record: dict, at: str) -> str:
     return f'*Looked up a value* ({at}) — "{query}" in **{project}** → {found}'
 
 
-def _render_diagram(record: dict, at: str) -> str:
-    """One drawing, embedded the way a photo is - see :func:`_render_photo`.
-
-    Old logs only: nothing writes a ``diagram`` record now, and a drawing is a photo record with
-    ``by="drawn"``. It stays because ``cyclops-sessions --fix`` re-renders old logs, and dropping
-    it would quietly strip the drawings out of every session page on the card the next time one
-    ran - the same argument the ``by == "cyclops"`` arm of :func:`_render_photo` makes.
-
-    The ``svg`` is what goes in the page and the ``file`` beside it is the spec; a reader wants
-    the picture and only Cyclops ever wants the JSON. A record with no svg is a diagram whose
-    render never came back from the panel, which is worth a line saying so rather than a broken
-    image: the spec is still on the card and still findable.
-    """
-    title = record.get("title", "a diagram")
-    if record.get("error"):
-        return f"*Tried to draw* ({at}) — {title} → failed: {record['error']}"
-    if record.get("found"):
-        return f"*Showed a diagram again* ({at}) — **{title}**"
-    line = f"*Drew a diagram* ({at}) — **{title}**"
-    if caption := record.get("caption"):
-        line += f"\n{caption}"
-    svg = str(record.get("svg", ""))
-    if not svg:
-        return f"{line}\n\n*(the panel never sent the picture back; the spec is on the card)*"
-    return f"{line}\n\n![{title}]({svg})"
-
-
 def _render_photo(record: dict, at: str) -> str:
     file = str(record.get("file", ""))
     if record.get("by") == "drawn":
         # A diagram, which is a photo record because it is a jpg in photos/ like any other - see
-        # cyclops.imagine.draw. Before 2026-09-04 a drawing was its own record type with its own
-        # folder and its own .svg; _render_diagram below still renders those.
+        # cyclops.imagine.draw.
         request = record.get("request", "")
         if record.get("error"):
             return f'*Tried to draw* ({at}) — "{request}" → failed: {record["error"]}'
@@ -867,8 +836,6 @@ def _summarise(folder: Path, state: card.State | None = None) -> str:
         flags.append(f"{state.dropped} bad line(s)")
     # Diagrams are rarer than photos, so they earn a column only when there are any - a card of
     # sessions that never drew anything reads exactly as it did before.
-    if state.diagrams:
-        flags.insert(0, f"{state.diagrams} diagram{'' if state.diagrams == 1 else 's'}")
     return (
         f"{folder.name:<44}{_span(tail.get('seconds')):>8}"
         f"{state.photos:>4} photo{'' if state.photos == 1 else 's'}   {'  '.join(flags)}"
@@ -1036,7 +1003,7 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
     try:
         for name in (LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO):
             (folder / name).unlink(missing_ok=True)
-        for sub in (PHOTOS, DIAGRAMS, PARTS):
+        for sub in (PHOTOS, PARTS):
             if (folder / sub).is_dir():
                 (folder / sub).rmdir()  # empty by definition; refuses if triage was wrong
         folder.rmdir()

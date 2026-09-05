@@ -1387,7 +1387,7 @@ class VoiceAgent:
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
-    # ---- diagrams ----
+    # ---- drawing one ----
 
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Draw one, keep it with the photos, and put it on the panel.
@@ -1412,7 +1412,7 @@ class VoiceAgent:
         try:
             # Keeping and showing is inside the try, not in an else. It was in an else once, and
             # a TypeError in the record it writes propagated straight out of this coroutine: the
-            # diagram was on the panel, and the model sat waiting for a tool result that was
+            # picture was on the panel, and the model sat waiting for a tool result that was
             # never sent until the user spoke over it.
             jpeg = await imagine.draw(request, style, self.settings)
             output, kept = await asyncio.to_thread(self._keep_and_show_drawing, jpeg, request)
@@ -1526,12 +1526,11 @@ class VoiceAgent:
     def _recall_scopes(self, project: str) -> set[str] | None:
         """Which corners of the card this query may look in, as ``recall.Item.scope`` values.
 
-        This session and every project by default - the same shape and the same argument as
-        :meth:`_diagram_folders`: "that one" almost always means either something from ten
-        minutes ago or something filed under whatever is on the bench. Older sessions are indexed
-        but not searched, because a year of half-finished conversations is mostly noise against a
-        question about a project, and the project is where the finished version of anything ends
-        up.
+        This session and every project by default: "that one" almost always means either
+        something from ten minutes ago or something filed under whatever is on the bench. Older
+        sessions are indexed but not searched, because a year of half-finished conversations is
+        mostly noise against a question about a project, and the project is where the finished
+        version of anything ends up.
         """
         scopes: set[str] = set()
         if (live := session.current()) is not None:
@@ -1595,7 +1594,7 @@ class VoiceAgent:
         if not best.item.showable:
             # `what`, not `kind`: session.note takes the record's own type as its first
             # parameter and that parameter is called kind, so passing one as a field is a
-            # TypeError at the call rather than at import. diagram records dodge it as `shape`.
+            # TypeError at the call rather than at import.
             session.note("recall", query=query[:120], title=best.item.title, what=best.item.kind)
             return {
                 "ok": True,

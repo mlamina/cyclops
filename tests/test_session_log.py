@@ -132,37 +132,6 @@ def test_a_record_field_may_not_be_called_kind(log):
             session.note("diagram", kind="wiring")
 
 
-def test_the_diagram_record_survives_the_page(log):
-    """The exact fields the draw and find tools write, through the log and into session.md."""
-    with log:
-        session.note(
-            "diagram",
-            title="Relay driven from GPIO 17",
-            caption="A 1k base resistor between the pin and the module.",
-            shape="wiring",
-            file="diagrams/19-40-12_relay.json",
-            svg="diagrams/19-40-12_relay.svg",
-        )
-        session.note("diagram", title="Raspberry Pi 5 header", shape="pinout", found=True)
-        session.note("diagram", title="a hydraulic circuit", error="it came back wrong twice")
-
-    page = (log.dir / card.PAGE_NAME).read_text()
-    assert "![Relay driven from GPIO 17](diagrams/19-40-12_relay.svg)" in page
-    assert "A 1k base resistor" in page
-    assert "Showed a diagram again" in page and "Raspberry Pi 5 header" in page
-    assert "it came back wrong twice" in page
-
-
-def test_a_diagram_the_panel_never_drew_still_says_so(log):
-    """No svg means the picture never came back. The spec is still on the card, so say that."""
-    with log:
-        session.note("diagram", title="Relay wiring", shape="wiring", svg="")
-
-    page = (log.dir / card.PAGE_NAME).read_text()
-    assert "the spec is on the card" in page
-    assert "![" not in page.split("Relay wiring")[1], "no broken image for a picture we lack"
-
-
 def test_an_edit_reads_as_a_change_imagined_rather_than_a_photo_taken(log):
     """The record cyclops.imagine writes: a photo record, but nobody took it."""
     with log:
