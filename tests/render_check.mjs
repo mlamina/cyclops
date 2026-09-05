@@ -46,7 +46,7 @@ async function loadPlaywright() {
 const { chromium } = await loadPlaywright();
 
 const BASE = process.env.BASE || 'http://127.0.0.1:8099';
-const PENDING = join(homedir(), '.cache', 'cyclops', 'diagram.json');
+const PENDING = join(homedir(), '.cache', 'cyclops', 'panel.json');
 const SHOTS = '/tmp/cyclops-render';
 
 // A real JPEG, inline rather than read off the card so the check needs no fixture: a plain
@@ -100,7 +100,7 @@ let failed = 0;
 for (const item of CASES) {
   writeFileSync(PENDING, JSON.stringify({ id: item.name + '-' + Date.now(), ...item.payload }));
   let posted = false;
-  const watch = (r) => { if (r.url().endsWith('/diagram/shown')) posted = true; };
+  const watch = (r) => { if (r.url().endsWith('/panel/painted')) posted = true; };
   page.on('request', watch);
   try {
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });

@@ -29,22 +29,22 @@ PAGE_SERVED_FLAG = Path.home() / ".cache" / "cyclops" / "page-served"
 # :meth:`cyclops.kiosk.Kiosk.warm_browser`.
 PAGE_ALIVE_FLAG = Path.home() / ".cache" / "cyclops" / "page-alive"
 
-# And where whatever the panel is being asked to show waits for it to notice. A diagram was the
-# first kind and gave the file its name, back when one was a JSON scene the page laid out;
-# everything that goes on the glass now is a jpeg riding in this payload under "image" - a photo
-# off the shutter, one recalled from the card, an edit, a diagram (cyclops.imagine). This holds
+# And where whatever the panel is being asked to show waits for it to notice. Everything that
+# goes on the glass is a jpeg riding in this payload under "image" - a photo off the shutter, one
+# recalled from the card, an edit, a diagram (cyclops.imagine). It was diagram.json until
+# 2026-09-04, when a diagram stopped being the special case that had named it. This holds
 # the thing itself rather than being an empty note, because the page has to render it and the two
 # processes share no memory - and because something made with no session running is never written
 # to the card, so a path would have nothing to point at. Written by whoever made it, read by the
 # admin service, removed by the kiosk when it takes the panel back: absent means "show the
 # dashboard".
-DIAGRAM_FILE = Path.home() / ".cache" / "cyclops" / "diagram.json"
+PANEL_FILE = Path.home() / ".cache" / "cyclops" / "panel.json"
 
 # And where the page says it has actually painted that picture. The kiosk waits for this before
 # uncovering the browser, exactly as it waits on PAGE_SERVED_FLAG at startup - without it the
 # panel would show the dashboard for as long as the picture takes to decode, which is the one
 # moment somebody is watching.
-DIAGRAM_SHOWN_FLAG = Path.home() / ".cache" / "cyclops" / "diagram-shown"
+PANEL_PAINTED_FLAG = Path.home() / ".cache" / "cyclops" / "panel-painted"
 
 # And where it leaves the output volume it wants. Same reason it cannot just set it itself:
 # the service runs with PrivateDevices=yes and has no /dev/snd, and at boot there is no user

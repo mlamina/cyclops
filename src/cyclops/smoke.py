@@ -23,7 +23,7 @@ from openai.types.realtime import RealtimeServerEvent
 
 from .agent import VoiceAgent, function_calls
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE
-from .config import DIAGRAM_FILE, ConfigError, load_settings
+from .config import PANEL_FILE, ConfigError, load_settings
 from .webcam import capture_image_async
 
 READY_TIMEOUT_S = 30.0
@@ -73,14 +73,14 @@ class TurnObserver:
 
 
 def _offered_at() -> float:
-    """When a picture was last handed to the panel, or 0.0 - see ``config.DIAGRAM_FILE``.
+    """When a picture was last handed to the panel, or 0.0 - see ``config.PANEL_FILE``.
 
     This is what a headless run can check. Smoke keeps no session (the photo turn uses
     ``captures/`` for the same reason), so a drawing has nowhere on the card to be written. But
     the offer is made either way, and a file that appears is proof an image came back whole.
     """
     try:
-        return DIAGRAM_FILE.stat().st_mtime
+        return PANEL_FILE.stat().st_mtime
     except OSError:
         return 0.0
 
@@ -201,7 +201,7 @@ async def _main() -> int:
             failures.append("turn 4 returned no transcript")
         # Leave nothing waiting: on the Pi this file is what the panel's page draws, and a
         # smoke run must not leave a picture sitting behind the kiosk window.
-        DIAGRAM_FILE.unlink(missing_ok=True)
+        PANEL_FILE.unlink(missing_ok=True)
 
         if agent.unacked_item_ids:
             failures.append(f"server never acknowledged items {sorted(agent.unacked_item_ids)}")

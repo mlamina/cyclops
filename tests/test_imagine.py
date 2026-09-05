@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from cyclops import agent, diagram, imagine
+from cyclops import agent, imagine, panel
 from cyclops.config import Settings
 
 
@@ -220,13 +220,13 @@ def test_a_picture_that_will_not_shrink_is_still_shown() -> None:
 
 @pytest.fixture
 def panel_file(tmp_path, monkeypatch):
-    path = tmp_path / "cache" / "diagram.json"
-    monkeypatch.setattr(diagram, "DIAGRAM_FILE", path)
+    path = tmp_path / "cache" / "panel.json"
+    monkeypatch.setattr(panel, "PANEL_FILE", path)
     return path
 
 
 def test_offer_image_writes_a_payload_the_page_can_read(panel_file) -> None:
-    assert diagram.offer_image(jpeg(64, 48), "matt black doors") is True
+    assert panel.offer_image(jpeg(64, 48), "matt black doors") is True
     payload = json.loads(panel_file.read_text())
     assert payload["image"].startswith("data:image/jpeg;base64,")
     assert payload["title"] == "matt black doors"
@@ -242,28 +242,28 @@ def test_the_panel_is_told_which_arrivals_are_worth_a_sound(panel_file) -> None:
     became photographs - it would have answered yes to everything and the panel would have gone
     silent for good. The caller now says what it wants.
     """
-    diagram.offer_image(jpeg(64, 48), "18-08-39_you")
-    assert diagram.announces() is False, "the shutter already said so a beat ago"
+    panel.offer_image(jpeg(64, 48), "18-08-39_you")
+    assert panel.announces() is False, "the shutter already said so a beat ago"
 
-    diagram.offer_image(jpeg(64, 48), "the fuse box", drawn=True)
-    assert diagram.announces() is True, "a drawing had nothing else to announce it"
+    panel.offer_image(jpeg(64, 48), "the fuse box", drawn=True)
+    assert panel.announces() is True, "a drawing had nothing else to announce it"
     assert json.loads(panel_file.read_text())["drawn"] is True
 
-    diagram.offer_image(jpeg(64, 48), "paint the doors matt black")
-    assert diagram.announces() is False, "...and a photo back over that is quiet again"
+    panel.offer_image(jpeg(64, 48), "paint the doors matt black")
+    assert panel.announces() is False, "...and a photo back over that is quiet again"
 
 
 def test_show_without_a_panel_is_false_not_an_error(monkeypatch) -> None:
     """``uv run cyclops`` has a conversation and no screen. That is ordinary, not a failure."""
-    monkeypatch.setattr(diagram, "_panel", None)
-    assert diagram.show() is False
+    monkeypatch.setattr(panel, "_kiosk", None)
+    assert panel.show() is False
 
 
 def test_two_offers_never_share_an_id(panel_file) -> None:
     """A stable id would make showing the same picture twice silently do nothing the second time."""
-    diagram.offer_image(jpeg(64, 48), "one")
+    panel.offer_image(jpeg(64, 48), "one")
     first = json.loads(panel_file.read_text())["id"]
-    diagram.offer_image(jpeg(64, 48), "one")
+    panel.offer_image(jpeg(64, 48), "one")
     assert json.loads(panel_file.read_text())["id"] != first
 
 
@@ -274,26 +274,26 @@ def test_withdrawing_leaves_the_page_nothing_to_paint(panel_file) -> None:
     keeps painting, until something takes it back - which is how tapping the eye came to uncover
     a picture from an hour earlier instead of the dashboard it promises.
     """
-    diagram.offer_image(jpeg(64, 48), "matt black doors")
+    panel.offer_image(jpeg(64, 48), "matt black doors")
     assert panel_file.exists()
-    diagram.withdraw()
+    panel.withdraw()
     assert not panel_file.exists()
-    diagram.withdraw()  # idempotent: nothing waiting is the state it is trying to reach
+    panel.withdraw()  # idempotent: nothing waiting is the state it is trying to reach
 
 
 def test_withdrawing_what_cannot_be_removed_is_not_a_traceback(tmp_path, monkeypatch) -> None:
     """A payload that will not go is never a reason to refuse the tap that wanted it gone."""
     blocked = tmp_path / "wall"
     blocked.write_text("not a directory")
-    monkeypatch.setattr(diagram, "DIAGRAM_FILE", blocked / "diagram.json")
-    diagram.withdraw()
+    monkeypatch.setattr(panel, "PANEL_FILE", blocked / "panel.json")
+    panel.withdraw()
 
 
 def test_a_card_that_will_not_write_is_false_and_not_a_traceback(tmp_path, monkeypatch) -> None:
     blocked = tmp_path / "wall"
     blocked.write_text("not a directory")
-    monkeypatch.setattr(diagram, "DIAGRAM_FILE", blocked / "diagram.json")
-    assert diagram.offer_image(jpeg(64, 48), "matt black") is False
+    monkeypatch.setattr(panel, "PANEL_FILE", blocked / "panel.json")
+    assert panel.offer_image(jpeg(64, 48), "matt black") is False
 
 
 # ---------------------------------------------------------------- showing it to the model

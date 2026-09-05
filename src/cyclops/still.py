@@ -10,9 +10,9 @@ is the one part of a session worth watching twice.
 So the frame is rebuilt from what the page was handed, on the way past. Nothing here reads the
 screen: the panel cannot be photographed from this side (the kiosk's window is not what is on
 it), and polling a compositor fifteen times a second for a picture that does not change would
-cost more than the recording is worth. The handshake in :mod:`cyclops.diagram`
+cost more than the recording is worth. The handshake in :mod:`cyclops.panel`
 already carries the picture, and this is the reader of it: whatever is on the glass rides in
-``DIAGRAM_FILE`` as a data URL, and it is the same JPEG the page decodes.
+``PANEL_FILE`` as a data URL, and it is the same JPEG the page decodes.
 
 There used to be a second case. A diagram was laid out by the page and by nothing else, so only
 the page could say what it looked like: it handed an SVG back and this shelled out to ffmpeg to
@@ -37,7 +37,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .config import DIAGRAM_FILE
+from .config import PANEL_FILE
 
 # The green-black the page draws on: --screen in admin/static/base.css, in BGR. The letterbox
 # either side of a contained picture is the screen's own colour there rather than a second one,
@@ -53,7 +53,7 @@ def of_panel(
     width: int,
     height: int,
     *,
-    payload_path: Path = DIAGRAM_FILE,
+    payload_path: Path = PANEL_FILE,
 ) -> np.ndarray | None:
     """The picture the page is showing, as a ``width`` x ``height`` BGR frame, or None.
 
@@ -74,7 +74,7 @@ def of_panel(
 def contain(picture: np.ndarray, width: int, height: int) -> np.ndarray:
     """Fit a picture inside the panel without cropping it, centred on the screen's own colour.
 
-    The page uses ``object-fit: contain`` and says why (``diagram.css``): cropping a picture
+    The page uses ``object-fit: contain`` and says why (``panel.css``): cropping a picture
     somebody asked to see is a small lie. A recording that cropped what the panel did not would
     be a larger one, so the two agree.
     """
@@ -98,7 +98,10 @@ def contain(picture: np.ndarray, width: int, height: int) -> np.ndarray:
 
 
 def _offered(path: Path) -> dict | None:
-    """What is waiting for the panel, or None. The same file the page reads - see diagram.offer."""
+    """What is waiting for the panel, or None - the same file the page reads.
+
+    See :func:`cyclops.panel.offer_image`, which writes it.
+    """
     try:
         found = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):

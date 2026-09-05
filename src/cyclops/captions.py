@@ -74,7 +74,7 @@ dark room - say that plainly in a few words rather than inventing detail."""
 def read(folder: Path) -> dict[str, str]:
     """Every caption written for one folder. A missing or damaged file is an empty answer.
 
-    Never raises, for the reason :func:`cyclops.diagram.read` gives about its own sidecars: a
+    Never raises, for the reason :func:`cyclops.panel.read` gives about its own sidecars: a
     caption file somebody hand-edited into invalid JSON must cost the captions and not the sweep.
     """
     try:

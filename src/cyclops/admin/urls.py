@@ -1,6 +1,6 @@
-"""The page, the numbers behind it, the volume, the way back to the camera - and the diagrams.
+"""The page, the numbers behind it, the volume, the way back to the camera - and the panel.
 
-The diagram routes are on this service rather than a second one because the panel already has a
+The panel routes are on this service rather than a second one because the panel already has a
 browser pointed here and kept warm; giving it somewhere else to be would mean starting a second
 one, and starting one is the thing the whole design avoids (see ``kiosk.py:110-113``).
 """
@@ -42,8 +42,8 @@ urlpatterns = [
         name="project-media",
     ),
     path("api/panel", views.panel, name="panel"),
-    path("api/diagram/<str:ident>", views.diagram, name="diagram"),
-    path("diagram/shown", views.diagram_shown, name="diagram-shown"),
+    path("api/picture/<str:ident>", views.picture, name="picture"),
+    path("panel/painted", views.picture_painted, name="panel-painted"),
     path("static/<str:name>", views.static_file, name="static"),
     path("volume", views.set_volume, name="volume"),
     path("barge-in", views.set_barge_in, name="barge-in"),

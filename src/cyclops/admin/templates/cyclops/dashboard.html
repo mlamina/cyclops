@@ -41,7 +41,7 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
      lan.css last, and it is the only ordering that is load-bearing here. -->
 <link rel="stylesheet" href="/static/base.css?v={{ v }}">
 <link rel="stylesheet" href="/static/system.css?v={{ v }}">
-<link rel="stylesheet" href="/static/diagram.css?v={{ v }}">
+<link rel="stylesheet" href="/static/panel.css?v={{ v }}">
 <link rel="stylesheet" href="/static/views.css?v={{ v }}">
 <link rel="stylesheet" href="/static/lan.css?v={{ v }}">
 </head>
@@ -243,7 +243,7 @@ has no panel to paint. There were 527 KB of vendored bundles here until 2026-09-
 eagerly at boot so that JointJS was already parsed when a diagram arrived. Diagrams are images
 now, so there is nothing to lay out and nothing to pre-parse.
 {% endcomment %}
-<script src="/static/diagram.js?v={{ v }}"></script>
+<script src="/static/panel.js?v={{ v }}"></script>
 {% endif %}
 </body>
 </html>

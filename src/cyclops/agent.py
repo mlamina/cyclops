@@ -27,7 +27,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import diagram, imagine, recall, session, sfx
+from . import imagine, panel, recall, session, sfx
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -1458,7 +1458,7 @@ class VoiceAgent:
 
         # One downscaled copy, doing the panel's job. The card keeps the full-size one.
         small = imagine.for_panel(jpeg)
-        shown = diagram.offer_image(small, request, drawn=True) and diagram.show()
+        shown = panel.offer_image(small, request, drawn=True) and panel.show()
         if kept is not None and kept.path is not None:
             session.note(
                 "photo",
@@ -1649,7 +1649,7 @@ class VoiceAgent:
         the long edge is what ``webcam.MAX_EDGE`` hands the model for a real photograph anyway.
 
         ``imagine.for_panel`` returns its input untouched when it is already small enough, and
-        ``diagram.offer_image`` labels whatever it is given ``data:image/jpeg``. That pairing is
+        ``panel.offer_image`` labels whatever it is given ``data:image/jpeg``. That pairing is
         safe for a photo and wrong for a small PNG - which is what a picture dropped into a project
         folder tends to be - so anything not already a JPEG is re-encoded first. A mislabelled data
         URL renders as nothing at all, silently, on the one screen nobody can see from here.
@@ -1662,7 +1662,7 @@ class VoiceAgent:
         if path.suffix.lower() not in {".jpg", ".jpeg"}:
             blob = imagine.as_jpeg(blob)
         small = imagine.for_panel(blob)
-        return bool(diagram.offer_image(small, path.stem) and diagram.show()), small
+        return bool(panel.offer_image(small, path.stem) and panel.show()), small
 
     async def add_found(self, jpeg: bytes) -> None:
         """Show the model the picture it just put on the panel. No response is asked for here.
@@ -1821,7 +1821,7 @@ class VoiceAgent:
                 self._log(f"[tool] could not keep the edit: {exc}", stream=sys.stderr)
 
         small = imagine.for_panel(jpeg)
-        shown = diagram.offer_image(small, request) and diagram.show()
+        shown = panel.offer_image(small, request) and panel.show()
         if kept is not None and kept.path is not None:
             # type "photo" and not a kind of its own: it is a jpg of their bench in the session's
             # photos/, so the transcript, the picture stream, the Media view and the projects

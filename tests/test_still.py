@@ -23,7 +23,7 @@ from cyclops import still
 PANEL = (800, 480)  # the official 7" panel, and what a screen recording is
 
 def offer(tmp_path: Path, payload: dict) -> Path:
-    path = tmp_path / "diagram.json"
+    path = tmp_path / "panel.json"
     path.write_text(json.dumps({"id": "abc123", **payload}))
     return path
 
@@ -47,7 +47,7 @@ def test_a_photo_comes_back_at_the_panels_size(tmp_path: Path) -> None:
 
 
 def test_a_photo_is_letterboxed_and_not_stretched(tmp_path: Path) -> None:
-    """The page fits it with object-fit: contain, so this does too - see diagram.css."""
+    """The page fits it with object-fit: contain, so this does too - see panel.css."""
     path = offer(tmp_path, {"image": jpeg_url(480, 480, (20, 30, 200))})  # square, on a 5:3 panel
     frame = still.of_panel(*PANEL, payload_path=path)
     assert frame is not None
@@ -90,7 +90,7 @@ def test_no_offer_at_all_is_none(tmp_path: Path) -> None:
 
 
 def test_a_payload_that_is_not_one_is_none(tmp_path: Path) -> None:
-    bad = tmp_path / "diagram.json"
+    bad = tmp_path / "panel.json"
     bad.write_text("half a fi")
     assert still.of_panel(*PANEL, payload_path=bad) is None
     bad.write_text('["not an object"]')

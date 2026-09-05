@@ -84,7 +84,7 @@ QUALITY = "low"
 OUTPUT_FORMAT = "jpeg"
 
 # The documented worst case for a complex prompt. Academic at QUALITY = "low", and generous for
-# the same reason diagram.py's is: nothing is covering the panel while we wait, the caption says
+# the same reason panel.py's was: nothing is covering the panel while we wait, the caption says
 # what is happening, and the alternative to waiting is no picture at all.
 EDIT_TIMEOUT_S = 120.0
 
@@ -200,7 +200,7 @@ class Edit:
 
 
 def _text(value: object, limit: int) -> str:
-    """One field, collapsed and trimmed - the same helper, for the same reason, as diagram.py."""
+    """One field, collapsed and trimmed - the same helper, for the same reason, as panel.py."""
     out = " ".join(str(value or "").split())
     return out[:limit].rstrip()
 
@@ -245,7 +245,7 @@ def decode(response: object) -> bytes:
     wasn't one.
 
     Its own function so that the one piece of API-shape knowledge in this module is covered by a
-    test that needs no key - the same reason :func:`cyclops.diagram.validate` is not inlined into
+    test that needs no key - the same reason :func:`cyclops.panel.validate` is not inlined into
     ``draw()``.
     """
     data = getattr(response, "data", None) or []
@@ -321,7 +321,7 @@ def as_jpeg(blob: bytes) -> bytes:
     """Any picture, as JPEG bytes. Unchanged if it will not open.
 
     :func:`for_panel` hands back its input untouched when it is already small enough, and
-    :func:`cyclops.diagram.offer_image` labels whatever it is given ``data:image/jpeg``. For the
+    :func:`cyclops.panel.offer_image` labels whatever it is given ``data:image/jpeg``. For the
     pictures this module makes that pairing is fine - they are always JPEG and always large. It is
     wrong for a small PNG somebody dropped into a project folder, which would reach the page
     labelled as something it is not and render as nothing at all, silently, on the one screen
@@ -351,7 +351,7 @@ def for_panel(jpeg: bytes) -> bytes:
     """A copy small enough to travel to the page. The card keeps the full-size one.
 
     The panel is 800x480, so most of the pixels that arrive exist only to be thrown away by the
-    browser - after being base64'd into ``DIAGRAM_FILE``, fsynced to the SD card, and then read
+    browser - after being base64'd into ``PANEL_FILE``, fsynced to the SD card, and then read
     and JSON-parsed by ``/api/panel``, which is polled every 400 ms and whose whole promise is
     that it stays one read and nothing else. This is the same trade
     ``webcam._resize_to_max_edge`` makes on the way to the model, for the same reason.
@@ -389,7 +389,7 @@ async def draw(request: str, style: str, settings: Settings) -> bytes:
     look is a property of the subject and only the conversation knows the subject. See
     ``DRAW_DIAGRAM_TOOL`` in :mod:`cyclops.agent` for what it is told to send.
 
-    No retry, unlike :func:`cyclops.diagram.draw` before it and for the reason this module's
+    No retry, unlike :func:`cyclops.panel.draw` before it and for the reason this module's
     docstring already gives about :func:`edit`: an image has no schema to fail, so a second
     attempt is another eighty seconds of somebody's patience spent on the same dice.
     """

@@ -1,6 +1,6 @@
 """Putting a second picture on a panel that is already showing one.
 
-Everything Cyclops can put on the glass goes through one door - ``diagram.show()``, which asks
+Everything Cyclops can put on the glass goes through one door - ``panel.show()``, which asks
 the kiosk - and that door used to answer "no" whenever anything at all had the panel. That was
 right while a picture was a rare event. It stopped being right when the shutter started putting
 photos up, because the ordinary shape of the thing is now: a photo goes up, and a minute later
@@ -35,7 +35,7 @@ class Cues:
 
 
 class Panel:
-    """As much of a kiosk as ``show_diagram`` touches."""
+    """As much of a kiosk as ``show_picture`` touches."""
 
     def __init__(self) -> None:
         self._panel_showing = threading.Event()
@@ -48,10 +48,10 @@ class Panel:
     def _restill(self) -> None:
         self.threads.append("restill")
 
-    def _diagram_session(self) -> None:
+    def _picture_session(self) -> None:
         self.threads.append("session")
 
-    show_diagram = Kiosk.show_diagram
+    show_picture = Kiosk.show_picture
 
 
 class Now:
@@ -72,7 +72,7 @@ def panel(monkeypatch):
 
 
 def test_an_empty_panel_takes_the_picture_the_long_way(panel) -> None:
-    assert panel.show_diagram() is True
+    assert panel.show_picture() is True
     assert panel.threads == ["session"], "a page has to be uncovered before anything is visible"
     assert panel._page_busy.is_set()
 
@@ -82,28 +82,28 @@ def test_a_picture_already_up_is_swapped_rather_than_refused(panel) -> None:
     panel._page_busy.set()
     panel._panel_showing.set()
 
-    answer = panel.show_diagram()
+    answer = panel.show_picture()
     assert answer is True, "saying False would deny a picture that is about to be on the glass"
     assert panel.threads == ["restill"], "no second session; the first one still owns the teardown"
 
 
 def test_a_photograph_going_up_makes_no_sound(panel, monkeypatch) -> None:
     """The shutter already sounded a beat ago. A second cue on top of it is one too many."""
-    monkeypatch.setattr(kiosk.diagram, "announces", lambda: False)
+    monkeypatch.setattr(kiosk.panel, "announces", lambda: False)
     panel._page_busy.set()
     panel._panel_showing.set()
 
-    assert panel.show_diagram() is True
+    assert panel.show_picture() is True
     assert panel._cues.played == [], "the picture is its own announcement"
 
 
 def test_a_drawing_replacing_one_still_says_so(panel, monkeypatch) -> None:
     """Nothing else announces a drawing: it took a minute and a half and arrived silently."""
-    monkeypatch.setattr(kiosk.diagram, "announces", lambda: True)
+    monkeypatch.setattr(kiosk.panel, "announces", lambda: True)
     panel._page_busy.set()
     panel._panel_showing.set()
 
-    assert panel.show_diagram() is True
+    assert panel.show_picture() is True
     assert panel._cues.played == ["shown"]
 
 
@@ -113,6 +113,6 @@ def test_the_admin_page_still_has_no_room(panel) -> None:
     painted it yet - answering True there would claim a panel that is still covered."""
     panel._page_busy.set()
 
-    assert panel.show_diagram() is False
+    assert panel.show_picture() is False
     assert panel.threads == [], "nothing is started for a panel that cannot take it"
     assert panel._cues.played == [], "and nothing is announced"

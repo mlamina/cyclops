@@ -38,10 +38,10 @@ import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
 from . import (  # noqa: E402
     barge,
-    diagram,
     filming,
     imagine,
     mixer,
+    panel,
     power,
     session,
     sfx,
@@ -55,10 +55,10 @@ from .button import RING_ACTIVE, RING_ERROR, RING_IDLE, ShutterButton  # noqa: E
 from .camera import STALE_AFTER_S, CameraSource  # noqa: E402
 from .config import (  # noqa: E402
     BROWSER_CLOSE_FLAG,
-    DIAGRAM_SHOWN_FLAG,
     PAGE_ALIVE_FLAG,
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
+    PANEL_PAINTED_FLAG,
     ConfigError,
     load_settings,
 )
@@ -201,8 +201,8 @@ WARM_UP_S = 25.0
 BROWSER_SETTLE_S = 2.0
 # How long the page gets to lay a drawing out before we uncover it anyway. Generously over the
 # ~400 ms poll plus a JointJS layout, because the cost of being wrong is asymmetric: uncovering
-# early shows the dashboard for a moment, and never uncovering loses the diagram entirely.
-DIAGRAM_WAIT_S = 8.0
+# early shows the dashboard for a moment, and never uncovering loses the picture entirely.
+PAINT_WAIT_S = 8.0
 VOLUME_POLL_S = 0.4  # how often we look for a volume, or a barge-in switch, the page left us
 # ...and how often we check that the window still fills the panel. See _keep_fullscreen: this is
 # a compositor's answer being verified rather than a value being read, so it can be lazy.
@@ -461,18 +461,18 @@ class Kiosk:
         self._close_at = 0.0  # when we last looked for a Close from a page nobody here put up
         self._admin_busy = threading.Event()  # set from the tap until the page is done with
         # A second latch rather than reusing _admin_busy, which the chrome reads to decide
-        # whether the eye is lit (see _pressed_now). A diagram is not that page, and a
+        # whether the eye is lit (see _pressed_now). A picture is not that page, and a
         # panel that lights the eye whenever Cyclops draws would be telling the truth about the
         # browser and a lie about what you are looking at. Both still gate _open_admin, so the
         # two can never be up at once.
-        self._page_busy = threading.Event()  # any page has the panel: the admin one or a diagram
+        self._page_busy = threading.Event()  # any page has the panel: the admin one or a picture
         # ...and a third, narrower than either: a picture of ours is not merely on its way to the
         # panel but actually visible on it. _page_busy goes up when the thread is *spawned*, and
-        # _diagram_session then waits up to DIAGRAM_WAIT_S for the page to paint and may give up
+        # _picture_session then waits up to PAINT_WAIT_S for the page to paint and may give up
         # without ever uncovering - so it cannot answer "is something of ours on the glass now?".
-        # show_diagram needs that exact question: the page polls, so a second picture offered
+        # show_picture needs that exact question: the page polls, so a second picture offered
         # while one is up swaps itself in, and refusing it would tell the model nobody can see a
-        # picture that everybody can. See show_diagram.
+        # picture that everybody can. See show_picture.
         self._panel_showing = threading.Event()
         self._reveal = threading.Event()  # asks the render loop to uncover the admin page
         self._retake = threading.Event()  # ... and to take the panel back off it
@@ -590,11 +590,11 @@ class Kiosk:
 
         Taking the panel back from a page is when it happens: we destroy and rebuild our window
         in the same instant the browser behind us is tearing down whatever it was showing, and
-        the busier that is - a megapixel photo rather than a diagram - the likelier the request
-        lands too early. So it is checked rather than assumed. ``getWindowImageRect`` reports
-        where the last image actually landed, which is exactly the question being asked; it is
-        useless for *discovering* the panel size, for the reason :meth:`_window_size` gives, and
-        ideal for confirming one we already know.
+        the busier that is - a megapixel photo rather than a few numbers - the likelier the
+        request lands too early. So it is checked rather than assumed. ``getWindowImageRect``
+        reports where the last image actually landed, which is exactly the question being asked;
+        it is useless for *discovering* the panel size, for the reason :meth:`_window_size`
+        gives, and ideal for confirming one we already know.
         """
         if not (self.fullscreen and self._window_up and self.screen is not None):
             return
@@ -972,7 +972,7 @@ class Kiosk:
         except OSError as exc:
             print(f"· could not read {path} for the panel ({exc})", file=sys.stderr, flush=True)
             return False
-        return bool(diagram.offer_image(small, path.stem) and diagram.show())
+        return bool(panel.offer_image(small, path.stem) and panel.show())
 
     # ---- admin page ----
 
@@ -998,7 +998,7 @@ class Kiosk:
         which is nearly always: his face is the button that gets pressed, and it asks for the
         screen Chromium was launched on. Only the odd tap that changes screens pays for a poll,
         and paying for it here is the whole point - uncovering first and letting the page swap
-        underneath somebody is exactly the flicker :meth:`_diagram_session` waits to avoid.
+        underneath somebody is exactly the flicker :meth:`_picture_session` waits to avoid.
         """
         if screen == self._screen:
             return
@@ -1146,10 +1146,10 @@ class Kiosk:
                 return
             # The eye promises the dashboard, so make sure that is what is behind our window.
             # The warm browser shows whatever was last offered to the panel, and an offer that
-            # was never shown - a crashed session, a diagram whose show() lost the race with
+            # was never shown - a crashed session, a picture whose show() lost the race with
             # this tap - would otherwise be what the tap uncovers. The two can never legitimately
             # be up at once: _page_busy gates both.
-            diagram.withdraw()
+            panel.withdraw()
             BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)  # a stale note must not close this one
             self._ask_for_screen(screen)
@@ -1185,10 +1185,10 @@ class Kiosk:
                 break
             time.sleep(ADMIN_POLL_S)
 
-    # ---- diagrams ----
+    # ---- pictures on the panel ----
 
-    def show_diagram(self) -> bool:
-        """Put the picture waiting in ``DIAGRAM_FILE`` on the panel. False if the panel is busy.
+    def show_picture(self) -> bool:
+        """Put the picture waiting in ``PANEL_FILE`` on the panel. False if the panel is busy.
 
         Called from the agent's thread, so it does nothing here but set a flag and start a
         thread: highgui belongs to the render loop and this is not it.
@@ -1202,8 +1202,8 @@ class Kiosk:
         has no room, because that is a different page and not ours to paint over.
         """
         if self._panel_showing.is_set():
-            if diagram.announces():
-                self._cues.play("shown")  # a drawing arriving is news; see _diagram_session
+            if panel.announces():
+                self._cues.play("shown")  # a drawing arriving is news; see _picture_session
             print("· picture swapped on the panel", flush=True)
             # A recording is being handed the picture on the panel rather than the black the
             # kiosk is painting behind the browser (see cyclops.still), and that hand-off happens
@@ -1216,7 +1216,7 @@ class Kiosk:
         if self._page_busy.is_set():
             return False  # the admin page is up, or a picture is on its way; do not stack them
         self._page_busy.set()
-        threading.Thread(target=self._diagram_session, name="kiosk-diagram", daemon=True).start()
+        threading.Thread(target=self._picture_session, name="kiosk-picture", daemon=True).start()
         return True
 
     def _restill(self) -> None:
@@ -1233,28 +1233,29 @@ class Kiosk:
             self._page_still = frame
             self.panel.publish(frame)
 
-    def _diagram_session(self) -> None:
-        """The whole life of one diagram: wait for it to be drawn, show it, wait, take it back.
+    def _picture_session(self) -> None:
+        """The whole life of one picture: wait for the page to paint it, show it, then take it
+        back.
 
         The same shape as :meth:`_admin_session` and for the same reasons, with one difference:
-        the admin page is already loaded in the warm browser, and a diagram is not. So this waits
+        the admin page is already loaded in the warm browser, and a picture is not. So this waits
         for the page to say it has actually painted before uncovering, rather than uncovering onto
-        a dashboard that turns into a diagram half a second later while somebody is watching.
+        a dashboard that turns into a picture half a second later while somebody is watching.
         """
         url = self._admin_url()
         shown = False
         try:
             if not _admin_reachable(url) or not self._ensure_browser(url):
-                print("· diagram: no page to draw it on", file=sys.stderr, flush=True)
+                print("· panel: no page to paint it on", file=sys.stderr, flush=True)
                 return
-            DIAGRAM_SHOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
-            DIAGRAM_SHOWN_FLAG.unlink(missing_ok=True)  # a stale note must not answer for this one
+            PANEL_PAINTED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            PANEL_PAINTED_FLAG.unlink(missing_ok=True)  # a stale note must not answer for this one
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
             asked_at = time.time()
-            if not _wait_for_flag(DIAGRAM_SHOWN_FLAG, asked_at, DIAGRAM_WAIT_S):
+            if not _wait_for_flag(PANEL_PAINTED_FLAG, asked_at, PAINT_WAIT_S):
                 # Uncover anyway. The page polls, so it is probably a slow layout rather than a
-                # dead browser, and a diagram arriving a moment late beats one that never comes.
-                print("· diagram: the page was slow to draw; showing anyway", flush=True)
+                # dead browser, and a picture arriving a moment late beats one that never comes.
+                print("· panel: the page was slow to paint; showing anyway", flush=True)
             # Before the reveal and on this thread, not the render loop's: rasterising a drawing
             # costs a third of a second on this box, which is a frame the panel would drop and a
             # third of a second nobody notices at the end of the ten this drawing already took.
@@ -1265,8 +1266,8 @@ class Kiosk:
             self._panel_showing.set()  # from here a second picture swaps rather than being refused
             self._reveal.set()
             # A drawing was made and it is on the panel now: look up. Where one that takes an
-            # empty panel says so - a diagram drawn or found arrives here through diagram.show(),
-            # and one replacing another says it in show_diagram instead, which is the path that
+            # empty panel says so - a picture drawn or found arrives here through panel.show(),
+            # and one replacing another says it in show_picture instead, which is the path that
             # does not come back through here. Pointedly not _admin_session's reveal, which is
             # his eye opening the dashboard and already has a sound of its own.
             #
@@ -1274,20 +1275,20 @@ class Kiosk:
             # this, and a second cue on top of it is one too many - which is only obvious now
             # that the shutter puts its photo on the panel rather than only handing it over.
             # A drawing does sound, because nothing else announced it and it took a minute.
-            if diagram.announces():
+            if panel.announces():
                 self._cues.play("shown")
-            print("· diagram on the panel", flush=True)
+            print("· picture on the panel", flush=True)
             self._watch_page(shown_at)
         finally:
             # Cleared before the withdraw, so nothing can offer a picture into the gap between
             # this one coming down and the panel coming back.
             self._panel_showing.clear()
             # The drawing goes before the panel comes back, so the page has already switched
-            # itself off the diagram by the time it is visible again behind the window.
-            diagram.withdraw()
+            # itself off the picture by the time it is visible again behind the window.
+            panel.withdraw()
             if shown:
                 self._retake.set()
-                print("· diagram closed", flush=True)
+                print("· picture closed", flush=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
             self._page_busy.clear()
 
@@ -1560,7 +1561,7 @@ class Kiosk:
                 # A session recording the screen is still sampling, and the screen is no longer
                 # ours to hand it. What is on it, when the page was handed a picture and we could
                 # rebuild it (see cyclops.still), and black otherwise. Black rather than the frame
-                # we happened to stop on: a diagram can hold the panel for a quarter of an hour
+                # we happened to stop on: a picture can hold the panel for a quarter of an hour
                 # mid-session, and a frozen halo over a running timer watches back as a hung
                 # encoder rather than as what happened.
                 self.panel.publish(
@@ -1765,10 +1766,10 @@ def main() -> None:
     # but _toggle_session still has one; _toggle_session always says which of the two it wants.
     controller = SessionController(settings, frames=camera, entrypoint="kiosk")
     kiosk = Kiosk(controller, camera, fullscreen, screen)
-    diagram.set_panel(kiosk)  # so a finished diagram can find a panel to appear on
+    panel.set_kiosk(kiosk)  # so a finished picture can find a panel to appear on
     # Nothing can be waiting for a panel that has only just come up, so anything here is a
     # leftover from a process that is gone - and the browser warmed below would paint it.
-    diagram.withdraw()
+    panel.withdraw()
     # Same argument, and the one that matters more: _sync_stranded reads this note every 200 ms
     # and answers it by taking the panel back. Left behind by a kiosk that was killed with the
     # page up, it would fire a window rebuild seconds into a boot that has nothing to take back.
@@ -1826,8 +1827,8 @@ def main() -> None:
         kiosk.close_browser()
         kiosk.button.close()  # the ring out while we still own the pin, then hand it back
         kiosk.backlight.on()  # never leave the panel dark behind us
-        diagram.set_panel(None)
-        diagram.withdraw()  # nothing should be waiting for a panel that is gone
+        panel.set_kiosk(None)
+        panel.withdraw()  # nothing should be waiting for a panel that is gone
         webcam.set_live_source(None)
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away

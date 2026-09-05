@@ -33,7 +33,7 @@ let showing = null;
 let asked = null;
 
 async function show(id) {
-  const r = await fetch('/api/diagram/' + encodeURIComponent(id), { cache: 'no-store' });
+  const r = await fetch('/api/picture/' + encodeURIComponent(id), { cache: 'no-store' });
   if (!r.ok) return;
   const found = await r.json();
   // Cleared before it is decided, so a drawing arriving after a photo gets its button back.
@@ -43,7 +43,7 @@ async function show(id) {
   window.__drawing(true);
   if (found.image) {
     // A photograph puts itself away on any press; a diagram keeps the corner square. See
-    // system.css, and `drawn` in cyclops/diagram.py's offer_image.
+    // system.css, and `drawn` in cyclops/panel.py's offer_image.
     if (!found.drawn) document.body.classList.add('photo');
     // Decoded before we say we have painted it, or the kiosk uncovers onto an empty stage.
     const img = new Image();
@@ -56,7 +56,7 @@ async function show(id) {
   }
   // Tell the kiosk it may uncover the panel. Sent even when there was no picture in the payload:
   // the alternative is a panel that never uncovers and a user who is told nothing.
-  try { await fetch('/diagram/shown', { method: 'POST', body: '' }); } catch (e) {}
+  try { await fetch('/panel/painted', { method: 'POST', body: '' }); } catch (e) {}
 }
 
 async function watch() {
@@ -69,10 +69,10 @@ async function watch() {
     } else if (!s.screen) {
       asked = null;
     }
-    if (s.diagram && s.diagram !== showing) {
-      showing = s.diagram;
-      await show(s.diagram);
-    } else if (!s.diagram && showing) {
+    if (s.picture && s.picture !== showing) {
+      showing = s.picture;
+      await show(s.picture);
+    } else if (!s.picture && showing) {
       // The kiosk took the panel back and cleared the offer. Go quiet, and let go of the image:
       // on a box with one browser and no tabs, the next picture is the only thing that will ever
       // want this memory.

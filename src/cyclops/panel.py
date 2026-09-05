@@ -2,7 +2,7 @@
 
 Everything Cyclops can put on the glass comes through here - a photo off the shutter, a picture
 recalled from the card, an edit, a diagram - and it is one small file plus a flag. The picture is
-written to :data:`cyclops.config.DIAGRAM_FILE`; the panel's page polls ``/api/panel`` every
+written to :data:`cyclops.config.PANEL_FILE`; the panel's page polls ``/api/panel`` every
 400 ms, sees an id it has not drawn, fetches the payload and paints it; :func:`show` asks the
 kiosk to uncover the browser once it has.
 
@@ -11,12 +11,15 @@ is served by the admin process, which shares no memory with whoever made the pic
 picture made with no session running was never written to the card at all - there would be
 nothing for a path to point at.
 
-**This module used to draw diagrams**, from a JSON schema of nodes and wires that a text model
-emitted and JointJS rendered on the page. On 2026-09-04 that came out: an image model draws a
-better diagram than a schema we maintain, so a diagram is now a jpg in ``photos/`` like any other
-picture, made by :func:`cyclops.imagine.draw`. What is left here is the half that was never about
-diagrams at all - which is also why the shutter button, ``recall`` and ``edit_photo`` all depend
-on this file. The name is the last thing left over; see the plan in ``Plans/``.
+**This was ``diagram.py`` until 2026-09-04**, and most of it drew diagrams: a JSON schema of
+nodes and wires that a text model emitted and JointJS rendered on the page. An image model draws
+a better diagram than a schema we maintain, so that came out, and a diagram is now a jpg in
+``photos/`` like any other picture (:func:`cyclops.imagine.draw`).
+
+What was left was the half that had never been about diagrams - the half the shutter button,
+``recall`` and ``edit_photo`` all go through - still called ``diagram``. That name was worth
+changing rather than keeping: it is how somebody deletes the camera from the panel while tidying
+up a feature that no longer exists.
 """
 
 from __future__ import annotations
@@ -28,12 +31,12 @@ import uuid
 from typing import Any
 
 from . import card
-from .config import DIAGRAM_FILE
+from .config import PANEL_FILE
 
-_panel: object | None = None  # a cyclops.kiosk.Kiosk while one is running; see set_panel
+_kiosk: object | None = None  # a cyclops.kiosk.Kiosk while one is running; see set_kiosk
 
 
-def set_panel(panel: object | None) -> None:
+def set_kiosk(kiosk: object | None) -> None:
     """Register the running kiosk, so a finished picture can find a screen to appear on.
 
     Same shape and same reason as :func:`cyclops.webcam.set_live_source` and
@@ -46,8 +49,8 @@ def set_panel(panel: object | None) -> None:
     the kiosk to reach it - that module owns OpenCV and a Qt window, and ``uv run cyclops`` has
     neither and wants neither.
     """
-    global _panel
-    _panel = panel
+    global _kiosk
+    _kiosk = kiosk
 
 
 def show() -> bool:
@@ -56,8 +59,8 @@ def show() -> bool:
     False is the ordinary answer under ``uv run cyclops``, where there is a conversation and no
     screen. The caller says so out loud rather than treating it as a failure.
     """
-    panel = _panel
-    return bool(panel is not None and panel.show_diagram())  # type: ignore[attr-defined]
+    kiosk = _kiosk
+    return bool(kiosk is not None and kiosk.show_picture())  # type: ignore[attr-defined]
 
 
 _announce = False  # whether the picture waiting for the panel should make a sound; see announces
@@ -80,7 +83,7 @@ def announces() -> bool:
 
     A module global rather than a read of the offer file, which carries the picture inline and
     would cost a megabyte of JSON parsed to answer one question. Whoever offers and whoever shows
-    are the same process - :func:`show` reaches the kiosk through ``_panel`` - so there is
+    are the same process - :func:`show` reaches the kiosk through ``_kiosk`` - so there is
     nothing here that can get out of step with what is on the glass.
     """
     return _announce
@@ -118,7 +121,7 @@ def withdraw() -> None:
     Never raises. A payload that cannot be removed is not a reason to refuse a tap.
     """
     try:
-        DIAGRAM_FILE.unlink(missing_ok=True)
+        PANEL_FILE.unlink(missing_ok=True)
     except OSError as exc:
         print(
             f"· could not take the panel's last picture back ({exc})",
@@ -135,7 +138,7 @@ def _leave(payload: dict[str, Any]) -> bool:
     nothing the second time.
     """
     try:
-        card.write_text(DIAGRAM_FILE, json.dumps({"id": uuid.uuid4().hex[:12], **payload}))
+        card.write_text(PANEL_FILE, json.dumps({"id": uuid.uuid4().hex[:12], **payload}))
     except OSError as exc:
         print(f"· could not offer the panel something to show ({exc})", file=sys.stderr, flush=True)
         return False

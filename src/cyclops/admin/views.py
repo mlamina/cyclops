@@ -28,11 +28,11 @@ from django.views.decorators.http import require_POST
 from .. import barge, card, filming, library, mixer, shelf, stats
 from ..config import (
     BROWSER_CLOSE_FLAG,
-    DIAGRAM_FILE,
-    DIAGRAM_SHOWN_FLAG,
     PAGE_ALIVE_FLAG,
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
+    PANEL_FILE,
+    PANEL_PAINTED_FLAG,
     ConfigError,
     Settings,
     load_settings,
@@ -59,12 +59,12 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 OURS = {
     "base.css": "text/css; charset=utf-8",
     "system.css": "text/css; charset=utf-8",
-    "diagram.css": "text/css; charset=utf-8",
+    "panel.css": "text/css; charset=utf-8",
     "views.css": "text/css; charset=utf-8",
     "lan.css": "text/css; charset=utf-8",
     "status.js": "text/javascript; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
-    "diagram.js": "text/javascript; charset=utf-8",
+    "panel.js": "text/javascript; charset=utf-8",
 }
 STATIC_FILES = OURS
 
@@ -236,18 +236,18 @@ def close_browser(request: HttpRequest) -> HttpResponse:
     return HttpResponse(status=204)
 
 
-# ------------------------------------------------------------------ diagrams
+# ------------------------------------------------------------------ the panel
 
 
 def _pending() -> dict | None:
-    """The diagram waiting to be shown, or None - see ``DIAGRAM_FILE``.
+    """The picture waiting to be shown, or None - see ``PANEL_FILE``.
 
     Never raises. A half-written file is not possible (they go through ``card.write_text``) but a
     truncated one from an older build, or none at all, both mean the same thing to the page: show
     the dashboard.
     """
     try:
-        found = json.loads(DIAGRAM_FILE.read_text(encoding="utf-8"))
+        found = json.loads(PANEL_FILE.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
     return found if isinstance(found, dict) and found.get("id") else None
@@ -284,7 +284,7 @@ def panel(request: HttpRequest) -> JsonResponse:
     if _is_local(request):  # a laptop on the LAN must not answer for the kiosk's own browser
         _note_alive()
     found = _pending()
-    return JsonResponse({"diagram": found["id"] if found else None, "screen": _screen()})
+    return JsonResponse({"picture": found["id"] if found else None, "screen": _screen()})
 
 
 def _screen() -> str | None:
@@ -303,7 +303,7 @@ def _screen() -> str | None:
         return None
 
 
-def diagram(request: HttpRequest, ident: str) -> JsonResponse:
+def picture(request: HttpRequest, ident: str) -> JsonResponse:
     """The drawing itself, by id, for the page to render.
 
     The id is checked against the pending one rather than used to look anything up, so there is
@@ -311,15 +311,15 @@ def diagram(request: HttpRequest, ident: str) -> JsonResponse:
     """
     found = _pending()
     if found is None or found["id"] != ident:
-        raise Http404("no such diagram is waiting")
+        raise Http404("no such picture is waiting")
     return JsonResponse(found)
 
 
 @require_POST
-def diagram_shown(request: HttpRequest) -> HttpResponse:
+def picture_painted(request: HttpRequest) -> HttpResponse:
     """The page has painted the picture: tell the kiosk it may uncover.
 
-    The kiosk is waiting on ``DIAGRAM_SHOWN_FLAG`` before it drops its window, and this is the
+    The kiosk is waiting on ``PANEL_PAINTED_FLAG`` before it drops its window, and this is the
     page saying it has something to uncover onto. An empty body and one touched file.
 
     It used to do two more jobs. When a diagram was a JointJS scene laid out in the browser, the
@@ -333,8 +333,8 @@ def diagram_shown(request: HttpRequest) -> HttpResponse:
     if _pending() is None:
         return HttpResponseBadRequest("nothing is waiting for the panel")
     try:
-        DIAGRAM_SHOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
-        DIAGRAM_SHOWN_FLAG.touch()
+        PANEL_PAINTED_FLAG.parent.mkdir(parents=True, exist_ok=True)
+        PANEL_PAINTED_FLAG.touch()
     except OSError as exc:
         print(f"· could not leave the panel-painted note ({exc})", flush=True)
     return HttpResponse(status=204)
