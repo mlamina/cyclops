@@ -24,7 +24,27 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)  # the repo root, whichever copy this scr
 LOG=/tmp/kiosk_live.log
 
 pkill -f "$PATTERN" || true  # nothing running is a fine starting point, not an error
-sleep 2
+
+# Wait for it to be *gone*, rather than for a couple of seconds. This was `sleep 2`, and two
+# seconds is not enough time for a kiosk to put down a Chromium, a camera and an ffmpeg: the
+# replacement started while the old one still held BCM17, took 'GPIO busy' for an answer, and
+# ran without a shutter button for the rest of its life (see button.py - a pin that will not
+# open is a note, not a stop, which is right for a box with no button wired and wrong for a
+# box whose button is merely still in use). The old process then let the line go a moment
+# later, so nothing was holding it by the time anybody went looking.
+#
+# Five deploys in an afternoon is what made a race that needs one unlucky teardown a certainty.
+n=0
+while pgrep -f "$PATTERN" > /dev/null 2>&1; do
+  n=$((n + 1))
+  if [ "$n" -gt 20 ]; then          # 10s of asking nicely is enough
+    echo "· kiosk would not exit; killing it" >&2
+    pkill -9 -f "$PATTERN" || true
+    sleep 1
+    break
+  fi
+  sleep 0.5
+done
 cd "$ROOT" || exit 1
 setsid nohup .venv/bin/cyclops-kiosk > "$LOG" 2>&1 < /dev/null &
 
