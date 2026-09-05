@@ -1,14 +1,14 @@
 """The panel handshake: one thing at a time, offered to the page and taken back afterwards.
 
 Everything Cyclops can put on the glass comes through here - a photo off the shutter, a picture
-recalled from the card, an edit, a diagram, a snippet of HTML the model wrote itself - and it is
+recalled from the card, an edit, a diagram, a scratchpad of HTML the model wrote itself - and it is
 one small file plus a flag. What is to be shown is written to :data:`cyclops.config.PANEL_FILE`;
 the panel's page polls ``/api/panel`` every 400 ms, sees an id it has not drawn, fetches the
 payload and paints it; :func:`show` asks the kiosk to uncover the browser once it has.
 
 There are two doors, and they differ only in what they leave in the file. :func:`offer_image`
-carries a JPEG, and :func:`offer_html` carries markup. The page branches on which key is there;
-nothing between here and there - not ``_leave``, not ``/api/picture``, not the kiosk - looks
+carries a JPEG, and :func:`offer_scratchpad` carries markup. The page branches on which key is
+there; nothing between here and there - not ``_leave``, not ``/api/picture``, not the kiosk - looks
 inside the payload at all.
 
 The picture travels *in* the file rather than as a path to one, and that is deliberate. The page
@@ -113,8 +113,8 @@ def offer_image(jpeg: bytes, title: str, *, drawn: bool = False) -> bool:
     return _leave({"title": title, "image": url, "drawn": drawn})
 
 
-def offer_html(html: str) -> bool:
-    """Leave a snippet of HTML where the panel's page will find it. False if it could not.
+def offer_scratchpad(html: str) -> bool:
+    """Leave a scratchpad of HTML where the panel's page will find it. False if it could not.
 
     The other door onto the glass, and the cheap one. Everything above arrives as pixels somebody
     made - a camera, or a minute and a half of ``gpt-image-2`` - and this arrives as markup the
@@ -122,21 +122,21 @@ def offer_html(html: str) -> bool:
     reading rather than hearing, a small SVG.
 
     It is silent. :func:`announces` is about whether *anything else* said this had arrived, and a
-    snippet is the one case where something did: the model is still talking when it lands. A
+    scratchpad is the one case where something did: the model is still talking when it lands. A
     drawing sounds because it took ninety seconds and nothing else marked it.
 
     No ``drawn`` key, and that is the whole of how it is dismissed. The page reads ``drawn`` to
-    decide between a corner square and a press anywhere, and a snippet gets the press: it is one
+    decide between a corner square and a press anywhere, and a scratchpad gets the press: it is one
     thing to look at and be done with rather than a diagram to point at while you argue about it.
 
     No title either, unlike :func:`offer_image`. Nothing has ever read that field - not the page,
     not :mod:`cyclops.still` - and here it would be a second argument the model has to write before
     anything can appear, which is the one cost this feature exists to avoid. The session log names
-    the snippet from the snippet (see ``cyclops.session._render_record``).
+    it from the words in what he wrote (see ``cyclops.session._render_record``).
     """
     global _announce
     _announce = False
-    return _leave({"html": html})
+    return _leave({"scratchpad": html})
 
 
 def withdraw() -> None:

@@ -1232,7 +1232,7 @@ class Kiosk:
         would otherwise republish itself over the black that replaced it.
 
         Nothing to rebuild means black, and not the frame we already had. ``still.of_panel``
-        answers None for whatever it cannot turn back into pixels - today that is a snippet of
+        answers None for whatever it cannot turn back into pixels - today that is a scratchpad of
         HTML, which nothing on this side of the glass can rasterise - and keeping the last frame
         there would put the *previous* picture in the recording for as long as the new thing is
         up. That is a worse answer than black for the reason the reveal already gives: a frozen

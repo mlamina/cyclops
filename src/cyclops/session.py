@@ -734,7 +734,7 @@ def _render_record(record: dict) -> str:
             return f"*Started keeping notes on* ({at}) — **{name}**"
         return f"*Looked up its notes on* ({at}) — **{name}**"
     if kind == "screen":
-        return f"*Put on the screen* ({at}) — {_screen_gist(record.get('html', ''))}"
+        return f"*Wrote on the scratchpad* ({at}) — {_scratchpad_gist(record.get('html', ''))}"
     if kind == "data":
         return _render_data(record, at)
     if kind == "transcript_failed":
@@ -744,11 +744,11 @@ def _render_record(record: dict) -> str:
     return ""
 
 
-SCREEN_GIST_CHARS = 70  # a line in a transcript, not the markup
+SCRATCHPAD_GIST_CHARS = 70  # a line in a transcript, not the markup
 
 
-def _screen_gist(html: str) -> str:
-    """What a snippet said, in a few words - the words out of the markup he wrote.
+def _scratchpad_gist(html: str) -> str:
+    """What a scratchpad said, in a few words - the words out of the markup he wrote.
 
     Read out of the HTML rather than asked for as a title alongside it. A title would be a second
     argument the model has to finish writing before anything can appear on the glass, and the one
@@ -763,7 +763,9 @@ def _screen_gist(html: str) -> str:
     text = " ".join(text.split())
     if not text:
         return f"{len(html)} characters of markup, and no words in it"
-    return text if len(text) <= SCREEN_GIST_CHARS else text[:SCREEN_GIST_CHARS].rstrip() + "…"
+    if len(text) <= SCRATCHPAD_GIST_CHARS:
+        return text
+    return text[:SCRATCHPAD_GIST_CHARS].rstrip() + "…"
 
 
 def _render_data(record: dict, at: str) -> str:

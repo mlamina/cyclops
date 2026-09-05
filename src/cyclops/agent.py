@@ -60,7 +60,7 @@ MAX_QUERY_CHARS = 300
 # A screenful of markup and no more. The argument IS the latency here - nothing can appear until
 # the model has finished writing it - and 800x480 read at arm's length holds a number, a short
 # list or a small drawing, none of which need more than this.
-MAX_SCREEN_CHARS = 1500
+MAX_SCRATCHPAD_CHARS = 1500
 MAX_PROJECT_NAME_CHARS = 80
 MAX_PROJECT_TAGLINE_CHARS = 300  # a little under store.MAX_TAGLINE_CHARS
 MAX_PROJECT_NOTES_CHARS = 4000  # a project page, not a card's worth of them
@@ -180,32 +180,37 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
     },
 }
 
-SHOW_ON_SCREEN_TOOL: RealtimeFunctionToolParam = {
+SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
-    "name": "show_on_screen",
+    "name": "write_on_scratchpad",
     "description": (
-        "Put something on the touchscreen, written by you as a small piece of HTML. It is up "
-        "about a second later, while you are still talking, and it costs nothing. "
+        "Write on your SCRATCHPAD: the touchscreen in front of them, which is yours to write on "
+        "as a small piece of HTML. It is up about a second later, while you are still talking, "
+        "and it costs nothing. "
+        "The scratchpad is what you and they both call this. Expect to be asked for it by that "
+        "name - 'put that on your scratchpad', 'scratchpad it', 'what's on the scratchpad' - and "
+        "call it that yourself when you mention it at all. Every one of those is this tool. "
         "Use it on your own initiative, without being asked, whenever the answer has something "
         "in it worth looking at rather than hearing: a torque figure or a temperature set large, "
         "the steps of a job as a numbered list they can work down, a part number, a size, a "
         "setting, a simple shape as inline SVG. A number you say once over a running compressor "
-        "is a number they will ask you for again; a number on the screen is one they can work to. "
+        "is a number they will ask you for again; a number on the scratchpad is one they work to. "
         "So show it AND say it - put the figure up, then say the caveat out loud. "
         "This is the tool to reach for by default. draw_diagram is the expensive exception: it "
         "is for a real technical drawing - how something is wired, what goes where on a header, "
         "how parts fit together - and it costs a minute, which is a minute wasted on anything "
         "that is text, numbers, a list or a simple shape. "
-        "The screen is 800x480, read at arm's length across a bench, and it cannot scroll: "
-        "whatever does not fit is not seen. One idea per screen, set big, a handful of elements. "
+        "The scratchpad is 800x480, read at arm's length across a bench, and it does not scroll: "
+        "whatever does not fit is not seen. One idea on it at a time, set big, a handful of "
+        "elements. "
         "The background, the text colour and the font are already his own, and headings, lists "
         "and SVG are already sized for the panel, so plain markup with no styling at all comes "
         "out right. Style it when the styling MEANS something - a value in red because it is out "
         "of range, a colour because they are matching a wire to it. "
-        "Two things to know. It holds the whole panel until they touch the screen, so it is for "
-        "the answer and not a caption on every sentence. And it replaces whatever picture was "
-        "there, so do not cover a photo they are still asking you about - edit_photo will have "
-        "nothing left to work on."
+        "Two things to know. It holds the whole panel until they touch it - a press anywhere wipes "
+        "the scratchpad and gives them his eye back - so it is for the answer and not a caption "
+        "on every sentence. And it replaces whatever picture was there, so do not cover a photo "
+        "they are still asking you about; edit_photo will have nothing left to work on."
     ),
     "parameters": {
         "type": "object",
@@ -213,7 +218,7 @@ SHOW_ON_SCREEN_TOOL: RealtimeFunctionToolParam = {
             "html": {
                 "type": "string",
                 "description": (
-                    "The body of the screen, as HTML. No <html>, <head> or <body> - just the "
+                    "What goes on the scratchpad, as HTML. No <html>, <head> or <body> - just the "
                     "elements. A number is '<h1>25 Nm</h1>'. Steps are an <ol> of short <li>. "
                     "You may use <style> or inline style= to override anything. Emoji are just "
                     "characters and can go anywhere. Scripts do not run and nothing is loaded "
@@ -546,10 +551,13 @@ HOW YOU TALK
 - They set the agenda, always. Go where they go. Never steer them somewhere else, and never
   hand them a plan they did not ask for.
 - One or two sentences. Their hands are busy and probably dirty; this is talk, not a document.
-- You have a screen as well as a voice, and it is part of answering rather than an extra. When
-  the answer has a number, a list of steps or a shape in it, put that on the screen with
-  show_on_screen and say the rest out loud. A figure they have to hold in their head while they
-  work is a figure they will ask you for twice.
+- You have a SCRATCHPAD as well as a voice - the touchscreen in front of them - and writing on
+  it is part of answering rather than an extra. When the answer has a number, a list of steps
+  or a shape in it, put that on the scratchpad and say the rest out loud. A figure they have
+  to hold in their head while they work is a figure they will ask you for twice.
+- Call it the scratchpad, because that is what they call it. "Put that on your scratchpad",
+  "scratchpad it", "what's on the scratchpad" - all of them mean write_on_scratchpad. A press
+  anywhere on it wipes it and gives them your eye back, so they never have to ask you to.
 - Answer first. No preamble, no repeating back what they just said, no summarising yourself.
 - Offer once. If you spot a risk, a better order to do things in, or something still
   unresolved, say it briefly and then let it go. Never raise the same unheeded point twice.
@@ -582,22 +590,22 @@ LOOKING THINGS UP
 - Combine the two when it helps: ask for a photo of the thing, then search for what you saw.
   If a search comes back empty or failed, say so plainly instead of inventing an answer.
 - When what comes back is a figure they are going to work to - a torque, a clearance, a gap, a
-  temperature - put it on the screen with show_on_screen as you say it. That is exactly what the
-  screen is for, and a number read out once over a running compressor is a number they lose.
+  temperature - write it on the scratchpad as you say it. That is exactly what the scratchpad
+  is for, and a number read out once over a running compressor is a number they lose.
 
 SHOWING THEM SOMETHING
-- Write on the screen yourself, with show_on_screen, and do it without being asked. A torque
-  figure or a temperature, set large. The steps of a job as a numbered list they can work down.
-  A part number, a size, a setting. A simple shape as SVG. It costs nothing and it is up in about
-  a second, while you are still talking.
-- Do it as you answer, not instead of answering: put the number on the screen and say the caveat
-  out loud. Then stop describing what is up there - they can see it.
-- The one restraint: it takes the whole screen until they touch it, so it is for the answer, not
-  for a caption on every sentence.
+- Write on the scratchpad yourself, and do it without being asked. A torque figure or a
+  temperature, set large. The steps of a job as a numbered list they can work down. A part
+  number, a size, a setting. A simple shape as SVG. It costs nothing and it is up in about a
+  second, while you are still talking.
+- Do it as you answer, not instead of answering: put the number on the scratchpad and say the
+  caveat out loud. Then stop describing what is up there - they can see it.
+- The one restraint: it holds the whole panel until they touch it, so it is for the answer,
+  not for a caption on every sentence.
 - When the answer is a set of connections or a layout - how something is wired, what goes where on
   a header, how parts fit together - draw it rather than saying it; see draw_diagram for what it
   can and cannot draw. It takes about a minute, so say what you are doing and carry on talking.
-  Never reach for it for something you could have written on the screen in a second.
+  Never reach for it for something you could have put on the scratchpad in a second.
 - When the answer is what something would LOOK like - a colour, a finish, a part moved, a thing
   that is not there yet - edit the picture in front of them rather than describing it; see
   edit_photo. It can take a minute, so say what you are doing and carry on talking. What comes
@@ -1010,7 +1018,7 @@ class VoiceAgent:
             "tools": [
                 WEB_SEARCH_TOOL,
                 *_diagram_tools(self.settings),
-                *_screen_tools(self.settings),
+                *_scratchpad_tools(self.settings),
                 *_imagine_tools(self.settings),
                 *_project_tools(self.settings),
                 *_recall_tools(self.settings),
@@ -1393,8 +1401,8 @@ class VoiceAgent:
         if call.name in DATA_TOOLS:
             await self._run_data_tool(call)
             return
-        if call.name == "show_on_screen":
-            await self._run_show_on_screen(call)
+        if call.name == "write_on_scratchpad":
+            await self._run_scratchpad(call)
             return
         if call.name == "draw_diagram":
             await self._run_draw_diagram(call)
@@ -1459,24 +1467,24 @@ class VoiceAgent:
 
     # ---- drawing one ----
 
-    async def _run_show_on_screen(self, call: RealtimeConversationItemFunctionCall) -> None:
+    async def _run_scratchpad(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Put what the model wrote on the panel. The shortest handler here, and deliberately.
 
         Every other tool that reaches the glass has a picture to make first - a minute of
         ``gpt-image-2``, or a file off the card. This one already has everything it needs in its
         own arguments, so there is nothing between the call and the panel but one small write.
         """
-        html = _tool_string(call.arguments, "html", MAX_SCREEN_CHARS)
-        self._log(f"[tool] show_on_screen {len(html)} chars")
+        html = _tool_string(call.arguments, "html", MAX_SCRATCHPAD_CHARS)
+        self._log(f"[tool] write_on_scratchpad {len(html)} chars")
         if not html:
             await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing to show"})
             await self._request_response()
             return
 
         try:
-            shown = await asyncio.to_thread(self._show_snippet, html)
+            shown = await asyncio.to_thread(self._write_scratchpad, html)
         except Exception as exc:  # never leave the model waiting for a tool result
-            self._log(f"[tool] show_on_screen failed: {exc!r}", stream=sys.stderr)
+            self._log(f"[tool] write_on_scratchpad failed: {exc!r}", stream=sys.stderr)
             await self._send_tool_output(
                 call.call_id, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
             )
@@ -1503,20 +1511,20 @@ class VoiceAgent:
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
-    def _show_snippet(self, html: str) -> bool:
-        """Offer the snippet and ask for the panel. Blocking; runs off the loop's thread.
+    def _write_scratchpad(self, html: str) -> bool:
+        """Offer the scratchpad and ask for the panel. Blocking; runs off the loop's thread.
 
-        Off the loop because ``panel.offer_html`` goes through ``card.write_text``, which fsyncs
-        an SD card - the same reason :meth:`_keep_and_show_drawing` is not a coroutine. It is a
-        small write, but the loop it would block is the one carrying his voice.
+        Off the loop because ``panel.offer_scratchpad`` goes through ``card.write_text``, which
+        fsyncs an SD card - the same reason :meth:`_keep_and_show_drawing` is not a coroutine.
+        It is a small write, but the loop it would block is the one carrying his voice.
 
-        Nothing is kept. A snippet is a sentence he said with the screen instead of his mouth, and
-        the session log records it the way it records the rest of what was said; there is no file
+        Nothing is kept. The scratchpad is a sentence he said with the screen instead of his
+        mouth, and the session log records it the way it records the rest; there is no file
         for it in ``photos/``, nothing to caption, and nothing for ``recall`` to find. Putting the
         same thing up again costs a second, which is the whole argument.
         """
-        shown = panel.offer_html(html) and panel.show()
-        session.note("screen", html=html[:MAX_SCREEN_CHARS], panel=shown)
+        shown = panel.offer_scratchpad(html) and panel.show()
+        session.note("screen", html=html[:MAX_SCRATCHPAD_CHARS], panel=shown)
         return shown
 
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
@@ -2254,16 +2262,16 @@ def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [DRAW_DIAGRAM_TOOL] if settings.diagrams else []
 
 
-def _screen_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+def _scratchpad_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The one tool that writes on the panel, or nothing. Left out rather than refused, as ever.
 
     A flag of its own, and not because of what it costs - it costs nothing, which is the point of
     it. It is the switch to reach for if he turns out to put something on the glass every second
     sentence: this is the first tool here that takes the screen away from the person using it
-    without being asked, and ``CYCLOPS_SCREEN=0`` is a way to find out what that is like that is
+    without being asked, and ``CYCLOPS_SCRATCHPAD=0`` is a way to find out what that is like that is
     not a revert.
     """
-    return [SHOW_ON_SCREEN_TOOL] if settings.screen else []
+    return [SCRATCHPAD_TOOL] if settings.screen else []
 
 
 def _imagine_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
@@ -2422,7 +2430,7 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
     # Barely seen - the browser covers this strip about a second later - but the chain wants no
     # silent branches, and the recording is still watching while it is up.
-    if call.name == "show_on_screen":
+    if call.name == "write_on_scratchpad":
         return "putting that on the screen…"
     if call.name == "edit_photo":
         return _phrase(

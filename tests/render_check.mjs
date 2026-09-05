@@ -8,10 +8,10 @@
  * and a kiosk that uncovers onto nothing. Nobody sees that from a laptop.
  *
  * So this checks what is left. A picture reaches #stage as an <img> with real pixels in it; a
- * snippet the model wrote reaches it as an <iframe> with a document of its own, laid out by that
+ * scratchpad the model wrote reaches it as an <iframe> with a document of its own, laid out by that
  * document's own stylesheet and letting a press through to the stage behind it; the page posts
  * back so the kiosk may uncover; a drawing keeps its corner button while a photograph and a
- * snippet do not; and what the model wrote cannot run a script or reach the network.
+ * scratchpad do not; and what the model wrote cannot run a script or reach the network.
  *
  * Not run by pytest, deliberately: pyproject says the suite must run anywhere in a second, and
  * this needs Chromium and a server. Run it when you touch the template, diagram.js or the CSS.
@@ -88,12 +88,12 @@ const CASES = [
     wantPhotoClass: true,
   },
   {
-    name: 'card',
-    kind: 'card',
+    name: 'scratchpad',
+    kind: 'scratchpad',
     // Not a scrap of styling, which is the case that matters. The model has to be able to write
     // `<h1>25 Nm</h1>` and get a good screen, because every character of CSS it writes instead is
-    // silence between the question and the answer - see CARD_HEAD in panel.js.
-    payload: { html: '<h1>25 Nm</h1><ol><li>Loosen the pinch bolt</li>' +
+    // silence between the question and the answer - see SCRATCHPAD_HEAD in panel.js.
+    payload: { scratchpad: '<h1>25 Nm</h1><ol><li>Loosen the pinch bolt</li>' +
                      '<li>Torque the crank</li></ol>' },
     // He put this up unasked, over his eye and over the way out of the session, so it goes away
     // on a press anywhere rather than at a corner square somebody has to find first.
@@ -102,12 +102,12 @@ const CASES = [
   },
   {
     name: 'hostile',
-    kind: 'card',
+    kind: 'scratchpad',
     // What the model will write by accident sooner or later, and what has to happen to it. The
     // image is the one that matters and it is not about safety: the iframe's load event waits on
     // subresources, so an external src would stall the paint for as long as DNS and TCP take, on
     // a panel whose whole promise is that this lands while he is still talking.
-    payload: { html: '<img src="https://example.com/nope.png">' +
+    payload: { scratchpad: '<img src="https://example.com/nope.png">' +
                      '<script>document.title = "ran"</script><h1>still painted</h1>' },
     wantPhotoClass: true,
     // Their presence IS the assertion - see the splice below.
@@ -140,13 +140,13 @@ for (const item of CASES) {
     await page.screenshot({ path: join(SHOTS, item.name + '.png') });
     const got = await page.evaluate(() => {
       const img = document.querySelector('#stage img.shot');
-      const frame = document.querySelector('#stage iframe.card');
+      const frame = document.querySelector('#stage iframe.scratchpad');
       return {
         // naturalWidth is the whole point: an <img> whose src the browser could not decode is
         // still in the DOM, still has a class, and is zero by zero.
         width: img ? img.naturalWidth : 0,
         height: img ? img.naturalHeight : 0,
-        // A snippet is a document of its own, so there is little to measure from out here beyond
+        // A scratchpad is a document of its own, so there is little to measure from out here beyond
         // its arrival and whether it lets a press reach the stage - which is the only way one is
         // ever dismissed. What is inside it is read through the frame tree below.
         frame: !!frame,
@@ -157,22 +157,22 @@ for (const item of CASES) {
       };
     });
     const bad = [];
-    if (item.kind === 'card') {
-      if (!got.frame) bad.push('the snippet never reached the stage as an iframe');
+    if (item.kind === 'scratchpad') {
+      if (!got.frame) bad.push('the scratchpad never reached the stage as an iframe');
       if (got.clickThrough === false) {
-        bad.push('the frame takes the press itself, so nothing can put the snippet away');
+        bad.push('the frame takes the press itself, so nothing can put the scratchpad away');
       }
       if (item.wantTall) {
         // Read through the frame tree and not page.evaluate, because the frame is sandboxed. This
-        // is the assertion that matters: it proves CARD_HEAD's own stylesheet reached the
+        // is the assertion that matters: it proves SCRATCHPAD_HEAD's own stylesheet reached the
         // document, which is the failure that otherwise ships silently as 16 px text on a panel
         // being read at arm's length across a bench.
-        const box = await page.frameLocator('#stage iframe.card')
+        const box = await page.frameLocator('#stage iframe.scratchpad')
           .locator(item.wantTall.sel).first().boundingBox().catch(() => null);
         if (!box) bad.push(`nothing matched ${item.wantTall.sel} inside the frame`);
         else if (box.height < item.wantTall.px) {
           bad.push(`${item.wantTall.sel} is ${Math.round(box.height)} px tall, wanted ` +
-                   `${item.wantTall.px}+ - the snippet's own stylesheet did not apply`);
+                   `${item.wantTall.px}+ - the scratchpad's own stylesheet did not apply`);
         }
       }
     } else if (!got.width || !got.height) {
@@ -195,7 +195,7 @@ for (const item of CASES) {
     if (!posted) bad.push('the page never told the kiosk it had painted; it would uncover late');
     if (bad.length) { failed++; console.log(`FAIL ${item.name}: ${bad.join('; ')}`); }
     else {
-      const what = item.kind === 'card'
+      const what = item.kind === 'scratchpad'
         ? 'painted in a frame of its own' : `${got.width}x${got.height} decoded`;
       console.log(`ok   ${item.name}: ${what}, posted back`);
     }

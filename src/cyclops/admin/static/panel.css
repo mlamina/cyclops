@@ -13,12 +13,12 @@
    colour rather than a second one. */
 .stage .shot { display: block; width: 100%; height: 100%; object-fit: contain; }
 
-/* ...and a snippet the model wrote is the other thing it holds, in a document of its own (see
-   CARD_HEAD in panel.js). Three of these four declarations are load-bearing:
+/* ...and a scratchpad the model wrote is the other thing it holds, in a document of its own (see
+   SCRATCHPAD_HEAD in panel.js). Three of these four declarations are load-bearing:
 
-   `pointer-events: none` is the whole of how a snippet is dismissed. A press inside an iframe
+   `pointer-events: none` is the whole of how a scratchpad is dismissed. A press inside an iframe
    belongs to the iframe, so the #stage listener that puts a picture away on any press would never
-   hear one - and a snippet needs that press more than a photograph does, because Cyclops put it
+   hear one - and a scratchpad needs that press more than a photograph does, because Cyclops put it
    up unasked and it is covering the eye and the way out of the session. It also settles the
    question of scrolling: there is one 800x480 screen, and what does not fit is not shown.
 
@@ -27,7 +27,7 @@
 
    `background`, so a frame that has not painted yet is the screen's own colour rather than the
    white an iframe defaults to. */
-.stage .card {
+.stage .scratchpad {
   display: block; width: 100%; height: 100%; border: 0;
   background: var(--screen); pointer-events: none;
 }

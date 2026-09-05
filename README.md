@@ -390,33 +390,35 @@ Every session end costs one model call even when nothing gets filed, because dec
 the call. At these model sizes it rounds to nothing, but `CYCLOPS_PROJECTS=0` turns the whole
 feature off — no sweep, and the two project tools aren't offered to the voice agent at all.
 
-## Writing on the screen
+## The scratchpad
 
-Cyclops has a screen and he uses it himself, without being asked. `show_on_screen` takes a small
-piece of HTML that **he writes**, and it is on the panel about a second later: a torque figure set
-large while he talks you through the job, the steps of it as a numbered list, a part number worth
-reading rather than hearing, a simple shape as inline SVG. Colour, emoji and layout are his to
-choose. It costs nothing but the tokens to write it, which is the whole point — it is the tool he
-should reach for by default, and [Diagrams](#diagrams) is the expensive exception for when the
-answer really is a drawing.
+Cyclops has a screen and he writes on it himself, without being asked. **The scratchpad** is what
+both of you call it — say "put that on your scratchpad" and he knows what you mean.
+
+`write_on_scratchpad` takes a small piece of HTML that **he writes**, and it is on the panel about
+a second later: a torque figure set large while he talks you through the job, the steps of it as a
+numbered list, a part number worth reading rather than hearing, a simple shape as inline SVG.
+Colour, emoji and layout are his to choose. It costs nothing but the tokens to write it, which is
+the whole point — this is the tool he reaches for by default, and [Diagrams](#diagrams) is the
+expensive exception for when the answer really is a drawing.
 
 It lands in a document of its own — an `<iframe srcdoc>` on the same stage a photo lands on — so
 his `<style>` cannot reach the dashboard behind it. That document gets his own green-on-black, his
 font, and headings, lists and SVG already sized for 800x480, so plain markup with no styling at
 all comes out looking like Cyclops. Two things it does not get: scripts do not run, and nothing
 loads from the network. Both are cheap insurance and one of them is about speed rather than
-safety — the frame's `load` event waits on subresources, so a hallucinated `<img src="https://…">`
-would stall the paint for as long as DNS takes.
+safety — the frame's `load` event waits on subresources, so a hallucinated
+`<img src="https://…">` would stall the paint for as long as DNS takes.
 
 **A press anywhere puts it away**, the way a photograph does and unlike a diagram, which keeps a
 corner square. It gets the whole panel until then, covering his eye and the way out of the
 session, so it is meant for things worth covering them for. As with a diagram, a `screen`
 recording is black for as long as one is up: rasterising HTML would mean a headless browser per
-snippet on a box that already throttles at 85 °C.
+scratchpad on a box that already throttles at 85 °C.
 
-Nothing is written to the card — a snippet is a sentence he said with the screen instead of his
+Nothing is written to the card — a scratchpad is a sentence he said with the screen instead of his
 mouth, and `session.md` records it the way it records the rest, as one line naming what it said.
-Putting the same thing up again costs a second. `CYCLOPS_SCREEN=0` withholds the tool entirely.
+Putting the same thing up again costs a second. `CYCLOPS_SCRATCHPAD=0` withholds the tool entirely.
 
 ## Diagrams
 
@@ -661,7 +663,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
 | `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them with the photos; `0` withholds `draw_diagram`. |
 | `CYCLOPS_IMAGINE`      | `1`            | Let Cyclops redraw the last photo with a change and show it on the panel; `0` withholds `edit_photo`. |
-| `CYCLOPS_SCREEN`       | `1`            | Let Cyclops write on the panel himself, as a small piece of HTML, without being asked; `0` withholds `show_on_screen`. |
+| `CYCLOPS_SCRATCHPAD`   | `1`            | Let Cyclops write on the panel himself, as a small piece of HTML, without being asked; `0` withholds `write_on_scratchpad`. |
 | `CYCLOPS_SOUNDS`       | `1`            | Cues: the box booting, waking and going to sleep, the shutter; `0` disables. |
 | `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
