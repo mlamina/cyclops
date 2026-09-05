@@ -56,6 +56,7 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -732,6 +733,8 @@ def _render_record(record: dict) -> str:
         if record.get("action") == "tracked":
             return f"*Started keeping notes on* ({at}) — **{name}**"
         return f"*Looked up its notes on* ({at}) — **{name}**"
+    if kind == "screen":
+        return f"*Put on the screen* ({at}) — {_screen_gist(record.get('html', ''))}"
     if kind == "data":
         return _render_data(record, at)
     if kind == "transcript_failed":
@@ -739,6 +742,28 @@ def _render_record(record: dict) -> str:
     if kind == "error":
         return f"*Something went wrong* ({at}) — {record.get('message', '')}"
     return ""
+
+
+SCREEN_GIST_CHARS = 70  # a line in a transcript, not the markup
+
+
+def _screen_gist(html: str) -> str:
+    """What a snippet said, in a few words - the words out of the markup he wrote.
+
+    Read out of the HTML rather than asked for as a title alongside it. A title would be a second
+    argument the model has to finish writing before anything can appear on the glass, and the one
+    thing this tool sells is that it appears while he is still talking; the words are already in
+    there, and this is the only reader of them.
+
+    Tags out, whitespace collapsed. Nothing here needs to be a parser: what it is reading is one
+    screenful of headings and list items, and the answer only has to be recognisable a week later.
+    """
+    text = re.sub(r"<[^>]*>", " ", html)
+    text = unescape(text)
+    text = " ".join(text.split())
+    if not text:
+        return f"{len(html)} characters of markup, and no words in it"
+    return text if len(text) <= SCREEN_GIST_CHARS else text[:SCREEN_GIST_CHARS].rstrip() + "…"
 
 
 def _render_data(record: dict, at: str) -> str:

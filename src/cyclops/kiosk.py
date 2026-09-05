@@ -1230,9 +1230,19 @@ class Kiosk:
 
         Checks the latch again on the way out: a picture that came down while this was rendering
         would otherwise republish itself over the black that replaced it.
+
+        Nothing to rebuild means black, and not the frame we already had. ``still.of_panel``
+        answers None for whatever it cannot turn back into pixels - today that is a snippet of
+        HTML, which nothing on this side of the glass can rasterise - and keeping the last frame
+        there would put the *previous* picture in the recording for as long as the new thing is
+        up. That is a worse answer than black for the reason the reveal already gives: a frozen
+        picture over a running timer watches back as a hung encoder rather than as what happened.
         """
-        frame = still.of_panel(*self._panel_size())
-        if frame is not None and self._panel_showing.is_set():
+        width, height = self._panel_size()
+        frame = still.of_panel(width, height)
+        if frame is None:
+            frame = _black(width, height)
+        if self._panel_showing.is_set():
             self._page_still = frame
             self.panel.publish(frame)
 

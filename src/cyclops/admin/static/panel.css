@@ -1,5 +1,5 @@
 /* A picture, on the panel. The stage it lands on, and the grid collapsing to get out of its way.
-   The other half is static/diagram.js, which fetches it and paints it. */
+   The other half is static/panel.js, which fetches it and paints it. */
 
 /* ---- the stage ---- */
 /* The second thing this page can be. Not a second page: the browser behind the panel is warm
@@ -7,11 +7,30 @@
    is watching. So both screens live in one document and the body class picks. */
 .stage { position: relative; min-height: 0; overflow: hidden; display: none; }
 
-/* Everything the stage holds is one of these now - a photo off the shutter, one recalled from
+/* A picture on the stage is one of these - a photo off the shutter, one recalled from
    the card, an edit, or a diagram (see cyclops/imagine.py). contain and not cover, because
    cropping a picture somebody asked to see is a small lie, and the letterbox is the screen's own
    colour rather than a second one. */
 .stage .shot { display: block; width: 100%; height: 100%; object-fit: contain; }
+
+/* ...and a snippet the model wrote is the other thing it holds, in a document of its own (see
+   CARD_HEAD in panel.js). Three of these four declarations are load-bearing:
+
+   `pointer-events: none` is the whole of how a snippet is dismissed. A press inside an iframe
+   belongs to the iframe, so the #stage listener that puts a picture away on any press would never
+   hear one - and a snippet needs that press more than a photograph does, because Cyclops put it
+   up unasked and it is covering the eye and the way out of the session. It also settles the
+   question of scrolling: there is one 800x480 screen, and what does not fit is not shown.
+
+   `display: block`, because an inline frame at height:100% sits on a text baseline and leaves a
+   descender's worth of gap under it - the same reason .shot has it.
+
+   `background`, so a frame that has not painted yet is the screen's own colour rather than the
+   white an iframe defaults to. */
+.stage .card {
+  display: block; width: 100%; height: 100%; border: 0;
+  background: var(--screen); pointer-events: none;
+}
 
 /* A picture gets the whole panel. Everything the dashboard needs around it - the header, the
    volume, the full-width way out - is chrome for a page of numbers, and a wiring diagram at

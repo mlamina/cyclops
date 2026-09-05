@@ -60,6 +60,12 @@ def of_panel(
     None means there is nothing to draw and the caller should go on publishing black: nobody has
     offered the panel anything (the admin page uncovers with the offer withdrawn, so tapping the
     eye lands here), or what was offered cannot be turned back into pixels.
+
+    A snippet of HTML (``cyclops.panel.offer_html``) is the second of those, deliberately. Turning
+    one back into pixels means a headless browser per snippet on a box that already throttles at
+    85 C, for a feature whose entire promise is that it costs nothing - and it is the same trade
+    that took the SVG rasteriser out above. The recording is black while a snippet is up, the way
+    it is black while the dashboard is.
     """
     offered = _offered(payload_path)
     if offered is None:

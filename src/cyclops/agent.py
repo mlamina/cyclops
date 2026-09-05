@@ -57,6 +57,10 @@ TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_QUERY_CHARS = 300
+# A screenful of markup and no more. The argument IS the latency here - nothing can appear until
+# the model has finished writing it - and 800x480 read at arm's length holds a number, a short
+# list or a small drawing, none of which need more than this.
+MAX_SCREEN_CHARS = 1500
 MAX_PROJECT_NAME_CHARS = 80
 MAX_PROJECT_TAGLINE_CHARS = 300  # a little under store.MAX_TAGLINE_CHARS
 MAX_PROJECT_NOTES_CHARS = 4000  # a project page, not a card's worth of them
@@ -172,6 +176,53 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
             },
         },
         "required": ["request", "style"],
+        "additionalProperties": False,
+    },
+}
+
+SHOW_ON_SCREEN_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "show_on_screen",
+    "description": (
+        "Write something on the touchscreen yourself, as a small piece of HTML, and have it "
+        "appear about a second later. This is the cheap way to show them something and it is "
+        "meant to be used freely, on your own initiative, without being asked - a number they "
+        "wanted pulled up, the steps of a job as a numbered list, a part number or a setting "
+        "worth reading rather than hearing, a simple shape as inline SVG. Put it up and keep "
+        "talking; it lands while you are still speaking. "
+        "Use it INSTEAD of draw_diagram for anything that is text, numbers, a list or a simple "
+        "shape. draw_diagram is a real technical drawing - wiring, a pinout, how parts fit "
+        "together - and it costs a minute of their time, which is a minute wasted on writing a "
+        "number down. "
+        "The screen is 800x480, read at arm's length across a bench, and it cannot scroll: "
+        "anything that does not fit is simply not seen. So one idea per screen, set big, a "
+        "handful of elements - never a page of them. "
+        "It takes the whole panel and stays there until they touch the screen, which means it "
+        "covers his eye and the way out of the session while it is up. That is fine for "
+        "something worth looking at and wrong for a caption on every sentence. It also replaces "
+        "whatever picture was on the panel, so do not put one up over a photo they are still "
+        "asking you about - edit_photo will have nothing left to work on. "
+        "Once it is up, stop describing it. They can see it. Answer what they ask about it. "
+        "The background, the text colour and the font are already set to his own, and headings, "
+        "lists and SVG are already sized for the panel, so plain markup with no styling at all "
+        "comes out looking right. Style it when the styling MEANS something - a value in red "
+        "because it is out of range, a colour because they are matching a wire to it."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "html": {
+                "type": "string",
+                "description": (
+                    "The body of the screen, as HTML. No <html>, <head> or <body> - just the "
+                    "elements. A number is '<h1>25 Nm</h1>'. Steps are an <ol> of short <li>. "
+                    "You may use <style> or inline style= to override anything. Emoji are just "
+                    "characters and can go anywhere. Scripts do not run and nothing is loaded "
+                    "from the network, so images must be inline SVG rather than a src."
+                ),
+            },
+        },
+        "required": ["html"],
         "additionalProperties": False,
     },
 }
@@ -529,9 +580,15 @@ LOOKING THINGS UP
   If a search comes back empty or failed, say so plainly instead of inventing an answer.
 
 SHOWING THEM SOMETHING
-- You have the screen they are looking at, and you can draw on it. When the answer is a set of
-  connections or a layout, draw it rather than saying it - see draw_diagram for what it can and
-  cannot draw. It takes about a minute, so say what you are doing and carry on talking.
+- You have the screen they are looking at, and you can write on it. Use show_on_screen freely and
+  without being asked: a number, a word, a short numbered list of what to do next, a simple shape.
+  It costs nothing and lands in about a second, while you are still talking. It does take the
+  whole screen until they touch it, so put up things worth looking at rather than a caption for
+  every sentence.
+- When the answer is a set of connections or a layout - how something is wired, what goes where on
+  a header, how parts fit together - draw it rather than saying it; see draw_diagram for what it
+  can and cannot draw. It takes about a minute, so say what you are doing and carry on talking.
+  Never reach for it for something you could have written on the screen in a second.
 - When the answer is what something would LOOK like - a colour, a finish, a part moved, a thing
   that is not there yet - edit the picture in front of them rather than describing it; see
   edit_photo. It can take a minute, so say what you are doing and carry on talking. What comes
@@ -944,6 +1001,7 @@ class VoiceAgent:
             "tools": [
                 WEB_SEARCH_TOOL,
                 *_diagram_tools(self.settings),
+                *_screen_tools(self.settings),
                 *_imagine_tools(self.settings),
                 *_project_tools(self.settings),
                 *_recall_tools(self.settings),
@@ -1326,6 +1384,9 @@ class VoiceAgent:
         if call.name in DATA_TOOLS:
             await self._run_data_tool(call)
             return
+        if call.name == "show_on_screen":
+            await self._run_show_on_screen(call)
+            return
         if call.name == "draw_diagram":
             await self._run_draw_diagram(call)
             return
@@ -1388,6 +1449,66 @@ class VoiceAgent:
         await self._request_response()
 
     # ---- drawing one ----
+
+    async def _run_show_on_screen(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Put what the model wrote on the panel. The shortest handler here, and deliberately.
+
+        Every other tool that reaches the glass has a picture to make first - a minute of
+        ``gpt-image-2``, or a file off the card. This one already has everything it needs in its
+        own arguments, so there is nothing between the call and the panel but one small write.
+        """
+        html = _tool_string(call.arguments, "html", MAX_SCREEN_CHARS)
+        self._log(f"[tool] show_on_screen {len(html)} chars")
+        if not html:
+            await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing to show"})
+            await self._request_response()
+            return
+
+        try:
+            shown = await asyncio.to_thread(self._show_snippet, html)
+        except Exception as exc:  # never leave the model waiting for a tool result
+            self._log(f"[tool] show_on_screen failed: {exc!r}", stream=sys.stderr)
+            await self._send_tool_output(
+                call.call_id, {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            )
+            await self._request_response()
+            return
+
+        if shown:
+            # What they are looking at is no longer a picture, so ``edit_photo`` has nothing to
+            # work on. Saying so here is the honest answer: the alternative is an edit that
+            # spends a minute and a real API call redrawing a photograph that came off the glass
+            # when this went up, and hands back something nobody asked to see.
+            self._on_panel = None
+        output = (
+            {"ok": True, "shown": True, "note": "It is on the screen. Do not read it out."}
+            if shown
+            else {
+                "ok": True,
+                "shown": False,
+                "note": (
+                    "There is no panel to show it on. Say so plainly rather than describing it."
+                ),
+            }
+        )
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    def _show_snippet(self, html: str) -> bool:
+        """Offer the snippet and ask for the panel. Blocking; runs off the loop's thread.
+
+        Off the loop because ``panel.offer_html`` goes through ``card.write_text``, which fsyncs
+        an SD card - the same reason :meth:`_keep_and_show_drawing` is not a coroutine. It is a
+        small write, but the loop it would block is the one carrying his voice.
+
+        Nothing is kept. A snippet is a sentence he said with the screen instead of his mouth, and
+        the session log records it the way it records the rest of what was said; there is no file
+        for it in ``photos/``, nothing to caption, and nothing for ``recall`` to find. Putting the
+        same thing up again costs a second, which is the whole argument.
+        """
+        shown = panel.offer_html(html) and panel.show()
+        session.note("screen", html=html[:MAX_SCREEN_CHARS], panel=shown)
+        return shown
 
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Draw one, keep it with the photos, and put it on the panel.
@@ -2124,6 +2245,18 @@ def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [DRAW_DIAGRAM_TOOL] if settings.diagrams else []
 
 
+def _screen_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The one tool that writes on the panel, or nothing. Left out rather than refused, as ever.
+
+    A flag of its own, and not because of what it costs - it costs nothing, which is the point of
+    it. It is the switch to reach for if he turns out to put something on the glass every second
+    sentence: this is the first tool here that takes the screen away from the person using it
+    without being asked, and ``CYCLOPS_SCREEN=0`` is a way to find out what that is like that is
+    not a revert.
+    """
+    return [SHOW_ON_SCREEN_TOOL] if settings.screen else []
+
+
 def _imagine_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The one editing tool, or none. A flag of its own rather than a ride on ``diagrams``.
 
@@ -2278,6 +2411,10 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return _phrase("searching for", _tool_query(args), "searching the web")
     if call.name == "draw_diagram":
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
+    # Barely seen - the browser covers this strip about a second later - but the chain wants no
+    # silent branches, and the recording is still watching while it is up.
+    if call.name == "show_on_screen":
+        return "putting that on the screen…"
     if call.name == "edit_photo":
         return _phrase(
             "editing the picture to", _tool_string(args, "request", MAX_QUERY_CHARS),
