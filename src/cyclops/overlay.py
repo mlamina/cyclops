@@ -461,13 +461,12 @@ DIAL_LABEL = 0.66  # where the reading sits in the gap under the hub, clear of t
 # reach: a needle at either end of the sweep points down into that quarter, and a number it
 # grazes on the way past is a number you read twice to be sure of
 
-# The reticle: four arcs on the lens axis and nothing else. It was a cross with graduations for
-# about an hour, which is exactly as long as it took somebody to say it looked like a gun sight -
-# and they were right. A broken ring says "lens" and says nothing else.
-RETICLE_R = 0.112  # 54 px at 480
-RETICLE_ARC = 44.0  # degrees of ring per quadrant; the rest is gap
-RETICLE_TILT = 45.0  # ...and the gaps land on the axes rather than the diagonals
-RETICLE_W = 1.4  # of a hairline: short arcs need the weight back to read as drawn marks
+# The reticle: four corners on the lens axis and nothing else. It was a cross with graduations
+# for about an hour, which is exactly as long as it took somebody to say it looked like a gun
+# sight - and they were right. Corners say "the frame is here" and say nothing else.
+RETICLE_R = 0.112  # 54 px at 480, from the middle out to any edge of the box
+RETICLE_LEG = 0.5  # of that reach, per leg; the rest of the edge is the gap on the axis
+RETICLE_W = 1.4  # of a hairline: marks this short need the weight back to read as drawn
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -1250,31 +1249,31 @@ class Overlay:
             self._draw_bolt(d, *p1, self.bolt_r - 1)
 
     def _draw_reticle(self, layer: Image.Image) -> None:
-        """Four arcs on the lens axis, and nothing in the middle of them.
+        """Four right-angled corners on the lens axis, and nothing in the middle of them.
 
         What a camera shows you when it is looking rather than aiming. This was a gapped cross
         with graduations for exactly as long as it took somebody to look at it and say it read as
-        a gun sight; the arcs say lens and say nothing else, and they leave the centre of the
+        a gun sight; the corners say frame and say nothing else, and they leave the centre of the
         picture - which is the part anybody actually points the thing at - completely clear.
 
-        Supersampled, unlike the corner ticks it replaces: a stepped circle in the middle of an
-        otherwise smooth panel is the most conspicuous kind of aliasing there is, and this layer
-        is built once so the tile costs nothing at a frame.
+        Each corner is one three-point stroke rather than two, so the bend is a joint PIL closes
+        for us instead of a notch two separate legs leave at the outside of the turn. Still
+        supersampled, for the ends rather than the lines: a mark this short is mostly its ends.
         """
-        r = max(8, round(RETICLE_R * self.height))
+        half = max(8, round(RETICLE_R * self.height))
+        leg = max(3, round(half * RETICLE_LEG))
         stroke = max(1.0, self.line * RETICLE_W)
         cx, cy = self.width // 2, self.height // 2
-        span = r + round(stroke) * 2
+        span = half + round(stroke) * 2
 
         def paint(t: ImageDraw.ImageDraw) -> None:
-            middle, reach = at(span), at(r)
-            for quadrant in range(4):
-                start = quadrant * 90 + RETICLE_TILT - RETICLE_ARC / 2
-                t.arc(
-                    [middle - reach, middle - reach, middle + reach, middle + reach],
-                    start=start, end=start + RETICLE_ARC, fill=linear(GREEN_MID, 195),
-                    width=round(wide(stroke)),
-                )
+            for sx in (-1, 1):
+                for sy in (-1, 1):
+                    x, y = span + sx * half, span + sy * half
+                    t.line(
+                        [(at(x - sx * leg), at(y)), (at(x), at(y)), (at(x), at(y - sy * leg))],
+                        fill=linear(GREEN_MID, 195), width=round(wide(stroke)), joint="curve",
+                    )
 
         layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
 
