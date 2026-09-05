@@ -135,7 +135,7 @@ class Settings:
     diagrams: bool = True  # offer draw_diagram, and keep what it draws in photos/
     recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
     imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
-    screen: bool = True  # offer write_on_scratchpad, so he can write on the panel himself
+    scratchpad: bool = True  # offer write_on_scratchpad, so he can write on the panel himself
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the session to its folder (needs a camera, or a panel)
     record_source: str = "screen"  # "screen": the panel, UI and all; "camera": the raw picture
@@ -331,7 +331,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
         recall=_flag("CYCLOPS_RECALL", Settings.recall),
         imagine=_flag("CYCLOPS_IMAGINE", Settings.imagine),
-        screen=_flag("CYCLOPS_SCRATCHPAD", Settings.screen),
+        scratchpad=_flag("CYCLOPS_SCRATCHPAD", Settings.scratchpad),
         project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_source=_record_source("CYCLOPS_RECORD_SOURCE"),

@@ -143,8 +143,9 @@ def test_a_scratchpad_over_a_photo_blacks_the_recording(monkeypatch) -> None:
 
 def test_the_tool_is_left_out_rather_than_refused() -> None:
     """Every gate here works this way: a tool the model can see is a tool it will try."""
-    assert agent._scratchpad_tools(Settings(api_key="k", screen=True)) == [agent.SCRATCHPAD_TOOL]
-    assert agent._scratchpad_tools(Settings(api_key="k", screen=False)) == []
+    on = Settings(api_key="k", scratchpad=True)
+    assert agent._scratchpad_tools(on) == [agent.SCRATCHPAD_TOOL]
+    assert agent._scratchpad_tools(Settings(api_key="k", scratchpad=False)) == []
 
 
 def test_the_activity_line_ends_in_an_ellipsis() -> None:

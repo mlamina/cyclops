@@ -2271,7 +2271,7 @@ def _scratchpad_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     without being asked, and ``CYCLOPS_SCRATCHPAD=0`` is a way to find out what that is like that is
     not a revert.
     """
-    return [SCRATCHPAD_TOOL] if settings.screen else []
+    return [SCRATCHPAD_TOOL] if settings.scratchpad else []
 
 
 def _imagine_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
