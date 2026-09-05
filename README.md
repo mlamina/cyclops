@@ -403,17 +403,22 @@ the whole point — this is the tool he reaches for by default, and [Diagrams](#
 expensive exception for when the answer really is a drawing.
 
 It lands in a document of its own — an `<iframe srcdoc>` on the same stage a photo lands on — so
-his `<style>` cannot reach the dashboard behind it. Text gets his own green-on-black and his font,
-sized for 800x480, so plain markup with no styling at all comes out looking like Cyclops.
+his `<style>` cannot reach the dashboard behind it. **It is always a blank white screen**, the
+whole 800x480, with no bezel and nothing framing it. Plain markup with nothing styled comes out
+dark on white and sized for the panel; every colour on it is his to choose, text and drawings
+alike, and worth using when the colour means something — a value in red because it is out of
+range, wires drawn in the colours they actually are.
 
-**A drawing gets paper.** An `<svg>` is put on a white sheet with dark ink, because green line art
-on black is a readout rather than a drawing — and you cannot draw a brown wire on a screen that
-only does green. So a sketch is coloured the way it would be on paper, sitting on the panel the
-way a [drawn diagram](#diagrams) already does. White as a sheet and not as the whole screen: it
-keeps his face around the drawing, and 800x480 of pure white on a bench at night is a torch. Two things it does not get: scripts do not run, and nothing
-loads from the network. Both are cheap insurance and one of them is about speed rather than
-safety — the frame's `load` event waits on subresources, so a hallucinated
-`<img src="https://…">` would stall the paint for as long as DNS takes.
+White always, rather than his phosphor green for writing and white only for drawings. That
+two-scheme version existed for two commits and had a bug in each: green line art landed invisible
+on the dark ground, and the white sheet arrived inset inside a bezel inside a gutter, so a diagram
+wore three frames before it drew its own. One ground and one set of defaults is both simpler and
+what a scratchpad is.
+
+Two things it does not get: scripts do not run, and nothing loads from the network. Both are cheap
+insurance and one of them is about speed rather than safety — the frame's `load` event waits on
+subresources, so a hallucinated `<img src="https://…">` would stall the paint for as long as DNS
+takes.
 
 **A press anywhere puts it away**, the way a photograph does and unlike a diagram, which keeps a
 corner square. It gets the whole panel until then, covering his eye and the way out of the

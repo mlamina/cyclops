@@ -184,34 +184,29 @@ SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "write_on_scratchpad",
     "description": (
-        "Write on your SCRATCHPAD: the touchscreen in front of them, which is yours to write on "
-        "as a small piece of HTML. It is up about a second later, while you are still talking, "
-        "and it costs nothing. "
-        "The scratchpad is what you and they both call this. Expect to be asked for it by that "
-        "name - 'put that on your scratchpad', 'scratchpad it', 'what's on the scratchpad' - and "
-        "call it that yourself when you mention it at all. Every one of those is this tool. "
+        "Your SCRATCHPAD: a blank white screen in front of them, 800x480, which you write and "
+        "draw on as a small piece of HTML. It is up about a second later, while you are still "
+        "talking, and it costs nothing. "
+        "That is the name you both use for it. Expect to be asked for it by that name - 'put "
+        "that on your scratchpad', 'scratchpad it', 'what's on the scratchpad' - and call it "
+        "that yourself. Every one of those is this tool. "
         "Use it on your own initiative, without being asked, whenever the answer has something "
         "in it worth looking at rather than hearing: a torque figure or a temperature set large, "
         "the steps of a job as a numbered list they can work down, a part number, a size, a "
-        "setting, a simple shape as inline SVG. A number you say once over a running compressor "
-        "is a number they will ask you for again; a number on the scratchpad is one they work to. "
-        "So show it AND say it - put the figure up, then say the caveat out loud. "
+        "setting, a simple drawing as inline SVG. A number you say once over a running "
+        "compressor is a number they will ask you for again; one on the scratchpad is one they "
+        "work to. So show it AND say it - put the figure up, then say the caveat out loud. Then "
+        "stop describing what is up there. They can see it. "
         "This is the tool to reach for by default. draw_diagram is the expensive exception: it "
         "is for a real technical drawing - how something is wired, what goes where on a header, "
         "how parts fit together - and it costs a minute, which is a minute wasted on anything "
         "that is text, numbers, a list or a simple shape. "
-        "The scratchpad is 800x480, read at arm's length across a bench, and it does not scroll: "
-        "whatever does not fit is not seen. One idea on it at a time, set big, a handful of "
-        "elements. "
-        "The background, the text colour and the font are already his own, and headings, lists "
-        "and SVG are already sized for the panel, so plain markup with no styling at all comes "
-        "out right. Text is his green on the dark screen; a drawing gets a sheet of white "
-        "paper to itself, so colour it properly. Style text when the styling MEANS something - "
-        "a value in red because it is out of range. "
-        "Two things to know. It holds the whole panel until they touch it - a press anywhere wipes "
-        "the scratchpad and gives them his eye back - so it is for the answer and not a caption "
-        "on every sentence. And it replaces whatever picture was there, so do not cover a photo "
-        "they are still asking you about; edit_photo will have nothing left to work on."
+        "It is read at arm's length across a bench and it does not scroll, so whatever does not "
+        "fit is not seen: one idea at a time, set big, a handful of elements. "
+        "It holds the whole panel until they touch it - a press anywhere wipes it and gives them "
+        "his eye back - so it is for the answer, not a caption on every sentence. And it "
+        "replaces whatever picture was there, so do not cover a photo they are still asking you "
+        "about; edit_photo will have nothing left to work on."
     ),
     "parameters": {
         "type": "object",
@@ -219,20 +214,19 @@ SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
             "html": {
                 "type": "string",
                 "description": (
-                    "What goes on the scratchpad, as HTML. No <html>, <head> or <body> - just the "
-                    "elements. A number is '<h1>25 Nm</h1>'. Steps are an <ol> of short <li>. "
-                    "You may use <style> or inline style= to override anything. Emoji are just "
-                    "characters and can go anywhere. Scripts do not run and nothing is loaded "
-                    "from the network, so images must be inline SVG rather than a src. "
-                    "An <svg> is drawn on WHITE PAPER, not on the dark screen, so draw it the "
-                    "way you would on paper: dark ink, and real colour wherever colour is "
-                    "part of the answer - the wires in the colours they actually are, red "
-                    "for the live one, the real finish of a part. Shapes with no stroke or "
-                    "fill come out as dark line art, which is usually what you want. Do not "
-                    "draw in the screen's green: that is the colour of talk, and this is a "
-                    "drawing. "
-                    "Do not write instructions on it either - no 'tap to clear', no 'press to "
-                    "close'. They already know, and it is a line of your screen spent saying so."
+                    "What goes on the scratchpad, as HTML. No <html>, <head> or <body> - just "
+                    "the elements. A number is '<h1>25 Nm</h1>'. Steps are an <ol> of short "
+                    "<li>. Plain markup with nothing styled already comes out right: dark on "
+                    "white, sized for the panel, centred. "
+                    "Colour is yours - text, shapes, anything - and it is worth using when the "
+                    "colour MEANS something: a value in red because it is out of range, wires "
+                    "drawn in the colours they actually are. "
+                    "The screen is already a blank white sheet, so never draw a background "
+                    "rectangle and never draw a frame or border round the whole thing. A box "
+                    "inside a box on a panel this small is what makes a clear diagram "
+                    "unreadable. Give an <svg> the drawing's own viewBox and let it fill. "
+                    "Emoji are just characters. Scripts do not run and nothing loads from the "
+                    "network, so a picture has to be inline SVG rather than a src."
                 ),
             },
         },
@@ -606,8 +600,8 @@ LOOKING THINGS UP
 SHOWING THEM SOMETHING
 - Write on the scratchpad yourself, and do it without being asked. A torque figure or a
   temperature, set large. The steps of a job as a numbered list they can work down. A part
-  number, a size, a setting. A simple shape as SVG. It costs nothing and it is up in about a
-  second, while you are still talking.
+  number, a size, a setting. A drawing. It is a blank white screen and any colour on it is
+  yours; it costs nothing and it is up in about a second, while you are still talking.
 - Do it as you answer, not instead of answering: put the number on the scratchpad and say the
   caveat out loud. Then stop describing what is up there - they can see it.
 - The one restraint: it holds the whole panel until they touch it, so it is for the answer,

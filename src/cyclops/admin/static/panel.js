@@ -27,13 +27,19 @@ stage.addEventListener('pointerdown', (event) => {
 });
 // ---- a scratchpad's own document ----
 //
-// The other thing that can land on the stage: a piece of HTML the model wrote (cyclops/panel.py's
-// offer_scratchpad). It goes in an <iframe srcdoc> rather than into #stage.innerHTML, and the reason is
-// the cascade rather than security. A model asked to write a screen writes `body { ... }` and
-// `h1 { ... }`, and in THIS document those rules land on the dashboard behind it. A second
-// document is the only cheap way to let it write a whole screen.
+// The other thing that can land on the stage: a piece of HTML the model wrote
+// (cyclops/panel.py's offer_scratchpad). It goes in an <iframe srcdoc> rather than into
+// #stage.innerHTML, and the reason is the cascade rather than security. A model asked to write a
+// screen writes `body { ... }` and `h1 { ... }`, and in THIS document those rules would land on
+// the dashboard behind it. A second document is the only cheap way to let it write a whole one.
 //
-// Everything below is prepended to whatever it wrote. Two of these lines are load-bearing:
+// The scratchpad is white, always. Not the phosphor green everything else on this panel wears,
+// and not white-only-for-drawings either, which is what it was for two commits: a screen that
+// changed colour depending on whether a <svg> happened to be in the markup, with two sets of
+// defaults behind it and a bug in each. It is a blank sheet. Anything written or drawn on it
+// brings its own colour, which is what a sheet of paper is for.
+//
+// Two of these lines are load-bearing:
 //
 //   The CSP, because the iframe's `load` event waits on subresources. One <img src="https://...">
 //   the model invented would stall the paint for as long as DNS and TCP take, on a panel whose
@@ -41,12 +47,14 @@ stage.addEventListener('pointerdown', (event) => {
 //   into an instant block. It also means no script runs, belt to the sandbox attribute's braces.
 //
 //   vh and vw, which nothing else in this interface may use (see --u in base.css). They are exact
-//   here and nowhere else: the card is always the whole panel, 800x480 at
+//   here and nowhere else: the scratchpad is always the whole panel, 800x480 at
 //   --force-device-scale-factor=1, so 1vh is 4.8px and stays 4.8px.
 //
-// The rest is one job: make `<h1>25 Nm</h1>` with no CSS at all a good screen, because every
-// character of styling the model has to write is silence between the question and the answer. It
-// sets nothing it does not have to, so a scratchpad that DOES want to be pink can be.
+// Everything else is one job: make `<h1>25 Nm</h1>` with no CSS at all a good screen, because
+// every character of styling the model has to write is silence between the question and the
+// answer. It sets nothing beyond that. SVG in particular is left entirely alone - its own
+// defaults are right on white, and the last thing it needs is us inheriting a stroke onto the
+// background rect it drew for itself.
 const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy"
       content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
@@ -54,14 +62,13 @@ const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
   html, body { margin: 0; height: 100%; }
   * { box-sizing: border-box; }
   body {
-    background: #050f0a; color: #56ff8c;
+    background: #fff; color: #111;
     font-family: ui-monospace, "DejaVu Sans Mono", "Liberation Mono", "Noto Color Emoji", monospace;
     font-size: 4vh; line-height: 1.35;
-    /* A column rather than a centred grid, and the difference is one case: a drawing under a
-       heading. Grid tracks size to their content and then overflow, so the sheet was clipped off
-       the bottom of the panel. A flex column lets it shrink to what is left instead. */
+    /* A column rather than a centred grid: grid tracks size to their content and then overflow,
+       which put a drawing under a heading off the bottom of the panel. Flex lets it give way. */
     display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; gap: 0.6em; padding: 4vh 5vw; overflow: hidden;
+    text-align: center; gap: 0.6em; padding: 3vh 4vw; overflow: hidden;
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   ::-webkit-scrollbar { width: 0; height: 0; }
@@ -71,32 +78,8 @@ const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
      left edge, and ragged-centre numbering is unreadable at arm's length. */
   ol, ul { text-align: left; margin: 0; padding-left: 1.4em; }
   li { margin: 0.15em 0; }
-  /* A drawing gets paper. Everything else here is his own phosphor green, because everything
-     else here is talk - but a sketch is not talk, and green line art on black is a readout
-     rather than a drawing. A wiring run wants the wires in the colours they actually are, and
-     you cannot draw a brown wire on a screen that only does green.
-
-     So the <svg> is a white sheet with dark ink, sitting on the panel the way a drawn diagram
-     already does (those arrive as jpgs of paper - see cyclops.imagine). That also settles what
-     stroke="black" means, which was invisible here a commit ago and is now simply correct: on
-     paper, black ink is what an unstyled shape SHOULD be. Nothing has to rescue it.
-
-     White as a sheet and not as the whole screen, deliberately. It keeps his own face around the
-     drawing, it matches how every other picture reaches the glass, and 800x480 of pure white on
-     a bench at night is a torch rather than a panel.
-
-     The color property is set so currentColor inside the sheet is ink, and height:auto lets the
-     viewBox pick the paper's shape - a wide diagram gets a wide sheet, not a letterboxed one.
-     No backticks in here: this whole block is a JS template literal, and one would end it. */
-  svg {
-    width: 88vw; height: auto; max-height: 74vh;
-    /* Shrinkable, with min-height:0 to allow it: a heading and a drawing together are taller
-       than the panel, and the sheet is the part that should give way rather than run off it. */
-    flex: 0 1 auto; min-height: 0;
-    background: #fff; color: #111; border-radius: 4px; padding: 1.5vh;
-    fill: none; stroke: currentColor;
-  }
-  svg text { fill: currentColor; stroke: none; }
+  /* As big as what is left, and shrinkable so a heading above it is not pushed off the panel. */
+  svg { flex: 1 1 auto; min-height: 0; width: 100%; height: 100%; }
 </style>
 `;
 const SCRATCHPAD_PAINT_MS = 500;  // long enough for a document with no subresources; see scratchpad() below
@@ -125,6 +108,10 @@ async function shot(url) {
 // A scratchpad on the stage, in a document of its own. Same promise as shot(): do not come back
 // until there is something to uncover onto.
 async function scratchpad(html) {
+  // The outer page gives up its bezel and its gutter for this: see panel.css. Every scratchpad,
+  // not just a drawing - a blank sheet with a phosphor frame round it is two ideas about what
+  // the panel is, and the frame is the one that loses.
+  document.body.classList.add('paper');
   const frame = document.createElement('iframe');
   frame.className = 'scratchpad';
   // Both set while it is still detached. An <iframe> inserted empty navigates to about:blank
@@ -148,8 +135,9 @@ async function show(id) {
   const r = await fetch('/api/picture/' + encodeURIComponent(id), { cache: 'no-store' });
   if (!r.ok) return;
   const found = await r.json();
-  // Cleared before it is decided, so a drawing arriving after a photo gets its button back.
-  document.body.classList.remove('photo');
+  // Cleared before it is decided, so a drawing arriving after a photo gets its button back -
+  // and so a photograph landing on top of a drawing gets the bezel back with it.
+  document.body.classList.remove('photo', 'paper');
   // The class before the picture: a stage that is still display:none has no size, and an image
   // fitted to a box of zero by zero paints nowhere at all.
   window.__drawing(true);
@@ -190,7 +178,7 @@ async function watch() {
       // want this memory.
       showing = null;
       window.__drawing(false);
-      document.body.classList.remove('photo');
+      document.body.classList.remove('photo', 'paper');
       stage.textContent = '';
     }
   } catch (e) { /* the service will come back, or the kiosk will time the page out */ }

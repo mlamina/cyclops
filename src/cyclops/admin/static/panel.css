@@ -32,6 +32,19 @@
   background: var(--screen); pointer-events: none;
 }
 
+/* ...and a scratchpad gets the panel with nothing at all around it.
+
+   base.css keeps the bezel under body.drawing on purpose - the scanlines and the glow come off a
+   picture you are trying to read, but "the border stays either way: that is the bezel, not a
+   filter". That is right for a photograph, which is a picture ON a device. It is wrong for a
+   blank sheet the device is writing on: measured on the glass, the bezel and the 17 px gutter
+   that exists to sit inside it took the scratchpad from 800x480 down to 766x446, and a drawing
+   arrived wearing a frame, inside a frame, inside a frame.
+
+   Only for a scratchpad (body.paper, set in panel.js). A photograph keeps its bezel. */
+body.paper::before { border: 0; border-radius: 0; }
+body.paper { padding: 0; }
+
 /* A picture gets the whole panel. Everything the dashboard needs around it - the header, the
    volume, the full-width way out - is chrome for a page of numbers, and a wiring diagram at
    arm's length wants the pixels more than it wants a title bar. So the grid collapses to one

@@ -113,17 +113,18 @@ const CASES = [
       '<circle cx="57.5" cy="15" r="7" fill="none" stroke="black"/>' +
       '<rect x="125" y="35" width="45" height="45" fill="none" stroke="#c33"/></svg>' },
     wantPhotoClass: true,
-    wantPaper: {
-      // The sheet itself. Without it a black-inked drawing is black on near-black, which is
-      // exactly what shipped for one commit and what nobody can see on a bench.
-      sheet: { sel: 'svg', prop: 'backgroundColor', is: 'rgb(255, 255, 255)' },
-      ink: [
-        // Ink is dark by default, and a colour he chose is still his. Black is no longer
-        // rescued into green: on paper it is simply the right answer.
-        { sel: 'rect[stroke="black"]', is: 'rgb(0, 0, 0)' },
-        { sel: 'rect[stroke="#c33"]', is: 'rgb(204, 51, 51)' },
-      ],
-    },
+    // Edge to edge and nothing framing it. Three separate things each took a slice off this
+    // before it was measured rather than looked at: the bezel, the 17 px gutter that exists to
+    // sit inside the bezel, and an inset white sheet of my own - four frames around one diagram
+    // on a panel 800 px wide, which is what Marco saw and called ugly.
+    wantFills: true,
+    // A colour he chose is his. stroke="black" is not rescued into anything - on white it is
+    // simply the right answer, and the rescue that used to be here was only ever a symptom of
+    // the ground being dark.
+    wantInk: [
+      { sel: 'rect[stroke="black"]', is: 'rgb(0, 0, 0)' },
+      { sel: 'rect[stroke="#c33"]', is: 'rgb(204, 51, 51)' },
+    ],
   },
   {
     name: 'hostile',
@@ -177,6 +178,8 @@ for (const item of CASES) {
         frame: !!frame,
         clickThrough: frame ? getComputedStyle(frame).pointerEvents === 'none' : null,
         photo: document.body.classList.contains('photo'),
+        frameBox: frame ? `${Math.round(frame.getBoundingClientRect().width)}x` +
+                          `${Math.round(frame.getBoundingClientRect().height)}` : null,
         // Nothing may hang off the panel: the stage is the whole 800x480 while it is up.
         overflow: document.documentElement.scrollWidth > 800,
       };
@@ -187,20 +190,29 @@ for (const item of CASES) {
       if (got.clickThrough === false) {
         bad.push('the frame takes the press itself, so nothing can put the scratchpad away');
       }
-      if (item.wantPaper) {
-        const inside = page.frameLocator('#stage iframe.scratchpad');
-        const { sheet, ink } = item.wantPaper;
-        const got = await inside.locator(sheet.sel).first()
-          .evaluate((el, p) => getComputedStyle(el)[p], sheet.prop).catch(() => null);
-        if (got !== sheet.is) {
-          bad.push(`the drawing's ${sheet.prop} is ${got}, wanted ${sheet.is}` +
-                   ' - without paper, dark ink on a dark screen is a drawing nobody can see');
+    }
+    if (item.kind === 'scratchpad') {
+      const inside = page.frameLocator('#stage iframe.scratchpad');
+      // White, always, whatever is on it. One ground and one set of defaults: the two-scheme
+      // version - green for writing, white for drawing - had a bug in each.
+      const ground = await inside.locator('body').first()
+        .evaluate((b) => getComputedStyle(b).backgroundColor).catch(() => null);
+      if (ground !== 'rgb(255, 255, 255)') {
+        bad.push(`the scratchpad's ground is ${ground}, wanted white`);
+      }
+      if (item.wantFills) {
+        // Measured on the frame and not on the drawing inside it, because the drawing is
+        // legitimately smaller when there is a heading over it. What must never come back is
+        // anything taking a slice off the panel before the scratchpad even starts.
+        if (got.frameBox !== '800x480') {
+          bad.push(`the scratchpad is ${got.frameBox} of the panel's 800x480` +
+                   ' - the bezel or its gutter is framing it again');
         }
-        for (const want of ink) {
-          const stroke = await inside.locator(want.sel).first()
-            .evaluate((el) => getComputedStyle(el).stroke).catch(() => null);
-          if (stroke !== want.is) bad.push(`${want.sel} strokes ${stroke}, wanted ${want.is}`);
-        }
+      }
+      for (const want of item.wantInk || []) {
+        const stroke = await inside.locator(want.sel).first()
+          .evaluate((el) => getComputedStyle(el).stroke).catch(() => null);
+        if (stroke !== want.is) bad.push(`${want.sel} strokes ${stroke}, wanted ${want.is}`);
       }
       if (item.wantTall) {
         // Read through the frame tree and not page.evaluate, because the frame is sandboxed. This
