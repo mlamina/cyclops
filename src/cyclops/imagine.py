@@ -1,10 +1,23 @@
-"""Imagining a change: the photo they just took, redrawn with one thing different.
+"""Pictures a model made: the photo redrawn with one thing different, and the diagram drawn from
+nothing but a sentence.
 
-Cyclops can already look at what is held up and say something about it, and it can draw a
-diagram when the answer is a set of connections. What it could not do is show the thing on the
-bench *changed* - the doors painted matt black, the bracket moved to the other end of the rail,
-the half-built thing shown finished. Those are the answers where a sentence is a paragraph and a
-picture is a glance, and there is a screen sitting right there.
+Two jobs, one module, because they are the same job underneath - the same model, the same pixel
+arithmetic, the same :func:`decode`, and the same jpg landing in the same ``photos/``.
+:func:`edit` is the older half: the thing on the bench shown *changed* - the doors painted matt
+black, the bracket moved to the other end of the rail, the half-built thing shown finished.
+:func:`draw` is the newer one and has no photograph at all: a wiring diagram, a pinout, a block
+diagram, drawn from a description because speech is a bad way to describe a wiring loom and there
+is a screen sitting right there.
+
+Both are answers where a sentence is a paragraph and a picture is a glance.
+
+**The diagram used to be checked and is not any more.** It was drawn by a text model into a JSON
+schema we owned and validated, and the panel rendered that with JointJS. The pictures were worse -
+labels colliding, boxes clipped off the edge - so on 2026-09-04 the schema went and this took over.
+What went with it was the only thing that could tell a wire drawn to the wrong pin from a wire
+drawn to the right one. ``DRAW_QUALITY`` is the whole of the mitigation, and it is not a proof.
+The tool description in :mod:`cyclops.agent` is where the model is told to say a connection out
+loud when getting it wrong would cost somebody.
 
 **What comes back is an illustration, never evidence.** ``images.edit`` with no mask redraws the
 whole frame, so every pixel in the result is the model's, including the ones that look untouched.
@@ -13,21 +26,25 @@ thing about this module that must not be forgotten, because the output *looks* l
 of the user's own bench - and a picture of their loom "shown wired correctly" is the single worst
 thing this feature could produce. The rule is enforced where the model can read it, in
 ``EDIT_PHOTO_TOOL``'s description over in :mod:`cyclops.agent`: colour, finish, placement and
-"shown finished" are for here; connections, orientation and order of assembly are for
-``draw_diagram``, whose output is checked against a schema we own.
+"shown finished" are for :func:`edit`; connections, orientation and order of assembly are for
+:func:`draw`. Both are drawn rather than measured, so the line between them is no longer "one is
+checked" - it is that only :func:`edit` starts from a photograph of their bench, and a photograph
+redrawn is the one that can be mistaken for a record of it.
 
 **No mask, and that is the same fact from the other side.** There is no way to draw one from a
 voice interface, so there is no way to tell the model "leave this half alone" other than by
 asking it nicely in the prompt. The door is open if a future panel gains a finger to draw with.
 
-**And no retry**, unlike :func:`cyclops.diagram.draw`. A diagram gets one because its failure is
-a schema violation with a complaint you can hand back, and the second attempt usually fixes it.
-An image has no schema to fail: a retry is another half-minute of somebody's patience spent on
-the same dice.
+**And no retry, in either half.** The drawing used to get one, because its failure was a schema
+violation with a complaint you could hand back and the second attempt usually fixed it. There is
+no schema now and so nothing to hand back: a retry is only another eighty seconds of somebody's
+patience spent on the same dice. The one exception is the pixel-budget probe in :func:`edit`,
+which is not a second roll - the first attempt never rendered anything.
 
-Nothing here imports :mod:`cyclops.session` or :mod:`cyclops.webcam` - it takes a ``Path`` and
-returns bytes - which is what keeps ``tests/test_imagine.py`` in the pure-logic suite with no
-camera and no key, and what keeps OpenCV out of a module the admin service may one day import.
+Nothing here imports :mod:`cyclops.session` or :mod:`cyclops.webcam` - it takes a ``Path`` or two
+strings and returns bytes - which is what keeps ``tests/test_imagine.py`` in the pure-logic suite
+with no camera and no key, and what keeps OpenCV out of a module the admin service may one day
+import.
 """
 
 from __future__ import annotations
@@ -73,6 +90,29 @@ EDIT_TIMEOUT_S = 120.0
 
 MAX_REQUEST_CHARS = 600
 MAX_TITLE_CHARS = 70
+MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TOOL
+
+# High, and unlike QUALITY this one is not a compromise either way. Measured from a laptop on
+# 2026-09-04 over five requests - a relay wiring, the NS4168 amp on the Pi's header, the 40-pin
+# pinout, a block diagram and a state machine - against the JointJS pipeline this replaced:
+# "high" took 76-88 s and drew every wire onto the pin its own caption named; "low" took 19-22 s,
+# looked just as handsome, and on the I2S diagram routed two wires out of the wrong rows of the
+# header while the summary table beside them stayed correct.
+#
+# That is the failure mode worth paying eighty seconds to avoid. Nothing downstream checks a
+# generated diagram - there is no schema left to check it against - so the picture is the whole
+# answer, and a wire drawn to the wrong pin is worse than no diagram at all. The cost is bearable
+# only because nothing is waiting on it: the tool has returned, the overlay says "drawing…", and
+# the conversation carries on. If that ever stops being true, fix the lifecycle, not this line.
+DRAW_QUALITY = "high"
+DRAW_TIMEOUT_S = 180.0  # the documented worst case, with room; see EDIT_TIMEOUT_S
+
+# Exactly 5:3, which is the panel's own shape, so nothing is letterboxed on the way to the
+# glass. Both edges divide by 16 and the area clears the pixel-budget floor described below;
+# checked against the API on 2026-09-04, because a size it will not take is a 400 arriving
+# eighty seconds late. Fixed rather than computed by size_for, because size_for exists to
+# preserve a *source photograph's* framing and a drawing has no source.
+PANEL_SIZE = "1200x720"
 
 # gpt-image-2 takes an arbitrary WIDTHxHEIGHT as long as both sides divide by 16 and the aspect
 # is between 1:3 and 3:1, so the edit can keep the photograph's own framing instead of being
@@ -110,6 +150,33 @@ Add no text, labels, arrows, captions or watermarks unless the instruction asks 
 tidy, improve or beautify anything you were not asked about.
 
 The instruction: {request}"""
+
+
+# What the drawing is asked to look like when the voice model sends no style note. It should not
+# happen - the tool makes the parameter required - but a diagram drawn in the wrong style still
+# beats a tool that refuses over a missing adjective.
+DEFAULT_STYLE = (
+    "Draw it as a printed workshop service-manual diagram: black line-art on off-white paper, "
+    "colour-coded wires with a small colour key, standard schematic symbols."
+)
+
+# The fixed half of the drawing instruction. The style note sits in the middle because that is
+# where it reads as a description of the picture rather than an afterthought, and the request
+# goes last so the most specific thing is the last thing read.
+DRAW_PROMPT = """\
+A technical diagram, drawn to be read on a small 800x480 workshop panel at arm's length.
+
+{style}
+
+Favour few, large, clearly separated elements over dense detail: a diagram of nine things
+somebody can read beats one of thirty they cannot. Label every component and terminal in a crisp
+technical sans-serif, set horizontally. Use the exact values, pin numbers and part names given
+and no others - never "a resistor" where a value was said.
+
+No perspective, no shading, no gradients, no glow, no photographic style, no decoration, no
+watermark.
+
+The diagram: {request}"""
 
 
 class ImagineError(RuntimeError):
@@ -303,7 +370,56 @@ def for_panel(jpeg: bytes) -> bytes:
         return jpeg
 
 
-def write(jpeg: bytes, request: str, folder: Path, *, when: datetime | None = None) -> Edit:
+async def draw(request: str, style: str, settings: Settings) -> bytes:
+    """Draw one technical diagram from a description. Raises :class:`ImagineError`, never a
+    traceback.
+
+    The counterpart to :func:`edit`, and deliberately in the same module: everything the drawing
+    needs - the model, the pixel-budget arithmetic, :func:`decode`, :func:`write` - is already
+    here, and a diagram is the same kind of object an edit is. What differs is that there is no
+    source photograph, so there is no framing to preserve and no :func:`size_for` call: the panel
+    is 800x480 and the picture is drawn to fit it.
+
+    ``style`` arrives from the voice model rather than from a constant here, because the right
+    look is a property of the subject and only the conversation knows the subject. See
+    ``DRAW_DIAGRAM_TOOL`` in :mod:`cyclops.agent` for what it is told to send.
+
+    No retry, unlike :func:`cyclops.diagram.draw` before it and for the reason this module's
+    docstring already gives about :func:`edit`: an image has no schema to fail, so a second
+    attempt is another eighty seconds of somebody's patience spent on the same dice.
+    """
+    request = _text(request, MAX_REQUEST_CHARS)
+    if not request:
+        raise ImagineError("no diagram was described")
+    style = _text(style, MAX_STYLE_CHARS)
+
+    client = AsyncOpenAI(api_key=settings.api_key, timeout=DRAW_TIMEOUT_S, max_retries=0)
+    try:
+        try:
+            response = await client.images.generate(
+                model=IMAGE_MODEL,
+                prompt=DRAW_PROMPT.format(request=request, style=style or DEFAULT_STYLE),
+                size=PANEL_SIZE,
+                quality=DRAW_QUALITY,
+                output_format=OUTPUT_FORMAT,
+            )
+        except APIError as exc:
+            raise ImagineError(f"the drawing failed: {exc.message or exc}") from exc
+        except TimeoutError as exc:
+            raise ImagineError(f"the drawing took longer than {DRAW_TIMEOUT_S:.0f}s") from exc
+        return decode(response)
+    finally:
+        await client.close()
+
+
+def write(
+    jpeg: bytes,
+    request: str,
+    folder: Path,
+    *,
+    role: str = "edit",
+    when: datetime | None = None,
+) -> Edit:
     """Put one imagined picture in a session's ``photos/`` and hand back what it became.
 
     Into ``photos/`` rather than an ``edits/`` of its own, and the argument is worth writing
@@ -312,14 +428,20 @@ def write(jpeg: bytes, request: str, folder: Path, *, when: datetime | None = No
     and two places in the README - five files of plumbing for a directory. In ``photos/`` it is
     in the picture stream, the lightbox, the Media view and the transcript for free, and the
     convention that already carries "who made this" is the filename's own suffix: ``_you`` for
-    the shutter, ``_cyclops`` for the older cards, and now ``_edit``. ``session._render_photo``
-    was already branching on that.
+    the shutter, ``_cyclops`` for the older cards, ``_edit`` for a photo redrawn with a change,
+    and ``_drawn`` for a diagram :func:`draw` made from nothing but a sentence.
+    ``session._render_photo`` was already branching on that.
+
+    ``role`` is the only reason a diagram needs no plumbing of its own: it is a jpg in
+    ``photos/`` like any other, so the captioner, the recall index, the Media view and the
+    projects copier all pick it up with no change at all. That is the whole argument for having
+    deleted the ``diagrams/`` folder.
 
     0600 because ``webcam._write_private`` is: this is a picture of somebody's room, whoever
     drew it. The admin service runs as the same user and can still serve it.
     """
     when = when or datetime.now()
-    stem = f"{when.strftime('%H-%M-%S')}_edit"
+    stem = f"{when.strftime('%H-%M-%S')}_{role}"
     path = folder / f"{stem}.jpg"
     card.write_bytes(path, jpeg, mode=0o600)
     return Edit(

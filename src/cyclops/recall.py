@@ -37,7 +37,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import card, diagram
+from . import card
 from .config import RECALL_FILE, Settings
 
 EMBED_MODEL = "text-embedding-3-small"
@@ -84,7 +84,7 @@ COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 class Item:
     """One thing on the card you could ask for, and everything needed to find and show it."""
 
-    kind: str  # "photo" | "image" | "entry" | "file" | "diagram"
+    kind: str  # "photo" | "image" | "entry" | "file"
     path: str  # absolute, as a string, because this round-trips through JSON
     scope: str  # "project:<folder name>" | "session:<folder name>"
     title: str  # what to call it out loud
@@ -319,9 +319,13 @@ def _files_in(root: Path, scope: str) -> list[Item]:
     """Every readable text file anywhere under a folder - the things you dropped there yourself.
 
     Walked recursively, because ``Datasheets/bolts.txt`` is the shape a person actually files
-    things in. ``Photos/`` and ``Diagrams/`` are skipped: their contents are read as pictures and
-    drawings above, and a diagram's JSON spec read as text would put a wall of coordinates into
-    the index.
+    things in. ``Photos/`` is skipped because its contents are read as pictures above.
+
+    ``Diagrams/`` is skipped for a sharper reason, and the skip must outlive the drawings: those
+    folders hold the JSON specs of the old schema, ``.json`` is in :data:`TEXT_SUFFIXES`, and
+    reading one as text would put a wall of layout coordinates into the index. Nothing writes
+    them any more and they are no longer indexed as drawings either - but they are still on the
+    card, so this still has to step over them.
     """
     out: list[Item] = []
     try:
@@ -355,39 +359,15 @@ def _files_in(root: Path, scope: str) -> list[Item]:
     return out
 
 
-def _diagrams_in(folder: Path, scope: str) -> list[Item]:
-    """Every drawing in one folder, by its own title and caption. Reuses ``diagram.index``."""
-    out: list[Item] = []
-    for drawing in diagram.index(folder):
-        if drawing.path is None:
-            continue
-        mtime, size = _stat(drawing.path)
-        out.append(
-            Item(
-                kind="diagram",
-                path=str(drawing.path),
-                scope=scope,
-                title=drawing.title or drawing.ident,
-                text=f"{drawing.title}. {drawing.caption} ({drawing.kind} diagram)"[
-                    :MAX_ITEM_CHARS
-                ],
-                mtime_ns=mtime,
-                size=size,
-            )
-        )
-    return out
-
-
 def project_items(folder: Path) -> list[Item]:
     """Everything in one project folder that could be asked for."""
     scope = f"project:{folder.name}"
     log_captions = _log_captions(folder)
     items = _readme_of(folder, scope) + _entries_of(folder, scope)
     items += _images_in(folder / "Photos", scope, log_captions, "photo")
-    items += _diagrams_in(folder / "Diagrams", scope)
     items += _files_in(folder, scope)
     # Pictures a person dropped into a folder of their own - "Eye Designs/", say. Photos/ is
-    # already done above and Diagrams/ holds drawings, so both are skipped rather than re-read.
+    # already done above, and Diagrams/ holds nothing this can read, so both are skipped.
     try:
         others = [p for p in sorted(folder.iterdir()) if p.is_dir()]
     except OSError:
@@ -403,7 +383,6 @@ def session_items(folder: Path) -> list[Item]:
     """A session's photos, and the summary somebody already wrote of the conversation."""
     scope = f"session:{folder.name}"
     items = _images_in(folder / card.PHOTOS, scope, {}, "photo")
-    items += _diagrams_in(folder / card.DIAGRAMS, scope)
     summary = folder / card.SUMMARY_NAME
     text = " ".join(_text_of(summary).split())
     if text:

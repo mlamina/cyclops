@@ -89,7 +89,7 @@ def test_a_picture_already_up_is_swapped_rather_than_refused(panel) -> None:
 
 def test_a_photograph_going_up_makes_no_sound(panel, monkeypatch) -> None:
     """The shutter already sounded a beat ago. A second cue on top of it is one too many."""
-    monkeypatch.setattr(kiosk.diagram, "is_picture", lambda: True)
+    monkeypatch.setattr(kiosk.diagram, "announces", lambda: False)
     panel._page_busy.set()
     panel._panel_showing.set()
 
@@ -98,8 +98,8 @@ def test_a_photograph_going_up_makes_no_sound(panel, monkeypatch) -> None:
 
 
 def test_a_drawing_replacing_one_still_says_so(panel, monkeypatch) -> None:
-    """Nothing else announces a drawing: it took ten seconds and arrived silently."""
-    monkeypatch.setattr(kiosk.diagram, "is_picture", lambda: False)
+    """Nothing else announces a drawing: it took a minute and a half and arrived silently."""
+    monkeypatch.setattr(kiosk.diagram, "announces", lambda: True)
     panel._page_busy.set()
     panel._panel_showing.set()
 

@@ -126,19 +126,6 @@ def photo_target(settings: Settings, *, by: str) -> tuple[Path, str]:
     return live.photos_dir, by
 
 
-def diagram_target(settings: Settings) -> Path | None:
-    """Where the next diagram goes, or None when there is no session to keep it in.
-
-    Unlike :func:`photo_target` there is no ``captures/`` fallback. A photo taken with nothing
-    running is still a photo of the room; a diagram with no session has no conversation to
-    belong to, nothing to file it under, and nothing that would ever look at it again - so it is
-    drawn on the panel and not written down. The caller checks for None rather than being handed
-    a directory nobody sweeps.
-    """
-    live = current()
-    return None if live is None else live.diagrams_dir
-
-
 def note(kind: str, **fields: Any) -> None:
     """Add one record to the live session. A no-op when there is none, so callers need no check."""
     live = current()
@@ -200,10 +187,6 @@ class SessionLog:
     @property
     def photos_dir(self) -> Path:
         return self.dir / PHOTOS
-
-    @property
-    def diagrams_dir(self) -> Path:
-        return self.dir / DIAGRAMS
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -786,6 +769,11 @@ def _render_data(record: dict, at: str) -> str:
 def _render_diagram(record: dict, at: str) -> str:
     """One drawing, embedded the way a photo is - see :func:`_render_photo`.
 
+    Old logs only: nothing writes a ``diagram`` record now, and a drawing is a photo record with
+    ``by="drawn"``. It stays because ``cyclops-sessions --fix`` re-renders old logs, and dropping
+    it would quietly strip the drawings out of every session page on the card the next time one
+    ran - the same argument the ``by == "cyclops"`` arm of :func:`_render_photo` makes.
+
     The ``svg`` is what goes in the page and the ``file`` beside it is the spec; a reader wants
     the picture and only Cyclops ever wants the JSON. A record with no svg is a diagram whose
     render never came back from the panel, which is worth a line saying so rather than a broken
@@ -807,7 +795,16 @@ def _render_diagram(record: dict, at: str) -> str:
 
 def _render_photo(record: dict, at: str) -> str:
     file = str(record.get("file", ""))
-    if record.get("by") == "edit":
+    if record.get("by") == "drawn":
+        # A diagram, which is a photo record because it is a jpg in photos/ like any other - see
+        # cyclops.imagine.draw. Before 2026-09-04 a drawing was its own record type with its own
+        # folder and its own .svg; _render_diagram below still renders those.
+        request = record.get("request", "")
+        if record.get("error"):
+            return f'*Tried to draw* ({at}) — "{request}" → failed: {record["error"]}'
+        line = f'*Drew a diagram* ({at}) — "{request}"'
+        label = "Drew"
+    elif record.get("by") == "edit":
         # A picture cyclops.imagine made from an earlier one. It is a photo record because it is
         # a jpg in photos/ like any other, and it says what was asked for rather than who shot
         # it, because nobody shot it. A failed edit has no file and renders as the line alone.

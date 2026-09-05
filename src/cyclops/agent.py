@@ -118,13 +118,19 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
         "a block diagram, a flow or a state machine. Use it when the answer is a layout or a set "
         "of connections that would take several sentences to say and one picture to show - "
         "'wire this relay to GPIO 17', 'what goes where on the header', 'how does this loop "
-        "work'. It appears on the panel a few seconds later and stays until they close it, so "
-        "say one short sentence out loud first and then keep talking; do not narrate the drawing "
-        "or read it back to them, they can see it. "
-        "Do NOT use it for: anything with real measured shapes or dimensions - a cutting list, a "
-        "joinery detail, an exploded view, a panel layout to scale - it draws boxes and wires "
-        "and cannot express those, so describe those out loud instead. Do not use it to show a "
-        "diagram you have already drawn this session; use find_diagram."
+        "work'. "
+        "It takes about a minute and fills the panel when it lands, and it stays until they put "
+        "it away, so say one short sentence out loud first and then keep talking; do not narrate "
+        "the drawing or read it back to them, they can see it. It is kept with this session's "
+        "photos, so use recall to put it back up later rather than drawing it a second time. "
+        "What comes back is drawn, not checked. It is usually right, but a line can land on the "
+        "wrong pin while the label beside it stays correct. So when a connection is one they "
+        "would actually act on - and getting it wrong would cost them a part or a shock - say "
+        "that connection out loud as well as showing it. "
+        "Nothing in it is to scale and nothing in it can be measured, whatever it looks like. So "
+        "it can show how the parts of a bracket go together, but it cannot be a cutting list, a "
+        "joinery detail or a panel layout somebody would work to: give those out loud, as "
+        "numbers. Never tell them to measure anything off the picture."
     ),
     "parameters": {
         "type": "object",
@@ -136,32 +142,36 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
                     "part names, pin numbers, resistances, voltages. Whoever draws it sees only "
                     "this sentence and nothing of your conversation, so it has to stand alone."
                 ),
-            }
-        },
-        "required": ["request"],
-        "additionalProperties": False,
-    },
-}
-
-FIND_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
-    "type": "function",
-    "name": "find_diagram",
-    "description": (
-        "Put a diagram you drew before back on the touchscreen - this session's or one kept with "
-        "a project. Use it whenever they refer back to one ('show me that wiring again', 'put "
-        "the pinout back up'), because it is instant and drawing it again is not, and because a "
-        "redraw would come back subtly different. If nothing matches it says so; offer to draw "
-        "it rather than guessing at which one they meant."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {
+            },
+            "style": {
                 "type": "string",
-                "description": "What the diagram was of, in their words. Matched on its title.",
-            }
+                "description": (
+                    "How this particular drawing should look, as a short phrase naming the "
+                    "conventions of the field it belongs to - the kind of drawing they would "
+                    "find in a manual for the thing on the bench in front of them. This is not "
+                    "a choice from a list: work out what the subject is, then name the paper, "
+                    "the linework, the use of colour and the labelling that a drawing of THAT "
+                    "would have. "
+                    "It matters because a diagram in the wrong idiom is read wrong. Ask for "
+                    "wires and terminals on a piece of software and it will invent terminals "
+                    "that do not exist; ask for a flat schematic of a loom and you lose the "
+                    "colour code they need to match against real wire in their hand. "
+                    "Examples of the shape of answer wanted - a relay wired to a Pi, or a "
+                    "motorcycle loom: 'a printed workshop service-manual wiring diagram, black "
+                    "line-art on off-white paper, wires drawn in their real colours with a small "
+                    "colour key'. The 40-pin header: 'a pinout chart, two numbered columns of "
+                    "pins with the names set outward, power, ground and signal each in their own "
+                    "colour'. An audio path, or how a program hangs together: 'a plain flat "
+                    "block diagram, plain boxes and labelled arrows, no wires, no terminals, one "
+                    "accent colour at most'. How a bracket goes together: 'a clean assembly "
+                    "sketch, the parts drawn separated along the axis they slide on, numbered "
+                    "callouts and a small parts key'. A pipe or duct run: 'an isometric pipework "
+                    "diagram in the style of a plumbing manual, runs in a single line weight, "
+                    "fittings and valves as standard symbols'."
+                ),
+            },
         },
-        "required": ["query"],
+        "required": ["request", "style"],
         "additionalProperties": False,
     },
 }
@@ -175,19 +185,20 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
         "them and saying it would take a paragraph: a colour or a finish, a part moved or taken "
         "away, a shelf on that wall, the half-built thing shown finished, that corner tidied. "
         "It works on whichever photo is on the panel - one they just took, one you found for "
-        "them, or one you already edited, so a second change carries on from the first. If "
-        "nothing has been up at all yet, ask them to hit SNAP. If what is up is a DIAGRAM, this "
-        "is not the tool: say so and offer draw_diagram, which is the one that can change it. "
+        "them, one you drew for them, or one you already edited, so a second change carries on "
+        "from the first. If nothing has been up at all yet, ask them to hit SNAP. "
         "It takes up to a minute and fills the panel when it lands, so say "
         "one short sentence out loud first and then keep talking. You are shown the result when "
         "it lands, but so are they: do not narrate it back at them unprompted. Volunteer "
         "something only if it did not do what they asked or there is something worth flagging - "
         "but answer whatever they do ask about it, directly, because you can see it. "
         "What comes back is an illustration, never evidence. The whole picture is redrawn, so "
-        "nothing in it is measured and nothing in it is a fact about their hardware. So do NOT "
-        "use it for connections, wiring, which way round a part goes, the order to assemble "
-        "something, or anything they would act on - draw_diagram is for those and it is checked "
-        "against a schema. Do not use it to read a label or a plate: look at the photo you "
+        "nothing in it is measured and nothing in it is a fact about their hardware - and "
+        "because it started as a photograph of their own bench, it is the one picture they could "
+        "mistake for a record of it. So do NOT use it for connections, wiring, which way round a "
+        "part goes, the order to assemble something, or anything they would act on: draw_diagram "
+        "is for those, because it draws the answer from a description instead of painting over "
+        "their hardware. Do not use it to read a label or a plate: look at the photo you "
         "already have. Never call it to show them what something 'really' looks like."
     ),
     "parameters": {
@@ -431,11 +442,13 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
         "It hands back the one best match and the names of a couple of near misses. Those are "
         "not a menu to read out - they are there in case what you showed is plainly the wrong "
         "thing, in which case offer one of them in a few words. "
+        "A diagram you drew earlier is kept with the photos, so this is how you put one back up "
+        "when they refer to it - it is far quicker than drawing it again, and a redraw would "
+        "come back different. "
         "Do NOT use it for: a number written down with save_data - find_data looks those up "
-        "exactly and this only finds the words around them; a drawing you drew - find_diagram "
-        "is faster and matches on the title; anything about the world rather than about their "
-        "own work - that is web_search. If it finds nothing, say so and offer to look another "
-        "way rather than showing them the closest thing anyway."
+        "exactly and this only finds the words around them; anything about the world rather "
+        "than about their own work - that is web_search. If it finds nothing, say so and offer "
+        "to look another way rather than showing them the closest thing anyway."
     ),
     "parameters": {
         "type": "object",
@@ -518,7 +531,7 @@ LOOKING THINGS UP
 SHOWING THEM SOMETHING
 - You have the screen they are looking at, and you can draw on it. When the answer is a set of
   connections or a layout, draw it rather than saying it - see draw_diagram for what it can and
-  cannot draw. Say one short sentence first, because it takes a few seconds to appear.
+  cannot draw. It takes about a minute, so say what you are doing and carry on talking.
 - When the answer is what something would LOOK like - a colour, a finish, a part moved, a thing
   that is not there yet - edit the picture in front of them rather than describing it; see
   edit_photo. It can take a minute, so say what you are doing and carry on talking. What comes
@@ -734,19 +747,19 @@ class Panel:
     """The last picture put in front of them, and what made it.
 
     One slot rather than the ``_last_photo`` this replaced, which only ever meant "the last thing
-    the *camera* saw". A picture reaches the panel three ways now - the shutter, a recall off the
-    card, and an edit - and ``edit_photo`` works on whichever of them is up, because the thing
-    somebody means by "change that" is the thing they are looking at.
+    the *camera* saw". A picture reaches the panel four ways now - the shutter, a recall off the
+    card, an edit, and a diagram drawn from a description - and ``edit_photo`` works on whichever
+    of them is up, because the thing somebody means by "change that" is the thing they are
+    looking at.
 
-    ``path`` is None when what is on the panel is not a photograph. That is the diagram case, and
-    it is the reason this is not simply a ``Path``: a drawing goes up through the same
-    ``diagram.show()`` everything else does, so a slot that only tracked photographs would still
-    be naming the picture from *before* the drawing, and an edit would quietly redraw something
-    that is no longer on the screen.
+    ``path`` stayed optional after the drawings became photographs. It no longer marks the
+    diagram case - a drawing is a jpg in ``photos/`` with a path like everything else - but a
+    picture that could not be written to the card still reaches the glass, and there is nothing
+    for an edit to send when it does.
     """
 
     path: Path | None
-    what: str  # "photo" | "found" | "edit" | "diagram" - for the log and the tool's own error
+    what: str  # "photo" | "found" | "edit" | "drawn" - for the log and the tool's own error
 
 
 class VoiceAgent:
@@ -1316,9 +1329,6 @@ class VoiceAgent:
         if call.name == "draw_diagram":
             await self._run_draw_diagram(call)
             return
-        if call.name == "find_diagram":
-            await self._run_find_diagram(call)
-            return
         if call.name == "edit_photo":
             await self._run_edit_photo(call)
             return
@@ -1380,16 +1390,19 @@ class VoiceAgent:
     # ---- diagrams ----
 
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
-        """Draw one, keep it, and put it on the panel.
+        """Draw one, keep it with the photos, and put it on the panel.
 
-        The drawing model gets its own module and its own retry, so what is left here is the
-        lifecycle: say the panel is drawing, write the result down, and hand the model back one
-        sentence about what happened. It is deliberately *not* told what the diagram contains -
-        it asked for a picture and the picture is on the screen, and a model given the JSON back
-        will read it out.
+        The same shape as :meth:`_run_edit_photo`, because since the JointJS schema went these
+        are the same operation: a picture arrives as jpeg bytes, is written into ``photos/`` and
+        offered to the glass. What differs is only that there is no source photograph.
+
+        The model is deliberately *not* told what the diagram contains. It asked for a picture,
+        the picture is on the screen, and a model handed a description of it will read that
+        description out at somebody who is already looking at the thing.
         """
-        request = _tool_string(call.arguments, "request", diagram.MAX_REQUEST_CHARS)
-        self._log(f"[tool] draw_diagram {request!r}")
+        request = _tool_string(call.arguments, "request", imagine.MAX_REQUEST_CHARS)
+        style = _tool_string(call.arguments, "style", imagine.MAX_STYLE_CHARS)
+        self._log(f"[tool] draw_diagram {request!r} ({style!r})")
         if not request:
             await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing described"})
             await self._request_response()
@@ -1401,129 +1414,70 @@ class VoiceAgent:
             # a TypeError in the record it writes propagated straight out of this coroutine: the
             # diagram was on the panel, and the model sat waiting for a tool result that was
             # never sent until the user spoke over it.
-            spec = await diagram.draw(request, self.settings)
-            output = await asyncio.to_thread(self._keep_and_show, spec)
-        except diagram.DiagramError as exc:
-            session.note("diagram", title=request[:80], error=str(exc))
-            self._log(f"[tool] diagram failed: {exc}", stream=sys.stderr)
-            output = {"ok": False, "error": str(exc)}
+            jpeg = await imagine.draw(request, style, self.settings)
+            output, kept = await asyncio.to_thread(self._keep_and_show_drawing, jpeg, request)
+        except imagine.ImagineError as exc:
+            session.note("photo", by="drawn", request=request[:80], error=str(exc))
+            self._log(f"[tool] draw_diagram failed: {exc}", stream=sys.stderr)
+            output, kept = {"ok": False, "error": str(exc)}, None
         except Exception as exc:  # never leave the model waiting for a tool result
-            session.note("diagram", title=request[:80], error=f"{type(exc).__name__}")
-            self._log(f"[tool] diagram failed: {exc!r}", stream=sys.stderr)
-            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            session.note("photo", by="drawn", request=request[:80], error=f"{type(exc).__name__}")
+            self._log(f"[tool] draw_diagram failed: {exc!r}", stream=sys.stderr)
+            output, kept = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None
         finally:
             self.drawing_active = False
 
-        self._note_panel(output)
+        # The panel slot, set on the loop rather than in the thread that showed it, because
+        # `edit_photo` reads it from here. A drawing now has a real path like every other
+        # picture, so "make that clearer" edits the diagram instead of being refused.
+        if output.get("shown") and kept is not None and kept.path is not None:
+            self._on_panel = Panel(kept.path, "drawn")
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
-    async def _run_find_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
-        """Put a diagram we already have back on the panel. No model, so this is disk speed."""
-        query = _tool_string(call.arguments, "query", MAX_DATA_QUERY_CHARS)
-        self._log(f"[tool] find_diagram {query!r}")
-        if not query:
-            missing = {"ok": False, "error": "nothing to look for"}
-            await self._send_tool_output(call.call_id, missing)
-            await self._request_response()
-            return
-        try:
-            output = await asyncio.to_thread(self._find_diagram, query)
-        except Exception as exc:  # a card that will not read is not a reason to hang the model
-            self._log(f"[tool] find_diagram failed: {exc!r}", stream=sys.stderr)
-            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
-        self._note_panel(output)
-        await self._send_tool_output(call.call_id, output)
-        await self._request_response()
-
-    def _diagram_folders(self) -> list[Path]:
-        """Everywhere a diagram might be: this session first, then every project on the card.
-
-        This session first because "that one" almost always means the one from ten minutes ago,
-        and :func:`cyclops.diagram.search` keeps the first copy of any id it sees twice.
-        """
-        folders = []
-        if (live := session.current()) is not None:
-            folders.append(live.diagrams_dir)
-        if self.settings.projects:
-            from .projects import store
-
-            folders.extend(p.diagrams_dir for p in store.catalog(self.settings))
-        return folders
-
-    def _note_panel(self, output: dict[str, Any]) -> None:
-        """A drawing reached the glass, so the photograph that was there is not on it any more.
-
-        Called on the loop from the two diagram runners rather than from the two blocking methods
-        that actually show one, which run in a thread - the slot is read by ``edit_photo`` on this
-        same loop, and there is no reason to write it from anywhere else.
-
-        It exists because ``edit_photo`` works on whatever is on the panel. Leave a photograph in
-        the slot while a drawing is up and "change that" redraws a picture nobody is looking at,
-        and puts the result on the panel as though it had answered. Clearing it turns that into a
-        sentence: see :meth:`_run_edit_photo`, which offers ``draw_diagram`` instead.
-        """
-        if output.get("shown"):
-            self._on_panel = Panel(None, "diagram")
-
-    def _keep_and_show(self, spec: dict[str, Any]) -> dict[str, Any]:
+    def _keep_and_show_drawing(
+        self, jpeg: bytes, request: str
+    ) -> tuple[dict[str, Any], imagine.Edit | None]:
         """Write the drawing down, then ask for the panel. Blocking; runs off the loop's thread.
 
         Written before it is shown, and shown whether or not writing worked: the panel is what
         was asked for, and a diagram nobody can keep is still a diagram somebody can read.
-        """
-        folder = session.diagram_target(self.settings)
-        kept: diagram.Diagram | None = None
-        if folder is not None:
-            try:
-                kept = diagram.write(spec, folder)
-            except OSError as exc:
-                self._log(f"[tool] could not keep the diagram: {exc}", stream=sys.stderr)
 
-        shown = diagram.offer(spec, kept) and diagram.show()
-        if kept is not None:
-            # `shape`, not `kind`: session.note takes the record's own type as its first
-            # parameter, and that parameter is called kind. Passing one as a field is a
-            # TypeError at the call, not at import - so it costs a whole session to find.
+        With no session running it is drawn and not kept, exactly as before and exactly as
+        :meth:`_keep_and_show_edit` does. Not ``session.photo_target``, which looks like the
+        right helper and is not: its ``captures/`` fallback is ``webcam._save``'s pruning archive
+        with its own naming and its own ``latest.jpg``, and ``imagine.write`` honours neither.
+        """
+        live = session.current()
+        kept: imagine.Edit | None = None
+        if live is not None:
+            try:
+                kept = imagine.write(jpeg, request, live.photos_dir, role="drawn")
+            except OSError as exc:
+                self._log(f"[tool] could not keep the drawing: {exc}", stream=sys.stderr)
+
+        # One downscaled copy, doing the panel's job. The card keeps the full-size one.
+        small = imagine.for_panel(jpeg)
+        shown = diagram.offer_image(small, request, drawn=True) and diagram.show()
+        if kept is not None and kept.path is not None:
             session.note(
-                "diagram",
-                title=kept.title,
-                caption=kept.caption,
-                shape=kept.kind,
-                file=f"{session.DIAGRAMS}/{kept.path.name}" if kept.path else "",
-                svg=f"{session.DIAGRAMS}/{kept.ident}.svg" if shown else "",
+                "photo",
+                by="drawn",
+                request=kept.request,
+                file=f"{session.PHOTOS}/{kept.path.name}",
+                bytes=kept.bytes,
+                panel=shown,
             )
         if not shown:
             return {
                 "ok": True,
-                "title": spec["title"],
                 "shown": False,
                 "note": (
                     "It was drawn but there is no panel to show it on. Say so plainly rather "
                     "than describing it."
                 ),
-            }
-        return {"ok": True, "title": spec["title"], "shown": True}
-
-    def _find_diagram(self, query: str) -> dict[str, Any]:
-        """Search the card for a diagram and put the best match back up. Blocking."""
-        found = diagram.search(self._diagram_folders(), query)
-        if not found:
-            return {
-                "ok": True,
-                "hits": 0,
-                "note": "Nothing drawn matches that. Offer to draw it rather than guessing.",
-            }
-        best = found[0]
-        shown = diagram.offer(best.spec, best) and diagram.show()
-        session.note("diagram", title=best.title, shape=best.kind, found=True)
-        return {
-            "ok": True,
-            "hits": len(found),
-            "title": best.title,
-            "shown": shown,
-            "others": [d.title for d in found[1:3]],
-        }
+            }, kept
+        return {"ok": True, "shown": True}, kept
 
     # ---- recall ----
 
@@ -1787,17 +1741,15 @@ class VoiceAgent:
             await self._request_response()
             return
         if shot.path is None:
-            # A drawing is on the panel. Not a failure and not a photograph: the tool that can
-            # change it is draw_diagram, whose output is checked against a schema we own, and
-            # painting over a wiring diagram with an image model is the one thing this module
-            # exists to refuse.
+            # Nothing on the glass has a file behind it. This used to be the diagram case, back
+            # when a drawing was a JSON spec with no jpg anywhere; a drawing is a picture in
+            # photos/ now and edits like any other, which is why "make that clearer, drop the
+            # LED" works. What is left here is the genuinely pathological case - a slot filled
+            # with something that was never written down - and there is nothing to send.
             await self._send_tool_output(call.call_id, {
                 "ok": False,
-                "error": "what is on the panel is a drawing, not a photo",
-                "note": (
-                    "You cannot edit a diagram with this. Say so in a few words and offer to "
-                    "draw it again with the change - that is draw_diagram."
-                ),
+                "error": "what is on the panel was never kept",
+                "note": "Say so in a few words and ask them to hit SNAP.",
             })
             await self._request_response()
             return
@@ -2164,12 +2116,13 @@ def _tool_string(arguments: str | None, key: str, limit: int) -> str:
 
 
 def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
-    """Both drawing tools, or neither. Left out rather than refused, as with the project tools.
+    """The drawing tool, or nothing. Left out rather than refused, as with the project tools.
 
-    They come as a pair on purpose: find_diagram with nothing that can draw one is a tool whose
-    only possible answer is "nothing found", and a model given that will keep trying it.
+    There used to be a second one, find_diagram, that put a drawing back on the panel from a
+    folder of its own. A diagram is a photograph now, so recall does that job and this is one
+    tool again.
     """
-    return [DRAW_DIAGRAM_TOOL, FIND_DIAGRAM_TOOL] if settings.diagrams else []
+    return [DRAW_DIAGRAM_TOOL] if settings.diagrams else []
 
 
 def _imagine_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
@@ -2326,8 +2279,6 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return _phrase("searching for", _tool_query(args), "searching the web")
     if call.name == "draw_diagram":
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
-    if call.name == "find_diagram":
-        return _phrase("looking for a drawing of", _tool_data_query(args), "looking for a drawing")
     if call.name == "edit_photo":
         return _phrase(
             "editing the picture to", _tool_string(args, "request", MAX_QUERY_CHARS),

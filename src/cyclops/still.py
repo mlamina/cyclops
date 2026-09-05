@@ -10,23 +10,19 @@ is the one part of a session worth watching twice.
 So the frame is rebuilt from what the page was handed, on the way past. Nothing here reads the
 screen: the panel cannot be photographed from this side (the kiosk's window is not what is on
 it), and polling a compositor fifteen times a second for a picture that does not change would
-cost more than the recording is worth. Both halves of the handshake in :mod:`cyclops.diagram`
-already carry the picture, and this is the reader of them:
+cost more than the recording is worth. The handshake in :mod:`cyclops.diagram`
+already carries the picture, and this is the reader of it: whatever is on the glass rides in
+``DIAGRAM_FILE`` as a data URL, and it is the same JPEG the page decodes.
 
-* **a photo** rides in ``DIAGRAM_FILE`` as a data URL, and is the same JPEG the page decodes;
-* **a drawing** is laid out by the page and by nothing else, so the page is the only thing that
-  can say what it looks like. It already hands the SVG back to be kept beside the session
-  (``/diagram/shown``), and the admin service drops a copy at ``PANEL_SVG_FILE`` for this.
-
-Which of the two it is comes from the payload rather than from a caller, for the same reason the
-page decides it that way: there is one file, and what is in it is the answer.
+There used to be a second case. A diagram was laid out by the page and by nothing else, so only
+the page could say what it looked like: it handed an SVG back and this shelled out to ffmpeg to
+rasterise it. Diagrams are drawn as images now and arrive down the same path as a photograph, so
+that whole branch is gone - one fewer subprocess per picture on a Pi already short of thermal
+headroom.
 
 The result is fitted the way the page fits it - ``object-fit: contain`` on the screen's own
 green-black - so the frame in the video is the picture that was on the glass, letterbox and all.
 
-The SVG is rasterised by ffmpeg, which recording already cannot run without and which is built
-against librsvg on the Pi. That is one process per picture shown, next to the ten seconds the
-drawing itself took, and none at all for a photo.
 
 Never raises, and returns None for every kind of failure - a missing file, a payload that is not
 one, an ffmpeg that cannot read SVG. The caller falls back to black, which is where it started.
@@ -36,14 +32,12 @@ from __future__ import annotations
 
 import base64
 import json
-import subprocess
-import sys
 from pathlib import Path
 
 import cv2
 import numpy as np
 
-from .config import DIAGRAM_FILE, PANEL_SVG_FILE
+from .config import DIAGRAM_FILE
 
 # The green-black the page draws on: --screen in admin/static/base.css, in BGR. The letterbox
 # either side of a contained picture is the screen's own colour there rather than a second one,
@@ -52,8 +46,6 @@ SCREEN_BGR = (10, 15, 5)
 
 # One picture, once, on a box that has just spent ten seconds drawing it. Long enough that a
 # loaded Pi still finishes, short enough that a wedged ffmpeg costs a frame rather than a session.
-RASTER_TIMEOUT_S = 5.0
-
 _JPEG_URL = "data:image/jpeg;base64,"
 
 
@@ -62,7 +54,6 @@ def of_panel(
     height: int,
     *,
     payload_path: Path = DIAGRAM_FILE,
-    svg_path: Path = PANEL_SVG_FILE,
 ) -> np.ndarray | None:
     """The picture the page is showing, as a ``width`` x ``height`` BGR frame, or None.
 
@@ -74,7 +65,7 @@ def of_panel(
     if offered is None:
         return None
     url = offered.get("image")
-    picture = _decode(url) if isinstance(url, str) else _raster(svg_path)
+    picture = _decode(url) if isinstance(url, str) else None
     if picture is None:
         return None
     return contain(picture, width, height)
@@ -124,39 +115,4 @@ def _decode(url: str) -> np.ndarray | None:
     except (ValueError, TypeError):
         return None
     picture = cv2.imdecode(np.frombuffer(blob, dtype=np.uint8), cv2.IMREAD_COLOR)
-    return picture if picture is not None and picture.size else None
-
-
-def _raster(path: Path) -> np.ndarray | None:
-    """The drawing the page handed back, rendered. None if there is none, or ffmpeg cannot.
-
-    ``rgb24`` rather than letting the PNG carry an alpha channel: the page's own copy already has
-    the screen behind it (``serialize`` in diagram.js puts it there so the file is worth opening),
-    and flattening here means the one that reaches the encoder cannot arrive transparent either.
-    """
-    if not path.is_file() or path.stat().st_size == 0:
-        return None
-    command = [
-        "ffmpeg", "-hide_banner", "-loglevel", "error",
-        "-i", str(path),
-        "-frames:v", "1", "-pix_fmt", "rgb24", "-c:v", "png", "-f", "image2pipe", "-",
-    ]
-    try:
-        done = subprocess.run(  # noqa: S603 - the command is ours, and the path is our own cache
-            command, capture_output=True, timeout=RASTER_TIMEOUT_S, check=False
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        print(f"· [still] could not draw the panel's picture ({exc})", file=sys.stderr, flush=True)
-        return None
-    if done.returncode != 0 or not done.stdout:
-        # An ffmpeg without librsvg is the likely one, and it is not fatal: the recording loses
-        # the drawing and keeps everything else, which is what it did before this existed.
-        detail = done.stderr.decode(errors="replace").strip().splitlines()
-        print(
-            f"· [still] no picture for the recording ({detail[-1] if detail else 'ffmpeg failed'})",
-            file=sys.stderr,
-            flush=True,
-        )
-        return None
-    picture = cv2.imdecode(np.frombuffer(done.stdout, dtype=np.uint8), cv2.IMREAD_COLOR)
     return picture if picture is not None and picture.size else None

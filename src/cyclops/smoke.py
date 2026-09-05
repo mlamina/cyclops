@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import sys
+import time
 
 from openai.types.realtime import RealtimeServerEvent
 
@@ -27,6 +28,12 @@ from .webcam import capture_image_async
 
 READY_TIMEOUT_S = 30.0
 TURN_TIMEOUT_S = 90.0
+# How long turn 4 then waits for the picture itself. draw_diagram returns as soon as it is called
+# and the image lands about ninety seconds later (imagine.DRAW_QUALITY), so the turn is over long
+# before the drawing is - and checking the offer file the moment the turn ends would always find
+# it empty. Comfortably past imagine.DRAW_TIMEOUT_S, so a slow draw fails on its own timeout with
+# a message rather than on this one without.
+DRAW_DEADLINE_S = 210.0
 
 
 class TurnObserver:
@@ -66,17 +73,30 @@ class TurnObserver:
 
 
 def _offered_at() -> float:
-    """When a diagram was last handed to the panel, or 0.0 - see ``config.DIAGRAM_FILE``.
+    """When a picture was last handed to the panel, or 0.0 - see ``config.DIAGRAM_FILE``.
 
     This is what a headless run can check. Smoke keeps no session (the photo turn uses
-    ``captures/`` for the same reason), so a drawing has nowhere on the card to be written and
-    ``diagram_target`` correctly declines to invent one. But the offer is made either way, and a
-    file that appears is proof the model returned a spec that passed validation.
+    ``captures/`` for the same reason), so a drawing has nowhere on the card to be written. But
+    the offer is made either way, and a file that appears is proof an image came back whole.
     """
     try:
         return DIAGRAM_FILE.stat().st_mtime
     except OSError:
         return 0.0
+
+
+async def _wait_for_offer(since: float, limit_s: float) -> bool:
+    """Wait for a picture to reach the panel's offer file. False if none does in time.
+
+    Polled rather than watched: it is one stat() a second against a drawing that takes ninety,
+    and a smoke run has nothing better to do while it waits.
+    """
+    deadline = time.monotonic() + limit_s
+    while time.monotonic() < deadline:
+        if _offered_at() > since:
+            return True
+        await asyncio.sleep(1.0)
+    return False
 
 
 async def _await_or_fail(agent_task: asyncio.Task, event: asyncio.Event, limit_s: float) -> None:
@@ -150,8 +170,13 @@ async def _main() -> int:
 
         # A diagram, drawn for real. There is no panel and no session here, so the tool answers
         # "shown: false" and writes nothing to the card - both correct. What is under test is the
-        # model calling it, the spec surviving validation, and the tool answering at all: this
-        # turn timing out is what a tool that raises instead of replying looks like from here.
+        # model calling it, an image coming back whole, and the tool answering at all: this turn
+        # timing out is what a tool that raises instead of replying looks like from here.
+        #
+        # Its own deadline, and a long one. The tool returns the moment it is called and the
+        # picture lands a minute and a half later, so the turn finishes long before the drawing
+        # does - and the ordinary TURN_TIMEOUT_S would have this checking for an offer that was
+        # never going to be there yet.
         turn.reset()
         before = _offered_at()
         await agent.send_text(
@@ -159,21 +184,23 @@ async def _main() -> int:
             "IN pin of a 5V relay module, with 5V to VCC and ground to GND."
         )
         await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
-        offered = _offered_at() > before
+        offered = await _wait_for_offer(before, DRAW_DEADLINE_S)
         print(
             f"· turn 4: tools={turn.tool_calls}, {turn.seconds_of_audio:.1f}s audio, "
-            f"spec offered to the panel: {offered}"
+            f"picture offered to the panel: {offered}"
         )
         if "draw_diagram" not in turn.tool_calls:
             failures.append("model did not call draw_diagram")
         elif not offered:
-            # The tool answered, so nothing is stuck - but no spec reached the panel, which means
-            # the drawing model failed validation twice.
-            failures.append("draw_diagram was called but no valid spec came back")
+            # The tool answered, so nothing is stuck - but no picture reached the panel inside
+            # the deadline, which means the drawing failed or is slower than it has ever been.
+            failures.append(
+                f"draw_diagram was called but nothing was drawn in {DRAW_DEADLINE_S:.0f}s"
+            )
         if not turn.has_transcript:
             failures.append("turn 4 returned no transcript")
         # Leave nothing waiting: on the Pi this file is what the panel's page draws, and a
-        # smoke run must not leave a diagram sitting behind the kiosk window.
+        # smoke run must not leave a picture sitting behind the kiosk window.
         DIAGRAM_FILE.unlink(missing_ok=True)
 
         if agent.unacked_item_ids:

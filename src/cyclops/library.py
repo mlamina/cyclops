@@ -328,6 +328,9 @@ def stream(sessions_dir: Path, limit: int = STREAM_LIMIT) -> list[Item]:
                     )
                 )
 
+        # Old cards only. Nothing has written diagrams/ since 2026-09-04 - a diagram is a jpg in
+        # photos/ and is listed by the loop above - but the ones already there are still worth
+        # browsing, and this is the only screen that shows them.
         diagrams = folder / DIAGRAMS
         if diagrams.is_dir():
             # The spec, not the picture: a drawing the panel never returned an svg for is still a

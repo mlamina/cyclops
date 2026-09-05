@@ -59,7 +59,6 @@ from .config import (  # noqa: E402
     PAGE_ALIVE_FLAG,
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
-    PANEL_SVG_FILE,
     ConfigError,
     load_settings,
 )
@@ -1203,7 +1202,7 @@ class Kiosk:
         has no room, because that is a different page and not ours to paint over.
         """
         if self._panel_showing.is_set():
-            if not diagram.is_picture():
+            if diagram.announces():
                 self._cues.play("shown")  # a drawing arriving is news; see _diagram_session
             print("· picture swapped on the panel", flush=True)
             # A recording is being handed the picture on the panel rather than the black the
@@ -1250,10 +1249,6 @@ class Kiosk:
                 return
             DIAGRAM_SHOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
             DIAGRAM_SHOWN_FLAG.unlink(missing_ok=True)  # a stale note must not answer for this one
-            # ...and no more may the drawing that came with it: the page posts the two together,
-            # so a picture left from the last diagram would be exactly the wrong one to put in
-            # the video of this one. Absent is a black frame, which is honest.
-            PANEL_SVG_FILE.unlink(missing_ok=True)
             BROWSER_CLOSE_FLAG.unlink(missing_ok=True)
             asked_at = time.time()
             if not _wait_for_flag(DIAGRAM_SHOWN_FLAG, asked_at, DIAGRAM_WAIT_S):
@@ -1278,7 +1273,8 @@ class Kiosk:
             # A photograph says nothing. Every snap already sounds the shutter a moment before
             # this, and a second cue on top of it is one too many - which is only obvious now
             # that the shutter puts its photo on the panel rather than only handing it over.
-            if not diagram.is_picture():
+            # A drawing does sound, because nothing else announced it and it took a minute.
+            if diagram.announces():
                 self._cues.play("shown")
             print("· diagram on the panel", flush=True)
             self._watch_page(shown_at)

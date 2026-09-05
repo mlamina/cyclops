@@ -700,6 +700,12 @@ def copy_photos(
 def copy_diagrams(project: Project, session_dir: Path) -> list[tuple[str, str]]:
     """Copy every diagram this session drew in, and hand back ``(relative path, title)``.
 
+    **Nothing produces these any more.** Since 2026-09-04 a diagram is a jpg in ``photos/`` and
+    travels into a project through :func:`copy_photos` like any other picture. This stays for the
+    sessions already on the card that have not been filed yet - it is one ``is_dir()`` per filing
+    when there are none, and deleting it would silently lose the drawings out of every old
+    session the moment it was swept up.
+
     Every one, with no curator and no limit - the one place this deliberately parts company with
     :func:`copy_photos`. A photo is a frame caught in passing and three of forty are worth
     keeping, so a model picks. A diagram was asked for out loud, drawn on purpose and looked at;

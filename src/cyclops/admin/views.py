@@ -33,7 +33,6 @@ from ..config import (
     PAGE_ALIVE_FLAG,
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
-    PANEL_SVG_FILE,
     ConfigError,
     Settings,
     load_settings,
@@ -47,21 +46,16 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 # Everything that will ever be served from static/, by the only names that will be served. An
 # allow-list rather than a path check because there is no argument to be had about what a
 # suffixed, slashed or dotted name resolves to if the set of legal answers is written out in
-# full. Two dicts rather than one because the two halves want opposite caching (below).
+# full.
 #
-# The vendored bundles. Bare URLs, no version: they change about twice a year, and hanging a
-# digest on them would re-download and re-parse 527 KB on the panel after every CSS tweak. The
-# price is that editing one *in place* would never reach a warm kiosk - so a new version of one
-# of these arrives under a new filename. See NOTICE.md.
-VENDORED = {
-    "joint.min.js": "text/javascript",
-    "dagre.min.js": "text/javascript",
-    "directed-graph.min.js": "text/javascript",
-}
-# Ours, which change whenever anybody touches the page. charset on both: twenty-odd lines of the
-# JS carry an em-dash or a middot, and text/css is not optional at all - a standards-mode
-# document *rejects* a stylesheet served as anything else, and says so in one console line with
-# an unstyled page as the only other symptom.
+# There was a second dict beside this one until 2026-09-04, holding JointJS, dagre and a graph
+# layout - 527 KB of vendored bundles that wanted the opposite caching from ours, because they
+# changed twice a year and ours change hourly. They were here to lay out a diagram in the
+# browser. Diagrams are drawn as images now, so the panel parses none of it.
+#
+# charset on all of them: twenty-odd lines of the JS carry an em-dash or a middot, and text/css
+# is not optional at all - a standards-mode document *rejects* a stylesheet served as anything
+# else, and says so in one console line with an unstyled page as the only other symptom.
 OURS = {
     "base.css": "text/css; charset=utf-8",
     "system.css": "text/css; charset=utf-8",
@@ -72,7 +66,7 @@ OURS = {
     "app.js": "text/javascript; charset=utf-8",
     "diagram.js": "text/javascript; charset=utf-8",
 }
-STATIC_FILES = VENDORED | OURS
+STATIC_FILES = OURS
 
 
 def _asset_version() -> str:
@@ -102,7 +96,6 @@ def _asset_version() -> str:
 
 
 ASSET_VERSION = _asset_version()
-MAX_SVG_BYTES = 4 * 1024 * 1024  # a 40-pin pinout is ~90 KB; this is a ceiling, not a budget
 # The same shape of number for what may be dropped onto the page from a laptop. A datasheet is
 # kilobytes and a phone photo is single-digit megabytes; this is a ceiling, not a budget, and it
 # is here so that a mis-drag of something enormous is refused rather than written to the card.
@@ -324,43 +317,26 @@ def diagram(request: HttpRequest, ident: str) -> JsonResponse:
 
 @require_POST
 def diagram_shown(request: HttpRequest) -> HttpResponse:
-    """The page has painted the diagram: keep the picture, and tell the kiosk it may uncover.
+    """The page has painted the picture: tell the kiosk it may uncover.
 
-    Three jobs in one request on purpose. The kiosk is waiting on ``DIAGRAM_SHOWN_FLAG`` before
-    it drops its window, and this is also the only moment the rendered SVG exists anywhere - the
-    panel draws it, so the panel is the only thing that can hand it back, for the card and for
-    the video the session is recording of the screen it is about to disappear behind.
+    The kiosk is waiting on ``DIAGRAM_SHOWN_FLAG`` before it drops its window, and this is the
+    page saying it has something to uncover onto. An empty body and one touched file.
 
-    The destination comes from our own pending file and never from the request. The body is one
-    anonymous blob of bytes; letting it choose where those bytes land would make this the one
-    endpoint on the box worth attacking.
+    It used to do two more jobs. When a diagram was a JointJS scene laid out in the browser, the
+    page was the only thing that knew what it looked like, so it posted the rendered SVG back
+    here to be kept beside the session and copied where the recording could read it. A diagram
+    is a jpg now, made before it is ever offered, so there is nothing to hand back: the picture
+    reached the card and the video by the same route a photograph does.
     """
     if not _is_local(request):
         return HttpResponseForbidden("only the kiosk's own browser paints the panel")
-    found = _pending()
-    if found is None:
-        return HttpResponseBadRequest("no diagram is waiting")
-
-    svg = request.body[:MAX_SVG_BYTES]
-    if svg:
-        # For the recording first, and unconditionally: a session recording the screen is
-        # sampling a panel the kiosk has stopped painting, and this is the only copy of what is
-        # actually on it. Landed rather than written, so the kiosk can never read half of one.
-        try:
-            card.write_bytes(PANEL_SVG_FILE, svg)
-        except OSError as exc:  # the drawing is on the panel either way, which is the point
-            print(f"· could not keep the panel's picture for the video ({exc})", flush=True)
-    target = found.get("svg")
-    if svg and target:
-        try:
-            card.write_bytes(Path(target), svg)
-        except OSError as exc:  # the drawing is on the panel either way, which is the point
-            print(f"· could not keep the diagram picture ({exc})", flush=True)
+    if _pending() is None:
+        return HttpResponseBadRequest("nothing is waiting for the panel")
     try:
         DIAGRAM_SHOWN_FLAG.parent.mkdir(parents=True, exist_ok=True)
         DIAGRAM_SHOWN_FLAG.touch()
     except OSError as exc:
-        print(f"· could not leave the diagram-shown note ({exc})", flush=True)
+        print(f"· could not leave the panel-painted note ({exc})", flush=True)
     return HttpResponse(status=204)
 
 

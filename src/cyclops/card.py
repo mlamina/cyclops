@@ -64,7 +64,7 @@ RECEIPT_NAME = "project.md"  # written into the session folder by projects/store
 # one in Photos/ and another in any folder you dropped pictures into.
 CAPTIONS_NAME = "captions.json"
 PHOTOS = "photos"
-DIAGRAMS = "diagrams"
+DIAGRAMS = "diagrams"  # old cards only; a diagram is a jpg in photos/ now
 PARTS = "parts"
 VIDEO = "video.mp4"
 
@@ -73,7 +73,9 @@ STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobod
 
 # Everything a session folder is allowed to contain. Only ever consulted before deleting one:
 # a folder holding anything not on this list is something a person put there, and is never
-# removed however empty triage thinks it is.
+# removed however empty triage thinks it is. DIAGRAMS stays on the list for exactly that reason -
+# nothing writes one now, but taking it off would make every session that already has one
+# undeletable for good.
 KNOWN = frozenset(
     {LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, DIAGRAMS, PARTS}
 )
@@ -352,6 +354,11 @@ def triage(folder: Path) -> State:
     records, dropped = read_log(folder / LOG_NAME)
     photos_dir = folder / PHOTOS
     photos = sum(1 for p in photos_dir.glob("*.jpg") if written(p)) if photos_dir.is_dir() else 0
+    # Nothing writes diagrams/ any more - a diagram has been a jpg in photos/ since 2026-09-04 -
+    # and this counts what is already on the card. Do not delete it as dead: State.salvage asks,
+    # and a session killed after one drawing and nothing else would otherwise read as "empty" and
+    # be swept away with the drawing still in it.
+    #
     # The spec, not the picture: a diagram whose svg never came back from the panel is still a
     # diagram, and counting both would count every diagram twice.
     diagrams_dir = folder / DIAGRAMS

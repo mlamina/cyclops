@@ -38,13 +38,21 @@ class PhotoLine:
     """
 
     file: str  # "photos/16-48-48_cyclops.jpg", as the record spells it
-    by: str  # "cyclops" | "you" | "edit"
+    by: str  # "cyclops" | "you" | "edit" | "drawn"
     at: float
     focus: str  # what it is about in words: what cyclops was asked to look at, or to change
     said: str
 
     def line(self) -> str:
-        if self.by == "edit":
+        if self.by == "drawn":
+            # A diagram Cyclops drew. It is a jpg in photos/ like the rest, so it reaches the
+            # curator through the same list - but it is the one picture here that was asked for
+            # out loud, drawn on purpose and read, so say so plainly: it nearly always earns a
+            # slot, and its caption should say what it shows rather than when it was taken.
+            bits = [self.file, "a diagram Cyclops drew, asked for out loud and read at the bench"]
+            if self.focus:
+                bits.append(f"asked for: {self.focus}")
+        elif self.by == "edit":
             # Worth keeping like any other picture - it was asked for out loud and looked at -
             # but the curator has to know what it is, because it looks exactly like a photograph
             # of the bench and is not one. Nothing in it was measured.

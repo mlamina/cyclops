@@ -118,6 +118,31 @@ def test_an_empty_request_never_reaches_the_network(tmp_path) -> None:
         asyncio.run(imagine.edit(source, "   ", Settings(api_key="")))
 
 
+def test_a_diagram_with_nothing_described_never_reaches_the_network() -> None:
+    """The same guard as an edit's, and it matters more: a drawing costs eighty seconds."""
+    with pytest.raises(imagine.ImagineError):
+        asyncio.run(imagine.draw("   ", "a wiring diagram", Settings(api_key="")))
+
+
+def test_a_drawing_asked_for_at_the_panel_s_own_shape() -> None:
+    """The size is fixed rather than computed, so this is the one place it is written down twice.
+
+    Both edges must divide by 16 and the area must clear gpt-image-2's minimum pixel budget - the
+    two rules that make `size_for` non-obvious for edits. A drawing has no source photo to take a
+    shape from, so a typo here would simply be a 400 from the API in eighty seconds' time.
+    """
+    width, height = (int(n) for n in imagine.PANEL_SIZE.split("x"))
+    assert width % 16 == 0 and height % 16 == 0
+    assert width * height >= imagine.PIXEL_BUDGET
+    assert round(width / height, 2) == round(800 / 480, 2), "the panel's own 5:3, or it letterboxes"
+
+
+def test_a_drawing_with_no_style_note_still_asks_for_something() -> None:
+    """The tool makes `style` required, but a missing adjective must not cost the whole picture."""
+    prompt = imagine.DRAW_PROMPT.format(request="a relay", style="" or imagine.DEFAULT_STYLE)
+    assert "service-manual" in prompt
+
+
 def test_a_missing_photo_is_a_sayable_error_and_not_an_OSError(tmp_path) -> None:
     with pytest.raises(imagine.ImagineError) as raised:
         asyncio.run(imagine.edit(tmp_path / "gone.jpg", "paint it black", Settings(api_key="")))
@@ -205,22 +230,33 @@ def test_offer_image_writes_a_payload_the_page_can_read(panel_file) -> None:
     payload = json.loads(panel_file.read_text())
     assert payload["image"].startswith("data:image/jpeg;base64,")
     assert payload["title"] == "matt black doors"
-    assert payload[diagram.SPEC_NAME] is None, "the page branches on this to pick a renderer"
-    assert payload["svg"] is None, "there is no picture to send back; it came as one"
+    assert payload["drawn"] is False, "a photograph; the page lets a press put it away"
     assert payload["id"]
 
 
-def test_the_panel_can_tell_a_photograph_from_a_drawing(panel_file) -> None:
-    """What the sound on arrival keys off. A photo has already sounded the shutter; a drawing
-    has announced itself with nothing at all."""
-    diagram.offer_image(jpeg(64, 48), "18-08-39_you")
-    assert diagram.is_picture() is True
+def test_the_panel_is_told_which_arrivals_are_worth_a_sound(panel_file) -> None:
+    """What the cue on arrival keys off, and what the page's corner button keys off with it.
 
-    diagram.offer({"title": "the fuse box", "nodes": [], "wires": []})
-    assert diagram.is_picture() is False, "a drawing over a photo is still a drawing"
+    This is the test that stands where ``is_picture()`` used to. That asked whether the picture
+    was a photograph rather than a drawing, which stopped being a question the moment drawings
+    became photographs - it would have answered yes to everything and the panel would have gone
+    silent for good. The caller now says what it wants.
+    """
+    diagram.offer_image(jpeg(64, 48), "18-08-39_you")
+    assert diagram.announces() is False, "the shutter already said so a beat ago"
+
+    diagram.offer_image(jpeg(64, 48), "the fuse box", drawn=True)
+    assert diagram.announces() is True, "a drawing had nothing else to announce it"
+    assert json.loads(panel_file.read_text())["drawn"] is True
 
     diagram.offer_image(jpeg(64, 48), "paint the doors matt black")
-    assert diagram.is_picture() is True, "...and a photo back over that is a photo again"
+    assert diagram.announces() is False, "...and a photo back over that is quiet again"
+
+
+def test_show_without_a_panel_is_false_not_an_error(monkeypatch) -> None:
+    """``uv run cyclops`` has a conversation and no screen. That is ordinary, not a failure."""
+    monkeypatch.setattr(diagram, "_panel", None)
+    assert diagram.show() is False
 
 
 def test_two_offers_never_share_an_id(panel_file) -> None:
@@ -345,32 +381,28 @@ def test_nothing_shown_yet_still_asks_for_the_shutter(voice) -> None:
     assert "SNAP" in output["note"], "the one thing they can do about it"
 
 
-def test_a_drawing_on_the_panel_is_not_edited_as_if_it_were_a_photo(voice) -> None:
-    """The failure this slot exists to prevent.
+def test_a_drawing_on_the_panel_is_edited_like_any_other_picture(voice) -> None:
+    """The opposite of what this slot used to assert, and the change is the point.
 
-    A diagram takes the panel through the same show() a photo does. If it left the previous
-    photograph in the slot, "change that" would redraw a picture nobody is looking at and put the
-    result up as though it had answered - and it would be an image model painting over a drawing
-    whose whole value is that it was checked against a schema.
+    A drawing was once a JSON spec with no file behind it, so the slot held ``Panel(None,
+    "diagram")`` and an edit had nothing to send: it refused, and named draw_diagram. A drawing
+    is a jpg in photos/ now, so "make that clearer, drop the status LED" is an ordinary edit of
+    an ordinary picture.
     """
     made, _ = voice
-    made._on_panel = agent.Panel(Path("/cyclops/photos/12-00-00_you.jpg"), "photo")
-    made._note_panel({"ok": True, "title": "the fuse box", "shown": True})
-    assert made._on_panel == agent.Panel(None, "diagram")
+    made._on_panel = agent.Panel(Path("/cyclops/photos/12-00-00_drawn.jpg"), "drawn")
+    output = edit_result(made)
+    assert "was never kept" not in str(output.get("error", "")), "it has a file; it can be sent"
 
+
+def test_a_picture_that_was_never_written_down_is_not_edited(voice) -> None:
+    """What is left of the guard: the slot can still hold something with no file behind it -
+    a picture shown with no session running - and there is nothing to send for that."""
+    made, _ = voice
+    made._on_panel = agent.Panel(None, "drawn")
     output = edit_result(made)
     assert output["ok"] is False
-    assert "draw_diagram" in output["note"], "it names the tool that can change it"
-
-
-def test_a_drawing_nobody_could_see_leaves_the_photo_where_it_was(voice) -> None:
-    """No panel free means no drawing on it, so the photograph is still the thing in front of
-    them - and still the thing to edit."""
-    made, _ = voice
-    photo = agent.Panel(Path("/cyclops/photos/12-00-00_you.jpg"), "photo")
-    made._on_panel = photo
-    made._note_panel({"ok": True, "title": "the fuse box", "shown": False})
-    assert made._on_panel is photo
+    assert "SNAP" in output["note"], "the one thing they can do about it"
 
 
 def test_nothing_is_sent_once_the_socket_has_gone(voice) -> None:

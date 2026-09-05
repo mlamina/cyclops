@@ -13,24 +13,14 @@ from __future__ import annotations
 
 import base64
 import json
-import shutil
-import subprocess
 from pathlib import Path
 
 import cv2
 import numpy as np
-import pytest
 
 from cyclops import still
 
 PANEL = (800, 480)  # the official 7" panel, and what a screen recording is
-
-SVG = (
-    '<svg xmlns="http://www.w3.org/2000/svg" width="800" height="480">'
-    '<rect width="100%" height="100%" fill="#050f0a"/>'
-    '<rect x="40" y="40" width="200" height="80" fill="#ff0000"/></svg>'
-)
-
 
 def offer(tmp_path: Path, payload: dict) -> Path:
     path = tmp_path / "diagram.json"
@@ -45,22 +35,12 @@ def jpeg_url(width: int, height: int, colour: tuple[int, int, int]) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(blob.tobytes()).decode("ascii")
 
 
-def has_librsvg() -> bool:
-    """Whether the ffmpeg on this machine can read an SVG at all - the Pi's can; a Mac's may not."""
-    if shutil.which("ffmpeg") is None:
-        return False
-    done = subprocess.run(
-        ["ffmpeg", "-hide_banner", "-decoders"], capture_output=True, check=False
-    )
-    return b"librsvg" in done.stdout
-
-
 # ---- a photo ----
 
 
 def test_a_photo_comes_back_at_the_panels_size(tmp_path: Path) -> None:
     path = offer(tmp_path, {"title": "bench", "image": jpeg_url(*PANEL, (20, 30, 200))})
-    frame = still.of_panel(*PANEL, payload_path=path, svg_path=tmp_path / "none.svg")
+    frame = still.of_panel(*PANEL, payload_path=path)
     assert frame is not None
     assert frame.shape == (PANEL[1], PANEL[0], 3)  # what the encoder was opened at
     assert frame.dtype == np.uint8
@@ -69,7 +49,7 @@ def test_a_photo_comes_back_at_the_panels_size(tmp_path: Path) -> None:
 def test_a_photo_is_letterboxed_and_not_stretched(tmp_path: Path) -> None:
     """The page fits it with object-fit: contain, so this does too - see diagram.css."""
     path = offer(tmp_path, {"image": jpeg_url(480, 480, (20, 30, 200))})  # square, on a 5:3 panel
-    frame = still.of_panel(*PANEL, payload_path=path, svg_path=tmp_path / "none.svg")
+    frame = still.of_panel(*PANEL, payload_path=path)
     assert frame is not None
     # 480x480 fits the panel's height, so it lands 480 wide with 160 either side of it.
     assert tuple(int(v) for v in frame[240, 10]) == still.SCREEN_BGR  # the letterbox, not black
@@ -80,35 +60,25 @@ def test_a_photo_is_letterboxed_and_not_stretched(tmp_path: Path) -> None:
 
 def test_a_photo_larger_than_the_panel_keeps_its_shape(tmp_path: Path) -> None:
     path = offer(tmp_path, {"image": jpeg_url(1024, 768, (200, 200, 200))})
-    frame = still.of_panel(*PANEL, payload_path=path, svg_path=tmp_path / "none.svg")
+    frame = still.of_panel(*PANEL, payload_path=path)
     assert frame is not None
     # 4:3 into 5:3: 640x480, so the bars are 80 wide and the top row is picture, not letterbox.
     assert tuple(int(v) for v in frame[240, 5]) == still.SCREEN_BGR
     assert tuple(int(v) for v in frame[0, 400]) != still.SCREEN_BGR
 
 
-# ---- a drawing ----
+# ---- a payload with no picture in it ----
 
 
-@pytest.mark.skipif(not has_librsvg(), reason="this ffmpeg cannot read an SVG (the Pi's can)")
-def test_a_drawing_is_rasterised_from_what_the_page_handed_back(tmp_path: Path) -> None:
-    svg = tmp_path / "panel.svg"
-    svg.write_text(SVG)
-    path = offer(tmp_path, {"title": "relay", "spec": {"nodes": []}})
-    frame = still.of_panel(*PANEL, payload_path=path, svg_path=svg)
-    assert frame is not None
-    assert frame.shape == (PANEL[1], PANEL[0], 3)
-    assert tuple(int(v) for v in frame[80, 140]) == (0, 0, 255)  # the red rect, in BGR
-    assert tuple(int(v) for v in frame[400, 400]) == still.SCREEN_BGR  # the page's own ground
+def test_a_payload_with_no_image_is_black_and_not_the_last_one(tmp_path: Path) -> None:
+    """The kiosk clears the file before it asks; this is what that clearing has to mean.
 
-
-def test_a_drawing_that_never_arrived_is_black_and_not_the_last_one(tmp_path: Path) -> None:
-    """The kiosk clears the file before it asks; this is what that clearing has to mean."""
-    path = offer(tmp_path, {"title": "relay", "spec": {"nodes": []}})
-    assert still.of_panel(*PANEL, payload_path=path, svg_path=tmp_path / "gone.svg") is None
-    empty = tmp_path / "panel.svg"
-    empty.write_bytes(b"")
-    assert still.of_panel(*PANEL, payload_path=path, svg_path=empty) is None
+    There used to be a second branch here. A diagram was a JSON spec the page laid out and handed
+    back as an SVG, and this rasterised that with ffmpeg. Everything on the panel is a jpeg data
+    URL now, so a payload without one has nothing behind it at all.
+    """
+    path = offer(tmp_path, {"title": "relay"})
+    assert still.of_panel(*PANEL, payload_path=path) is None
 
 
 # ---- nothing to show ----
@@ -129,6 +99,6 @@ def test_a_payload_that_is_not_one_is_none(tmp_path: Path) -> None:
 
 def test_an_image_that_will_not_decode_is_none(tmp_path: Path) -> None:
     path = offer(tmp_path, {"image": "data:image/jpeg;base64,bm90IGEgamJlZw=="})
-    assert still.of_panel(*PANEL, payload_path=path, svg_path=tmp_path / "none.svg") is None
+    assert still.of_panel(*PANEL, payload_path=path) is None
     path = offer(tmp_path, {"image": "https://example.invalid/photo.jpg"})
-    assert still.of_panel(*PANEL, payload_path=path, svg_path=tmp_path / "none.svg") is None
+    assert still.of_panel(*PANEL, payload_path=path) is None

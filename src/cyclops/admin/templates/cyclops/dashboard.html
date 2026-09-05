@@ -75,8 +75,6 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
       {% endif %}
     </nav>
   </header>
-  <!-- Outside the header on purpose: a diagram hides the header, and this has to outlive it. -->
-  <span class="dtitle" id="dtitle"></span>
 
   <main class="view system">
     {% if local %}
@@ -240,17 +238,11 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
 
 {% if local %}
 {% comment %}
-Vendored, never a CDN - see static/NOTICE.md. Loaded for the kiosk's browser only: a laptop on
-the LAN has no panel to draw on, and 527 KB is a rude thing to hand it for a page of four numbers.
-
-Loaded eagerly rather than on the first diagram, which is the whole point of the warm browser:
-this parse happens once, at boot, while nobody is looking, so that when a drawing does arrive the
-only thing between it and the panel is the layout.
+The panel's own script: it polls for a picture and paints it. Kiosk only - a laptop on the LAN
+has no panel to paint. There were 527 KB of vendored bundles here until 2026-09-04, loaded
+eagerly at boot so that JointJS was already parsed when a diagram arrived. Diagrams are images
+now, so there is nothing to lay out and nothing to pre-parse.
 {% endcomment %}
-<script src="/static/joint.min.js"></script>
-<script src="/static/dagre.min.js"></script>
-<script>window.graphlib = window.dagre && window.dagre.graphlib;</script>
-<script src="/static/directed-graph.min.js"></script>
 <script src="/static/diagram.js?v={{ v }}"></script>
 {% endif %}
 </body>

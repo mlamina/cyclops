@@ -70,9 +70,8 @@ sessions/
       14-33-12_you.jpg
       14-33-05_edit.jpg      one of those redrawn with a change - see Imagining a change
       14-32-40_cyclops.jpg   (only on older cards - Cyclops used to hold its own shutter)
-    diagrams/
-      14-35-01_relay-driven-from-gpio.svg    the picture, embedded in session.md
-      14-35-01_relay-driven-from-gpio.json   the spec, so it can be drawn again
+      14-35-01_drawn.jpg     a diagram it drew - see Diagrams
+    diagrams/                (only on older cards - a diagram used to be a spec and an svg)
 ```
 
 `session.md` opens in any markdown viewer with both images inline and every line stamped as an
@@ -395,45 +394,43 @@ feature off — no sweep, and the two project tools aren't offered to the voice 
 ## Diagrams
 
 Some answers are a picture. Ask *"how do I wire this relay to GPIO 17"* and Cyclops draws it on
-the touchscreen — a wiring diagram with named pins and routed wires, a pinout, a block diagram, a
-flow or a state machine. It appears a few seconds later, fills the panel, and has the same
-full-width **Close** bar as the system page.
+the touchscreen — a wiring diagram in the idiom of a printed service manual, a pinout chart, a
+block diagram, an assembly sketch. It takes about a minute and a half, fills the panel when it
+lands, and keeps a small **Close** square in the corner rather than the full-width bar: a diagram
+is a thing you point at while you talk about it, so pressing it must not put it away.
 
-**The voice model does not draw it.** It calls `draw_diagram` with one sentence, and that sentence
-goes to a text model which returns a small JSON description — nodes, ports and wires. The panel
-translates that into shapes with [JointJS](https://www.jointjs.com). The model never writes
-JointJS and never writes coordinates for anything that does not need them: it says
-`{"type": "resistor", "label": "1k"}` and the zigzag lives in the template. That split is the
-whole reliability story, because it moves correctness onto a schema we validate ourselves in a
-millisecond — and a diagram that fails validation is redrawn once, with the complaint attached.
+**The voice model does not draw it.** It calls `draw_diagram` with two things — one sentence
+saying what to draw, with every value that matters in it, and a second saying what kind of
+drawing it should be. That second one is not a menu: the model is asked to name the conventions
+of whatever field the subject belongs to, because a diagram in the wrong idiom is read wrong. Ask
+for wires and terminals on a piece of software and the picture will invent terminals that do not
+exist. `gpt-image-2` draws it at `quality="high"`, which takes about eighty seconds.
 
-It draws boxes and wires, so it is good at connections and useless at shapes. A cutting list, a
-joinery detail or anything to scale is not something it can express, and it is told to say so
-rather than draw a wrong picture.
+**It is drawn, not checked.** Until 2026-09-04 this worked the other way round: a text model
+emitted a small JSON scene of nodes and wires, we validated it against a schema of our own, and
+[JointJS](https://www.jointjs.com) rendered it in the browser. That schema was the whole
+reliability story. It went because the pictures were worse — labels colliding with each other,
+boxes clipped off the edge of the panel — and the honest trade is written down here: nothing now
+distinguishes a wire drawn to the right pin from one drawn to the pin beside it. `draw_diagram`
+is told to say a connection out loud when getting it wrong would cost you a part, and nothing in
+a generated picture is to scale or measurable, whatever it looks like.
 
-**Diagrams are kept, like photos.** Each one lands in the session folder as a pair — the `.json`
-Cyclops re-reads and the `.svg` you open — and when the session is filed, *every* diagram is
-copied into the project:
+**A diagram is a photo.** It lands in the session's `photos/` as `14-35-01_drawn.jpg`, exactly
+where the shutter's `14-33-12_you.jpg` goes, and everything downstream already knew what to do
+with it: the index service captions it, `session.md` embeds it, the Media grid lists it, and the
+project sweep files it with the rest. There is no `diagrams/` folder any more and no second
+search path — ask *"put that relay wiring back up"* and `recall` finds it by meaning, like any
+other picture. Old cards keep their `diagrams/` and `Diagrams/` folders and the page still reads
+them; nothing new is written there.
 
-```
-projects/Pelican Display Mount/
-  Diagrams/
-    2026-08-29_19-40-12_relay-driven-from-gpio.svg    the picture, in the log entry
-    2026-08-29_19-40-12_relay-driven-from-gpio.json   the spec, so it can be put back up
-```
+Because it is a photo, `edit_photo` works on it too — *"drop the status LED"* edits the drawing
+in front of you. Bear in mind that an edit redraws every pixel including the lettering, so for
+anything whose labels matter, drawing it again is the safer move.
 
-Unlike photos there is no curator and no limit: a photo is a frame caught in passing and three of
-forty are worth keeping, but a diagram was asked for out loud and looked at. The svg carries its
-own dark background, so it opens the way it looked on the panel rather than as invisible green on
-white.
-
-Ask for one again — *"put that relay wiring back up"* — and `find_diagram` matches on the title
-and re-renders the stored spec. That is instant and costs no model call, which is also why it is
-preferred to drawing it twice: a redraw would come back subtly different.
-
-The three vendored bundles under `src/cyclops/admin/static/` - which also holds the page's own
-CSS and JS - are served from the Pi, never a CDN
-(see `NOTICE.md` there). Nothing about the panel needs the internet.
+The page's own CSS and JS under `src/cyclops/admin/static/` are served from the Pi, never a CDN.
+There used to be three vendored bundles there too — 527 KB of JointJS, dagre and a graph layout,
+parsed by the panel at boot; they went with the schema. Nothing about the panel needs the
+internet.
 
 ## Imagining a change
 
@@ -455,7 +452,8 @@ whole frame, so every pixel in the result is the model's, including the ones tha
 Nothing in it is measured and nothing in it is a fact about your hardware. That is why colour,
 finish, a part moved, a thing that is not there yet and *shown finished* are what it is for, and
 why connections, orientation and the order to assemble something are not: those are
-`draw_diagram`, whose output is checked against a schema we own before it is drawn.
+`draw_diagram`, which draws the answer from a description instead of painting over your
+hardware.
 
 **Cyclops is shown the result the moment it lands**, so it can tell you when the edit did not do
 what you asked rather than leaving you to notice. It is told not to describe it back — you are
@@ -635,7 +633,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `CYCLOPS_ABOUT_FILE`   | `about-you.md` | Where the standing facts about you are kept (relative to the CWD; `~` ok). |
 | `CYCLOPS_PROJECTS`     | `1`            | Keep `projects/` up to date, and offer Cyclops the `open_project` / `track_project` tools; `0` turns the whole feature off. |
 | `CYCLOPS_PROJECT_PHOTOS` | `3`          | Hero shots copied into a project per session; `0` keeps `Photos/` empty. |
-| `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them; `0` withholds both drawing tools. |
+| `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them with the photos; `0` withholds `draw_diagram`. |
 | `CYCLOPS_IMAGINE`      | `1`            | Let Cyclops redraw the last photo with a change and show it on the panel; `0` withholds `edit_photo`. |
 | `CYCLOPS_SOUNDS`       | `1`            | Cues: the box booting, waking and going to sleep, the shutter; `0` disables. |
 | `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |

@@ -30,28 +30,21 @@ PAGE_SERVED_FLAG = Path.home() / ".cache" / "cyclops" / "page-served"
 PAGE_ALIVE_FLAG = Path.home() / ".cache" / "cyclops" / "page-alive"
 
 # And where whatever the panel is being asked to show waits for it to notice. A diagram was the
-# first kind and gave the file its name; an imagined picture (cyclops.imagine) is the second, and
-# rides in the same payload under "image". This one holds the thing itself rather than being an
-# empty note, because the page has to render it and the two processes share no memory - and
-# because something made with no session running is never written to the card, so a path would
-# have nothing to point at. Written by whoever made it, read by the admin service, removed by the
-# kiosk when it takes the panel back: absent means "show the dashboard".
+# first kind and gave the file its name, back when one was a JSON scene the page laid out;
+# everything that goes on the glass now is a jpeg riding in this payload under "image" - a photo
+# off the shutter, one recalled from the card, an edit, a diagram (cyclops.imagine). This holds
+# the thing itself rather than being an empty note, because the page has to render it and the two
+# processes share no memory - and because something made with no session running is never written
+# to the card, so a path would have nothing to point at. Written by whoever made it, read by the
+# admin service, removed by the kiosk when it takes the panel back: absent means "show the
+# dashboard".
 DIAGRAM_FILE = Path.home() / ".cache" / "cyclops" / "diagram.json"
 
-# And where the page says it has actually painted that diagram. The kiosk waits for this before
+# And where the page says it has actually painted that picture. The kiosk waits for this before
 # uncovering the browser, exactly as it waits on PAGE_SERVED_FLAG at startup - without it the
-# panel would show the dashboard for as long as it takes JointJS to lay the drawing out, which
-# is the one moment somebody is watching.
+# panel would show the dashboard for as long as the picture takes to decode, which is the one
+# moment somebody is watching.
 DIAGRAM_SHOWN_FLAG = Path.home() / ".cache" / "cyclops" / "diagram-shown"
-
-# And where it leaves the drawing itself, once, for the recording rather than for the panel. A
-# session recording the screen samples what the kiosk paints, and while a diagram is up the kiosk
-# paints nothing - so the minutes somebody spent reading it used to watch back as black. The page
-# is the only thing that knows what the drawing looks like, because it is the one that laid it
-# out, and it already hands the SVG back in the note above; this is that copy, kept where the
-# kiosk can reach it without going near the card. See :mod:`cyclops.still`. A photo needs no
-# equivalent: it is already in DIAGRAM_FILE, whole.
-PANEL_SVG_FILE = Path.home() / ".cache" / "cyclops" / "panel.svg"
 
 # And where it leaves the output volume it wants. Same reason it cannot just set it itself:
 # the service runs with PrivateDevices=yes and has no /dev/snd, and at boot there is no user
@@ -125,7 +118,7 @@ class Settings:
     slug: bool = True  # name each finished session from its transcript (cyclops.slug)
     remember: bool = True  # keep about-you.md up to date from what is said (cyclops.about)
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
-    diagrams: bool = True  # offer the drawing tools, and keep what they draw (cyclops.diagram)
+    diagrams: bool = True  # offer draw_diagram, and keep what it draws in photos/
     recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
     imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty

@@ -279,6 +279,10 @@ seconds in with nothing being said is not.
 Prefer the thing itself once, a detail that was being argued about, a problem, or visible
 progress. Avoid near-duplicates taken seconds apart, and shots with no conversation around them.
 
+One of these may be a diagram Cyclops drew rather than a photograph anybody took - the line says
+so. A diagram was asked for out loud, drawn on purpose and read, so it is nearly always worth one
+of the slots, ahead of a bench shot that merely happened. Caption it by what it shows.
+
 Captions are for someone scrolling a folder in a year: "The mitre joint, not flush" beats "a
 photo of the model". No dates, no filenames, no "photo of".
 

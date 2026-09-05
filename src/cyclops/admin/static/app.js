@@ -1,19 +1,23 @@
 /* The card, in the browser: seven screens, one document, no navigation.
 
-   The kiosk's browser must never navigate - it is warm, already pointed here, holding a parsed
-   527 KB of JointJS and a 400 ms watch on the panel, and spawning it costs 1.4 s against the
-   2 ms this page costs (kiosk.py). So the hash picks a view and a body class shows it.
+   The kiosk's browser must never navigate - it is warm, already pointed here, holding a 400 ms
+   watch on the panel, and spawning it costs 1.4 s against the 2 ms this page costs (kiosk.py).
+   So the hash picks a view and a body class shows it.
 
-   Plain DOM throughout. There is no build step here and no CDN to reach for (NOTICE.md), and
-   the panel has no internet to reach one over.
+   Plain DOM throughout. There is no build step here and nothing vendored any more - the 527 KB
+   of JointJS this used to mention came out with the drawing schema - and the panel has no
+   internet to reach a CDN over.
 
-   Publishes window.__drawing, which diagram.js calls when a drawing takes the panel. */
+   Publishes window.__drawing, which diagram.js calls when a picture takes the panel.
+
+   The `kind === 'diagram'` branches below are for records already on the card. Nothing writes
+   one now; a diagram is a photo record with by="drawn". */
 
 // ---------------------------------------------------------------- the card, in the browser
 //
 // Four screens, one document, no navigation - see the .view rules. Everything below is plain
-// DOM: there is no build step here and no CDN to reach for (static/NOTICE.md), and the panel
-// has no internet to reach one over.
+// DOM: there is no build step here and nothing vendored to reach for, and the panel has no
+// internet to reach a CDN over.
 
 // The narrow layout does not *hide* the transcript, it never asks the server for it, which is
 // the whole of "everything on the desktop, only the video on the panel".
@@ -191,8 +195,13 @@ function aside(record) {
            ' → ' + (record.hits ? record.hits + ' found' : 'nothing written down');
   }
   if (kind === 'photo') {
-    // A picture Cyclops drew from an earlier one, not one anybody took. Same record type
-    // because it is a jpg in photos/ like any other; `by` is what tells them apart.
+    // Two of these are pictures Cyclops made rather than ones anybody took. Same record type
+    // because they are jpgs in photos/ like any other; `by` is what tells them apart.
+    if (record.by === 'drawn') {
+      const asked = '"' + esc(record.request || '') + '"';
+      if (record.error) return 'Tried to draw — ' + asked + ' → failed';
+      return 'Drew a diagram — ' + asked;
+    }
     if (record.by === 'edit') {
       const what = '"' + esc(record.request || '') + '"';
       if (record.error) return 'Tried to imagine a change — ' + what + ' → failed';
@@ -222,7 +231,7 @@ function line(record) {
   if (record.url) {
     shot = '<img class="inline" loading="lazy" draggable="false" src="' +
            esc(record.url) + '" alt="">';
-  } else if (kind === 'diagram' && !record.error && !record.found) {
+  } else if (kind === 'diagram' && !record.error && !record.found) {  // old cards only
     shot = '<div class="who">the panel never sent the picture back</div>';
   }
   return '<div class="line ' + (kind === 'error' ? 'bad' : '') + '" data-t="' + (record.t || 0) + '">' +
