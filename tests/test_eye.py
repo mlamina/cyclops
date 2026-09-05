@@ -378,10 +378,21 @@ def test_a_mood_with_no_breath_does_not_divide_by_it() -> None:
 
 
 def _face(ov: overlay.Overlay, frame: np.ndarray) -> np.ndarray:
-    """Just him, cropped square out of a rendered frame."""
+    """Just him: a square crop out of a rendered frame, blanked outside his own rim.
+
+    The blanking is not tidiness. A square around a circle has four corners of something else in
+    it, and since the collar went round him that something else is opaque steel wearing the
+    chrome's green - so a mood's colour measured over the raw square is measured over a housing
+    that never changes colour, and his red fault face reads as amber. His rim is the boundary
+    every one of these measurements means by "him"; this is just it being said in the crop rather
+    than assumed by the threshold.
+    """
     cx, cy = ov.eye
     r = ov.eye_r
-    return frame[cy - r : cy + r, cx - r : cx + r]
+    crop = frame[cy - r : cy + r, cx - r : cx + r].copy()
+    yy, xx = np.mgrid[0 : crop.shape[0], 0 : crop.shape[1]]
+    crop[(xx - r + 0.5) ** 2 + (yy - r + 0.5) ** 2 > r * r] = 0
+    return crop
 
 
 def _lit(crop: np.ndarray) -> int:

@@ -552,9 +552,31 @@ TERM_PAD = 6.0  # inside the screen, above the first line and below the last
 EYE_R = 0.1833  # 88 px at 800x480, against 60 in the row this replaced
 EYE_SHOULDER = 16.0  # reference px between his rim and the rail's centreline round him
 EYE_SEAT = 0.5
-EYE_PLATE_ALPHA = 205  # the disc behind him, and the same alpha the terminal's glass gets:
-# both are a hole in a housing rather than something laid over the picture. A porthole you
-# cannot see through is not a porthole
+EYE_PLATE_ALPHA = 255  # the body behind him, and the one thing on this panel that is not a hole
+# in a housing. It sat at the terminal's own 205 for a while on the porthole argument - that a
+# window you cannot see through is not a window - and the argument was about the wrong object.
+# What is drawn inside this circle is a mechanism, not a view: an iris, a stator, a knurled ring,
+# and between every one of them the tile he is painted from is empty. At 205 the room came
+# through all of it, and the one part of the panel that is supposed to be a machine was the only
+# part you could see the wall through. He is solid now, and the reticle in the middle of the
+# picture is where the seeing-through belongs.
+
+# The body runs out to the swell rather than to his rim. Between those two there used to be
+# sixteen pixels of translucent plate with the rail's inner edge floating over it, and that strip
+# is where the collar goes: the barrel he is seated in, drawn from the rail's own profile so the
+# housing and the bracket that straps over it are visibly the same alloy.
+COLLAR_IN = 0.86  # the collar's inner flank, as a fraction of the swell
+# Where the loom leaves him, in PIL's degrees - straight at the panel's own corner, because that
+# is the only direction with any run in it. His swell comes within three pixels of both the left
+# edge and the bottom one, so the pocket between him and the corner is the whole cable budget:
+# about 47 px at 800x480, which is enough for a gland and three cables and nothing else.
+GLAND_AT = 135.0
+LOOM_N = 3
+LOOM_FAN = 11.0  # degrees between one cable and the next
+LOOM_REACH = 70.0  # reference px, which is past the corner: they are meant to leave the panel
+# The mount points, in the arc the bracket's rail does not already cover - it comes round him
+# from -105 to +15, and these two are what say the rest of the collar is bolted down as well.
+COLLAR_BOLTS = (72.0, 198.0)
 
 # The two instruments, bolted straight through the small bracket's rail rather than sitting in a
 # plate of their own. Neither has a word: a dial that needs a label is the wrong dial, and the
@@ -1207,10 +1229,12 @@ class Overlay:
     def _bracket_mask(self, tags: int) -> np.ndarray:
         """Where the chrome is, as 0..1 - the plates, less the disc his face fills.
 
-        His plate is what backs him instead, and it is the same all the way round; without this
-        the wash's own edge would run across his face as a tide line. The switches keep the wash
-        under them, because their wells are opaque enough not to care and cutting two more holes
-        in a mask is two more edges to land in the wrong place.
+        His body is what backs him instead, and it is the same all the way round; without this
+        the wash's own edge would run across his face as a tide line. Cut at the swell rather than
+        at his rim, so the hole matches what :meth:`_build_plate` fills: he is opaque out to there
+        now, and a wash computed under an opaque disc is a wash nobody will ever see. The switches
+        keep the wash under them, because their wells are opaque enough not to care and cutting
+        two more holes in a mask is two more edges to land in the wrong place.
         """
         plate = Image.new("L", (self.width, self.height), 0)
         d = ImageDraw.Draw(plate)
@@ -1223,7 +1247,7 @@ class Overlay:
                     fill=255)
         holes = Image.new("L", (self.width, self.height), 0)
         hd = ImageDraw.Draw(holes)
-        cx, cy, r = *self.eye, self.eye_r
+        cx, cy, r = *self.eye, self.shoulder
         hd.ellipse([cx - r, cy - r, cx + r, cy + r], fill=255)
         inside = np.asarray(plate, np.float32) / 255.0
         inside *= 1.0 - np.asarray(holes, np.float32) / 255.0
@@ -1263,19 +1287,25 @@ class Overlay:
         return cached
 
     def _build_plate(self) -> Image.Image:
-        """The disc behind the eye, on its own layer under the chrome.
+        """His body: the solid disc he is drawn on, on its own layer under the chrome.
 
-        The same argument the terminal's glass makes: he is drawn in thin rings over a live
-        camera, and a green hairline over whatever the lens is pointed at is a coin toss. He and
-        the screen sit at the same alpha and for the same reason - each is a hole in a housing
-        rather than something laid over the picture, and the room may ghost through both.
+        This is not the terminal's glass and does not share its argument. The screen is a window
+        onto a line of text and may let the room through; this is the face of a machine, and the
+        room coming through a machine is the one thing that stops it being one. He is nothing but
+        thin rings with empty tile between them, so at anything short of opaque the camera ran
+        through his iris, his stator and the gaps between every ring of him at once.
+
+        Out to the *swell* rather than to his rim, because that is where the collar picks the body
+        up - see :meth:`_draw_collar`. Filled to the rim instead and there is a ring of translucent
+        plate left over between his rim and the collar's inner flank, which reads as a gap round
+        the lens rather than as the barrel it is standing in.
 
         A separate layer rather than part of :meth:`_build_chrome`, because that one blurs its own
         alpha to make the bloom, and a filled disc this size through a Gaussian blur is not a
         glow, it is a lamp.
         """
         layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        cx, cy, r = *self.eye, self.eye_r
+        cx, cy, r = *self.eye, self.shoulder
         ImageDraw.Draw(layer).ellipse(
             [cx - r, cy - r, cx + r, cy + r], fill=(*SCREEN, EYE_PLATE_ALPHA)
         )
@@ -1299,8 +1329,17 @@ class Overlay:
         # is what buries an end of it. Order is the whole illusion: drawn last this is a box lying
         # on the panel, and drawn first it is a box behind it.
         self._draw_terminal(layer)
+        # ...then his collar, and only then the mounts, so the left one's rail straps *over* the
+        # barrel where the two share an arc. The other way round the collar's own rings are
+        # written across the inner half of the rail and the joint comes apart.
+        self._draw_collar(layer)
         for bracket in self.brackets.values():
             self._draw_bracket(layer, bracket)
+        # The loom after the mounts and not before them, which is the opposite of the terminal's
+        # rule and for the opposite reason: nothing is meant to bury these except the gland. Drawn
+        # first, the corner's own webbing and the rail's cast shadow simply write over the top of
+        # them - ImageDraw writes rather than composites - and the cables vanish.
+        self._draw_loom(layer)
         self._draw_reticle(layer)
         # The two dial faces, which used to be baked once per state with the switches they
         # replace. Neither wears the state's accent - a volume and a board temperature are true
@@ -1402,10 +1441,16 @@ class Overlay:
         which is the one thing this layout is spending its corners to avoid. The pod has none:
         webbing braces a corner against a load, and a module hanging off the middle of an edge
         has no corner and nothing to brace.
+
+        Nor does the one with a face on it. The loom leaves his housing into that same corner and
+        there is about forty pixels of it, so webbing and cables in there together is not two
+        details, it is a thicket - and of the two, the thing that says where the power goes wins
+        over the thing that says the corner is stiff. `seats` is what asks the question, because
+        the left mount is the only bracket that has one.
         """
         d = ImageDraw.Draw(layer)
         corner, a, b = bracket.corner, bracket.spine[0], bracket.spine[-1]
-        for i in range(RIB_N if corner else 0):
+        for i in range(RIB_N if corner and not bracket.seats else 0):
             t = 0.15 + 0.075 * i
             d.line(
                 [(corner[0] + (a[0] - corner[0]) * t, corner[1] + (a[1] - corner[1]) * t),
@@ -1423,6 +1468,110 @@ class Overlay:
             p0, p1, _, _ = bracket.shoulder(seat)
             self._draw_bolt(d, *p0, self.bolt_r - 1)
             self._draw_bolt(d, *p1, self.bolt_r - 1)
+
+    def _draw_collar(self, layer: Image.Image) -> None:
+        """The barrel he is seated in: the rail's own profile, bent into a ring.
+
+        A solid disc on its own is not an object, it is a hole - it has a silhouette and no
+        thickness. What makes him a thing sunk into the panel is the band round the outside of
+        him, and it is built from :meth:`_rail_colour` for the same reason the bolts are borrowed
+        from the bracket: the housing and the mount that straps over it have to be the same alloy
+        or the join reads as two drawings rather than as one assembly.
+
+        Concentric strokes rather than an extrusion. :meth:`_draw_rail` offsets a path, which
+        works on anything open and folds into itself on a closed loop this tight; a ring is the
+        one case where the offsets are just circles, so they are drawn as circles.
+
+        Inside the flank it drops a blurred shadow onto his face. That is where most of the depth
+        actually comes from - and it is only visible because the tile he is painted from is empty
+        between his rings, so a shadow laid down under him shows through the gaps.
+        """
+        cx, cy = self.eye
+        out = float(self.shoulder)
+        inn = out * COLLAR_IN
+        d = ImageDraw.Draw(layer)
+        steps = max(2, round(out - inn))
+        for i in range(steps):
+            r = inn + (out - inn) * (i + 0.5) / steps
+            d.ellipse([cx - r, cy - r, cx + r, cy + r],
+                      outline=(*self._rail_colour((r - inn) / (out - inn)), 255), width=2)
+        # The lit lip and the flank, crisp on top of the bands they end - the same two strokes
+        # that finish a rail, and for the same reason.
+        d.ellipse([cx - out + 0.6, cy - out + 0.6, cx + out - 0.6, cy + out - 0.6],
+                  outline=(*mix(GREEN_MID, GREEN, 0.5), 255), width=2)
+        d.ellipse([cx - inn, cy - inn, cx + inn, cy + inn], outline=(*SCREEN, 240), width=2)
+        shade = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        drop = max(2, round(3 * self.scale))
+        ImageDraw.Draw(shade).ellipse(
+            [cx - inn + drop, cy - inn + drop, cx + inn - drop, cy + inn - drop],
+            outline=(0, 0, 0, 170), width=max(3, round(7 * self.scale)),
+        )
+        layer.alpha_composite(shade.filter(ImageFilter.GaussianBlur(max(1.5, 4.0 * self.scale))))
+        # ...and the mount points, in the arc the rail never reaches. The bracket bolts its own
+        # two where the rail leaves the straight; without these the far side of the collar is a
+        # ring resting against him rather than a housing fastened down all the way round.
+        d = ImageDraw.Draw(layer)
+        mid = (inn + out) / 2.0
+        for deg in COLLAR_BOLTS:
+            a = math.radians(deg)
+            self._draw_bolt(d, cx + mid * math.cos(a), cy + mid * math.sin(a), self.bolt_r - 1)
+
+    def _draw_loom(self, layer: Image.Image) -> None:
+        """The cables leaving his housing for the corner, and off the panel.
+
+        A camera on a bracket has something coming out of the back of it, and until now he was the
+        one piece of equipment here that was fed by nothing. The run is short by necessity - his
+        swell is three pixels off both edges down there, so the pocket between him and the corner
+        is all there is - and short is fine, because what the cables have to do is leave. They are
+        drawn past the panel's edge on purpose: a loom that stops inside the frame is a loom with
+        an end, and an end wants a connector on it.
+
+        Each cable is a black stroke, a steel body over it and a lit hairline along the top, which
+        is the cheapest thing that reads as round rather than as a line. The gland goes on last
+        and is what every one of them starts under - none of them has a beginning, the same way
+        the terminal's rail has no ends.
+        """
+        cx, cy = self.eye
+        aim = math.radians(GLAND_AT)
+        d = ImageDraw.Draw(layer)
+        w = max(3, round(9 * self.scale))
+        for i in range(LOOM_N):
+            a = aim + math.radians(LOOM_FAN) * (i - (LOOM_N - 1) / 2.0)
+            along, across = (math.cos(a), math.sin(a)), (-math.sin(a), math.cos(a))
+            # From inside the collar, so the gland has something to cover rather than to butt
+            # against, and with a little sag - three cables leaving on exactly parallel lines is
+            # a ribbon, and this is a bundle.
+            root = (cx + (self.shoulder - w) * along[0], cy + (self.shoulder - w) * along[1])
+            sag = (LOOM_N - 1 - i) * 2.5 * self.scale
+            reach = LOOM_REACH * self.scale
+            pts = [
+                (root[0] + along[0] * reach * t + across[0] * sag * math.sin(math.pi * t),
+                 root[1] + along[1] * reach * t + across[1] * sag * math.sin(math.pi * t))
+                for t in (k / 12.0 for k in range(13))
+            ]
+            d.line(pts, fill=(0, 0, 0, 150), width=w + 4, joint="curve")
+            d.line(pts, fill=(*mix(GREEN_MID, SCREEN, 0.62), 255), width=w, joint="curve")
+            d.line([(x - 1, y - 1) for x, y in pts],
+                   fill=(*mix(GREEN_MID, GREEN, 0.25), 235), width=max(1, w // 3), joint="curve")
+        g = max(8, round(17 * self.scale))
+        seat = (cx + (self.shoulder - g * 0.35) * math.cos(aim),
+                cy + (self.shoulder - g * 0.35) * math.sin(aim))
+        along, across = (math.cos(aim), math.sin(aim)), (-math.sin(aim), math.cos(aim))
+        # Slightly wider where it meets the collar than where the cables leave it, so it reads as
+        # a fitting screwed into the housing rather than as a block sitting on top of one.
+        corners = [
+            (seat[0] - along[0] * g * 0.7 + across[0] * g * 0.8,
+             seat[1] - along[1] * g * 0.7 + across[1] * g * 0.8),
+            (seat[0] + along[0] * g * 0.7 + across[0] * g * 0.62,
+             seat[1] + along[1] * g * 0.7 + across[1] * g * 0.62),
+            (seat[0] + along[0] * g * 0.7 - across[0] * g * 0.62,
+             seat[1] + along[1] * g * 0.7 - across[1] * g * 0.62),
+            (seat[0] - along[0] * g * 0.7 - across[0] * g * 0.8,
+             seat[1] - along[1] * g * 0.7 - across[1] * g * 0.8),
+        ]
+        d.polygon(corners, fill=(*mix(GREEN_MID, SCREEN, 0.62), 255),
+                  outline=(*mix(GREEN_MID, GREEN, 0.45), 240))
+        d.line([corners[0], corners[3]], fill=(*mix(GREEN_MID, GREEN, 0.6), 250), width=2)
 
     def _draw_reticle(self, layer: Image.Image) -> None:
         """Four right-angled corners on the lens axis, and nothing in the middle of them.
