@@ -6,20 +6,30 @@ shapes, a numpy-built halo and scanline field - and handed to :mod:`cyclops.kios
 array to alpha-blend onto the frame. Geometry doubles as the hit-test map: every interactive
 element returns its rectangle, so a tap can be resolved without a second layout.
 
-The layout is two corner mounts, a status pod and a picture. A mount's rail comes in square to
-one panel edge, ramps across the corner at 45 degrees and lands square on the other, and the two
-of them carry the three controls; the pod is that same shape turned inwards, hanging off the
-middle of the top edge with the readouts in it. This replaced a strip and a three-cell tab row
-that between them covered 29% of the panel - the chrome here covers 16%, and the middle of
-the screen, which is what somebody holding a camera down a pipe is actually looking at, is
-nothing but picture and a four-arc reticle on the lens axis.
+The layout is two corner mounts, a status pod, a terminal and a picture. A mount's rail comes in
+square to one panel edge, ramps across the corner at 45 degrees and lands square on the other,
+and the two of them carry the three controls; the pod is that same shape turned inwards, hanging
+off the middle of the top edge with the readouts in it; and the terminal is a chassis bolted
+between the two mounts along the bottom, with the caption printed on its screen. The middle of
+the panel, which is what somebody holding a camera down a pipe is actually looking at, is nothing
+but picture and a four-arc reticle on the lens axis.
+
+The chrome covers 22% of the panel, against 29% for the strip and three-cell tab row this layout
+replaced. That is a much thinner win than it was - it was 15% before the terminal arrived, which
+took the caption off the middle of the picture and put eight per cent of chassis along the bottom
+to do it - and it is only a win at all because of what *kind* of coverage each is. The tab row
+was an opaque near-black bar. Everything here is the tube filter over the live picture, so the
+room runs behind the metal as well as between it; the only parts you cannot see through are the
+terminal's glass and the wells the two dials are sunk into. Re-measure with
+`Overlay(800, 480)._bracket_mask(0).mean()` rather than reasoning about it, which is how both of
+the numbers on this line came to be wrong for a while.
 
 What made that affordable was giving up the words. SNAP, WAKE UP and GO TO SLEEP were what
 forced the controls into a row across the bottom: a cell has to be as wide as its label. Two
 dials and a face need a disc each, and a disc can go in a corner. What the words used to say is
-said by the ring in the button, by the border's colour, and by the line under
-the picture - which can say "searching the web…" where a word could only say SEARCH. The state
-word went the same way and for the same reason: three things were already saying it better.
+said by the ring in the button, by the border's colour, and by the terminal along the bottom -
+which can say "searching the web…" where a word could only say SEARCH. The state word went the
+same way and for the same reason: three things were already saying it better.
 
 A bracket is drawn to look like one. The rail is an extrusion rather than a stroke - a shadow
 cast inwards onto the plate, then a profile across its width: a lit chamfer on the outer lip, a
@@ -390,22 +400,28 @@ MOODS = {
 }
 
 # A caption that ends in an ellipsis is a caption that moves, and that is the whole test the line
-# uses: "searching the web…" walks its dots, "listening — talk to me" holds still. Every phrase
+# uses: "searching the web…" gets a blinking cursor, "listening — talk to me" holds still. Every
+# phrase
 # the controller publishes obeys the same rule, which is why none of them has to say twice whether
 # it is a job or a state. Nearly always that means work in flight; the exception is the snore,
 # which is not work but is just as much a thing going on.
 BUSY_MARK = "…"
 MARKER = "› "  # what every caption opens with, and the smallest thing that wears the accent
-CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead. One line meant
-# every phrase worth reading - a fault, a search, what a tool is doing - was trimmed to a stub
-# ending in an ellipsis, in a bubble with most of the picture's width still free beside it. Two
-# is where it stops: a third would have the bubble standing taller than his head, and a caption
-# that big is a dialogue box rather than something said in passing.
+CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead, and now also
+# how deep the terminal's screen is - the glass is cut to its text rather than the other way
+# round. One line meant every phrase worth reading - a fault, a search, what a tool is doing -
+# was trimmed to a stub ending in an ellipsis with most of the panel's width still free beside
+# it. Two is where it stops: a third is a screen deep enough to start eating the picture, and a
+# caption that big is a dialogue box rather than something said in passing.
 CAPTION_ALPHA = 245
-CAPTION_DOTS = 3
-DOT_PERIOD_S = 1.2  # one sweep of the three dots...
+CURSOR = "_"  # what a line about work in flight ends in: a cursor, blinking, hard against the
+# last letter. It was three dots walking up and starting over for a long time, which is the same
+# sentence in a language this panel does not speak any more - the line is printed on a terminal
+# now, and a terminal that has not finished says so with a cursor. It costs a character where the
+# dots cost three, and it means the thing everybody has read it to mean since a VT100.
+CURSOR_PERIOD_S = 1.2  # one blink of it, half on and half off...
 BREATH_PERIOD_S = 2.4  # ...and one breath of the phosphor, at half that rate so the two never lock
-BREATH_DEPTH = 0.30  # how far the text sinks towards the slab at the bottom of a breath
+BREATH_DEPTH = 0.30  # how far the text sinks towards the glass at the bottom of a breath
 
 HALO_CORE = 0.004  # fraction of the height held at full brightness, hard against the edge
 HALO_FALLOFF = 0.024  # and how far the light reaches inwards before it is gone
@@ -420,13 +436,16 @@ VIGNETTE_ALPHA = 0.42
 # see what is at the bottom of. The brackets carry the filter and nothing else, so the picture
 # runs edge to edge behind them and the chrome earns its contrast from its own opaque glyphs
 # rather than from a bar.
-PLATE_ALPHA = 170  # the one dark backing left: the caption bubble, which sits on the picture.
-# Backing rather than a bar: it is there to stop white-on-anything, and every point of alpha past
-# what that needs is a point of the room taken away from somebody holding a camera down a pipe to
-# look at it. The edge below is what carries the shape, so the fill can afford to be thin.
-BUBBLE_EDGE_ALPHA = 215  # ...and the outline, which stays nearly solid. Fill and edge used to be
-# one number, so thinning the fill dissolved the bubble's own shape along with it - which is the
-# half that has to survive whatever the camera is pointed at
+TERM_ALPHA = 205  # the well the caption is printed in, and the one dark backing left. It used
+# to be a slab under a speech bubble at 170, thin because that one floated on the picture and
+# every point of alpha was a point of the room taken away from somebody holding a camera down a
+# pipe. This one is a hole in a housing, and a hole you can see the wall through is not a screen -
+# so it sits with the switch wells and the disc behind his face rather than with the slab.
+TERM_SCAN = 34  # ...and how much more opaque every third row of it is. The tube's own scanline
+# field comes through the glass at about a fifth of its strength once the well is over it, which
+# turns a ten-point modulation into a two-point one: the one surface on this panel that is
+# literally a CRT ends up the flattest thing on it. So the well draws its own, on the filter's
+# pitch and in the filter's phase, and the two reinforce instead of beating.
 SWITCH_ALPHA = 215  # ...and the well a switch is sunk into, which is dark enough to read a
 # glyph off and no darker: it sits over the picture like everything else in a bracket does
 
@@ -496,6 +515,30 @@ BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
 BOT_R_STEP = 38.0  # ...its landing on the bottom edge...
 BOT_R_LAND = 26.0  # ...and the shorter one on the right, which is what makes it the small one
 
+# ---- the terminal ----
+#
+# The line that says what he is doing was a speech bubble for a long time - a slab with a tail
+# leaning down towards his face, sized to its sentence, floating over the middle of the picture.
+# It is a machine now: a chassis bolted into the one strip of this panel that had nothing in it,
+# the bottom middle, with its rail running out of sight behind the eye's housing at one end and
+# behind the volume knob at the other. Nothing about what the line *says* changed. What changed
+# is that it is printed on something - and that the something is still there when there is nothing
+# to say, which is the whole difference between the two. A bubble with no words in it is a bug; a
+# terminal with a blank screen is a terminal.
+#
+# It is not a fourth bracket. A bracket is a spine with a corner to brace or an edge to land
+# square on, and this has neither: it lands on the other two mounts. One straight rail and one
+# rectangle, which is what a thing bolted between two other things looks like.
+# There is no foot under the glass. It ran to PAD above the panel's own edge for a while, on the
+# rule that keeps every legible thing clear of the border's inward glow - and what that bought
+# was a strip of see-through chassis along the bottom of the screen with nothing on it, which
+# reads as a gap the module has not been pushed all the way into rather than as a bezel. The
+# glass goes to the edge instead and the border is drawn over it, which is what a screen fitted
+# into a case looks like. The rule it breaks is about *text*, and the text is still well inside:
+# the last line finishes about where the glow has already died.
+TERM_PAD = 6.0  # inside the screen, above the first line and below the last
+TERM_BEZEL = 6.0  # the metal between the rail's inner lip and the screen's top edge
+
 # The eye. He rides the left bracket's ramp, sunk halfway into it - `EYE_SEAT` is that depth as a
 # fraction of the swell's radius, and acos(0.5) is a 60-degree shoulder, which is where the rail
 # leaves the straight and goes round him. Half of him is in the bracket and half is over the
@@ -504,8 +547,9 @@ BOT_R_LAND = 26.0  # ...and the shorter one on the right, which is what makes it
 EYE_R = 0.1833  # 88 px at 800x480, against 60 in the row this replaced
 EYE_SHOULDER = 16.0  # reference px between his rim and the rail's centreline round him
 EYE_SEAT = 0.5
-EYE_PLATE_ALPHA = 205  # the disc behind him. Lighter than the caption's slab on purpose: this
-# one sits over the middle of the picture, and a porthole you cannot see through is a hole
+EYE_PLATE_ALPHA = 205  # the disc behind him, and the same alpha the terminal's glass gets:
+# both are a hole in a housing rather than something laid over the picture. A porthole you
+# cannot see through is not a porthole
 
 # The two instruments, bolted straight through the small bracket's rail rather than sitting in a
 # plate of their own. Neither has a word: a dial that needs a label is the wrong dial, and the
@@ -770,8 +814,8 @@ def _load_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default(size)
 
 
-def caption_pulse(phase: float) -> tuple[float, int]:
-    """How far the caption has sunk, and how many dots trail it, at monotonic time *phase*.
+def caption_pulse(phase: float) -> tuple[float, bool]:
+    """How far the caption has sunk, and whether its cursor is showing, at monotonic *phase*.
 
     A raised cosine rather than a square wave: this is a phosphor tube, and a line snapping on
     and off reads as a fault light rather than as work being done. What comes back is a *mix*
@@ -781,11 +825,16 @@ def caption_pulse(phase: float) -> tuple[float, int]:
     to stop exactly that.
 
     Time rather than frames, because the loop does not run at one rate - 25 fps with the camera
-    up, 5 while the admin page covers the panel, 4 asleep - and a dot per frame would gallop and
-    stall along with it.
+    up, 5 while the admin page covers the panel, 4 asleep - and a blink per frame would gallop
+    and stall along with it.
+
+    The cursor is a square wave where the breath is not, and for the same reason the breath is
+    not one: a cursor that faded in and out would be a thing being dimmed, and a cursor is a
+    thing being *switched*. That is what a terminal has always done and it is the half of this
+    line anybody reads without looking at it.
     """
-    step = DOT_PERIOD_S / (CAPTION_DOTS + 1)
-    return BREATH_DEPTH * breath(phase, BREATH_PERIOD_S), int((phase % DOT_PERIOD_S) / step)
+    return (BREATH_DEPTH * breath(phase, BREATH_PERIOD_S),
+            phase % CURSOR_PERIOD_S < CURSOR_PERIOD_S / 2)
 
 
 def rim_breath(phase: float) -> float:
@@ -998,46 +1047,47 @@ class Overlay:
                            max(track_w, track_foot - track_top))
         self._rung = self.slider.h / SLIDER_RUNGS
 
-        # What makes the status line a bubble rather than a slab is the tail, and only the tail.
-        # The corners were rounded for a while and it was the wrong borrowing: every other edge on
-        # this panel is square or is a full arc, and a softened box in the middle of it read as a
-        # chat app dropped onto a terminal.
-        self.caption_tail = max(3, round(11 * scale))
-        self.caption_root = max(4, round(15 * scale))
-        self.caption_lean = max(2, round(6 * scale))
+        # The terminal, solved from the bottom up: the screen is as deep as two lines and their
+        # padding, it sits on the panel's own bottom edge, and the rail goes above it. Written the
+        # other way round - a rail at a chosen height with a screen hung underneath - the glass
+        # ends up short of the edge at one window size and past it at another, because the bottom
+        # is the only fixed thing here.
         self.caption_h = round(24 * scale)  # one line of it
-        self.caption_nose = max(3, round(14 * scale))  # tail tip to his shoulder
-        # The bubble's left edge is the fixed one, pinned beside him, so the tail always lands in
-        # the same place - on him - and the sentence grows away to the right. It clears his
-        # *swell* rather than his rim, because the rail goes round him out there and a tail
-        # coming out of the rail is a tail coming out of the bracket.
+        pad = max(2, px(TERM_PAD))
+        floor_ = self.height
+        roof = floor_ - CAPTION_LINES * self.caption_h - 2 * pad
+        # From the middle of one mount's bottom rail to the middle of the other's, which is what
+        # makes the screen a piece of the same machine rather than a panel laid over it. Each of
+        # its side edges is therefore buried in a rail for the lower half of the screen's depth
+        # and stands clear of one for the upper half, where the two mounts have turned into ramps
+        # - a screen sliding down behind two brackets, and the whole of why this reads as bolted
+        # in rather than drawn on. It is centred on the bay between them for free, both mounts
+        # being measured from their own edge.
+        self.term = Rect(bstep + blegs, roof, (width - rout) - (bstep + blegs), floor_ - roof)
+        self.term_top = roof - max(2, px(TERM_BEZEL)) - self.rail_w / 2.0
+        # ...and the rail's two ends, solved off the mounts rather than written down: each sits
+        # where that mount's own rail crosses the terminal's, which is what buries the joint. A
+        # 45-degree rail is a rail-and-a-half wide measured across the horizontal, so it covers a
+        # square butt end through the whole of that end's thickness - and on the left the crossing
+        # lands on the arc round his housing rather than on the ramp, which the search finds and
+        # arithmetic here would not.
+        self.term_rail = [
+            (self._rail_at("bl", self.term_top), self.term_top),
+            (self._rail_at("br", self.term_top), self.term_top),
+        ]
+        # The text inside the screen. Both edges are layout now, not results: the well does not
+        # resize with its sentence, so what a longer line does is wrap and then elide, and the
+        # cursor at the end of a busy one no longer has a slab edge to shove.
         #
-        # It hangs off his shoulder now rather than straight out from his side, so the gap is
-        # solved for rather than added on: the tail's tip is put exactly `caption_nose` clear of
-        # the swell along whatever diagonal it happens to lie on. Written as `x + nose` instead,
-        # the constant would mean fourteen pixels at one window size and thirty at another, which
-        # is how a tail stops looking like it comes out of anything.
-        # It hangs *below* the reticle rather than across it. The four arcs are the one thing on
-        # this panel drawn over the middle of the picture, and a bubble crossing them turns two
-        # deliberate marks into one accident - so the bubble's own top edge, at its tallest, is
-        # what clears them, and the tail then lands beside his equator rather than above it.
-        self.caption_bottom = (
-            self.height // 2 + self.reticle_r + max(4, round(8 * scale))
-            + CAPTION_LINES * self.caption_h
-        )
-        reach = self.shoulder + self.caption_nose
-        drop = self.caption_bottom + self.caption_tail - self.eye[1]
-        across = math.sqrt(reach * reach - drop * drop) if abs(drop) < reach else reach
-        self.caption_left = math.ceil(self.eye[0] + across) + self.caption_lean
-        # ...and it stops short of *both* switches rather than at the frame's own padding. Now
-        # that the line sits low enough to clear the reticle it is level with the shutter as well
-        # as the microphone, and a bubble clipping the top of a control is a bubble that has made
-        # the control look broken.
-        self.caption_right = min(
-            self.width - self.pad - round(34 * scale),
-            min(cx for cx, _ in self.switches.values()) - self.btn_r - round(12 * scale),
-        )
-        self.caption_y = self.caption_bottom - self.caption_h / 2  # the bottom line's middle
+        # Measured in from the *rails* and not from the screen's own corners, which are half a
+        # rail further out and buried for the whole of the lower line's height. Inset from the
+        # glass instead and the second line starts underneath the left-hand mount: the first cut
+        # of this had an "s" growing out of the bracket.
+        inset = self.rail_w / 2.0 + max(3, round(6 * scale))
+        self.caption_left = round(self.term.x + inset)
+        self.caption_right = round(self.term.right - inset)
+        self.caption_top = self.term.y + pad
+        self.caption_y = self.caption_top + self.caption_h / 2  # the *first* line's middle now
 
         self._halo = halo_alpha(width, height)
         self._filter = self._build_filter()
@@ -1054,12 +1104,29 @@ class Overlay:
         # a second almost every frame asks for the tile the frame before it already built.
         self._knobs: dict[tuple[int | None, bool], Image.Image] = {}
         self._needles: dict[tuple[int | None, str, bool], Image.Image] = {}
-        self._dots_w = self.font_caption.getlength("." * CAPTION_DOTS)
+        self._cursor_w = self.font_caption.getlength(CURSOR)
         self.hitboxes = self._layout()
         self.menu_card, self.menu_cells = self._menu_layout()
         self._scrim: Image.Image | None = None  # built on the first long press, then kept
 
     # ---- layout ----
+
+    def _rail_at(self, name: str, y: float) -> float:
+        """Where mount *name*'s rail centreline crosses the horizontal line *y*.
+
+        Walked along :meth:`Bracket.path` rather than solved, because that path is not always a
+        straight line where it is asked about: on the left the terminal's rail meets it on the arc
+        that goes round his housing, a dozen pixels above where the ramp picks up again. Whichever
+        crossing is nearest the middle of the panel is the one that bounds the terminal, so a
+        bracket that grew a second seat would still answer this correctly.
+        """
+        points = self.brackets[name].path()
+        hits = [
+            ax + (bx - ax) * (y - ay) / (by - ay)
+            for (ax, ay), (bx, by) in zip(points, points[1:], strict=False)
+            if ay != by and (ay - y) * (by - y) <= 0
+        ]
+        return max(hits) if name[1] == "l" else min(hits)
 
     def _disc(self, centre: tuple[float, float], radius: float) -> Rect:
         """The bounding box of a round control, which is what a hit test gets to work with."""
@@ -1144,6 +1211,11 @@ class Overlay:
         d = ImageDraw.Draw(plate)
         for bracket in (*self.brackets.values(), self.pods[tags]):
             bracket.plate(d)
+        # ...and the terminal, which has no spine to lay down a polygon from - it is a rectangle
+        # standing on the bottom edge, and where it runs under the two mounts the two footprints
+        # are simply the same metal, so the union leaves no seam to line up.
+        d.rectangle([self.term_rail[0][0], self.term_top, self.term_rail[1][0], self.height],
+                    fill=255)
         holes = Image.new("L", (self.width, self.height), 0)
         hd = ImageDraw.Draw(holes)
         cx, cy, r = *self.eye, self.eye_r
@@ -1188,10 +1260,10 @@ class Overlay:
     def _build_plate(self) -> Image.Image:
         """The disc behind the eye, on its own layer under the chrome.
 
-        The same argument the caption's slab makes: he is drawn in thin rings over a live camera,
-        and a green hairline over whatever the lens is pointed at is a coin toss. Lighter than
-        the caption's slab, though - that one backs a line of text you have to read, and this one
-        backs a face you only have to recognise, so the room can still ghost through behind him.
+        The same argument the terminal's glass makes: he is drawn in thin rings over a live
+        camera, and a green hairline over whatever the lens is pointed at is a coin toss. He and
+        the screen sit at the same alpha and for the same reason - each is a hole in a housing
+        rather than something laid over the picture, and the room may ghost through both.
 
         A separate layer rather than part of :meth:`_build_chrome`, because that one blurs its own
         alpha to make the bloom, and a filled disc this size through a Gaussian blur is not a
@@ -1218,6 +1290,10 @@ class Overlay:
         the chrome has a thickness.
         """
         layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+        # The terminal before either mount and before both instruments, because every one of them
+        # is what buries an end of it. Order is the whole illusion: drawn last this is a box lying
+        # on the panel, and drawn first it is a box behind it.
+        self._draw_terminal(layer)
         for bracket in self.brackets.values():
             self._draw_bracket(layer, bracket)
         self._draw_reticle(layer)
@@ -1493,10 +1569,10 @@ class Overlay:
 
         Greedy and word-wise, which is all a caption needs: these are one short sentence, and the
         alternative - balancing the lines - would have the first one change length every time the
-        second did, in a bubble that is already redrawn as the sentence changes.
+        second did, which on a screen of a fixed size is movement bought for nothing.
 
         A word longer than the whole limit still goes down and is cut mid-word by :meth:`_elide`,
-        rather than being dropped or spilling out of the bubble. Rare, and always a URL or a
+        rather than being dropped or running off the glass. Rare, and always a URL or a
         token out of an API error, which is exactly the case that must not lose the beginning of
         the message it is buried in.
         """
@@ -1628,7 +1704,7 @@ class Overlay:
         One row: the meter against the pod's left edge, the clock against its right, and the two
         tags in a fixed slot between them. Every one of the three is pinned to something that
         does not move, and the slack sits in the middle where the tags are not - which is the
-        same bargain the caption strikes with its dots. Packed instead, the clock would slide
+        same bargain the caption strikes with its cursor. Packed instead, the clock would slide
         sideways the moment the board got warm, and a panel whose numbers move while it is
         telling you the truth feels like one that is lying.
 
@@ -1707,12 +1783,17 @@ class Overlay:
     def _draw_caption(
         self, d: ImageDraw.ImageDraw, state: str, halo: tuple, detail: str, phase: float
     ) -> None:
-        """Plain English over the bottom of the picture, in a bubble coming out of his face.
+        """Plain English across the bottom of the panel, printed on the terminal's screen.
 
-        The bubble is not decoration: this text sits on the live camera, and white-on-anything is
-        a coin toss. It is also where an error actually says what went wrong, which the old
-        chrome could only render as a red rim. What it is *shaped* like is a separate argument -
-        see :meth:`_bubble`.
+        The screen is not decoration: this text sits over the live camera, and white-on-anything
+        is a coin toss. It is also where an error actually says what went wrong, which the old
+        chrome could only render as a red rim. What it is printed *on* is a separate argument -
+        see :meth:`_draw_terminal`.
+
+        Printed from the top, like anything else with a prompt on it: a one-line message leaves
+        the second line blank, which is what a terminal with nothing more to say looks like. The
+        bubble grew upwards instead, and had to, because its bottom edge was where the tail hung
+        from - the last piece of that shape still visible in this method.
 
         The controller's sentence wins over this module's own table, and not the other way round
         as it used to: it is the half that knows what is being searched for, which project is
@@ -1725,50 +1806,40 @@ class Overlay:
             return  # the strip already says the mode; saying it twice is not a caption
         busy = text.endswith(BUSY_MARK)
         if busy:
-            text = text[: -len(BUSY_MARK)]  # the dots take the ellipsis's place, and move
+            text = text[: -len(BUSY_MARK)]  # the cursor takes the ellipsis's place, and blinks
         font = self.font_caption
-        # Laid out from his rim outwards, and the marker rides along on the front of the sentence
-        # so the wrap can put it where it belongs rather than the drawing assuming a first line.
-        x, inset = self.caption_left, round(8 * self.scale)
-        # The dots are reserved on every line whether any of them are showing or not. On the last
-        # one that is what stops the bubble's far edge shuffling four times a second while they
-        # count; on the others it costs at most a word's placement, which is cheaper than working
-        # out which line will turn out to be the widest before wrapping it.
-        dots_w = self._dots_w if busy else 0.0
-        limit = self.caption_right - x - inset * 2 - dots_w
+        # The marker rides along on the front of the sentence so the wrap can put it where it
+        # belongs rather than the drawing assuming a first line.
+        x = self.caption_left
+        # The cursor's room is reserved whether it is showing or not, which is what stops a line
+        # that fills the screen at rest putting its cursor under the bracket half the time.
+        cursor_w = self._cursor_w if busy else 0.0
+        limit = self.caption_right - x - cursor_w
         lines = self._wrap(MARKER + text, font, limit, CAPTION_LINES)
         if busy and lines[-1].endswith(BUSY_MARK):
-            # Cut short *and* about work in flight, which used to come out as "an M8 s…..": the
-            # ellipsis the trim leaves behind, followed by the dots that were already standing in
-            # for one. Four marks doing one mark's job. The dots win, because they are the half
-            # that moves, and they mean what the ellipsis meant anyway.
+            # Cut short *and* about work in flight, which used to come out as "an M8 s…_": the
+            # ellipsis the trim leaves behind, and then a cursor that was already standing in for
+            # one. Two marks doing one mark's job. The cursor wins, because it is the half that
+            # moves, and it means what the ellipsis meant anyway.
             lines[-1] = lines[-1][: -len(BUSY_MARK)]
-        widths = [font.getlength(line) for line in lines]
-        widths[-1] += dots_w  # the dots trail the last line, so only that one has to make room
-        right = x + max(widths) + inset * 2
-        # It grows *up*. The bottom edge is where the tail hangs from and the tail has his
-        # shoulder to clear, so that edge is layout; a second line has nowhere to go but upwards,
-        # over a part of the picture where there is nothing but his own head anyway.
-        bottom = self.caption_bottom
-        top = bottom - len(lines) * self.caption_h
-        self._bubble(d, x, right, top, bottom)
+        top = self.caption_top
         # The breath runs under every caption of a session that is up - it is what makes the line
-        # read as a live tube rather than a printed label - and the dots under any line that ends
-        # in an ellipsis, where they mean the thing everybody already reads them to mean.
+        # read as a live tube rather than a printed label - and the cursor after any line that
+        # ends in an ellipsis, where it means the thing everybody already reads it to mean.
         #
-        # Asleep the breath stops and the dots do not. The breath stopping is the point rather
+        # Asleep the breath stops and the cursor does not. The breath stopping is the point rather
         # than an economy: it used to run unconditionally, so a panel with nothing on it was
         # quietly pulsing 809 pixels of caption, and against that an awake panel that pulses says
         # nothing at all - and brightness stopped being his register the day the sleeping face
-        # gave it up. The dots stay because what the line says while he is asleep is a snore, and
-        # a snore that holds still is a printed label. A fault gets neither: it is asking to be
-        # read, not watched.
-        sunk, walking = caption_pulse(phase)
-        # Working breathes and walks its dots along with a session, though it is not one: the line
-        # under a busy box is a job in flight, which is exactly what this animation is for. It is
-        # the only thing on the panel that says so while the border and the readouts sit at rest.
+        # gave it up. The cursor stays because what the line says while he is asleep is a snore,
+        # and a snore that holds still is a printed label. A fault gets neither: it is asking to
+        # be read, not watched.
+        sunk, blink = caption_pulse(phase)
+        # Working breathes and blinks along with a session, though it is not one: the line under a
+        # busy box is a job in flight, which is exactly what this animation is for. It is the only
+        # thing on the panel that says so while the border and the readouts sit at rest.
         sunk = sunk if session_up(state) or state == WORKING else 0.0
-        lit = walking if session_up(state) or state in (IDLE, WORKING) else 0
+        lit = blink and (session_up(state) or state in (IDLE, WORKING))
         colour = mix(halo if state == ERROR else GREEN, SCREEN, sunk)
         # The marker takes the accent and the sentence does not. A whole line of running text in
         # white over a live camera is harder to read than the same line in phosphor, and the
@@ -1777,55 +1848,66 @@ class Overlay:
         accent = (*mix(halo, SCREEN, sunk), CAPTION_ALPHA)
         for i, line in enumerate(lines):
             y = top + (i + 0.5) * self.caption_h
-            at = x + inset
+            at = x
             if line.startswith(MARKER):  # only ever the first, and only if the wrap left it there
                 at += self._text(d, at, y, MARKER, font, accent)
                 line = line[len(MARKER):]
             at += self._text(d, at, y, line, font, (*colour, CAPTION_ALPHA))
             if busy and lit and i == len(lines) - 1:
-                # Hard against the last letter, where an ellipsis belongs - these are standing in
-                # for the one the phrase arrived with, not sitting beside it as a separate mark.
-                self._text(d, at, y, "." * lit, font, (*colour, CAPTION_ALPHA))
+                # Hard against the last letter, where a cursor belongs - it is standing in for the
+                # ellipsis the phrase arrived with, not sitting beside it as a separate mark.
+                self._text(d, at, y, CURSOR, font, (*colour, CAPTION_ALPHA))
 
-    def _bubble(
-        self, d: ImageDraw.ImageDraw, x: float, right: float, top: float, bottom: float
-    ) -> None:
-        """The slab the caption sits on, shaped like what it is: him saying something.
+    def _draw_terminal(self, layer: Image.Image) -> None:
+        """The screen the caption is printed on, and the rail that carries it.
 
-        The line was always his - the marker, the plain English, the breath under it - and a
-        rectangle was the one part of it that read as a readout. Three rounded corners and a
-        tail hanging off the fourth, leaning down and to the left towards the face it comes
-        out of, which is the shape everybody has been reading since before there were screens.
+        This replaced a speech bubble, and the argument is the same one the words themselves
+        settled a while ago. A bubble is him talking: it is the right shape for a sentence and the
+        wrong shape for a readout, it has to be sized to whatever it happens to be saying, and it
+        has nowhere to be when there is nothing to say. What the line actually does - narrate a
+        job, name a fault, count out a teardown - is what a terminal does, so it is one: a fixed
+        screen in a housing bolted into the bottom middle of the panel, the one strip of it that
+        had nothing in it. The sentence changes; the machine it is printed on does not.
 
-        The tail hangs off the *left* because that is where he stands, and off the bottom rather
-        than out of the side because the bubble's left edge moves with the sentence: a tail on
-        the side would point straight at him under a long caption and into the picture under a
-        short one, while one under the corner leans the same way whatever the line says.
+        All of it is fixed by the window size, so all of it is baked. What that buys is the half
+        of the idea that a per-frame drawing could not have: the chassis is on the panel whether
+        or not there is a caption, which is what makes it furniture rather than a slab that
+        appears under some words.
 
-        It is drawn with an edge, which the slab it replaces did not need. A dark fill only
-        has a shape where there is something behind it to differ from, and behind this there is
-        as often as not a black picture - an unlit room, or no camera at all - where a bubble and
-        a rectangle are the same invisible dark patch. The edge is what makes the shape survive
-        its own background, and it is the faintest phosphor on the panel because the words inside
-        it are what anybody is actually reading.
-
-        Drawn flat rather than through :func:`eye.smoothed`, like every other filled shape on
-        this panel - the tag, the menu card, the tab cells. Only the strokes are supersampled,
-        because a stepped hairline reads as a fault and a stepped edge on a slab does not.
+        Nothing here wears the state's accent. The border does that, and the eye, and the marker
+        on the line itself - a housing that changed colour with the conversation would be a fourth
+        voice saying what three already say.
         """
-        tip = (x - self.caption_lean, bottom + self.caption_tail)
-        root = (x + self.caption_root, bottom)
-        fill = (*SCREEN, PLATE_ALPHA)
-        edge = (*GREEN_DIM, BUBBLE_EDGE_ALPHA)
-        line = max(1, self.line // 2)
-        d.rectangle([x, top, right, bottom], fill=fill, outline=edge, width=line)
-        # The tail, then the bottom edge between its corners wiped back to fill, then its own two
-        # sides - which is what makes the two shapes one silhouette rather than a box with a
-        # pennant taped under it. ImageDraw writes rather than composites, so the wipe is a wipe.
-        d.polygon([(x, bottom), root, tip], fill=fill)
-        d.line([(x, bottom), root], fill=fill, width=line)
-        d.line([root, tip], fill=edge, width=line)
-        d.line([tip, (x, bottom)], fill=edge, width=line)
+        d = ImageDraw.Draw(layer)
+        box = self.term
+        # The well, sunk into the face rather than sitting on it. Flat fill first: ImageDraw
+        # writes rather than composites, so the raster below is drawn as *more opaque* rows and
+        # not as dark ones - a black line at a low alpha would punch a hole in the glass instead
+        # of dimming it, and SCREEN is already near enough black that darkening it says nothing.
+        d.rectangle([box.x, box.y, box.right, box.bottom], fill=(*SCREEN, TERM_ALPHA))
+        for y in range(box.y + (-box.y) % SCANLINE_EVERY, box.bottom, SCANLINE_EVERY):
+            d.line([(box.x, y), (box.right, y)], fill=(*SCREEN, min(255, TERM_ALPHA + TERM_SCAN)))
+        # ...and the chamfer round it, which is the rail's own profile turned inside out: the same
+        # light from above, falling into a hole instead of onto a lip, so the dark edge is the top
+        # and the left and the lit one is the bottom and the right. Both come off _rail_colour, so
+        # the well and the rail it hangs under are the same alloy.
+        lip, flank = (*self._rail_colour(1.0), 255), (*self._rail_colour(0.0), 255)
+        edge = max(1, self.line // 2)
+        d.line([(box.x, box.y), (box.right, box.y)], fill=flank, width=edge)
+        d.line([(box.x, box.y), (box.x, box.bottom)], fill=flank, width=edge)
+        d.line([(box.x, box.bottom), (box.right, box.bottom)], fill=lip, width=edge)
+        d.line([(box.right, box.y), (box.right, box.bottom)], fill=lip, width=edge)
+        # The rail last, so its cast shadow falls across the top of the screen - which is most of
+        # what sells the depth, and which the well's flat fill would wipe if the two swapped.
+        self._draw_rail(layer, self.term_rail)
+        # Two bolts, over the screen's own top corners and a rail's half-width in from them. Every
+        # other rail here is bolted where it turns; this one does not turn, so it is bolted where
+        # it lands, which is the same sentence. The inset is what keeps the right-hand one clear
+        # of the volume knob, whose bezel is drawn over this a few lines later.
+        d = ImageDraw.Draw(layer)
+        half = self.rail_w / 2.0
+        for x in (box.x + half, box.right - half):
+            self._draw_bolt(d, x, self.term_top)
 
     def _draw_rim(self, d: ImageDraw.ImageDraw, halo: tuple, phase: float) -> None:
         """Re-stroke the border, sunk by one breath. Only ever called while a session is up.

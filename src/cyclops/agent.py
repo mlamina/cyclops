@@ -2524,8 +2524,8 @@ def _subject(text: str) -> str:
     """A tool's argument, cut down to something that still reads as part of a spoken phrase.
 
     Cut on a word boundary rather than mid-syllable, and with no marker left behind: the caption
-    is elided again on the way to the panel, and two sets of trailing dots on one line - one for
-    "there was more of this" and one for "this is still happening" - say nothing between them.
+    is elided again on the way to the panel, and a trailing ellipsis next to the cursor standing
+    in for one - "there was more of this" beside "this is still happening" - says nothing.
     """
     text = " ".join(text.split())
     if len(text) <= ACTIVITY_SUBJECT_CHARS:
@@ -2557,7 +2557,7 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
     down and look two more up while the strip said only LISTENING.
 
     Every line ends in an ellipsis. That is not decoration either - it is how the overlay tells a
-    caption about work in flight from one about a state, and decides whether to walk its dots
+    caption about work in flight from one about a state, and decides whether to blink a cursor
     underneath it. See :data:`cyclops.overlay.BUSY_MARK`.
     """
     args = call.arguments

@@ -1818,7 +1818,7 @@ class Kiosk:
                     # stat and nothing else.
                     detail=self._saying() or str(status["detail"]) or job,
                     # One instant for the whole frame, taken at the top of the loop. The caption
-                    # breathes and counts its dots off this rather than off a clock of its own,
+                    # breathes and blinks its cursor off this rather than off a clock of its own,
                     # so the animation cannot drift between elements or with the frame rate.
                     phase=started,
                     heat=self._heat,

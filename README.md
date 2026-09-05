@@ -557,10 +557,10 @@ whether anything is going on.
 the row. Three things do so today: `draw_diagram`, `edit_photo`, and the three jobs
 `cyclops.after` runs once a session has ended.
 
-**Where you see it.** The panel's caption line, under his eye — the same line that says
-"searching the web…", walking its dots. It is the last thing that line falls back to, behind the
-kiosk's own notices and the session's, so it is what fills the minute after a session ends where
-the panel used to sit on the snore. And, on the admin page, one amber line at the right-hand end
+**Where you see it.** The panel's terminal, along the bottom — the same line that says
+"searching the web…", with its cursor blinking. It is the last thing that line falls back to,
+behind the kiosk's own notices and the session's, so it is what fills the minute after a session
+ends where the panel used to sit on the snore. And, on the admin page, one amber line at the right-hand end
 of the header, on every screen, updated by the poll that was already running.
 
 **A tool that starts a task answers straight away.** This is the half worth knowing about if you
@@ -974,8 +974,9 @@ CYCLOPS_HALF_DUPLEX=1
 **The panel.** `cyclops-kiosk` is the whole front-end and needs no browser: it opens the camera,
 draws the live picture fullscreen, and lays a green terminal bezel over it — a status pod hanging
 off the middle of the top edge (signal meter, `REC`, `HOT`, session clock), the picture and a
-four-arc reticle through the middle, and two corner mounts carrying three round controls sized
-for a thumb in a glove:
+four-arc reticle through the middle, a terminal bolted across the bottom that says in plain
+English what he is doing, and two corner mounts carrying three round controls sized for a thumb
+in a glove:
 
 | Control | What it does |
 | --- | --- |
@@ -1061,6 +1062,14 @@ These are meant to be pushed around rather than argued about:
 uv run python tools/eye_sheet.py --seconds 8 --level 1.0   # every mood, over a strip of time
 uv run python tools/eye_sheet.py --state searching --frames 16 --scale 2
 ```
+
+**The line along the bottom** is a terminal rather than a speech bubble: a chassis bolted between
+the two mounts, its rail running out of sight behind the eye's housing at one end and behind the
+volume knob at the other, with the caption printed on its screen, which runs down to the panel's
+own bottom edge. It is there whether or not there is anything to say, which is the whole
+difference — a bubble with no words in it is a bug, and a terminal with a blank screen is a
+terminal. A phrase ending in `…` is work in flight and gets a blinking `_` where the ellipsis
+was; anything else is a state and holds still.
 
 And while he is asleep **nothing on the panel moves at all** — not the eye, not the border, not
 the caption, which used to breathe whatever was happening. Two frames of a resting panel are

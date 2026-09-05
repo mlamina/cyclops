@@ -4,9 +4,9 @@ Three silent failures live here, and none of them raises. A tool that reaches th
 no phrase at all is simply never mentioned - which is the bug this whole line was built to fix,
 so a tenth tool added without one has to fail something. A job that finishes in five milliseconds
 under a job that has not finished takes the caption down with it if the hand-back is wrong, and
-the panel goes blank mid-search. And dots that are drawn without their width being reserved make
-the slab behind them breathe in and out four times a second, which no unit test would notice and
-nobody could look at.
+the panel goes blank mid-search. And a cursor drawn without its width being reserved sits under
+the left-hand bracket half the time on any line that fills the screen, which no unit test would
+notice and nobody could look at.
 
 Everything here is pure: no camera, no key, no window. `Overlay` is PIL and numpy only.
 """
@@ -34,25 +34,26 @@ class Call:
 # ---------------------------------------------------------------- the animation
 
 
-def test_dots_walk_up_and_start_again() -> None:
-    step = overlay.DOT_PERIOD_S / (overlay.CAPTION_DOTS + 1)
-    counts = [
-        overlay.caption_pulse(i * step + step / 2)[1] for i in range(overlay.CAPTION_DOTS + 1)
-    ]
-    assert counts == [0, 1, 2, 3], "the dots are supposed to fill in one after another"
-    assert overlay.caption_pulse(overlay.DOT_PERIOD_S + step / 2)[1] == 0, "and then start over"
+def test_the_cursor_is_on_for_half_of_every_blink() -> None:
+    half = overlay.CURSOR_PERIOD_S / 2
+    assert overlay.caption_pulse(half / 2)[1], "a cursor starts a period showing"
+    assert not overlay.caption_pulse(half * 1.5)[1], "...and spends the other half of it dark"
+    # Square, unlike the breath beside it: a cursor is a thing being switched, not one being
+    # dimmed, and a terminal has never faded one in.
+    on = [overlay.caption_pulse(i * overlay.CURSOR_PERIOD_S / 64)[1] for i in range(64)]
+    assert sum(on) == 32, f"the blink is not half on and half off: {sum(on)}/64"
 
 
-def test_the_dots_never_stall_however_long_the_panel_has_been_up() -> None:
+def test_the_cursor_never_stalls_however_long_the_panel_has_been_up() -> None:
     # A Pi's monotonic clock is its uptime, and this panel is left running for weeks. What has to
-    # hold at a million seconds is not that the dots are at any particular place - that is
-    # meaningless - but that they still advance exactly one step per step, with no stall and no
-    # skip. Which phase the sequence happens to start on is the clock's business.
-    step = overlay.DOT_PERIOD_S / (overlay.CAPTION_DOTS + 1)
+    # hold at a million seconds is not that the cursor is in any particular state - that is
+    # meaningless - but that it is still turning over once per period, with no stall and no skip.
+    half = overlay.CURSOR_PERIOD_S / 2
     for base in (0.0, 86_400.0, 1_000_000.0, 5_000_000.0):
-        seen = [overlay.caption_pulse(base + i * step + step / 2)[1] for i in range(13)]
-        gaps = {(b - a) % (overlay.CAPTION_DOTS + 1) for a, b in zip(seen, seen[1:], strict=False)}
-        assert gaps == {1}, f"the dots stumbled at {base:,.0f}s of uptime: {seen}"
+        seen = [overlay.caption_pulse(base + i * half + half / 2)[1] for i in range(13)]
+        assert all(a != b for a, b in zip(seen, seen[1:], strict=False)), (
+            f"the cursor stumbled at {base:,.0f}s of uptime: {seen}"
+        )
 
 
 def test_the_breath_comes_back_round() -> None:
@@ -207,71 +208,84 @@ def test_the_controller_prefers_the_agent_then_the_phase(voice: agent.VoiceAgent
 # ---------------------------------------------------------------- on the panel
 
 
-def _slab(frame: np.ndarray, ov: overlay.Overlay) -> tuple[int, int]:
-    """The caption bubble's left and right edge, read back off a rendered frame.
+def _ink(frame: np.ndarray, ov: overlay.Overlay, line: int = 0) -> tuple[int, int] | None:
+    """Where the lit text starts and stops on one line of the terminal's screen, or None.
 
-    Matched on its own two colours - the fill and the outline, each at its own alpha - rather
-    than on "opaque enough". A threshold picked up his plate, the frame's corner brackets and
-    anything else that happened to land above it, and quietly went on picking the rightmost of
-    them: the day the fill was thinned to let the room through, this helper started measuring a
-    bracket at x=782 and reporting that the bubble never moved.
+    Read between the two mounts rather than across the whole screen. Both of the glass's side
+    edges are buried under a rail, and a rail is the brightest thing on this panel - measure out
+    to the glass's own corners and every line comes back the full width of the bay.
     """
-    band = frame[
-        int(ov.caption_y - ov.caption_h / 2) + 1 : int(ov.caption_y + ov.caption_h / 2) - 1
-    ]
-    rgb, alpha = band[:, :, :3], band[:, :, 3]
-    fill = (alpha == overlay.PLATE_ALPHA) & (rgb == np.array(overlay.SCREEN, np.uint8)).all(axis=2)
-    edge = (alpha == overlay.BUBBLE_EDGE_ALPHA) & (
-        rgb == np.array(overlay.GREEN_DIM, np.uint8)
-    ).all(axis=2)
-    lit = np.where((fill | edge).any(axis=0))[0]
-    assert lit.size, "no bubble on the panel at all"
-    return int(lit.min()), int(lit.max())
+    top = int(ov.caption_top + line * ov.caption_h)
+    band = frame[top + 2 : top + ov.caption_h - 2, ov.caption_left - 2 : ov.caption_right + 2]
+    on = (band[:, :, :3].astype(int).sum(axis=2) > 300) & (band[:, :, 3] > 150)
+    lit = np.where(on.any(axis=0))[0]
+    return (int(lit.min()) + ov.caption_left - 2, int(lit.max()) + ov.caption_left - 2) if (
+        lit.size
+    ) else None
 
 
-def test_the_slab_does_not_breathe_with_the_dots() -> None:
-    # The one thing here that a unit test would never catch and nobody could stand to look at:
-    # the slab is sized to its text, so unreserved dots make a dark rectangle grow and shrink
-    # four times a second behind the words.
+def test_the_cursor_trails_the_sentence_rather_than_moving_it() -> None:
+    # What the bubble could not do. It was sized to its own sentence, so an unreserved mark at the
+    # end of a line made a dark rectangle grow and shrink behind the words - a thing no unit test
+    # would catch and nobody could stand to look at. The glass is a fixed size now, so the only
+    # thing left that a blink may move is the far end of its own line.
+    #
+    # Asleep, where the breath is off and the cursor is not: awake, every letter on the line is
+    # also being dimmed and lifted by caption_pulse, and this is asking about position.
     ov = overlay.Overlay(800, 480)
-    step = overlay.DOT_PERIOD_S / (overlay.CAPTION_DOTS + 1)
-    edges = {
-        _slab(
-            ov.render(
-                state=overlay.SEARCHING,
-                level=0.0,
-                detail="searching for M8 torque…",
-                phase=i * step + step / 2,
-            ),
-            ov,
-        )
-        for i in range(overlay.CAPTION_DOTS + 1)
-    }
-    assert len(edges) == 1, f"the slab moved with the dots: {sorted(edges)}"
+    half = overlay.CURSOR_PERIOD_S / 2
+    shown = dict(state=overlay.IDLE, level=0.0, detail="searching for M8 torque…")
+    on = _ink(ov.render(phase=half / 2, **shown), ov)
+    off = _ink(ov.render(phase=half * 1.5, **shown), ov)
+    assert on[0] == off[0], f"the sentence shuffled with the cursor: {on} then {off}"
+    assert on[1] > off[1], "the cursor is supposed to appear off the end of the line, not in it"
+    assert on[1] - off[1] == pytest.approx(ov._cursor_w, abs=3), (
+        "and to be exactly one cursor wide when it does"
+    )
 
 
-def test_a_resting_caption_reserves_no_room_for_dots() -> None:
-    # The bubble is pinned beside his rim and grows rightwards, so the width it reserves shows up
-    # on its far edge - and its left edge must not move at all, that being where the tail is.
+def test_the_cursor_never_runs_off_the_glass() -> None:
+    # What reserving its width still buys, now that there is no slab edge for it to shove. The
+    # wrap is done against a limit the cursor is already subtracted from, so a line that fills the
+    # screen at rest still has room for it - and without that it lands under the bracket.
+    ov = overlay.Overlay(800, 480)
+    half = overlay.CURSOR_PERIOD_S / 2
+    for detail in ("searching for an M8 stainless bolt…", "x" * 200 + "…", "wwwwww wwwwwwww w…"):
+        for phase in (half / 2, half * 1.5):
+            frame = ov.render(state=overlay.SEARCHING, level=0.0, detail=detail, phase=phase)
+            for line in range(overlay.CAPTION_LINES):
+                edges = _ink(frame, ov, line)
+                assert edges is None or edges[1] <= ov.caption_right, (
+                    f"{detail[:20]!r} line {line} ran to {edges} past {ov.caption_right}"
+                )
+
+
+def test_the_screen_is_the_same_size_whatever_is_on_it() -> None:
+    # The whole of why this stopped being a bubble. A slab sized to its sentence has to move when
+    # the sentence does; a terminal is a thing, and a thing that changed shape with what it was
+    # printing would be a dialogue box with a bezel drawn on.
     ov = overlay.Overlay(800, 480)
     at_rest = dict(state=overlay.LISTENING, level=0.0, phase=0.0)
-    busy = _slab(ov.render(detail="doing a thing…", **at_rest), ov)
-    rest = _slab(ov.render(detail="doing a thing", **at_rest), ov)
-    assert busy[1] - rest[1] == pytest.approx(ov._dots_w, abs=2), (
-        "a line about work in flight is exactly the dots wider than the same line at rest"
+    short = ov.render(detail="doing a thing", **at_rest)
+    long_ = ov.render(detail="doing a considerably longer thing than the other one", **at_rest)
+    band = slice(int(ov.caption_top), int(ov.caption_top + overlay.CAPTION_LINES * ov.caption_h))
+    moved = np.argwhere(np.any(short != long_, axis=2))
+    assert moved.size, "the two captions rendered identically"
+    assert moved[:, 0].min() >= band.start and moved[:, 0].max() < band.stop, (
+        "the screen changed shape with its sentence"
     )
-    assert busy[0] == rest[0] == int(ov.caption_left), (
-        "the bubble's left edge is layout: move it and the tail stops coming out of his face"
+    assert _ink(short, ov)[0] == _ink(long_, ov)[0], (
+        "the text is printed from the screen's own left edge, not laid out from its middle"
     )
+    assert _ink(short, ov)[0] - ov.caption_left < ov.caption_h, "and from near enough that edge"
 
 
-def test_the_dots_actually_land_on_the_panel() -> None:
+def test_the_cursor_actually_lands_on_the_panel() -> None:
     ov = overlay.Overlay(800, 480)
-    step = overlay.DOT_PERIOD_S / (overlay.CAPTION_DOTS + 1)
+    half = overlay.CURSOR_PERIOD_S / 2
     shown = dict(state=overlay.SEARCHING, level=0.0, detail="searching…")
-    bare = ov.render(phase=step / 2, **shown)
-    full = ov.render(phase=3 * step + step / 2, **shown)
-    assert not np.array_equal(bare, full), "nothing moved between no dots and three"
+    assert not np.array_equal(ov.render(phase=half / 2, **shown),
+                              ov.render(phase=half * 1.5, **shown)), "nothing blinked"
 
 
 def test_the_wrapper_always_lets_the_line_go(

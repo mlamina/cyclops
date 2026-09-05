@@ -149,7 +149,7 @@ def test_the_tool_is_left_out_rather_than_refused() -> None:
 
 
 def test_the_activity_line_ends_in_an_ellipsis() -> None:
-    """How ``overlay.BUSY_MARK`` tells work in flight from a state, and decides to walk its dots."""
+    """How ``overlay.BUSY_MARK`` tells work in flight from a state, and so blinks a cursor."""
     call = type("Call", (), {"name": "write_on_scratchpad", "arguments": "{}"})()
     assert agent._activity_line(call).endswith("…")
 

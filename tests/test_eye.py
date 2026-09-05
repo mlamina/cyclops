@@ -137,7 +137,7 @@ def test_the_sleeping_face_moves_slowly_and_by_moving() -> None:
     assert abs(mood.spin) < min(abs(m.spin) for m in working), "he turns faster than a working eye"
     # ...and, like every other period on this panel, out of step with all of them - see
     # RIM_PERIOD_S. His is the longest, so it can only lock by being a multiple of one of them.
-    for period in (overlay.RIM_PERIOD_S, overlay.BREATH_PERIOD_S, overlay.DOT_PERIOD_S):
+    for period in (overlay.RIM_PERIOD_S, overlay.BREATH_PERIOD_S, overlay.CURSOR_PERIOD_S):
         assert mood.breath_s % period > 1e-6, f"his breath locks to the {period}s one"
 
 
@@ -409,17 +409,17 @@ def _glow(crop: np.ndarray) -> float:
 
 
 def _line_box(ov: overlay.Overlay) -> tuple[slice, slice]:
-    """Everywhere the caption bubble can reach: its tallest, plus the tail, out to its far edge.
+    """The terminal's screen: everywhere the caption can put a lit pixel, and nowhere else.
 
-    Both ends are the bubble's own and neither is the panel's, because it now has a neighbour at
-    each: his swell is a few pixels left of the tail's tip, and the microphone is a few pixels
-    right of where the longest sentence stops. Either one dragged into this band is something
-    that moves for its own reasons, being measured as though it were the line.
+    Both ends are the text's own and neither is the glass's, because the glass has a neighbour at
+    each - its two side edges are buried under the mounts' bottom rails, and a rail dragged into
+    this band is a piece of chrome being blanked as though it were the line. The rows are the
+    screen's own two, which is what it is cut to.
     """
-    top = int(ov.caption_bottom - overlay.CAPTION_LINES * ov.caption_h)
-    bottom = int(ov.caption_bottom) + ov.caption_tail + 1
-    left = max(int(ov.caption_left - ov.caption_lean), ov.eye[0] + ov.shoulder + 1)
-    return slice(top, bottom), slice(left, int(ov.caption_right) + 2)
+    return (
+        slice(int(ov.caption_top), int(ov.caption_top) + overlay.CAPTION_LINES * ov.caption_h),
+        slice(int(ov.caption_left) - 2, int(ov.caption_right) + 2),
+    )
 
 
 def test_only_two_things_move_while_he_is_asleep() -> None:
@@ -449,17 +449,17 @@ def test_only_two_things_move_while_he_is_asleep() -> None:
 
 
 def test_his_line_snores_while_he_is_asleep() -> None:
-    # The dots were gated on there being a session, so a sleeping panel's line was a printed
+    # The cursor was gated on there being a session, so a sleeping panel's line was a printed
     # label. It says a snore now, and a snore that holds still is not one.
     ov = _panel()
     assert overlay.CAPTIONS[overlay.IDLE].endswith(overlay.BUSY_MARK), "it would never animate"
     rows, cols = _line_box(ov)
     shown = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **shown)
-    step = overlay.DOT_PERIOD_S / (overlay.CAPTION_DOTS + 1)
-    bare = ov.render(phase=step / 2, **shown)[rows, cols]
-    full = ov.render(phase=3 * step + step / 2, **shown)[rows, cols]
-    assert not np.array_equal(bare, full), "the dots do not walk while he is asleep"
+    half = overlay.CURSOR_PERIOD_S / 2
+    bare = ov.render(phase=half * 1.5, **shown)[rows, cols]
+    full = ov.render(phase=half / 2, **shown)[rows, cols]
+    assert not np.array_equal(bare, full), "the cursor does not blink while he is asleep"
     # ...and the line still does not brighten and dim doing it. The eye gave that up - brightness
     # is how this panel says which state it is in - and a line that pulses under a face that has
     # stopped is the same mistake one row further down.
@@ -473,10 +473,10 @@ def test_his_line_snores_while_he_is_asleep() -> None:
         crop = ov.render(phase=phase, **shown)[rows, cols]
         return int(crop[:, :, :3][crop[:, :, 3] >= 200].astype(int).sum(axis=1).max())
 
-    # Whole dot periods apart, so the same dots are lit in every sample and the breath is the
-    # only thing left that could differ - and it runs at half the dot period, which puts these
+    # Whole cursor periods apart, so the cursor is showing in every sample and the breath is the
+    # only thing left that could differ - and it runs at twice the cursor period, which puts these
     # alternately at the top and the bottom of it.
-    assert len({ink(i * overlay.DOT_PERIOD_S) for i in range(4)}) == 1, "the line breathes"
+    assert len({ink(i * overlay.CURSOR_PERIOD_S) for i in range(4)}) == 1, "the line breathes"
 
 
 RING_BAND = 0.75  # ...as a fraction of his radius: outside anything the gaze can reach
@@ -843,12 +843,11 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
         (int(clock_right - ov._clock_w), clock - 12, int(clock_right), clock + 12)
     ) == "accent"
     # The caption's marker takes the accent and its sentence does not - a running line in aqua
-    # over a live camera is harder to read than the same line in phosphor. The slab hangs off
-    # ov.caption_right and grows leftwards, so the marker is found by measuring back from there.
-    inset = round(8 * ov.scale)
+    # over a live camera is harder to read than the same line in phosphor. It is the first thing
+    # on the terminal's first line, so it is found at the left edge of the screen's own text.
     marker_w = int(ov.font_caption.getlength(overlay.MARKER))
-    at = int(ov.caption_left) + inset  # the bubble grows rightwards from a fixed left edge
-    top = int(ov.caption_y) - 6  # caption_y is the bottom line's centre, and this one fits on it
+    at = int(ov.caption_left)  # the screen prints from its own left edge, always the same one
+    top = int(ov.caption_y) - 6  # caption_y is the *first* line's centre, and this one fits on it
     assert wears((at, top, at + marker_w, top + 14)) == "accent"
     assert wears((at + marker_w, top, at + marker_w + 60, top + 14)) == "phosphor"
     # ...and the furniture: the volume knob, which reads the same number in every state and so
@@ -981,39 +980,62 @@ def test_his_swell_stays_on_the_panel(width: int, height: int) -> None:
         assert 0 < ov.eye[axis] - ov.shoulder and ov.eye[axis] + ov.shoulder < edge
 
 
-def _bubble_mask(band: np.ndarray) -> np.ndarray:
-    """Where the caption bubble is, by its own two colours: the fill, and the outline round it.
+def _ink(band: np.ndarray) -> np.ndarray:
+    """Lit text in a crop of the terminal's screen.
 
-    Alpha alone is not enough and never was. The shoulder's arcs are anti-aliased and a handful
-    of their coverage values land on the fill's exactly; thin the fill and his plate, the corner
-    brackets and half the chrome come in as well. The edge has to be in here too - it is the
-    outermost pixel of the shape, so a mask of the fill alone reports the bubble a pixel further
-    from his face than it is.
+    The glass itself is no use to measure. It is baked with the rest of the chrome and is the
+    same rectangle whatever is printed on it, which is the whole point of it - so what gets
+    measured is the words.
+
+    The upper alpha bound is what separates a letter from a rail, and it is why this can be
+    pointed at a crop wider than the screen. Every glyph on this panel is drawn at CAPTION_ALPHA
+    and every piece of chrome at 255: the two mounts run over the screen's own side edges, and
+    they are brighter phosphor than the text is.
     """
-    rgb, alpha = band[:, :, :3], band[:, :, 3]
-    fill = (alpha == overlay.PLATE_ALPHA) & (rgb == np.array(overlay.SCREEN, np.uint8)).all(axis=2)
-    edge = (alpha == overlay.BUBBLE_EDGE_ALPHA) & (
-        rgb == np.array(overlay.GREEN_DIM, np.uint8)
-    ).all(axis=2)
-    return fill | edge
+    rgb, alpha = band[:, :, :3].astype(int), band[:, :, 3]
+    return (rgb.sum(axis=2) > 300) & (alpha > 150) & (alpha <= overlay.CAPTION_ALPHA)
 
 
-def test_the_bubble_comes_out_of_his_face_without_landing_on_it() -> None:
-    """Both halves, because they pull against each other and only one of them is obvious.
+def test_the_screen_runs_under_both_mounts() -> None:
+    """The whole of why this stopped being a bubble: it is bolted in, not laid on.
 
-    A bubble whose tail stops somewhere out over the picture is a bubble attached to nothing,
-    which is the entire point of shaping it like one - so "well clear of him" is a failure here,
-    not a safe default. The line used to hang off the right-hand edge and grow leftwards, which
-    put the tail wherever the sentence happened to end.
+    A bracket's plate is see-through here, so z-order alone cannot say "behind" - the only chrome
+    that can hide anything is a rail, a bolt, his own disc and the wells the dials sit in. So the
+    screen is cut from the middle of one mount's bottom rail to the middle of the other's, and
+    what proves it is that its side edges are *not visible* down there: a rail is opaque and the
+    glass is not, so alpha alone separates them.
 
-    And he must still not be *under* it. Measured against his circle rather than a box round it,
-    because the tail hangs below the bubble's bottom edge, which is exactly where his disc is
-    widest - a bounding box would call that clear while the tail sat on his rim.
+    Both halves matter and pull against each other. Buried for the whole depth and the screen is
+    a slot with no sides at all; buried for none of it and it is a box standing between two
+    brackets with a gap either side.
     """
     ov = _panel()
-    cx, cy, r = *ov.eye, ov.shoulder
-    top = int(ov.caption_bottom - overlay.CAPTION_LINES * ov.caption_h)
-    bottom = int(ov.caption_bottom) + ov.caption_tail + 1
+    frame = ov.render(state=overlay.LISTENING, level=0.0, elapsed=12.0, phase=10.0)
+    box = ov.term
+    buried = [
+        y for y in range(box.y, box.bottom)
+        if frame[y, box.x, 3] == 255 and frame[y, box.right - 1, 3] == 255
+    ]
+    assert buried, "neither edge of the screen is under a rail - it is sitting on the panel"
+    assert buried[-1] == box.bottom - 1, "the screen comes back out from under the mounts"
+    depth = len(buried) / box.h
+    assert 0.4 < depth < 0.8, (
+        f"{depth:.0%} of the screen's depth is buried; it wants to be about half, so that it "
+        "reads as sliding behind the mounts rather than as a slot or as a box between them"
+    )
+
+
+def test_the_caption_never_lands_on_a_mount() -> None:
+    """However long the sentence, and whatever it wraps to.
+
+    The text is inset from the two rails rather than from the glass's own corners, which are half
+    a rail further out and buried for the whole of the second line's height. Inset from the glass
+    instead and a long caption starts underneath the left-hand bracket.
+    """
+    ov = _panel()
+    rows, _ = _line_box(ov)
+    # Looked at from outside the screen, so that ink landing on a bracket is ink this can see.
+    wide = slice(ov.term.x - 30, ov.term.right + 30)
     for detail in (
         "listening — talk to me",
         "looking for the torque specification for an M8 stainless bolt into aluminium…",
@@ -1021,39 +1043,34 @@ def test_the_bubble_comes_out_of_his_face_without_landing_on_it() -> None:
     ):
         band = ov.render(
             state=overlay.SEARCHING, level=0.0, elapsed=12.0, detail=detail, phase=10.0
-        )[top:bottom]
-        mask = _bubble_mask(band)
-        assert mask.any(), "no bubble on the panel at all - this would pass on a blank line"
-        ys, xs = np.nonzero(mask)
-        reach = np.hypot(xs - cx, ys + top - cy).min() - r
-        # Measured against his *swell* and not his rim: the rail goes round him out there, and a
-        # tail that stopped short of the rail would be coming out of the bracket's edge rather
-        # than out of him. Both bounds are the gap itself, which is the one number here anybody
-        # chose - the left edge is solved for so the tail's tip lands exactly on it.
-        assert reach >= ov.caption_nose, (
-            f"the bubble is {ov.caption_nose - reach:.1f}px inside its own gap: {detail[:30]!r}"
-        )
-        assert reach < 2 * ov.caption_nose, (
-            f"its nearest point is {reach:.1f}px off his rim - the tail comes out of nothing"
+        )[rows, wide]
+        ink = _ink(band)
+        assert ink.any(), "nothing on the screen at all - this would pass on a blank line"
+        xs = np.nonzero(ink.any(axis=0))[0] + wide.start
+        assert ov.caption_left <= xs.min() and xs.max() <= ov.caption_right, (
+            f"{detail[:30]!r} put ink at {xs.min()}..{xs.max()}, outside "
+            f"{ov.caption_left}..{ov.caption_right} - it is standing on a bracket"
         )
 
 
 def test_a_long_caption_takes_a_second_line_rather_than_a_stub() -> None:
-    # One line meant every sentence worth reading was cut to a stub ending in an ellipsis, in a
-    # bubble with most of the picture still free beside it. Measured on the bubble's height,
-    # which is the thing that has to grow, and upwards, because the bottom edge is where the
-    # tail hangs from and the tail has his shoulder to clear.
+    # One line meant every sentence worth reading was cut to a stub ending in an ellipsis, with
+    # most of the panel still free beside it. Measured on the ink now rather than on a slab: the
+    # screen is two lines deep whatever is on it, so what has to grow is what is printed - and it
+    # grows *downwards*, onto the second line, because a terminal prints from the top.
     ov = _panel()
     shown = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0, phase=10.0)
+    rows, cols = _line_box(ov)
 
     def box(detail: str) -> tuple[int, int]:
-        rows = np.where(_bubble_mask(ov.render(detail=detail, **shown)).any(axis=1))[0]
-        return int(rows.min()), int(rows.max())
+        ink = _ink(ov.render(detail=detail, **shown)[rows, cols])
+        lines = np.where(ink.any(axis=1))[0]
+        return int(lines.min()), int(lines.max())
 
     short = box("searching…")
     long_ = box("looking for the torque specification for an M8 stainless bolt into aluminium…")
-    assert long_[1] == short[1], "the bubble grew downwards, onto the tab row"
-    assert short[0] - long_[0] == pytest.approx(ov.caption_h, abs=2), "no second line appeared"
+    assert long_[0] == short[0], "the first line moved - the screen prints from its own top edge"
+    assert long_[1] - short[1] == pytest.approx(ov.caption_h, abs=3), "no second line appeared"
     # ...and the second line is used to say more, not to say the same amount twice as tall.
     lines = ov._wrap("a b c d e f g h i j k l m n o p q r s t u v w x y z", ov.font_caption, 60, 2)
     assert len(lines) == 2 and lines[-1].endswith("…"), "the wrap neither filled nor cut"
