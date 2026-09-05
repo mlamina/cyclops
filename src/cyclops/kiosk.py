@@ -74,6 +74,7 @@ from .overlay import (  # noqa: E402
     STOPPING,
     VOLUME,
     VOLUME_STEP,
+    WORKING,
     Overlay,
     composite,
     fit_to_window,
@@ -1735,6 +1736,14 @@ class Kiosk:
 
             status = self.controller.status()
             state = self._effective(str(status["state"]))
+            # Nobody is talking to him, but something is running - a drawing that outlived the
+            # tool call that asked for it, or the child tidying up after a session that has
+            # already ended (cyclops.tasks). Only ever over IDLE: a session says what it is doing
+            # for itself, in states that are about a conversation, and this one is not. Read once
+            # here and used twice - it picks the mood, and it is the caption's last fallback below.
+            job = tasks.line()
+            if job and state == IDLE:
+                state = WORKING
             asleep = self._sleeping(state)
 
             # What the ring is saying. Handed over every frame because what it reflects is a
@@ -1810,7 +1819,7 @@ class Kiosk:
                     # used to sit on the snore for the whole minute cyclops.after takes.
                     # `tasks.line()` memoises on the file's stat, so asking every frame is a
                     # stat and nothing else.
-                    detail=self._saying() or str(status["detail"]) or tasks.line(),
+                    detail=self._saying() or str(status["detail"]) or job,
                     # One instant for the whole frame, taken at the top of the loop. The caption
                     # breathes and counts its dots off this rather than off a clock of its own,
                     # so the animation cannot drift between elements or with the frame rate.

@@ -51,7 +51,7 @@ def main() -> None:
     for row, (state, mood) in enumerate(moods.items()):
         engine = EyeEngine(RADIUS, 2, overlay.SCREEN, mood)
         top = row * cell
-        d.text((8, top + cell // 2 - 4), overlay.LABELS[state], fill=overlay.GREEN_MID)
+        d.text((8, top + cell // 2 - 4), state.upper(), fill=overlay.GREEN_MID)
         d.text((8, top + cell // 2 + 8), f"{state}", fill=overlay.GREEN_DIM)
         for col in range(args.frames):
             phase = col * args.seconds / max(1, args.frames)

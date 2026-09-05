@@ -192,12 +192,17 @@ def test_the_sleeping_rings_are_not_a_gear_train() -> None:
 
 
 def test_a_mood_that_asks_for_no_wander_gets_the_turn_it_always_had() -> None:
-    # sway defaults to 0 and every other mood leaves it there, so this is what keeps the change
-    # to the sleeping face from quietly rewriting the other nine.
+    # sway defaults to 0, and this is what keeps a wander added to one mood from quietly
+    # rewriting the rest. Two moods ask for one and they are named here rather than counted:
+    # the sleeping face, whose rings turn over because a resting creature is not a gear train,
+    # and the working one, whose rings turn over because a machine under load is not either.
+    # A third arriving without a decision still trips this.
+    wanders = {overlay.IDLE, overlay.WORKING}
     for phase in (0.0, 3.3, 91.7):
         for share in (eye.KNURL_SPIN, eye.CASTLE_SPIN, eye.DOT_SPIN, eye.SCAN_SPIN):
             assert eye.wander(phase, 7.0, share, 0.0, 0) == pytest.approx(7.0 * share * phase)
-    assert all(m.sway == 0.0 for state, m in overlay.MOODS.items() if state != overlay.IDLE)
+    assert all(m.sway == 0.0 for state, m in overlay.MOODS.items() if state not in wanders)
+    assert all(overlay.MOODS[state].sway > 0.0 for state in wanders), "or the row says nothing"
 
 
 def test_the_states_do_not_all_look_the_same() -> None:

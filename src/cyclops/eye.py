@@ -263,7 +263,9 @@ def blink(phase: float, every: float) -> float:
     return 1.0 - breath(since, BLINK_S)
 
 
-def wander(phase: float, spin: float, share: float, sway: float, ring: int) -> float:
+def wander(
+    phase: float, spin: float, share: float, sway: float, ring: int, sway_s: float = SWAY_S
+) -> float:
     """Where one ring has got to by *phase*, in degrees: its own steady turn, pushed as it goes.
 
     *share* is the ring's multiple of the mood's spin - the counter-rotation it would have on
@@ -289,8 +291,9 @@ def wander(phase: float, spin: float, share: float, sway: float, ring: int) -> f
     turn = spin * share * phase
     if sway <= 0.0 or spin == 0.0:
         return turn
-    long = SWAY_S * (1.0 + BLINK_DRIFT)  # the golden ratio times the short one
-    for i, period in enumerate((SWAY_S, long)):
+    short = sway_s if sway_s > 0.0 else SWAY_S
+    long = short * (1.0 + BLINK_DRIFT)  # the golden ratio times the short one
+    for i, period in enumerate((short, long)):
         offset = ((ring + 1) * (i + 1) * BLINK_DRIFT) % 1.0
         turn += sway * spin * period / TAU * math.sin(TAU * (phase / period + offset))
     return turn
@@ -326,6 +329,18 @@ class Mood:
     # 0 is a gear train, every ring locked to every other. Past 1 a ring's wander outruns its
     # own rate and it turns over now and then - which is the whole point of it, since a set that
     # only ever varies its speed still reads as one mechanism running unevenly.
+    sway_s: float = SWAY_S  # ...and how long one surge of that wander lasts. Amplitude and rate
+    # are separate on purpose - see :func:`wander`, where a term pushes just as hard whatever its
+    # period is - so this is the knob for *how often* a ring turns over, where `sway` is only how
+    # hard it is pushed. A sleeping face surges over sixteen seconds because that is a creature
+    # breathing; a working one wants its parts changing speed several times in a glance.
+    # It snaps between moods rather than easing; see :meth:`lerp` for the measurement.
+    core: float = 1.0  # how much of an eye there is behind the blades, 0 .. 1. At 0 the
+    # diaphragm meets in the middle and nothing is drawn inside it - no hole, no bezel, no spark -
+    # which is the difference between a narrowed eye and a shut one. Every other number in here
+    # describes a face looking at something, at some width and in some direction; this is the one
+    # that says there is nobody looking out. It scales the hole rather than gating it so that
+    # closing is an animation: he winds the iris down as he goes to work.
     rings: float = 1.0  # how present he is at all. 1 is his own resting level and
     # not a ceiling - above it he comes up towards full, which is what a tap uses
     scan: float = 0.0  # length in degrees of a bright arc sweeping the rim, 0 for none
@@ -363,7 +378,16 @@ class Mood:
                 # about, and the eye spends the 0.45 s darting at random. `breath_s` is a period
                 # too and *is* eased, which is the exception that shows the rule - it is used as
                 # a phase, not as an index, so it slides instead of jumping.
-                for name in ("aperture", "swell", "breath_s", "voice", "spin", "sway",
+                #
+                # `sway_s` is a period and is NOT eased, and "it goes into a sine rather than a
+                # floor" is not enough to save it - that was tried. wander() uses it as
+                # `sin(phase / period)`, and `phase` is monotonic seconds since the kiosk started,
+                # so sliding the period from 16.3 to 1.6 sweeps that argument through thousands of
+                # turns inside 0.45 s. Measured: the knurl lurches between -60 and +165 degrees a
+                # second during the crossfade, against a mood whose steady rate is 52, and it does
+                # it at every uptime. Snapped, the same transition stays inside its own rate. The
+                # amplitude eases and the period does not, which is the rule above after all.
+                for name in ("aperture", "swell", "breath_s", "voice", "spin", "sway", "core",
                              "rings", "scan", "gaze", "dart", "look_x", "look_y")
             },
         )
@@ -806,9 +830,9 @@ class EyeEngine:
         # Each ring is asked where it has got to rather than all of them being read off one
         # clock. With no sway that is the same product it always was; with one they drift apart,
         # overtake and turn back under each other - see :func:`wander`.
-        fast = wander(phase, mood.spin, KNURL_SPIN, mood.sway, 0)
-        mid = wander(phase, mood.spin, CASTLE_SPIN, mood.sway, 1)
-        slow = wander(phase, mood.spin, DOT_SPIN, mood.sway, 2)
+        fast = wander(phase, mood.spin, KNURL_SPIN, mood.sway, 0, mood.sway_s)
+        mid = wander(phase, mood.spin, CASTLE_SPIN, mood.sway, 1, mood.sway_s)
+        slow = wander(phase, mood.spin, DOT_SPIN, mood.sway, 2, mood.sway_s)
 
         # The rim, and the sweep when a mood asks for one. A radar sweep is built the way one is:
         # the trace is bright and the ring under it is faint. The highlight used to be mixed
@@ -819,7 +843,7 @@ class EyeEngine:
         scanning = mood.scan > 0.0
         pen.ring(r * RIM, RIM_LIT * (SCAN_DIM if scanning else 1.0), self._stroke * RIM_W)
         if scanning:
-            start = wander(phase, mood.spin, SCAN_SPIN, mood.sway, 3) % 360.0
+            start = wander(phase, mood.spin, SCAN_SPIN, mood.sway, 3, mood.sway_s) % 360.0
             pen.band(r * RIM, start, start + mood.scan, RIM_LIT,
                      self._stroke * RIM_W + self._thin)
 
@@ -850,7 +874,14 @@ class EyeEngine:
         r = self._c
         iris = r * IRIS
         open_ = self.aperture(mood, phase, level)
-        hole = iris * (HOLE_MIN + (HOLE_MAX - HOLE_MIN) * open_)
+        hole = iris * (HOLE_MIN + (HOLE_MAX - HOLE_MIN) * open_) * max(0.0, min(1.0, mood.core))
         pen.leaves(iris, hole, LEAF_N, LEAF_TWIST, max(2.0 * SUPERSAMPLE, iris * HATCH))
+        # A hole narrower than the spark's own floor is not a small eye, it is a closed one, and
+        # the two have to be told apart here because :meth:`Pen.core` cannot: it guarantees a
+        # spark of at least one whole panel pixel however small the core is (and must - see the
+        # note there), so drawing it at a hole the blades have already met across would leave the
+        # brightest mark on the whole face sitting on a shut diaphragm.
+        if hole <= SPARK_FLOOR * SUPERSAMPLE:
+            return
         pen.loop(hole * BEZEL, BEZEL_LIT, self._stroke * BEZEL_W)
         pen.core(hole, (gx * hole * GAZE_LEAD, gy * hole * GAZE_LEAD))

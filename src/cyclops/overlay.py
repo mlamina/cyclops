@@ -92,6 +92,12 @@ IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
 # session down takes ~2.3 s, during which the controller still honestly reports "listening" -
 # so without these the button looks dead for over two seconds after you press stop.
 STARTING, STOPPING = "starting", "stopping"
+# ...and the one state that is not about a session at all: something is running in the background
+# with nobody in a conversation to narrate it - a drawing that outlived the tool call that asked
+# for it, or the child naming and filing a session that has already ended (see cyclops.tasks).
+# The panel used to show that as IDLE, so a box that was working for a minute wore a sleeping
+# face and snored through it.
+WORKING = "working"
 
 
 def session_up(state: str) -> bool:
@@ -101,7 +107,7 @@ def session_up(state: str) -> bool:
     fills in. The kiosk asks it too, so that what the switch shows and what the switch does can
     never drift apart - see ``_toggle_session``.
     """
-    return state not in (IDLE, ERROR)
+    return state not in (IDLE, ERROR, WORKING)
 
 
 def awake(state: str) -> bool:
@@ -112,7 +118,7 @@ def awake(state: str) -> bool:
     that is what you asked for, and the cell stays lit with the caption saying "saving the
     video…" because that is what is still true.
     """
-    return state not in (IDLE, ERROR, STOPPING)
+    return state not in (IDLE, ERROR, STOPPING, WORKING)
 
 
 # Phosphor palette. The chrome is one hue - the brand, the rules, the ticks, the two tabs that do
@@ -138,6 +144,15 @@ RED = (255, 86, 70)
 # the REC tag both went pale long before this did, because on a one-hue tube pale is the only
 # direction left.
 WHITE = (225, 255, 240)
+# And the one the machine gets while it works with nobody talking to it. The note above says a
+# blue-cyan was tried as the *accent* and fought the green, and that still holds - which is why
+# this is not one: it wears no chrome, tints no border and lights no readout. It is the eye's own
+# colour and nothing else's, for the one state where he is not a face answering anybody but a
+# mechanism running on its own, and a cold hue is what says that where the tube's white would
+# only say "up". Kept dark and slightly green-shifted rather than a pure hue for the same reason
+# WHITE is not paper white: this is one phosphor screen, and a colour with none of the screen in
+# it reads as a sticker on the glass.
+BLUE = (96, 168, 255)
 SCREEN = (5, 15, 10)  # the green-black the brackets and their plates are made of
 INK = (3, 11, 7)  # text on a filled tab
 
@@ -149,6 +164,10 @@ INK = (3, 11, 7)  # text on a filled tab
 # panel where everything is an accent has none.
 HALOS = {
     IDLE: GREEN_DIM,
+    # The border stays where a sleeping one is: it answers "is the agent up?", and he is not.
+    # Working is a thing the box is doing, not a conversation - the eye says so, and the eye is
+    # the one part of this panel whose job is to say what he is like rather than whether he is on.
+    WORKING: GREEN_DIM,
     STARTING: AMBER,
     STOPPING: AMBER,  # disconnecting is the same transition, run backwards
     CONNECTING: AMBER,
@@ -187,6 +206,10 @@ HEAT_WORD = "HOT"
 # project is being opened, which step of the teardown is running - and that wins; this is what the
 # panel falls back on. Every state has one, so the line is never blank while a session is up.
 CAPTIONS = {
+    # Never actually read: this state exists only while cyclops.tasks has a sentence, and that
+    # sentence is what the caption shows. Here because every state has a resting line and the one
+    # that could get away without it is the one that would be blank on the day something changed.
+    WORKING: "working…",
     IDLE: "zzZzzzZ…",  # he snores. The microphone opposite still breathes towards the colour it
     # will turn, which is the half of this that was ever load-bearing - so the line is free to
     # stop being an instruction and go back to being him.
@@ -286,6 +309,57 @@ MOODS = {
     # and looking down at the work while it does, which is the one mood with a lean it holds.
     DRAWING: Mood(tint=WHITE, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0,
                   gaze=0.26, look_x=-0.30, look_y=0.42),
+    # Working, with nobody talking to him. The one mood in this table that is not a face at all,
+    # and every number here is pushing away from the creature the rest of them describe.
+    #
+    # The pupil is shut, and `core` at 0 is what shuts it rather than a small `aperture`. Narrowing
+    # the iris was tried first and leaves an ember: the blades stop at HOLE_MIN and Pen.core puts a
+    # guaranteed spark in whatever hole is left, so the brightest mark on the face was still there,
+    # still centred, still reading as something looking back. At 0 the blades meet and nothing is
+    # drawn inside them. That is the whole of "he is not attending to you" - every other awake mood
+    # opens to something, and this one has nothing to open to. `aperture` is left near zero anyway
+    # so that the closing is a closing: he winds the iris down on his way into this mood rather
+    # than snapping shut.
+    #
+    # `sway` is what stops it being a graphic. It was zero here at first, on the argument that a
+    # locked gear train is what a machine is - and a set of rings turning at one rate that never
+    # varies reads as a spinning logo, because every arrangement it reaches it has reached before.
+    # A machine under changing load winds up, falls back and turns parts over, and that is the
+    # half of "running" you cannot get from speed alone.
+    #
+    # `sway_s` is the half of that which says how *often*, and it is the reason this mood needed
+    # a knob the table did not have. Amplitude and rate are separate in eye.wander - a term pushes
+    # just as hard whatever its period - so `sway` alone cannot make a ring turn over more than
+    # about twice a minute at sleep's sixteen-second surge. Raising it only makes the same slow
+    # heave harder.
+    #
+    # 1.2 over 1.6 s, measured rather than guessed: each of the three visible rings changes
+    # direction about once a second, and the knurl spends 22% of its time running backwards. What
+    # was tried on either side of it - the surge lengths are what matters, not the amplitude.
+    # At 2.5 s it turns over every two or three seconds, which is a machine changing its mind
+    # rather than one under load. At 1.2 s and sway 1.6 the runs get shorter than the eye can
+    # follow and it stops reading as turning at all - it judders. This keeps sustained runs in
+    # both directions, which is what makes the reversals read as reversals.
+    #
+    # The scan arc rides the same wander at share 2.3 and is barely touched by it - 1% of its time
+    # backwards - so the sweep goes on going one way underneath all of it, which is what a rotor
+    # should do while the gear train around it argues.
+    #
+    # Briskly, and one way. 52 degrees a second is a turn every seven seconds - fast enough to be
+    # plainly running from across a bench, slow enough not to read as the hunt SEARCHING does at
+    # 155. The scan arc is the rotor: one bright sweep going round the rim, which is the panel's
+    # existing way of saying a mechanism is turning rather than merely lit.
+    #
+    # And it does not look around, does not blink and does not breathe like a creature - `gaze`
+    # and `blink_s` at zero, and the swell a small fast tick at 1.8 s rather than a lung. A face
+    # that glanced about while it worked would be waiting for you; this one has its head down.
+    # `rings` above his resting level, which is the one number here that is about being seen
+    # rather than about being a machine. At 1.0 he was dimmer working than asleep - the sleeping
+    # face is green, and green is the brightest thing this phosphor does, so the same presence in
+    # a cold hue reads as less. 1.25 puts him back level with it; 1.5 was tried and reads as lit
+    # rather than running, which is the opposite of the point.
+    WORKING: Mood(tint=BLUE, aperture=0.04, swell=0.03, breath_s=1.8, spin=52.0, sway=1.2,
+                  sway_s=1.6, scan=64.0, gaze=0.0, rings=1.25, core=0.0),
     # A fault. Still and red, and pointedly not pulsing - not even the sleeping breath: a thing
     # that throbs is asking to be watched, and this one is asking to be read. The caption
     # underneath says what broke, and it is the only face on the panel that never moves at all
@@ -1669,8 +1743,11 @@ class Overlay:
         # a snore that holds still is a printed label. A fault gets neither: it is asking to be
         # read, not watched.
         sunk, walking = caption_pulse(phase)
-        sunk = sunk if session_up(state) else 0.0
-        lit = walking if session_up(state) or state == IDLE else 0
+        # Working breathes and walks its dots along with a session, though it is not one: the line
+        # under a busy box is a job in flight, which is exactly what this animation is for. It is
+        # the only thing on the panel that says so while the border and the readouts sit at rest.
+        sunk = sunk if session_up(state) or state == WORKING else 0.0
+        lit = walking if session_up(state) or state in (IDLE, WORKING) else 0
         colour = mix(halo if state == ERROR else GREEN, SCREEN, sunk)
         # The marker takes the accent and the sentence does not. A whole line of running text in
         # white over a live camera is harder to read than the same line in phosphor, and the
