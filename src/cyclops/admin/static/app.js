@@ -44,7 +44,9 @@ const talk = document.getElementById('talk');
 // The panel navigates with four tabs and every other client with one menu (see dashboard.html).
 // Only one of these is ever on the page, and the code below simply drives whichever it found.
 const tabs = [...document.querySelectorAll('.tab')];
-const pick = document.getElementById('pick');
+// Not `pick`: that id belongs to the Upload button down in the crumb bar, and an id claimed
+// twice is silently won by whichever element is earlier in the document.
+const menu = document.getElementById('menu');
 const rig = document.getElementById('rig');
 const play = document.getElementById('play');
 const vnow = document.getElementById('vnow');
@@ -797,7 +799,7 @@ vSessions.addEventListener('click', (e) => {
 for (const tab of tabs) {
   tab.addEventListener('click', () => { location.hash = '#' + tab.dataset.go; });
 }
-if (pick) pick.addEventListener('change', () => { location.hash = '#' + pick.value; });
+if (menu) menu.addEventListener('change', () => { location.hash = '#' + menu.value; });
 // Every project row, every file row and every crumb says where it goes, so one listener moves
 // all of them. The markdown's own links need none: shelf.py writes them as hashes already, and
 // a hash is the one href that changes this page without navigating away from it.
@@ -834,7 +836,7 @@ function route() {
   document.body.classList.add(view);
   for (const el of tabs) el.setAttribute('aria-current', el.dataset.go === tab ? 'true' : 'false');
   // The parent route, so a session or a file leaves the menu reading the list it came from.
-  if (pick) pick.value = tab;
+  if (menu) menu.value = tab;
   // Views scroll on their own, and a new one always starts at the top. The browser and the
   // reader keep their crumb bar still and scroll the half under it, so those two are named
   // here rather than caught by the .view sweep.

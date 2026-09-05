@@ -166,7 +166,7 @@ async function stub(ctx) {
 // the handful of properties that decide it. Not all of getComputedStyle: that is 340 properties
 // per element of which 330 never move, and a diff nobody reads is a check nobody runs.
 
-const WATCH = ['body', 'header', '.brand', '.nav', '.tab', '.pick', '.system', '.controls', '.ctl',
+const WATCH = ['body', 'header', '.brand', '.nav', '.tab', '.menu', '.system', '.controls', '.ctl',
   '.meters', '.meter', '.mtrack', '.mrow', '.mlabel', '.mvalue', '.vslider', '.sw', '.close',
   '.view', '.row', '.shot', '.rowtext', '.rowtitle', '.rowsum', '.rowwhen', '.grid', '.cell',
   '.watch', '.playing', '.video', '.talk', '.line', '.caption', '.stitle', '.smeta', '.ssum',
@@ -214,6 +214,21 @@ async function overflows(page) {
   });
 }
 
+// An id claimed twice is won silently by whichever element is earlier in the document, and the
+// loser is simply never wired up. That is not a layout question, but this is the only harness
+// that loads the real page in a real browser, and the bug it caught - a <select> in the header
+// taking the Upload button's id, so opening the menu opened a file dialog and Upload did
+// nothing - cost more than the six lines of checking it.
+async function duplicateIds(page) {
+  return page.evaluate(() => {
+    const seen = new Map();
+    for (const el of document.querySelectorAll('[id]'))
+      seen.set(el.id, (seen.get(el.id) || 0) + 1);
+    return [...seen].filter(([, n]) => n > 1)
+      .map(([id, n]) => `id="${id}" is on ${n} elements`);
+  });
+}
+
 async function navReachable(page) {
   return page.evaluate(() => {
     const bad = [];
@@ -224,7 +239,7 @@ async function navReachable(page) {
     // document. Both are matched here rather than one, because a check that iterates a selector
     // the page no longer has passes by finding nothing - which is the failure it was written to
     // catch, wearing a tick.
-    const found = [...document.querySelectorAll('.tab, .pick')];
+    const found = [...document.querySelectorAll('.tab, .menu')];
     if (!found.length) return ['there is no navigation on this page at all'];
     for (const el of found) {
       const name = el.tagName === 'SELECT' ? 'the menu' : el.textContent;
@@ -282,6 +297,7 @@ for (const [name, hash] of SCREENS) {
   if (!(await page.evaluate(() => document.body.classList.contains('kiosk'))))
     failures.push(`panel/${name}: KIOSK=${KIOSK} is not loopback - this is the LAN page, not the panel`);
   found[`panel/${name}`] = await probe(page);
+  for (const line of await duplicateIds(page)) failures.push(`panel/${name}: ${line}`);
   for (const e of errors) failures.push(`panel/${name}: console: ${e}`);
   await ctx.close();
 }
@@ -297,6 +313,7 @@ for (const [size, width, height] of SIZES) {
     found[`${size}/${name}`] = await probe(page);
     for (const line of await overflows(page)) failures.push(`${size}/${name}: ${line}`);
     for (const line of await navReachable(page)) failures.push(`${size}/${name}: ${line}`);
+    for (const line of await duplicateIds(page)) failures.push(`${size}/${name}: ${line}`);
     for (const e of errors) failures.push(`${size}/${name}: console: ${e}`);
     await ctx.close();
   }
