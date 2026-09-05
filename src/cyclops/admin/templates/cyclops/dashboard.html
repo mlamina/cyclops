@@ -83,7 +83,7 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
          they belong to, instead of with a rule that has to remember to. -->
     <div class="controls">
       <section class="ctl">
-        <div class="chead">
+        <div class="chead cslim">
           <span class="vlabel">VOL</span>
           <output class="cvalue" id="volval">{{ volume|default:80 }}%</output>
         </div>
@@ -107,6 +107,33 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
                   aria-checked="{% if barge_in %}true{% else %}false{% endif %}">{% if barge_in %}ON{% else %}OFF{% endif %}</button>
         </div>
         <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}wait for Cyclops to finish{% endif %}</span>
+      </section>
+      <!-- Who answers you. Ten voices is too many to argue about on paper and none of them can be
+           told apart by name, so every one of these three buttons plays one: the arrows step and
+           play, the name in the middle plays the one you are on again. They all POST the same
+           thing to the same route, so replaying is not a second mechanism.
+
+           data-voices carries the ten in order, so stepping is local and the round trip is only
+           ever the setting - a stepper that had to wait for the network to redraw its own label
+           would be a stepper you press twice.
+
+           The only row here with no hint under it, and the last 22 px the column had. The other
+           three say ON or SCREEN, which is a word that needs explaining; this one plays the
+           voice, which is the explanation. What a line of text would have had to carry instead -
+           that the choice lands on the next session rather than on the one you may be in the
+           middle of - is in the labels below, in the README, and in .env.example. -->
+      <section class="ctl" data-voices="{{ voices|join:" " }}">
+        <div class="chead">
+          <span class="vlabel">VOICE</span>
+          <span class="vstep">
+            <button class="sw swarrow" id="voiceprev" type="button"
+                    aria-label="Previous voice; plays it, and answers you in it next session">&lsaquo;</button>
+            <button class="sw swname" id="voicename" type="button"
+                    aria-label="Play this voice again; it answers you next session">{{ voice|upper }}</button>
+            <button class="sw swarrow" id="voicenext" type="button"
+                    aria-label="Next voice; plays it, and answers you in it next session">&rsaquo;</button>
+          </span>
+        </div>
       </section>
     </div>
     {% endif %}

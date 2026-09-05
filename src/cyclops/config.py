@@ -63,6 +63,20 @@ BARGE_IN_FILE = Path.home() / ".cache" / "cyclops" / "barge-in"
 # CYCLOPS_RECORD_SOURCE is left to decide - see :mod:`cyclops.filming`.
 RECORD_SOURCE_FILE = Path.home() / ".cache" / "cyclops" / "record-source"
 
+# And where it leaves the answer to "who should be answering me?" - one of the ten voices the
+# Realtime API offers. The same note-and-pick-up shape as the three above, and for the same
+# reason as the record source: the page is not the process that opens the conversation, and the
+# voice can only be set in the ``session.update`` that opens one. Absent means nobody has ever
+# said, and CYCLOPS_VOICE is left to decide - see :mod:`cyclops.voice`.
+VOICE_FILE = Path.home() / ".cache" / "cyclops" / "voice"
+
+# And beside it, the one note here that is a request rather than a state: play that voice now, so
+# whoever is standing at the panel can hear what they are choosing between. Written by the page,
+# consumed *and deleted* by the kiosk - the only process on this box with a /dev/snd - which is
+# the same shape as PANEL_FILE and for the same reason: a thing that has been done is not a
+# setting, and leaving it lying about would sound it again on the next poll.
+SAY_VOICE_FILE = Path.home() / ".cache" / "cyclops" / "say-voice"
+
 # And where the index service leaves what it has read off the card, for the voice agent to search.
 # One file rather than two, because the service writes it while a session reads it and there is no
 # lock between them: vectors and their metadata in separate files could be torn apart across a
@@ -246,6 +260,29 @@ def _record_source(name: str) -> str:
     return raw.lower()
 
 
+def _voice(name: str) -> str:
+    """One of the ten the Realtime API will accept. See :mod:`cyclops.voice`.
+
+    Validated here rather than left to OpenAI for the reason ``_record_source`` is: a box that
+    will not do what you meant should say so while you are watching, and the alternative is a
+    session that opens, is refused, and closes again with the reason three layers down in a
+    websocket error.
+
+    The names are written out here rather than imported from ``cyclops.voice``, which imports
+    this module - ``_record_source`` has the same duplication for the same reason, and
+    ``tests/test_voice.py`` is what holds the two lists to each other.
+    """
+    raw = _env(name)
+    if raw is None:
+        return Settings.voice
+    wanted = raw.lower()
+    legal = ("marin", "cedar", "alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer",
+             "verse")
+    if wanted not in legal:
+        raise ConfigError(f"{name} must be one of {', '.join(legal)}, got {raw!r}")
+    return wanted
+
+
 def _lang(name: str) -> str | None:
     raw = _env(name)
     if raw is None:
@@ -271,7 +308,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
     return Settings(
         api_key=api_key or "",
         model=_env("CYCLOPS_MODEL") or Settings.model,
-        voice=_env("CYCLOPS_VOICE") or Settings.voice,
+        voice=_voice("CYCLOPS_VOICE"),
         volume=_volume("CYCLOPS_VOLUME"),
         sounds=_flag("CYCLOPS_SOUNDS", Settings.sounds),
         reasoning_effort=_env("CYCLOPS_REASONING_EFFORT"),

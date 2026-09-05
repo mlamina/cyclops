@@ -47,6 +47,7 @@ from . import (  # noqa: E402
     sfx,
     stats,
     still,
+    voice,
     webcam,
 )
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
@@ -59,6 +60,7 @@ from .config import (  # noqa: E402
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
     PANEL_PAINTED_FLAG,
+    SAY_VOICE_FILE,
     ConfigError,
     load_settings,
 )
@@ -456,6 +458,7 @@ class Kiosk:
         # and the session already agree, and there is nothing to say.
         self._barge_margin = barge.margin_db(controller.settings)
         self._barge_at = 0.0
+        self._say_at = 0.0  # when we last looked for a voice the page wants sounded
         self._browser: subprocess.Popen | None = None  # the admin browser, kept warm from boot
         self._warm_at = time.time()  # when it was launched, so a note older than it means nothing
         self._close_at = 0.0  # when we last looked for a Close from a page nobody here put up
@@ -1477,6 +1480,33 @@ class Kiosk:
         self.controller.set_barge_in(margin)
         print(f"· barge-in {'off' if margin is None else f'on at {margin:g} dB'}", flush=True)
 
+    # ---- the voice ----
+
+    def _sync_voice(self) -> None:
+        """Sound the voice the settings screen is asking to hear.
+
+        The other three notes are settings, read over and over; this one is a request, taken and
+        thrown away. It is here rather than on the page because the page is a browser and this is
+        the only process on the box with a /dev/snd - the same reason the volume cannot set
+        itself (see cyclops.mixer).
+
+        Which voice a session actually opens with is not decided here at all: it is the ordinary
+        note beside this one, read by cyclops.ui when the session opens. This is only the sound.
+        """
+        now = time.monotonic()
+        if now - self._say_at < VOLUME_POLL_S:
+            return
+        self._say_at = now
+        try:
+            wanted = SAY_VOICE_FILE.read_text().strip().lower()
+        except OSError:
+            return  # no request, which is almost always the answer
+        # Taken before it is played, and unlinked either way: a name that is not one of the ten
+        # left lying here would be asked for again every half second for the rest of the day.
+        SAY_VOICE_FILE.unlink(missing_ok=True)
+        if wanted in voice.NAMES:
+            self._cues.play(voice.cue(wanted))
+
     # ---- sleep ----
 
     def _sleeping(self, state: str) -> bool:
@@ -1577,6 +1607,7 @@ class Kiosk:
                 self._touched_at = time.monotonic()  # closing the page is a touch like any other
             self._sync_volume()  # the page sets the volume, so keep reading it while it is up
             self._sync_barge_in()  # ...and whether it may be interrupted, on the same beat
+            self._sync_voice()  # ...and plays a voice the settings screen asks to hear
             self._sync_stranded()  # ...and whether the warm browser has ended up in front of us
             if self._hidden:
                 time.sleep(1.0 / ADMIN_FPS)  # nothing we draw now can be seen by anyone

@@ -615,7 +615,7 @@ ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 | `OPENAI_API_KEY`       | —              | Required.                                                  |
 | `CYCLOPS_MODEL`        | `gpt-realtime-2.1` | Realtime model id (`gpt-realtime-2.1-mini` is ~3× cheaper). |
 | `CYCLOPS_REASONING_EFFORT` | `low`      | `minimal` for lowest latency, up to `xhigh` (2.x models).  |
-| `CYCLOPS_VOICE`        | `marin`        | Output voice.                                              |
+| `CYCLOPS_VOICE`        | `marin`        | Output voice: `marin`, `cedar`, `alloy`, `ash`, `ballad`, `coral`, `echo`, `sage`, `shimmer` or `verse`. `marin` and `cedar` are the two OpenAI recommends. The panel's VOICE stepper overrides this once it has been touched, and plays each voice as you step through them. |
 | `CYCLOPS_VOLUME`       | `100`          | Output volume percent (0–100); also a slider in the touchscreen UI. |
 | `CYCLOPS_CAMERA_INDEX` | `auto`         | `auto` probes cameras, remembers the one that delivers frames, and falls back to a useeplus endoscope if no `/dev/video*` answers; a number pins a specific `/dev/video*`. |
 | `CYCLOPS_HALF_DUPLEX`  | `auto`         | `auto`: speaker mode on when the output device is a speaker. `1`/`0` force it. |

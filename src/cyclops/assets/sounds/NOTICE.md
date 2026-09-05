@@ -37,9 +37,36 @@ Three of those flags are decisions rather than defaults:
 turned into silence with a line on stderr rather than played at the wrong speed, and
 `tests/test_sfx.py` is what catches it before it ships.
 
+## The ten voice samples
+
+`voice_*.wav` are a different kind of thing from the five above and are cut by a different
+route. They are one sentence — "I'm Cyclops. Show me what you're working on." — spoken by each
+of the ten voices the Realtime API offers, played by the VOICE stepper on the settings screen so
+that choosing between them is done by ear (`cyclops.voice`, `cyclops.kiosk._sync_voice`).
+
+No masters are kept. The five designed cues came from a sample pack and could never be made
+again; these are model output from one line of text and one model name, both of which are
+written down in `tools/voice_clips.py`. Re-running that is the master:
+
+```sh
+uv run python tools/voice_clips.py            # all ten
+uv run python tools/voice_clips.py --only cedar
+```
+
+It does the cut itself, in numpy, rather than handing off to the ffmpeg line above — what these
+have to hit is not a dB figure but the two bands `tests/test_sfx.py` measures, and measuring
+exactly what the test measures is the only way to be sure of landing inside them. Every clip is
+matched to the same loudest-50 ms figure as the beeps, which matters more here than it does for
+a cue: ten voices heard one after another are being *compared*, and one that is merely louder
+than the one before it sounds better than it is.
+
 ## Licence
 
 Sourced from a **Zenhiser** sample pack (`Transformer FX 2`); the artist and copyright tags are
 left intact in the converted files rather than stripped. Zenhiser's terms permit use in
 productions but prohibit redistributing the samples as samples, so if this repo ever gains a
 public remote or a distributed wheel, these four files are the thing to reconsider.
+
+The ten `voice_*.wav` are not Zenhiser material and are not covered by any of that: they
+are OpenAI model output, generated here, and are governed by the API terms the rest of this
+box already runs under.

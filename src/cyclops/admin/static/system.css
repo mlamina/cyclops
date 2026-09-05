@@ -25,19 +25,23 @@
 body:not(.kiosk) .system { grid-template-columns: minmax(0, 1fr); }
 body:not(.kiosk) .meters { padding-left: 0; }
 
-/* ---- the three things this screen can change ---- */
+/* ---- the four things this screen can change ---- */
 /* One to a row now. They were a 52 u volume bar and a single row holding *both* switches,
    because 480 px had nothing left to give: a second full-height switch row took the readouts'
    numbers from 45 px of their 58 px line to 19 px, which is not a smaller number but a broken
-   one. The readouts are 16 u bars today and have handed most of that height back. */
+   one. The readouts are 16 u bars today and have handed most of that height back, and VOICE is
+   what the fourth of them was spent on. */
 .controls {
   display: grid;
-  grid-template-rows: repeat(3, auto);
+  grid-template-rows: repeat(4, auto);
   /* space-between rather than three equal thirds, so the top of VOL sits level with the top of
      CPU and the bottom of INTERRUPT with the bottom of the disk bar. Two alignments across the
      rule for nothing, and they are the two anybody actually sees. */
   align-content: space-between;
-  gap: calc(14 * var(--u));
+  /* 14 u until VOICE arrived. Four rows and a 46 u thumb on three of them do not leave a fourth
+     of the column to spend on air, and space-between has no negative space to give back - a
+     row that does not fit is simply drawn under the close bar, with nothing said. */
+  gap: calc(10 * var(--u));
   /* The rule down the middle *is* the split. On this column's own border rather than between
      the two, so it leaves when the settings do: a laptop must never be left with a line down
      an empty half. */
@@ -125,6 +129,10 @@ body:not(.kiosk) .meters { padding-left: 0; }
    about 9 mm, which is a thumb with a glove on. */
 .chead { display: flex; align-items: center; justify-content: space-between;
          gap: calc(10 * var(--u)); min-height: calc(46 * var(--u)); }
+/* ...except the volume's, which holds a word and a number and no thumb at all. The 46 u exists so
+   that a switch has somewhere to sit; reserving it here was 24 px of nothing above the slider,
+   and 24 px is most of what the fourth control needed. */
+.cslim { min-height: 0; }
 .vlabel {
   font-size: calc(13 * var(--u));
   line-height: 1;
@@ -201,6 +209,23 @@ body:not(.kiosk) .meters { padding-left: 0; }
 }
 .sw[aria-checked="true"] { background: var(--green); color: var(--ink); border-color: var(--green); }
 .sw:active { border-color: var(--green); }
+
+/* The voice stepper: two arrows and the name between them, three .sw in a row rather than one.
+   40 u an arrow instead of 96 - about 8 mm, still a thumb, and three full-width switches would
+   not share this column with the word VOICE. The name keeps a fixed width so that stepping from
+   ASH to SHIMMER does not shove the arrows about under the finger that is holding one down; 128 u
+   is SHIMMER, the longest of the ten, at this letter-spacing. */
+.vstep { display: flex; align-items: center; gap: calc(6 * var(--u)); }
+.swarrow { width: calc(40 * var(--u)); letter-spacing: 0; font-size: calc(20 * var(--u)); }
+/* Lit, because it is the one of the three that says something rather than doing something: it is
+   showing you the setting, and it is the reading on this row the way 80% is the volume's. */
+.swname {
+  width: calc(128 * var(--u));
+  color: var(--green);
+  border-color: var(--green);
+  font-size: calc(14 * var(--u));
+  letter-spacing: .18em;
+}
 
 /* ---- the way out ---- */
 /* The biggest target on the screen, and shaped like the kiosk's tab row so it is obvious it

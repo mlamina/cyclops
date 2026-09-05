@@ -48,5 +48,6 @@ urlpatterns = [
     path("volume", views.set_volume, name="volume"),
     path("barge-in", views.set_barge_in, name="barge-in"),
     path("record-source", views.set_record_source, name="record-source"),
+    path("voice", views.set_voice, name="voice"),
     path("close", views.close_browser, name="close"),
 ]

@@ -113,6 +113,37 @@ if (rec) {
   });
 }
 
+// Who answers you. The three buttons are one gesture: every press sends the voice it lands on,
+// and the route both writes the setting and asks the kiosk to sound it - so stepping is listening
+// and there is nothing extra to press to hear what you just chose.
+//
+// The ten names came down with the page (data-voices) so a step redraws instantly and the round
+// trip is only ever the setting. Same optimistic order as the two switches above, and for a
+// stronger reason: the sound is half a second behind the finger already, and a label that waited
+// for the network as well would be a label you press twice.
+const voicename = document.getElementById('voicename');
+if (voicename) {
+  const names = voicename.closest('.ctl').dataset.voices.split(' ');
+  const say = (name) => {
+    voicename.textContent = name.toUpperCase();
+    fetch('/voice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'name=' + name,
+    }).catch(() => {});
+  };
+  // Wrapping, because ten voices in a row have two ends and neither is a place to be stuck: the
+  // two worth reaching for sit at the front, so the way back to them from the far end is one
+  // press of the arrow you were already using.
+  const step = (by) => {
+    const at = names.indexOf(voicename.textContent.toLowerCase());
+    say(names[(at + by + names.length) % names.length]);
+  };
+  voicename.addEventListener('click', () => say(voicename.textContent.toLowerCase()));
+  document.getElementById('voiceprev').addEventListener('click', () => step(-1));
+  document.getElementById('voicenext').addEventListener('click', () => step(1));
+}
+
 const close = document.getElementById('close');
 const closeword = document.getElementById('closeword');
 // Named and hung on window, because the panel has a second way out: a picture is put away by

@@ -25,7 +25,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import barge, card, filming, library, mixer, shelf, stats
+from .. import barge, card, filming, library, mixer, shelf, stats, voice
 from ..config import (
     BROWSER_CLOSE_FLAG,
     PAGE_ALIVE_FLAG,
@@ -33,6 +33,7 @@ from ..config import (
     PAGE_SERVED_FLAG,
     PANEL_FILE,
     PANEL_PAINTED_FLAG,
+    SAY_VOICE_FILE,
     ConfigError,
     Settings,
     load_settings,
@@ -180,6 +181,7 @@ def _payload(request: HttpRequest) -> dict:
         volume=mixer.requested(),
         barge_in=barge.enabled(_settings()),
         record_screen=filming.on_screen(_settings()),
+        voice=voice.chosen(_settings()),
         # Absolute, so "0 sessions" is self-diagnosing: the count is relative to the CWD the
         # service was started in (see WorkingDirectory in deploy/cyclops-admin.service).
         sessions_dir=str(_settings().sessions_dir.expanduser().resolve()),
@@ -192,7 +194,15 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     # ASSET_VERSION rides beside the payload rather than inside it: _payload() is also
     # /api/status, whose keys the page's [data-field] loop iterates and the README documents as
     # something you can curl. A cache-busting token has no business in either.
-    page = render(request, "cyclops/dashboard.html", _payload(request) | {"v": ASSET_VERSION})
+    # `voices` rides here rather than in _payload for the same reason ASSET_VERSION does: the
+    # payload is also /api/status, whose keys the README documents as something you can curl, and
+    # the ten names never change between two polls of it. The page needs the whole list once, to
+    # step through without asking again.
+    page = render(
+        request,
+        "cyclops/dashboard.html",
+        _payload(request) | {"v": ASSET_VERSION, "voices": list(voice.VOICES)},
+    )
     # The page is the one thing that must never be stale, because it is what names the versions
     # of everything else - a cached copy would go on asking for last week's stylesheet for ever.
     # It is fetched once per browser start, so this costs nothing.
@@ -420,6 +430,34 @@ def set_record_source(request: HttpRequest) -> HttpResponse:
     if wanted not in {filming.CAMERA, filming.SCREEN}:
         return HttpResponseBadRequest("source must be 'camera' or 'screen'")
     return JsonResponse({"record_source": filming.request(wanted)})
+
+
+@require_POST
+def set_voice(request: HttpRequest) -> HttpResponse:
+    """Say which of the ten voices should answer, and sound it.
+
+    Loopback only, like the three settings above it. One route for both halves of the stepper
+    because they are one gesture: stepping to a voice and hearing it are the same act, and a
+    control that changed the setting silently would be a list of names again.
+
+    Two notes, because they are two different kinds of thing. The voice is a setting and lands on
+    the next session - the Realtime API takes it in the `session.update` that opens a websocket
+    and there is no event that changes it afterwards. The other is a request, consumed and
+    deleted by the kiosk, which is the only process here with a speaker (see the volume above,
+    and :meth:`cyclops.kiosk.Kiosk._sync_voice`).
+    """
+    if not _is_local(request):
+        return HttpResponseForbidden("the voice is set from the panel")
+    wanted = request.POST.get("name", "")
+    if wanted not in voice.NAMES:
+        return HttpResponseBadRequest("name must be one of the ten voices")
+    chosen = voice.request(wanted)
+    try:
+        SAY_VOICE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SAY_VOICE_FILE.write_text(f"{chosen}\n")
+    except OSError as exc:  # a voice that is set silently beats one that is not set at all
+        print(f"· could not ask for a voice sample ({exc})", flush=True)
+    return JsonResponse({"voice": chosen})
 
 
 # ------------------------------------------------------------------ what is on the card

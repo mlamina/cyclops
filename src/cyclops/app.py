@@ -11,7 +11,7 @@ from dataclasses import replace
 from openai import OpenAIError
 from websockets.exceptions import WebSocketException
 
-from . import barge, session
+from . import barge, session, voice
 from .agent import SessionError, VoiceAgent
 from .audio import (
     EchoGuard,
@@ -117,7 +117,9 @@ async def _run(settings: Settings) -> None:
     out_dev = resolve_device(settings.output_device)
     output_name = default_output_name(out_dev)
     half_duplex, why = resolve_half_duplex(settings, output_name)
-    settings = replace(settings, half_duplex=half_duplex)
+    # ...and the voice the panel last asked for, so a session started from a terminal and
+    # one started from the glass cannot disagree about who is answering. See cyclops.voice.
+    settings = replace(settings, half_duplex=half_duplex, voice=voice.chosen(settings))
     speaker = Speaker(device=out_dev)
     speaker.volume = settings.volume
     # A guard for every session, headphones included: with barge-in switched off it is the

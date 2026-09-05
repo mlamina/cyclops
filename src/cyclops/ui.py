@@ -17,7 +17,7 @@ import threading
 import time
 from dataclasses import replace
 
-from . import barge, sfx
+from . import barge, sfx, voice
 from .agent import VoiceAgent
 from .audio import (
     SAMPLE_RATE,
@@ -293,7 +293,13 @@ class SessionController:
         )
         source = mic.source or "whatever PipeWire calls the default"
         print(f"· mic: {source}{mic.levelling}", flush=True)
-        agent = VoiceAgent(replace(s, half_duplex=half), mic=mic, speaker=speaker, guard=guard)
+        # What this session actually runs as, which is not quite what .env says: half-duplex may
+        # have been worked out from the output device just now, and the voice may have been
+        # chosen on the panel since the kiosk started. Built once and given to both the agent and
+        # the log, so the folder records the voice you were answered in rather than the one the
+        # variable holds - see cyclops.voice.
+        live = replace(s, half_duplex=half, voice=voice.chosen(s))
+        agent = VoiceAgent(live, mic=mic, speaker=speaker, guard=guard)
         guard.on_barge_in = agent.local_barge_in
         with self._lock:
             self._speaker, self._mic, self._agent = speaker, mic, agent
@@ -306,7 +312,7 @@ class SessionController:
         # on the way out - including when the session dies rather than stops. The inner `finally`
         # still runs first, so the recorder is stopped only once the audio callbacks have ceased.
         with SessionLog(
-            s,
+            live,
             agent,
             entrypoint=self._entrypoint,
             mic=mic,

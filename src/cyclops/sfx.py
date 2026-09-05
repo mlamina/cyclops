@@ -45,6 +45,8 @@ from pathlib import Path
 import numpy as np
 import sounddevice as sd
 
+from . import voice
+
 # A sine has ~3 dB of crest factor against speech's ~12, so a full-scale tone lands far louder
 # than the voice it sits beside. A quarter of full scale puts them in the same room.
 PEAK = 0.25
@@ -151,6 +153,11 @@ SAMPLES: dict[str, str] = {
     # is exactly the kind a synthesized approximation of gets heard as wrong rather than as
     # stylised.
     "shutter": "cyclops_camera_shutter.wav",
+    # ...and the ten voices, one line each, played by the stepper on the settings screen so that
+    # choosing between them is done by ear rather than off a list of names (cyclops.voice). Cut
+    # by tools/voice_clips.py and loudness-matched to each other and to the four above, because
+    # ten clips heard one after another are being compared and the louder one wins unfairly.
+    **{voice.cue(name): f"voice_{name}.wav" for name in voice.VOICES},
 }
 
 SILENCE = np.zeros(0, dtype=np.int16)  # what a cue that would not load amounts to
