@@ -465,7 +465,7 @@ DIAL_LABEL = 0.66  # where the reading sits in the gap under the hub, clear of t
 # about an hour, which is exactly as long as it took somebody to say it looked like a gun sight -
 # and they were right. A broken ring says "lens" and says nothing else.
 RETICLE_R = 0.1625  # 78 px at 480
-RETICLE_ARC = 68.0  # degrees of ring per quadrant; the rest is gap
+RETICLE_ARC = 58.0  # degrees of ring per quadrant; the rest is gap
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -1269,7 +1269,7 @@ class Overlay:
                 start = quadrant * 90 - RETICLE_ARC / 2
                 t.arc(
                     [middle - reach, middle - reach, middle + reach, middle + reach],
-                    start=start, end=start + RETICLE_ARC, fill=linear(GREEN_MID, 230),
+                    start=start, end=start + RETICLE_ARC, fill=linear(GREEN_MID, 195),
                     width=round(wide(self.line)),
                 )
 
