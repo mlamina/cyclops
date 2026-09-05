@@ -119,13 +119,19 @@ records, and now for two reasons: `cyclops` opens the camera per photo instead o
 so there is no continuous video for it to record — and it has no panel, which is the other thing
 there is to record.
 
-**The left channel is an open microphone, and it is levelled.** Open means everything the mic
-heard goes down: the room, the bench, the fan — and Cyclops himself, as the room heard him. He is
-therefore on the recording twice, cleanly on the right where he left the speaker and faintly on
-the left a moment later. That is the price of keeping the room, and it is worth it: the mute that
-[speaker mode](#macos-notes) puts on the microphone is about stopping Cyclops answering his own
-voice, and there is nothing in that decision worth cutting a hole in a recording for. It used to
-cut one anyway — three quarters of a Pi session's mic track was digital silence.
+**The left channel is an open microphone, cut only while Cyclops is actually speaking, and
+levelled.** Open means the room goes down with you: the bench, the fan, someone else in the
+doorway. The one thing it must not hold is Cyclops — a mic in a room with a loudspeaker in it
+hears the loudspeaker, and that is a delayed, room-coloured second copy of a voice already
+recorded cleanly on the other channel. So the track is silenced for exactly as long as sound is
+leaving the speaker, plus a quarter-second for the room's tail.
+
+That cut is deliberately narrower than the one [speaker mode](#macos-notes) puts on the
+microphone. The gate that protects the *model* from hearing itself stays shut across a whole
+utterance, pauses and all, because re-opening early costs a spurious answer; the recording only
+has to avoid a duplicate, so it follows the speaker's own output block by block and the gaps
+inside a sentence are room again. Writing the model's verdict down instead is what used to leave
+three quarters of a Pi session's mic track as digital silence.
 
 The levelling is a compressor on the way in (`cyclops.audio.Compressor`): a lavalier on a shirt is
 20–30 dB down on a mic at the mouth and swings wildly as you turn away from the panel, so quiet

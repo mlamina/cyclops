@@ -7,19 +7,27 @@ module: it is handed a :class:`FrameSource` and samples it, and the two answers 
 that satisfy that one method.
 
 Keeping the two voices apart means neither is mixed into the other: listen to one side alone, or
-mix them down later. It does not mean the left channel is only you. That channel is an open
-microphone in a room with a loudspeaker in it, so Cyclops is on both - cleanly on the right,
-where it left the speaker, and again on the left as the room heard it. The alternative was
-muting the mic in the recording for as long as he was audible, which is what this used to do,
-and it cost every other thing the room was doing at the time. A session's audio is now a
-recording of the session rather than a transcript of what reached the model.
+mix them down later. The left channel is an open microphone, so it holds the room - the bench,
+the fan, you moving about - and not merely the parts of it a gate thought were speech. The one
+thing it does not hold is Cyclops. A microphone in a room with a loudspeaker in it hears the
+loudspeaker, and that arrives as a delayed, room-coloured second copy of a voice already
+recorded cleanly on the other channel, which is worth nothing and is unpleasant to listen to.
+So the microphone track is cut for exactly as long as sound is actually leaving the speaker,
+and is open the rest of the time.
+
+That is a narrower cut than it sounds, and deliberately narrower than the echo guard's. The
+guard shuts the microphone for the whole of an utterance, pauses included, because it is
+protecting the model from hearing itself and an early re-open would cost a spurious answer.
+This is protecting a recording from a duplicate, so it follows the speaker's own output block
+by block: the gaps inside a sentence, and the moment after the last word, are room again.
 
 Three streams have to line up, and each arrives on its own clock:
 
 * video is sampled here on the wall clock at a fixed rate - re-writing the previous frame when the
   source has not produced a new one, so video time never drifts away from wall time;
 * the user track is written one block per microphone callback, whatever the echo guard made of
-  that block, so it stays 1:1 with the input clock and holds everything the mic heard;
+  that block, so it stays 1:1 with the input clock - silenced only where the speaker was
+  sounding, and never dropped, so the clock survives the silencing;
 * the agent track is taken from the speaker callback *after* its zero-fill, which makes it a
   continuous record of what actually came out of the speaker, the silence between utterances
   included - no timeline has to be reconstructed from response deltas.
@@ -37,6 +45,7 @@ that goes wrong disables the recording and leaves the conversation running.
 
 from __future__ import annotations
 
+import math
 import shutil
 import subprocess
 import sys
@@ -48,6 +57,7 @@ from pathlib import Path
 from typing import Protocol
 
 import cv2
+import numpy as np
 
 from . import card
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE
@@ -58,6 +68,13 @@ DEFAULT_FPS = 15
 # native size worth keeping. It is a ceiling when set, never an upscale - see _output_size.
 DEFAULT_WIDTH = 0
 CRF = "26"
+# What counts as the speaker actually making a sound, and how long the room goes on making it
+# afterwards. The floor is in int16 RMS over one 20 ms output block - the speaker's callback
+# zero-fills, so silence between utterances really is zero and anything above this floor is
+# audio. The hold covers the tail: the amplifier's own latency, the flight time across the
+# room and its reverberation, none of which stop when the last sample is handed over.
+ECHO_FLOOR = 150.0
+ECHO_HOLD_S = 0.25
 DRAIN_INTERVAL_S = 0.25
 FIRST_FRAME_TIMEOUT_S = 1.0
 JOIN_TIMEOUT_S = 5.0
@@ -257,6 +274,7 @@ class SessionRecorder:
         self._user: _Track | None = None
         self._agent: _Track | None = None
         self._mic_at = 0.0  # capture time of the very first mic block
+        self._agent_at = 0.0  # monotonic time the speaker last had something in it to play
         self._reported = False
 
     # ---------------------------------------------------------------- lifecycle
@@ -331,28 +349,41 @@ class SessionRecorder:
     def on_mic_block(self, block: bytes) -> None:
         """Hook for :meth:`cyclops.audio.Microphone._callback`. Runs on the audio thread.
 
-        Every block, with no opinion about it. What the echo guard did with the same block is
-        the agent's business and not the recording's: the guard decides what OpenAI is allowed
-        to hear, so that Cyclops does not answer his own voice, and there is nothing in that
-        decision worth writing a hole in a recording for. This used to write the guard's
-        verdict instead - zeros wherever it had held the mic shut - which on a Pi in speaker
-        mode meant three quarters of the track was digital silence rather than a room.
+        Every block, silenced while the speaker is sounding and kept whole otherwise. What the
+        echo guard made of the same block does not come into it: that decision is about what
+        OpenAI is allowed to hear, and it holds the microphone shut across a whole utterance -
+        writing *that* down cost three quarters of a Pi session's track. This one is about what
+        a listener would rather not hear twice, and it lasts exactly as long as the sound does.
+
+        A block is silenced rather than dropped. One block in, one block out, so the track stays
+        locked to the input clock however much of it is cut.
         """
         if self.failed or self._user is None:
             return
         try:
             if self._mic_at == 0.0:
                 self._mic_at = time.monotonic()
-            self._user.append(block, self._mic_at)
+            echoing = time.monotonic() - self._agent_at < ECHO_HOLD_S
+            self._user.append(bytes(len(block)) if echoing else block, self._mic_at)
         except Exception as exc:
             self.failed = self.failed or f"{type(exc).__name__}: {exc}"
 
     def on_speaker_block(self, block: bytes) -> None:
-        """Hook for :meth:`cyclops.audio.Speaker._callback`, after its zero-fill."""
+        """Hook for :meth:`cyclops.audio.Speaker._callback`, after its zero-fill.
+
+        Doubles as the microphone's cue to duck. This is the only place that knows what is
+        actually coming out of the speaker - the block has already been zero-filled, so it is
+        the output itself rather than a guess from a buffer's length or an item's timing - and
+        noting when it was last non-silent is all :meth:`on_mic_block` needs.
+        """
         if self.failed or self._agent is None:
             return
         try:
-            self._agent.append(block, time.monotonic())
+            now = time.monotonic()
+            samples = np.frombuffer(block, dtype=np.int16).astype(np.float32)
+            if samples.size and math.sqrt(float(np.mean(samples * samples))) > ECHO_FLOOR:
+                self._agent_at = now
+            self._agent.append(block, now)
         except Exception as exc:
             self.failed = self.failed or f"{type(exc).__name__}: {exc}"
 

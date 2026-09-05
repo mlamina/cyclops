@@ -15,7 +15,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from cyclops import filming
+from cyclops import filming, record
 from cyclops.config import ConfigError, Settings, _record_source
 from cyclops.overlay import composite
 from cyclops.record import PanelSource, SessionRecorder
@@ -229,11 +229,17 @@ def recorder_with_a_track() -> tuple[SessionRecorder, Track]:
     return recorder, track
 
 
-def test_every_block_the_microphone_heard_reaches_the_track() -> None:
-    """Whatever the echo guard did with a block, the recording keeps it - see cyclops.record.
+def loud() -> bytes:
+    """One block of speaker output well over ECHO_FLOOR - Cyclops mid-word."""
+    return b"\x00\x20" * 480  # 0x2000 = 8192, an ordinary speaking level
 
-    The guard is the model's business: it stops Cyclops answering his own voice. It used to be
-    the recording's too, and three quarters of a session's mic track came out digital silence.
+
+def test_every_block_the_microphone_heard_reaches_the_track() -> None:
+    """With the speaker quiet, whatever the echo guard did with a block the recording keeps it.
+
+    The guard is the model's business: it stops Cyclops answering his own voice, and it holds
+    the mic shut across a whole utterance to do it. The recording used to write that verdict
+    down, and three quarters of a session's mic track came out digital silence.
     """
     recorder, track = recorder_with_a_track()
     blocks = [bytes([n]) * 960 for n in range(1, 6)]
@@ -247,6 +253,34 @@ def test_a_block_is_written_on_the_callback_that_brought_it() -> None:
     recorder, track = recorder_with_a_track()
     recorder.on_mic_block(b"\x01\x02" * 480)
     assert len(track.written) == 1
+
+
+def test_the_microphone_is_cut_while_the_speaker_is_sounding() -> None:
+    """Otherwise the left channel is a second, room-coloured copy of the right one."""
+    recorder, track = recorder_with_a_track()
+    recorder._agent = Track()  # the other half of the tap, which is what notices the speaker
+    recorder.on_speaker_block(loud())
+    recorder.on_mic_block(b"\x11" * 960)
+    assert track.written == [bytes(960)], "silenced, and still exactly one block long"
+
+
+def test_silence_out_of_the_speaker_is_not_an_echo() -> None:
+    """The speaker callback zero-fills, so it runs constantly. Only real audio closes the mic."""
+    recorder, track = recorder_with_a_track()
+    recorder._agent = Track()
+    recorder.on_speaker_block(bytes(960))  # between utterances: handed over, but silent
+    recorder.on_mic_block(b"\x11" * 960)
+    assert track.written == [b"\x11" * 960]
+
+
+def test_the_room_comes_back_once_the_sound_has_died_away() -> None:
+    """The hold covers the room's tail; after it, the gaps inside a session are room again."""
+    recorder, track = recorder_with_a_track()
+    recorder._agent = Track()
+    recorder.on_speaker_block(loud())
+    recorder._agent_at -= record.ECHO_HOLD_S + 0.01  # as if that block were a moment ago
+    recorder.on_mic_block(b"\x11" * 960)
+    assert track.written == [b"\x11" * 960]
 
 
 def test_a_broken_track_disables_the_recording_rather_than_the_session() -> None:
