@@ -61,6 +61,25 @@ BARGE_IN_FILE = Path.home() / ".cache" / "cyclops" / "barge-in"
 # CYCLOPS_RECORD_SOURCE is left to decide - see :mod:`cyclops.filming`.
 RECORD_SOURCE_FILE = Path.home() / ".cache" / "cyclops" / "record-source"
 
+# And where the index service leaves what it has read off the card, for the voice agent to search.
+# One file rather than two, because the service writes it while a session reads it and there is no
+# lock between them: vectors and their metadata in separate files could be torn apart across a
+# rewrite, and a reader would rank one generation's numbers against the next generation's names.
+# An .npz built in memory and landed through card.write_bytes cannot do that.
+#
+# Under ~/.cache with the locks and the panel flags, and this is a choice about *kind* rather than
+# about disks - on a Pi there is one SD card and everything is on it. sessions/ and projects/ are
+# a tree meant to be browsed in Finder and copied off whole; a quarter-megabyte of float32 is not
+# something to find in there, nor to have travel with a card image. It is also derived: delete it
+# and the service rebuilds it from the card, which is still the only thing that holds a fact.
+RECALL_FILE = Path.home() / ".cache" / "cyclops" / "recall.npz"
+
+# And the lock that says one process is reconciling it. Same reasoning as store.LOCK_FILE: flock,
+# so the kernel drops it when the holder dies and a box that loses power mid-sweep comes back with
+# nothing stale to detect. This is what stops a hand-run `cyclops-index --once` writing over the
+# service that is already running.
+RECALL_LOCK = Path.home() / ".cache" / "cyclops" / "recall.lock"
+
 # The one note that goes the other way: which screen the panel wants the page it is about to
 # uncover to be on. The warm browser is loaded once at boot and never navigated, and there are two
 # things on the panel that open it - his face, which promises the sessions, and the heat gauge,
@@ -98,6 +117,7 @@ class Settings:
     remember: bool = True  # keep about-you.md up to date from what is said (cyclops.about)
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
     diagrams: bool = True  # offer the drawing tools, and keep what they draw (cyclops.diagram)
+    recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
     imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the session to its folder (needs a camera, or a panel)
@@ -269,6 +289,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         remember=_flag("CYCLOPS_REMEMBER", Settings.remember),
         projects=_flag("CYCLOPS_PROJECTS", Settings.projects),
         diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
+        recall=_flag("CYCLOPS_RECALL", Settings.recall),
         imagine=_flag("CYCLOPS_IMAGINE", Settings.imagine),
         project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),

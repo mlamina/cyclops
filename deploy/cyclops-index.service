@@ -1,0 +1,89 @@
+# Keep the recall index in step with the card. Install with deploy/install-index.sh.
+#
+# The one long-running thing here besides the kiosk and the status page, and it exists so that
+# neither of those has to do this work. Indexing inside the kiosk would tie it to a process that
+# `deploy/push.sh` pkills on every deploy; inside cyclops-admin it would put model calls in a
+# request handler; inside the voice agent it would make the first question after a busy afternoon
+# the slowest one anybody ever asks. So it watches the card on its own and pays the cost when a
+# file changes rather than when somebody is standing there waiting.
+#
+# It is also the thing that gives every picture on the card a caption, because captioning and
+# indexing want the same trigger: a photo that appeared. See cyclops/indexer.py.
+#
+# Nothing depends on this for correctness. The index is derived, the card holds every fact, and a
+# box where this never starts simply cannot answer "show me the photo of the torque spec" - it
+# loses nothing else and nothing gets written wrong.
+#
+# Host-specific lines: User=, Group=, WorkingDirectory=, ExecStart=.
+
+[Unit]
+Description=Cyclops recall index (watch the card, caption pictures, keep the index true)
+# Both halves of the job need the network - embeddings and captions are API calls - and unlike
+# cyclops-admin.service, which binds 0.0.0.0:80 and needs no routable address, this one has
+# nothing useful to do without one. It survives coming up early (the catch-up sweep just fails and
+# the 15-minute timer retries), but there is no reason to make it.
+Wants=network-online.target
+After=network-online.target
+# The status page first, so somebody watching the panel sees a box that is up while this works.
+After=cyclops-admin.service
+# If sessions/ ever becomes a real removable mount rather than a directory on the root fs, this is
+# the line that stops us indexing an empty tree and writing the emptiness down.
+RequiresMountsFor=/home/cyclops/cyclops
+# Unbounded, like cyclops-admin.service and unlike cyclops-recover.service. This is a watcher with
+# no end state to reach: whatever made it die, the right move an hour later is still to be
+# watching. A backoff long enough not to spin is the whole of the protection needed.
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+User=cyclops
+Group=cyclops
+# MUST match the CWD the kiosk runs in - the same argument cyclops-admin.service makes, and the
+# same way to get it silently wrong. sessions_dir and projects_dir are CWD-relative and
+# deliberately unresolved (cyclops/config.py), and load_settings() finds .env by walking up from
+# here. Start this anywhere else and it watches two directories that do not exist, indexes
+# nothing, and says so to a journal nobody reads.
+WorkingDirectory=/home/cyclops/cyclops
+ExecStart=/home/cyclops/cyclops/.venv/bin/cyclops-index
+Environment=PYTHONUNBUFFERED=1
+
+# --- hardening that does not break anything here ---
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=full
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallFilter=@system-service
+
+# --- deliberately NOT set; each of these silently breaks something ---
+# ProtectHome=          hides /home/cyclops: no venv, no sessions/, no projects/, nothing to
+#                       index - and also no ~/.cache/cyclops to write the index into.
+# ProtectSystem=strict  read-only /home; this writes captions.json into the card and recall.npz
+#                       into ~/.cache, so writing there is most of the point.
+# PrivateTmp=           the OpenAI SDK uses /tmp.
+# EnvironmentFile=      pointing this at .env is tempting and wrong, for the reason
+#                       cyclops-recover.service writes down: systemd's parser and python-dotenv's
+#                       disagree about quoting and about `export`. WorkingDirectory is how .env
+#                       is read, exactly as for the other two.
+
+# --- never compete with a live session ---
+# The same numbers as cyclops-admin.service rather than cyclops-recover.service's harsher set:
+# this is idle almost all of the time, and when it is not, it is waiting on the network rather
+# than burning a core. What it must never do is take CPU from x264 or the realtime audio thread
+# while a conversation is happening - which it can be, because the shutter button writes a photo
+# into a folder this is watching. cyclops.indexer also calls os.nice(10) itself, so a hand-run
+# `cyclops-index --once` outside systemd behaves the same way.
+Nice=10
+CPUWeight=20
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

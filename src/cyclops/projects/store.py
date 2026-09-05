@@ -19,8 +19,14 @@ The layout::
 One sentence holds the whole design up: **Log.md is the truth, README.md is a view of it, and
 projects/ can be rebuilt from sessions/ alone.** That is the same split session.py already runs
 on - ``session.jsonl`` is the record and ``session.md`` is only ever ``render_markdown`` of it -
-and it is what lets this have no database. When the two disagree, Log.md wins and the README is
+and it is what lets this folder be the whole truth about a project, with nothing kept anywhere
+else that could disagree with it. When the two disagree, Log.md wins and the README is
 regenerated; the README is never a source of anything except the frontmatter we put there.
+
+(This used to end "and it is what lets this have no database". There is now a vector index under
+``~/.cache/cyclops/`` so that :mod:`cyclops.recall` can search these folders by meaning. It changes
+nothing here: it is derived from what is written below, it is rebuilt from it, and it holds no fact
+this folder does not already hold.)
 
 Three rules follow from it, and each is load-bearing:
 
@@ -464,10 +470,18 @@ def photo_count(project: Project) -> int:
     is a normal thing to happen, because losing a receipt is exactly what the ledger is there to
     survive - and a number in the frontmatter that disagrees with the folder beside it is the
     kind of small lie that makes a person stop trusting the rest of the page.
+
+    The captions sidecar is not a photo. It lives in this folder because it describes the pictures
+    in it (see :mod:`cyclops.captions`), and counting it would put a number in the frontmatter one
+    higher than the pictures a person can see - which is precisely the small lie above.
     """
     if not project.photos_dir.is_dir():
         return 0
-    return sum(1 for item in project.photos_dir.iterdir() if item.is_file())
+    return sum(
+        1
+        for item in project.photos_dir.iterdir()
+        if item.is_file() and item.name != card.CAPTIONS_NAME
+    )
 
 
 def entry_count(project: Project) -> int:

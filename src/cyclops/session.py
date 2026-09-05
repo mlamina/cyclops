@@ -738,6 +738,13 @@ def _render_record(record: dict) -> str:
         stale = " (you had moved on by the time it landed)" if record.get("stale") else ""
         chars = record.get("chars", 0)
         return f'*Searched the web* ({at}) — "{query}" → {chars} characters back{stale}'
+    if kind == "recall":
+        query = record.get("query", "")
+        title = record.get("title", "")
+        if not title:
+            return f'*Looked for* ({at}) — "{query}" → nothing on the card matched'
+        where = " and put it on the panel" if record.get("shown") else ""
+        return f'*Looked for* ({at}) — "{query}" → **{title}**{where}'
     if kind == "project":
         name = record.get("name", "")
         if record.get("action") == "tracked":

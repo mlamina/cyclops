@@ -240,6 +240,36 @@ async def edit(source: Path, request: str, settings: Settings) -> bytes:
         await client.close()
 
 
+def as_jpeg(blob: bytes) -> bytes:
+    """Any picture, as JPEG bytes. Unchanged if it will not open.
+
+    :func:`for_panel` hands back its input untouched when it is already small enough, and
+    :func:`cyclops.diagram.offer_image` labels whatever it is given ``data:image/jpeg``. For the
+    pictures this module makes that pairing is fine - they are always JPEG and always large. It is
+    wrong for a small PNG somebody dropped into a project folder, which would reach the page
+    labelled as something it is not and render as nothing at all, silently, on the one screen
+    nobody can see from here. So anything not already a JPEG comes through here first.
+
+    Never raises, for the reason :func:`for_panel` gives about the same case: a picture that will
+    not convert is still a picture worth trying to show.
+    """
+    try:
+        with Image.open(io.BytesIO(blob)) as image:
+            if (image.format or "").upper() in {"JPEG", "JPG"}:
+                return blob
+            out = io.BytesIO()
+            # RGBA and palette images both have to lose their alpha to become a JPEG. Flattening
+            # onto white rather than black: these are photographs and screenshots, and a
+            # transparent margin reads as paper far more often than it reads as night.
+            picture = image.convert("RGBA")
+            flat = Image.new("RGB", picture.size, (255, 255, 255))
+            flat.paste(picture, mask=picture.split()[-1])
+            flat.save(out, format="JPEG", quality=PANEL_JPEG_QUALITY)
+            return out.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError):
+        return blob
+
+
 def for_panel(jpeg: bytes) -> bytes:
     """A copy small enough to travel to the page. The card keeps the full-size one.
 

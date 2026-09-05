@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import json
 import re
 import sys
@@ -25,7 +26,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import diagram, imagine, session, sfx
+from . import diagram, imagine, recall, session, sfx
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -64,6 +65,11 @@ MAX_DATA_KEY_CHARS = 80  # a label someone looks a value up by, not a sentence
 MAX_DATA_VALUE_CHARS = 200
 MAX_DATA_NOTE_CHARS = 200
 MAX_DATA_QUERY_CHARS = 120
+# A recall is one embedding round trip and a dot product, so it is fast enough that the panel's
+# caption barely appears. The budget is a backstop against a wedged connection, not a plan: past
+# this the user has been staring at "looking for…" long enough that no answer is the kinder one.
+RECALL_TIMEOUT_S = 8.0
+RECALL_HITS = 5
 MAX_DATA_ENTRIES = 20  # one plate's worth of values, generously
 ACTIVITY_SUBJECT_CHARS = 40  # a subject on the caption, not a sentence
 # How long a finished job's sentence stays on the panel. A data tool is off the card and back in
@@ -391,6 +397,50 @@ FORGET_DATA_TOOL: RealtimeFunctionToolParam = {
             },
         },
         "required": ["project", "key"],
+        "additionalProperties": False,
+    },
+}
+
+RECALL_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "recall",
+    "description": (
+        "Find something you have on the card and, when it is a picture, put it on the "
+        "touchscreen. This searches by meaning rather than by wording, so their words do not "
+        "have to match what was written: photos and their descriptions, what was written up "
+        "about each session of a project, and any file they put in the project folder "
+        "themselves. Use it whenever they refer back to something that exists - 'show me the "
+        "pic of the torque spec from the manual', 'what did we decide about the fork seals', "
+        "'find that datasheet I put in there'. A photo appears on the panel and stays until "
+        "they tap it, so say one short sentence and then stop; they can see it, so do not "
+        "describe it back at them unless they ask. "
+        "Do NOT use it for: a number written down with save_data - find_data looks those up "
+        "exactly and this only finds the words around them; a drawing you drew - find_diagram "
+        "is faster and matches on the title; anything about the world rather than about their "
+        "own work - that is web_search. If it finds nothing, say so and offer to look another "
+        "way rather than showing them the closest thing anyway."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": (
+                    "What they are looking for, in their words and in a full phrase rather "
+                    "than keywords - 'the torque spec from the owner's manual' beats 'torque'. "
+                    "It is matched on meaning, so describing the thing works better than "
+                    "guessing at what it was called."
+                ),
+            },
+            "project": {
+                "type": "string",
+                "description": (
+                    "Optional: the project to look in, when they named one or the conversation "
+                    "is plainly about a single one. Leave it out to search everything."
+                ),
+            },
+        },
+        "required": ["query"],
         "additionalProperties": False,
     },
 }
@@ -842,6 +892,7 @@ class VoiceAgent:
                 *_diagram_tools(self.settings),
                 *_imagine_tools(self.settings),
                 *_project_tools(self.settings),
+                *_recall_tools(self.settings),
             ],
             "tool_choice": "auto",
         }
@@ -1227,6 +1278,9 @@ class VoiceAgent:
         if call.name == "edit_photo":
             await self._run_edit_photo(call)
             return
+        if call.name == "recall":
+            await self._run_recall(call)
+            return
         # Every name still gets an output. A tool the model invents, or one it remembers from a
         # session config that has since changed, must be answered or it waits for it forever.
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
@@ -1409,6 +1463,161 @@ class VoiceAgent:
             "shown": shown,
             "others": [d.title for d in found[1:3]],
         }
+
+    # ---- recall ----
+
+    async def _run_recall(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Find something on the card and, if it is a picture, put it on the panel.
+
+        The tool is read-only by design. ``cyclops-index`` owns the index and pays for keeping it
+        current; this loads a file, embeds one short string and takes a dot product, so a recall
+        costs about as long as the network round trip and nothing else. Nothing here walks the
+        card, captions anything or writes a byte.
+        """
+        query = _tool_query(call.arguments)
+        project = _tool_string(call.arguments, "project", MAX_QUERY_CHARS)
+        self._log(f"[tool] recall {query!r}" + (f" in {project!r}" if project else ""))
+        if not query:
+            nothing = {"ok": False, "error": "nothing to look for"}
+            await self._send_tool_output(call.call_id, nothing)
+            await self._request_response()
+            return
+        turn = self._turn_serial
+        try:
+            output = await self._recall(query, project)
+        except Exception as exc:  # never leave the model waiting for a tool result
+            self._log(f"[tool] recall failed: {exc!r}", stream=sys.stderr)
+            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        if self._turn_serial != turn:
+            # They spoke while this was in flight. Same treatment web_search gets, and for the
+            # same reason: the Realtime API cannot withdraw a tool call, so a late answer is
+            # reported as late rather than delivered out of the blue.
+            output["stale"] = True
+            output["note"] = (
+                "They have said something since this was asked for. Answer them first, and "
+                "only mention this if it is still what they want."
+            )
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    def _recall_scopes(self, project: str) -> set[str] | None:
+        """Which corners of the card this query may look in, as ``recall.Item.scope`` values.
+
+        This session and every project by default - the same shape and the same argument as
+        :meth:`_diagram_folders`: "that one" almost always means either something from ten
+        minutes ago or something filed under whatever is on the bench. Older sessions are indexed
+        but not searched, because a year of half-finished conversations is mostly noise against a
+        question about a project, and the project is where the finished version of anything ends
+        up.
+        """
+        scopes: set[str] = set()
+        if (live := session.current()) is not None:
+            scopes.add(f"session:{live.dir.name}")
+        if not self.settings.projects:
+            return scopes or None
+        from .projects import store
+
+        catalog = store.catalog(self.settings)
+        if project:
+            found = store.find(catalog, project)
+            if found is not None:
+                return {f"project:{found.path.name}"} | scopes
+            # A project name we do not recognise. Searching everything is better than searching
+            # nothing: they said a name, it did not resolve, and the thing they want is probably
+            # still on the card under a spelling neither of us guessed.
+        scopes.update(f"project:{p.path.name}" for p in catalog)
+        return scopes or None
+
+    async def _recall(self, query: str, project: str) -> dict[str, Any]:
+        """One search, and the panel if the answer is a picture."""
+        index = await asyncio.to_thread(recall.load)
+        if not len(index):
+            return {
+                "ok": True,
+                "hits": 0,
+                "note": (
+                    "Nothing is indexed yet, so there is nothing to search. Say you cannot find "
+                    "it rather than guessing at what they meant."
+                ),
+            }
+        client = AsyncOpenAI(api_key=self.settings.api_key, timeout=RECALL_TIMEOUT_S, max_retries=0)
+        try:
+            vector = await recall.embed([query], client)
+        finally:
+            with contextlib.suppress(Exception):
+                await client.close()
+
+        scopes = await asyncio.to_thread(self._recall_scopes, project)
+        hits = recall.rank(index, vector[0], scopes=scopes, limit=RECALL_HITS)
+        hits = [hit for hit in hits if hit.score >= recall.MIN_SCORE]
+        if not hits:
+            return {
+                "ok": True,
+                "hits": 0,
+                "note": (
+                    "Nothing on the card matches that. Say so and offer to look another way - "
+                    "do not describe the nearest thing as if it were what they asked for."
+                ),
+            }
+
+        best = hits[0]
+        others = [hit.item.title for hit in hits[1:3]]
+        if not best.item.showable:
+            # `what`, not `kind`: session.note takes the record's own type as its first
+            # parameter and that parameter is called kind, so passing one as a field is a
+            # TypeError at the call rather than at import. diagram records dodge it as `shape`.
+            session.note("recall", query=query[:120], title=best.item.title, what=best.item.kind)
+            return {
+                "ok": True,
+                "hits": len(hits),
+                "kind": best.item.kind,
+                "title": best.item.title,
+                "text": best.item.text,
+                "others": others,
+            }
+
+        shown = await asyncio.to_thread(self._show_found, Path(best.item.path), best.item.title)
+        session.note(
+            "recall",
+            query=query[:120],
+            title=best.item.title,
+            what=best.item.kind,  # never `kind`; see above
+            file=Path(best.item.path).name,
+            shown=shown,
+        )
+        result: dict[str, Any] = {
+            "ok": True,
+            "hits": len(hits),
+            "kind": best.item.kind,
+            "title": best.item.title,
+            "shown": shown,
+            "others": others,
+        }
+        if not shown:
+            result["note"] = (
+                "It was found but there is no panel free to show it on. Say what it is out loud "
+                "instead of pretending they can see it."
+            )
+        return result
+
+    def _show_found(self, path: Path, title: str) -> bool:
+        """Put a picture already on the card onto the panel. Blocking; runs off the loop's thread.
+
+        ``imagine.for_panel`` hands back its input untouched when it is already small enough, and
+        ``diagram.offer_image`` labels whatever it is given ``data:image/jpeg``. That pairing is
+        safe for a photo and wrong for a small PNG - which is exactly what a picture dropped into
+        a project folder tends to be - so anything that is not already a JPEG is re-encoded first.
+        A mislabelled data URL renders as nothing at all, silently, on the one screen nobody can
+        see from here.
+        """
+        try:
+            blob = path.read_bytes()
+        except OSError as exc:
+            self._log(f"[tool] could not read {path}: {exc}", stream=sys.stderr)
+            return False
+        if path.suffix.lower() not in {".jpg", ".jpeg"}:
+            blob = imagine.as_jpeg(blob)
+        return diagram.offer_image(imagine.for_panel(blob), title) and diagram.show()
 
     # ---- imagined pictures ----
 
@@ -1808,6 +2017,17 @@ def _imagine_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [EDIT_PHOTO_TOOL] if settings.imagine else []
 
 
+def _recall_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The one recall tool, or none. Left out rather than refused, as with every other gate.
+
+    Its index is kept by ``cyclops-index``, a service this process does not start and cannot see.
+    Offering the tool anyway is the right call: a card with no index answers "nothing found",
+    which is also the honest answer for a card with nothing on it, and the alternative is a
+    setting that has to guess whether some other unit is running.
+    """
+    return [RECALL_TOOL] if settings.recall else []
+
+
 def _project_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The five project tools, or none of them. ``CYCLOPS_PROJECTS=0`` leaves them out entirely.
 
@@ -1950,6 +2170,8 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return f"writing down {rows} value{'' if rows == 1 else 's'}…"
     if call.name == "find_data":
         return _phrase("looking up", _tool_data_query(args), "looking that up")
+    if call.name == "recall":
+        return _phrase("looking for", _tool_query(args), "looking through your things")
     if call.name == "forget_data":
         return _phrase("forgetting", _tool_key(args), "rubbing that out")
     return "working…"  # a tool the model invented; it still gets an answer, so it still gets a line

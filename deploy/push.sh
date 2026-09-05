@@ -48,7 +48,13 @@ ssh "$TARGET" "install -d ~/.config/pipewire/pipewire.conf.d \
 ssh "$TARGET" "sudo install -m 644 $DEST/deploy/user/cyclops-*.service /etc/systemd/user/ \
   && XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload" || true
 
+# The two long-lived system units. `|| true` on both for the same reason: a box where one of them
+# was never installed is a box being set up, not a failed deploy - install-admin.sh and
+# install-index.sh are what enable them, once, per Pi. The indexer is restarted here rather than
+# left alone because it holds cyclops.recall and cyclops.captions in memory, so like the kiosk it
+# would otherwise quietly keep running the old build.
 ssh "$TARGET" "sudo systemctl restart cyclops-admin || true"
+ssh "$TARGET" "sudo systemctl restart cyclops-index || true"
 
 # Restart the kiosk too, and do not merely suggest it. Everything else here either re-reads the
 # code on every invocation (the CLI, the smoke test) or is a service systemd restarts for us; the

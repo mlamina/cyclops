@@ -6,9 +6,19 @@ and with it OpenCV, and the admin service has no business loading a video encode
 directory. Everything a listing needs - what a folder is called, what marks one finished, how to
 read its log - already lives in ``card.py``, which is the copy those two modules share.
 
-There is no index and no database. The card is the index, as it is everywhere else here: a session
-is a folder, and the answer to any question about it is in that folder. What this module adds is a
-small read cache, because the page asks the same question every time you switch views.
+For everything this module answers, the card is still the index: a session is a folder, and the
+answer to any question a listing asks is in that folder. What this module adds is a small read
+cache, because the page asks the same question every time you switch views.
+
+This used to say "there is no index and no database", flatly and about the whole codebase, and
+that stopped being true when :mod:`cyclops.recall` arrived. Semantic search cannot be answered by
+reading one folder - you cannot embed a query against a directory listing - so there is now a
+vector index under ``~/.cache/cyclops/``, kept by its own service. Nothing here uses it and nothing
+here needs to.
+
+What survived the change is the half that was actually load-bearing, and it is still worth
+stating: **the card holds every fact.** The index is derived from these folders and holds nothing
+that is not in them, so deleting it costs a rebuild and never an answer.
 """
 
 from __future__ import annotations
@@ -39,7 +49,9 @@ STAMP_LEN = len("0000-00-00_00-00-00")
 
 # What the transcript shows. `session`, `video` and `end` are the bookkeeping records that the
 # frontmatter is made of; they say nothing a reader wants in the middle of a conversation.
-SPOKEN = frozenset({"you", "cyclops", "photo", "diagram", "search", "project", "data", "error"})
+SPOKEN = frozenset(
+    {"you", "cyclops", "photo", "diagram", "search", "project", "data", "recall", "error"}
+)
 
 STREAM_LIMIT = 500
 

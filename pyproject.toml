@@ -34,6 +34,7 @@ cyclops-boot-sound = "cyclops.boot:main"
 cyclops-sessions = "cyclops.session:main"
 cyclops-admin = "cyclops.admin.server:main"
 cyclops-projects = "cyclops.projects:main"
+cyclops-index = "cyclops.indexer:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -84,9 +84,10 @@ def test_every_tool_the_model_is_offered_has_something_to_say() -> None:
             *agent._diagram_tools(settings),
             *agent._imagine_tools(settings),
             *agent._project_tools(settings),
+            *agent._recall_tools(settings),
         ]
     }
-    assert len(offered) == 9, "the tool list changed; the caption table probably needs to as well"
+    assert len(offered) == 10, "the tool list changed; the caption table probably needs to as well"
     for name in sorted(offered):
         line = agent._activity_line(Call(name, "{}"))
         assert line != "working…", f"{name} falls through to the line meant for invented tools"

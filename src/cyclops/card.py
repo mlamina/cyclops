@@ -59,6 +59,10 @@ LOG_NAME = "session.jsonl"
 PAGE_NAME = "session.md"
 SUMMARY_NAME = "summary.md"
 RECEIPT_NAME = "project.md"  # written into the session folder by projects/store.py
+# What each picture in this folder is of, written by the index service - see cyclops.captions.
+# Lands in whichever folder holds the images, so a session has one in photos/ and a project has
+# one in Photos/ and another in any folder you dropped pictures into.
+CAPTIONS_NAME = "captions.json"
 PHOTOS = "photos"
 DIAGRAMS = "diagrams"
 PARTS = "parts"
