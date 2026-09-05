@@ -39,6 +39,10 @@ body.drawing .stage { display: block; }
   pointer-events: none;
 }
 body.drawing .dtitle { display: block; }
+/* ...but never over a photograph. A drawing's title is something somebody asked for ("the fuse
+   box"); a photo's is whatever the file is called, and a timestamp printed over the corner of
+   the picture you are looking at is noise. The picture says what it is. */
+body.photo .dtitle { display: none; }
 /* Said while JointJS lays the drawing out. It is on screen for a frame or two on the panel,
    and for longer than that on anything slower, which is the case it is here for. */
 .laying-out {

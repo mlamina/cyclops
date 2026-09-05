@@ -418,6 +418,24 @@ def show() -> bool:
     return bool(panel is not None and panel.show_diagram())  # type: ignore[attr-defined]
 
 
+_offered_picture = False  # whether what is waiting for the panel is a photograph; see is_picture
+
+
+def is_picture() -> bool:
+    """True when what is waiting for the panel is a photograph rather than a drawing.
+
+    The panel asks so that it can stay quiet for one and not the other. A drawing arriving is
+    news - nothing else announced it, and it took ten seconds to make. A photograph going up
+    already had the shutter to say so, and a second sound a beat later is one too many.
+
+    A module global rather than a read of the offer file, which carries the picture inline and
+    would cost a megabyte of JSON parsed to answer one question. Whoever offers and whoever shows
+    are the same process - :func:`show` reaches the kiosk through ``_panel`` - so there is
+    nothing here that can get out of step with what is on the glass.
+    """
+    return _offered_picture
+
+
 def offer(spec: dict[str, Any], kept: Diagram | None = None) -> bool:
     """Leave a drawing where the panel's page will find it. False if it could not be left.
 
@@ -431,6 +449,8 @@ def offer(spec: dict[str, Any], kept: Diagram | None = None) -> bool:
     # rather than inline, because str(None) is "None" and would have the page writing a picture
     # to a file of that name.
     target = _svg_for(kept) if kept is not None else None
+    global _offered_picture
+    _offered_picture = False
     return _leave({
         "title": spec.get("title", ""),
         SPEC_NAME: spec,
@@ -451,6 +471,8 @@ def offer_image(jpeg: bytes, title: str) -> bool:
     for - see :func:`cyclops.imagine.for_panel`.
     """
     url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
+    global _offered_picture
+    _offered_picture = True
     return _leave({"title": title, SPEC_NAME: None, "image": url, "svg": None})
 
 

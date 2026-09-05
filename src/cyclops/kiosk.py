@@ -1203,7 +1203,8 @@ class Kiosk:
         has no room, because that is a different page and not ours to paint over.
         """
         if self._panel_showing.is_set():
-            self._cues.play("shown")  # something new arrived; the other one is in _diagram_session
+            if not diagram.is_picture():
+                self._cues.play("shown")  # a drawing arriving is news; see _diagram_session
             print("· picture swapped on the panel", flush=True)
             # A recording is being handed the picture on the panel rather than the black the
             # kiosk is painting behind the browser (see cyclops.still), and that hand-off happens
@@ -1268,13 +1269,17 @@ class Kiosk:
             shown = True
             self._panel_showing.set()  # from here a second picture swaps rather than being refused
             self._reveal.set()
-            # Something was made and it is on the panel now: look up. Where a picture that takes
-            # an empty panel says so - a diagram drawn or found, a photo snapped and a photo he
-            # imagined all arrive here through diagram.show(). One replacing another says it in
-            # show_diagram instead, which is the path that does not come back through here.
-            # Pointedly not _admin_session's reveal, which is his eye opening the dashboard and
-            # already has a sound of its own.
-            self._cues.play("shown")
+            # A drawing was made and it is on the panel now: look up. Where one that takes an
+            # empty panel says so - a diagram drawn or found arrives here through diagram.show(),
+            # and one replacing another says it in show_diagram instead, which is the path that
+            # does not come back through here. Pointedly not _admin_session's reveal, which is
+            # his eye opening the dashboard and already has a sound of its own.
+            #
+            # A photograph says nothing. Every snap already sounds the shutter a moment before
+            # this, and a second cue on top of it is one too many - which is only obvious now
+            # that the shutter puts its photo on the panel rather than only handing it over.
+            if not diagram.is_picture():
+                self._cues.play("shown")
             print("· diagram on the panel", flush=True)
             self._watch_page(shown_at)
         finally:

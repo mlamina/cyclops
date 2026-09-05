@@ -85,7 +85,26 @@ def test_a_picture_already_up_is_swapped_rather_than_refused(panel) -> None:
     answer = panel.show_diagram()
     assert answer is True, "saying False would deny a picture that is about to be on the glass"
     assert panel.threads == ["restill"], "no second session; the first one still owns the teardown"
-    assert panel._cues.played == ["shown"], "something arrived, so the panel says so"
+
+
+def test_a_photograph_going_up_makes_no_sound(panel, monkeypatch) -> None:
+    """The shutter already sounded a beat ago. A second cue on top of it is one too many."""
+    monkeypatch.setattr(kiosk.diagram, "is_picture", lambda: True)
+    panel._page_busy.set()
+    panel._panel_showing.set()
+
+    assert panel.show_diagram() is True
+    assert panel._cues.played == [], "the picture is its own announcement"
+
+
+def test_a_drawing_replacing_one_still_says_so(panel, monkeypatch) -> None:
+    """Nothing else announces a drawing: it took ten seconds and arrived silently."""
+    monkeypatch.setattr(kiosk.diagram, "is_picture", lambda: False)
+    panel._page_busy.set()
+    panel._panel_showing.set()
+
+    assert panel.show_diagram() is True
+    assert panel._cues.played == ["shown"]
 
 
 def test_the_admin_page_still_has_no_room(panel) -> None:

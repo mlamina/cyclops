@@ -210,6 +210,19 @@ def test_offer_image_writes_a_payload_the_page_can_read(panel_file) -> None:
     assert payload["id"]
 
 
+def test_the_panel_can_tell_a_photograph_from_a_drawing(panel_file) -> None:
+    """What the sound on arrival keys off. A photo has already sounded the shutter; a drawing
+    has announced itself with nothing at all."""
+    diagram.offer_image(jpeg(64, 48), "18-08-39_you")
+    assert diagram.is_picture() is True
+
+    diagram.offer({"title": "the fuse box", "nodes": [], "wires": []})
+    assert diagram.is_picture() is False, "a drawing over a photo is still a drawing"
+
+    diagram.offer_image(jpeg(64, 48), "paint the doors matt black")
+    assert diagram.is_picture() is True, "...and a photo back over that is a photo again"
+
+
 def test_two_offers_never_share_an_id(panel_file) -> None:
     """A stable id would make showing the same picture twice silently do nothing the second time."""
     diagram.offer_image(jpeg(64, 48), "one")
