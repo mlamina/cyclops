@@ -32,6 +32,12 @@ from .webcam import WebcamError, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
 RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
+# How long stop() waits for the reader to come back before giving up on it. Comfortably
+# more than a healthy read (66 ms at 15 fps) and deliberately less than a stalled one,
+# which _read_loop's docstring measures at ten seconds: waiting that out would push the
+# whole teardown past the ten seconds start-kiosk.sh allows before it sends SIGKILL, and
+# a SIGKILL is the unclean exit this is all trying to avoid.
+CLOSE_WAIT_S = 3.0
 HISTORY = 12  # frames kept for the sharpest-of-recent pick - 0.8 s at the 15 fps we ask for
 # HISTORY is a count and SHARP_WINDOW_S is a duration, so the two are tied to webcam.FRAME_RATE:
 # twelve frames just covers the window at 15 fps, and at 30 fps would cover only half of it.
@@ -149,12 +155,42 @@ class CameraSource:
         return best_frame
 
     def stop(self) -> None:
-        """Stop the reader and release the device so a later run can open it again."""
+        """Stop the reader and release the device so a later run can open it again.
+
+        **The device is released by the thread that owns it, and by nothing else.** That is the
+        whole of this method, and it used to do the opposite.
+
+        It used to join the reader for two seconds and then call ``self._cap.release()`` itself.
+        That release looks like belt and braces and is the opposite: ``_supervise`` clears
+        ``_cap`` in its own ``finally`` before releasing, so on a clean exit there is nothing left
+        here to release. The only way that line ever ran was with the reader thread still alive -
+        which means still inside ``cap.read()``, on the same ``VideoCapture`` we were then
+        releasing from this thread.
+
+        Two threads in one ``VideoCapture`` is how a UVC device gets left mid-stream, and a C920
+        left mid-stream does not come back: it stays on the bus, answers ``lsusb``, and gives
+        ``uvcvideo ... Failed to set UVC probe control : -110`` for ever with no ``/dev/video``
+        node at all. Only a USB re-enumerate clears it. That happened on 2026-09-05, after three
+        kiosk restarts in a row, and it was not a rare race: ``_read_loop``'s own docstring
+        measures a stalled read at ten seconds against this two-second join, so any camera that
+        was already unhappy hit it every single time.
+
+        So if the reader will not come back, do nothing at all. The process is on its way out and
+        the kernel closes the fd on exit, which stops the stream from the one place that cannot
+        race a reader. A device released late beats a device wedged now.
+        """
         self._stop.set()
         thread, self._thread = self._thread, None
         if thread is not None:
-            thread.join(timeout=2.0)
-        if self._cap is not None:
+            thread.join(timeout=CLOSE_WAIT_S)
+            if thread.is_alive():
+                print(
+                    "· camera reader is still in a read; leaving the device to the process exit",
+                    flush=True,
+                )
+                self._forget()
+                return
+        if self._cap is not None:  # no reader ever ran; nobody else can be holding this
             self._cap.release()
             self._cap = None
         self._forget()
