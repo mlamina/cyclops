@@ -106,9 +106,15 @@ MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TO
 # correctly.
 #
 # Eighty seconds is bearable only because nothing is waiting on it: the tool has returned, the
-# overlay says "drawing…", and the conversation carries on. If that stops being true, fix the
-# lifecycle rather than this line. If the error rate turns out not to justify the wait, "low" is
-# a one-word change and the honest one.
+# overlay says "drawing…", and the conversation carries on. That was written as a description and
+# was not true - `_run_draw_diagram` awaited this call inside the tool handler, so the call stayed
+# open for the whole of it and the model could not say another word. It is true now, and it is
+# what pays for this setting: the drawing is a task (cyclops.tasks), the tool answers in a moment,
+# and the model is told when the picture lands. Anything that puts a caller back in front of this
+# await takes the argument for "high" with it.
+#
+# If the error rate turns out not to justify the wait, "low" is a one-word change and the honest
+# one.
 DRAW_QUALITY = "high"
 DRAW_TIMEOUT_S = 180.0  # the documented worst case, with room; see EDIT_TIMEOUT_S
 

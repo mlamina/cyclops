@@ -74,6 +74,12 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
       </select>
       {% endif %}
     </nav>
+    <!-- What is going on in the background, or nothing at all - see cyclops.tasks. Last in the
+         header and pushed to the far end by margin-left:auto, in the ~180 px the four tabs leave
+         over; empty is the resting state and :empty takes it out of the flex row entirely, so a
+         box with nothing to report has the header it always had. The panel's own caption says
+         this too, in the same words - this is the copy you can read from a laptop. -->
+    <b class="job" data-field="task">{{ task }}</b>
   </header>
 
   <main class="view system">

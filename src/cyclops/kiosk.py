@@ -47,6 +47,7 @@ from . import (  # noqa: E402
     sfx,
     stats,
     still,
+    tasks,
     voice,
     webcam,
 )
@@ -1802,7 +1803,14 @@ class Kiosk:
                     # to say are about the panel in front of you rather than about the session -
                     # a shutter that took no photo is worth interrupting "listening — talk to
                     # me" for, and it has four seconds to do it in.
-                    detail=self._saying() or str(status["detail"]),
+                    # ...and behind both of them, whatever is running in the background with
+                    # nobody in the conversation to narrate it: a drawing that outlived the tool
+                    # call that asked for it, or the child tidying up after a session that has
+                    # already ended. That last case is the one this was added for - the panel
+                    # used to sit on the snore for the whole minute cyclops.after takes.
+                    # `tasks.line()` memoises on the file's stat, so asking every frame is a
+                    # stat and nothing else.
+                    detail=self._saying() or str(status["detail"]) or tasks.line(),
                     # One instant for the whole frame, taken at the top of the loop. The caption
                     # breathes and counts its dots off this rather than off a clock of its own,
                     # so the animation cannot drift between elements or with the frame rate.

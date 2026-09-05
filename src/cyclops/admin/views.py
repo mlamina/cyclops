@@ -25,7 +25,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import barge, card, filming, library, mixer, shelf, stats, voice
+from .. import barge, card, filming, library, mixer, shelf, stats, tasks, voice
 from ..config import (
     BROWSER_CLOSE_FLAG,
     PAGE_ALIVE_FLAG,
@@ -185,6 +185,12 @@ def _payload(request: HttpRequest) -> dict:
         # Absolute, so "0 sessions" is self-diagnosing: the count is relative to the CWD the
         # service was started in (see WorkingDirectory in deploy/cyclops-admin.service).
         sessions_dir=str(_settings().sessions_dir.expanduser().resolve()),
+        # What is going on in the background right now, or "" when nothing is - see
+        # :mod:`cyclops.tasks`. One sentence rather than the list: this rides on the five-second
+        # poll every client already runs, and the header has room for a line and not a table.
+        # `curl cyclops.local/api/status | jq .task` is the same answer from a laptop, which is
+        # most of why it is here rather than only on the panel's caption.
+        task=tasks.line(),
     )
     return data
 

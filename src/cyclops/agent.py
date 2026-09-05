@@ -27,7 +27,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import imagine, panel, recall, session, sfx
+from . import imagine, panel, recall, session, sfx, tasks
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -123,9 +123,12 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
         "of connections that would take several sentences to say and one picture to show - "
         "'wire this relay to GPIO 17', 'what goes where on the header', 'how does this loop "
         "work'. "
-        "It takes about a minute and fills the panel when it lands, and it stays until they put "
-        "it away, so say one short sentence out loud first and then keep talking; do not narrate "
-        "the drawing or read it back to them, they can see it. It is kept with this session's "
+        "This call comes back straight away and the picture arrives about a minute and a half "
+        "later, so say one short sentence out loud and then carry on talking about something "
+        "else - do not wait for it, do not call it again, and do not keep mentioning it. You "
+        "are told separately when it lands or if it fails. It fills the panel when it arrives "
+        "and stays until they put it away; do not narrate the drawing or read it back to them, "
+        "they can see it. It is kept with this session's "
         "photos, so use recall to put it back up later rather than drawing it a second time. "
         "What comes back is drawn, not checked. It is usually right, but a line can land on the "
         "wrong pin while the label beside it stays correct. So when a connection is one they "
@@ -246,8 +249,10 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
         "It works on whichever photo is on the panel - one they just took, one you found for "
         "them, one you drew for them, or one you already edited, so a second change carries on "
         "from the first. If nothing has been up at all yet, ask them to hit SNAP. "
-        "It takes up to a minute and fills the panel when it lands, so say "
-        "one short sentence out loud first and then keep talking. You are shown the result when "
+        "This call comes back straight away and the picture arrives about half a minute later, "
+        "so say one short sentence out loud and then carry on - do not wait for it and do not "
+        "call it a second time. You are told when it lands or if it fails. It fills the panel "
+        "when it arrives. You are shown the result when "
         "it lands, but so are they: do not narrate it back at them unprompted. Volunteer "
         "something only if it did not do what they asked or there is something worth flagging - "
         "but answer whatever they do ask about it, directly, because you can see it. "
@@ -566,6 +571,11 @@ HOW YOU TALK
 - Offer once. If you spot a risk, a better order to do things in, or something still
   unresolved, say it briefly and then let it go. Never raise the same unheeded point twice.
 - Saying nothing is a real option. While they measure, count, cut or think, stay quiet.
+- Some of what you ask for takes a minute to arrive - a drawing, a change to their photo.
+  Those come back to you the moment you ask, before the work is done. Say what you are
+  doing in a few words and carry on talking; you are told separately when it lands or
+  fails, and that is when to mention it. Never ask for the same thing twice while you
+  are waiting, and never sit silent waiting for it.
 - Curiosity is one good question, not more words. Ask only when the answer would change what
   you say next, and only one question at a time.
 - Useful beats warm. A number, a caution, the next step - that is the help. Praise is not.
@@ -1549,15 +1559,19 @@ class VoiceAgent:
         return shown
 
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
-        """Draw one, keep it with the photos, and put it on the panel.
+        """Set a drawing going, answer at once, and let :meth:`_draw` finish it.
 
-        The same shape as :meth:`_run_edit_photo`, because since the JointJS schema went these
-        are the same operation: a picture arrives as jpeg bytes, is written into ``photos/`` and
-        offered to the glass. What differs is only that there is no source photograph.
+        The tool returns in a moment and the picture arrives about ninety seconds later. That is
+        the whole point of the split: this used to await the image model here, so the call stayed
+        open for the whole of it and the model could not say another word until it closed - while
+        both this tool's own description and the system prompt told it to say what it was doing
+        and carry on talking. ``imagine.py`` said the same thing about the eighty seconds being
+        bearable "only because nothing is waiting on it", and asked for the lifecycle to be fixed
+        rather than the quality dropped. This is that fix.
 
-        The model is deliberately *not* told what the diagram contains. It asked for a picture,
-        the picture is on the screen, and a model handed a description of it will read that
-        description out at somebody who is already looking at the thing.
+        What holds the two halves together is a task (:mod:`cyclops.tasks`): the panel says what
+        is being drawn for as long as it takes, and :meth:`announce` tells the model when it
+        lands. Nothing polls and nothing waits.
         """
         request = _tool_string(call.arguments, "request", imagine.MAX_REQUEST_CHARS)
         style = _tool_string(call.arguments, "style", imagine.MAX_STYLE_CHARS)
@@ -1567,7 +1581,31 @@ class VoiceAgent:
             await self._request_response()
             return
 
+        # Set before the answer goes out, not inside the coroutine: the model is about to be told
+        # the drawing has started, and a panel still saying LISTENING underneath that would be the
+        # one moment the two disagree. `_activity_line` writes the sentence the caption already
+        # uses for this call - "drawing the relay wiring…" - so the task and the panel agree too.
         self.drawing_active = True
+        task = tasks.start(_activity_line(call))
+        self._spawn(self._draw(task, request, style))
+        await self._send_tool_output(call.call_id, {
+            "ok": True,
+            "started": True,
+            "note": (
+                "It is being drawn now and takes about a minute and a half. Say in a few words "
+                "that you are drawing it, then carry on talking about something else - you will "
+                "be told when it lands or if it fails."
+            ),
+        })
+        await self._request_response()
+
+    async def _draw(self, task: str, request: str, style: str) -> None:
+        """The ninety seconds. Runs on its own after :meth:`_run_draw_diagram` has answered.
+
+        The model is deliberately *not* told what the diagram contains. It asked for a picture,
+        the picture is on the screen, and a model handed a description of it will read that
+        description out at somebody who is already looking at the thing.
+        """
         try:
             # Keeping and showing is inside the try, not in an else. It was in an else once, and
             # a TypeError in the record it writes propagated straight out of this coroutine: the
@@ -1579,7 +1617,7 @@ class VoiceAgent:
             session.note("photo", by="drawn", request=request[:80], error=str(exc))
             self._log(f"[tool] draw_diagram failed: {exc}", stream=sys.stderr)
             output, kept = {"ok": False, "error": str(exc)}, None
-        except Exception as exc:  # never leave the model waiting for a tool result
+        except Exception as exc:  # never leave the model waiting to be told how it went
             session.note("photo", by="drawn", request=request[:80], error=f"{type(exc).__name__}")
             self._log(f"[tool] draw_diagram failed: {exc!r}", stream=sys.stderr)
             output, kept = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None
@@ -1591,8 +1629,28 @@ class VoiceAgent:
         # picture, so "make that clearer" edits the diagram instead of being refused.
         if output.get("shown") and kept is not None and kept.path is not None:
             self._on_panel = Panel(kept.path, "drawn")
-        await self._send_tool_output(call.call_id, output)
-        await self._request_response()
+
+        if not output.get("ok"):
+            tasks.fail(task, str(output.get("error", "")))
+            await self.announce(
+                "[The diagram you were drawing could not be made: "
+                f"{output.get('error', 'it failed')}. Tell them so in a few words. Nothing "
+                "appeared on their screen, so nobody else has told them.]"
+            )
+            return
+        tasks.finish(task)
+        if not output.get("shown"):
+            # Drawn with no panel to put it on - `uv run cyclops` at a desk. The one case where
+            # describing it is the right thing to do, because they have nothing to look at.
+            await self.announce(
+                "[The diagram you were drawing is finished, but there was no screen to put it "
+                f"on. Say so plainly rather than describing it. It was: {request}]"
+            )
+            return
+        await self.announce(
+            "[The diagram you were drawing is now up on their screen. Say it is there, in a few "
+            "words. Do not describe it or read it back - they are looking at it.]"
+        )
 
     def _keep_and_show_drawing(
         self, jpeg: bytes, request: str
@@ -1865,21 +1923,44 @@ class VoiceAgent:
         )
         self._log(f"[recall] showed the model {len(jpeg) // 1024} KB")
 
+    async def announce(self, text: str) -> None:
+        """Tell the model that something it started in the background has landed, and let it talk.
+
+        The other end of a tool that returns before its work is done. ``draw_diagram`` answers in
+        a moment and the picture arrives a minute and a half later, so the arrival has to reach the
+        conversation on its own - there is no tool call left to answer by then, and the model would
+        otherwise be told nothing at all and go on believing a drawing was still being made.
+
+        A synthetic user turn for the reason :meth:`add_photo`'s docstring gives, and flat and
+        bracketed for the reason its caption is: a line written as speech comes back out of the
+        speaker verbatim. It asks for a response, which is what separates it from
+        :meth:`add_edit` - that one rides inside a tool call that is about to ask for its own.
+
+        Silent when the socket has gone. A session that ended while a drawing was in flight has
+        nobody left to tell, and the picture went to the panel regardless.
+        """
+        if not self.connected:
+            return
+        await self._send_item(
+            {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
+        )
+        await self._request_response()
+
     # ---- imagined pictures ----
 
     async def _run_edit_photo(self, call: RealtimeConversationItemFunctionCall) -> None:
-        """Redraw the picture on the panel with a change, keep it, and put it up.
+        """Check there is something to edit, set the redraw going, and answer at once.
 
-        The same lifecycle as :meth:`_run_draw_diagram` - the module does the work, this does the
-        bookkeeping - with one thing added that the diagram does not need. An edit can take a
-        minute where a drawing takes ten seconds, which is long enough for the user to have moved
-        on entirely, so it borrows :meth:`_run_web_search`'s staleness check: if they have spoken
-        since this started, the model is told so and told not to launch into it.
+        The same lifecycle as :meth:`_run_draw_diagram` and split the same way and for the same
+        reason: the picture takes half a minute, and a tool call held open for that long is a
+        conversation with nothing in it. What is left here is the three questions that can be
+        answered without drawing anything - is there a request, is there a photo on the glass, and
+        was that photo ever written down. None of those is a task: they are answered in the moment
+        and there is nothing to watch.
 
-        Like the diagram, the model is not told what the picture contains. Unlike the diagram it
-        is told, out loud in the result, that it has not seen it - because this one *looks* like
-        a photograph of their bench, and a model that forgets it is a drawing will start
-        answering questions off it.
+        :meth:`_edit` is the other half, and it carries the one thing the diagram does not need -
+        the staleness check, because an edit is asked for about a photograph they are looking at
+        and half a minute is long enough for them to have moved on.
         """
         request = _tool_string(call.arguments, "request", imagine.MAX_REQUEST_CHARS)
         self._log(f"[tool] edit_photo {request!r}")
@@ -1912,20 +1993,44 @@ class VoiceAgent:
             await self._request_response()
             return
 
-        turn = self._turn_serial  # if this moves while we render, they have moved on
-        started = time.monotonic()
         self.drawing_active = True
+        task = tasks.start(_activity_line(call))
+        self._spawn(self._edit(task, shot.path, request, self._turn_serial))
+        await self._send_tool_output(call.call_id, {
+            "ok": True,
+            "started": True,
+            "note": (
+                "It is being redrawn now and takes about half a minute. Say in a few words that "
+                "you are working on it, then carry on - you will be told when it lands or if it "
+                "fails, and you will be shown the result."
+            ),
+        })
+        await self._request_response()
+
+    async def _edit(self, task: str, source: Path, request: str, turn: int) -> None:
+        """The half minute. Runs on its own after :meth:`_run_edit_photo` has answered.
+
+        ``turn`` is :attr:`_turn_serial` as it stood when the edit was asked for. If it has moved
+        by the time the picture lands, they have spoken since and may have moved on entirely - so
+        the arrival is mentioned rather than announced. That check used to ride in the tool output;
+        it belongs here now, because the tool answers before there is anything to be stale about.
+
+        Unlike the diagram, the model *is* shown what came back, and told plainly that it is a
+        drawing - because this one looks like a photograph of their own bench, and a model that
+        forgets that will start answering questions off it.
+        """
+        started = time.monotonic()
         try:
-            # Inside the try rather than an else, for the reason _run_draw_diagram's comment
-            # gives: a failure in the bookkeeping must not leave the model waiting for a result.
-            jpeg = await imagine.edit(shot.path, request, self.settings)
+            # Inside the try rather than an else, for the reason _draw's comment gives: a failure
+            # in the bookkeeping must not leave the model waiting to be told how it went.
+            jpeg = await imagine.edit(source, request, self.settings)
             output, seen, kept = await asyncio.to_thread(self._keep_and_show_edit, jpeg, request)
             self._log(f"[tool] edit: {len(jpeg) // 1024} KB in {time.monotonic() - started:.1f}s")
         except imagine.ImagineError as exc:
             session.note("photo", by="edit", request=request[:80], error=str(exc))
             self._log(f"[tool] edit failed: {exc}", stream=sys.stderr)
             output, seen, kept = {"ok": False, "error": str(exc)}, None, None
-        except Exception as exc:  # never leave the model waiting for a tool result
+        except Exception as exc:  # never leave the model waiting to be told how it went
             session.note("photo", by="edit", request=request[:80], error=f"{type(exc).__name__}")
             self._log(f"[tool] edit failed: {exc!r}", stream=sys.stderr)
             output, seen, kept = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None, None
@@ -1939,20 +2044,31 @@ class VoiceAgent:
             # that reached no card is not a file anything can open again.
             self._on_panel = Panel(kept, "edit")
 
-        if output.get("ok") and self._turn_serial != turn:
-            output["stale"] = True
-            output["note"] = (
-                "They have spoken since this started, so it may no longer be what they want. "
-                "The picture is on the panel: mention it in a few words if it still fits, and "
-                "do not launch into it."
+        if not output.get("ok"):
+            tasks.fail(task, str(output.get("error", "")))
+            await self.announce(
+                "[The change you were making to their photo could not be drawn: "
+                f"{output.get('error', 'it failed')}. Tell them so in a few words.]"
             )
-        await self._send_tool_output(call.call_id, output)
-        # The output first, so the call it answers is closed before anything else joins the
-        # conversation, and the picture after it - an image cannot ride in a function_call_output,
-        # so it has to be an item of its own. One response.create covers both.
+            return
+        tasks.finish(task)
+        # The picture first and the word after it, which is the order the tool output and the
+        # image used to go in and for the same reason: an image cannot ride in a message that is
+        # asking for a response, so it goes down as an item of its own and `announce` issues the
+        # one response.create that covers both.
         if seen is not None:
             await self.add_edit(seen, request)
-        await self._request_response()
+        if self._turn_serial != turn:
+            await self.announce(
+                "[The change you were making is now on their screen, but they have spoken since "
+                "they asked for it and may have moved on. Mention it in a few words if it still "
+                "fits, and do not launch into it.]"
+            )
+            return
+        await self.announce(
+            "[The change you were making is now on their screen. Say it is there, in a few "
+            "words. Do not describe it - they are looking at it.]"
+        )
 
     def _keep_and_show_edit(
         self, jpeg: bytes, request: str

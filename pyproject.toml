@@ -15,6 +15,11 @@ dependencies = [
     "markdown>=3.7",
     "openpyxl>=3.1",
     "python-dotenv>=1.2.3",
+    # The background-task ledger (cyclops.tasks) is one YAML file meant to be read with
+    # `cat`. store.py hand-rolls the frontmatter subset it emits and says a real parser
+    # would read it unchanged if one were ever wanted - this is that: a task's result
+    # field carries whatever an API said went wrong, which is not a constrained subset.
+    "pyyaml>=6",
     "sounddevice>=0.5.6",
     "supercamera>=0.1",  # useeplus endoscopes: vendor-specific USB, so no /dev/video node
     # The shutter button on the panel. Linux-only markers because lgpio has no macOS wheel and

@@ -42,11 +42,15 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from . import tasks
 from .config import ConfigError, Settings, load_settings
 
 __all__ = ["main", "spawn", "wanted"]
 
-# Where the child says how it went, since nobody is watching it happen. Beside the projects lock
+# Where the child says how it went, in full. The panel now says *that* it is happening - each of
+# the three jobs opens a row in cyclops.tasks, so the caption reads "naming the last session…"
+# instead of the snore while this runs - but a caption is one sentence and this is the
+# traceback. Beside the projects lock
 # in ~/.cache rather than on the card, for the reason store.py gives about both: a lock and a
 # logbook are facts about this machine, and the card is a tree whose whole purpose is to be
 # browsable. The name still says "projects" because that is what it used to carry and what
@@ -122,16 +126,20 @@ def _remember(folder: Path | None, settings: Settings) -> None:
     from .card import LOG_NAME, read_log
     from .session import transcript_text
 
-    records, _ = read_log(folder / LOG_NAME)
-    text = transcript_text(records)
-    if not text:
-        return  # nothing was said, so there is nothing this could have taught us
-    known = read(settings)
-    facts = remember(text, known, settings)
-    if not facts or facts == known:
-        return  # an empty answer means leave the list alone, never empty it
-    write(settings, facts)
-    print(f"· remembered: {len(facts)} thing(s) about you (was {len(known)})", flush=True)
+    # The task opens after the guard, so a box with CYCLOPS_REMEMBER=0 leaves no row for work it
+    # was never going to do. It closes as "done" on the two empty answers below, which is honest:
+    # having nothing to remember is a result, not a failure.
+    with tasks.run("remembering what that was about…"):
+        records, _ = read_log(folder / LOG_NAME)
+        text = transcript_text(records)
+        if not text:
+            return  # nothing was said, so there is nothing this could have taught us
+        known = read(settings)
+        facts = remember(text, known, settings)
+        if not facts or facts == known:
+            return  # an empty answer means leave the list alone, never empty it
+        write(settings, facts)
+        print(f"· remembered: {len(facts)} thing(s) about you (was {len(known)})", flush=True)
 
 
 def _name(settings: Settings) -> None:
@@ -140,7 +148,8 @@ def _name(settings: Settings) -> None:
         return
     from .session import describe_pending
 
-    describe_pending(settings)
+    with tasks.run("naming the last session…"):
+        describe_pending(settings)
 
 
 def _file(settings: Settings) -> None:
@@ -155,7 +164,8 @@ def _file(settings: Settings) -> None:
 
     from . import projects
 
-    asyncio.run(projects.sweep(settings))
+    with tasks.run("filing it under a project…"):
+        asyncio.run(projects.sweep(settings))
 
 
 def _step(what: str, job) -> None:

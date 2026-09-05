@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from cyclops import agent, imagine, panel
+from cyclops import agent, imagine, panel, tasks
 from cyclops.config import Settings
 
 
@@ -357,7 +357,13 @@ class Called:
 
 
 def edit_result(made) -> dict:
-    """Drive `_run_edit_photo` and hand back the tool output it sent."""
+    """Drive `_run_edit_photo` and hand back the tool output it sent.
+
+    `_spawn` is stubbed out rather than left to run: the handler answers the call and hands the
+    half-minute of drawing to a background task, and this suite has no key and no network to do
+    that with. Closing the coroutine keeps the loop `asyncio.run` tears down from complaining
+    about a task nobody awaited.
+    """
     sent: list[dict] = []
 
     async def _send_tool_output(call_id, output):
@@ -365,6 +371,7 @@ def edit_result(made) -> dict:
 
     made._send_tool_output = _send_tool_output
     made._request_response = _nothing
+    made._spawn = lambda coro: coro.close()
     asyncio.run(made._run_edit_photo(Called('{"request": "paint the doors matt black"}')))
     return sent[0]
 
@@ -392,7 +399,8 @@ def test_a_drawing_on_the_panel_is_edited_like_any_other_picture(voice) -> None:
     made, _ = voice
     made._on_panel = agent.Panel(Path("/cyclops/photos/12-00-00_drawn.jpg"), "drawn")
     output = edit_result(made)
-    assert "was never kept" not in str(output.get("error", "")), "it has a file; it can be sent"
+    assert output["ok"] is True, "it has a file, so it is sent rather than refused"
+    assert output["started"] is True, "the call is answered before the picture exists"
 
 
 def test_a_picture_that_was_never_written_down_is_not_edited(voice) -> None:
@@ -409,4 +417,92 @@ def test_nothing_is_sent_once_the_socket_has_gone(voice) -> None:
     made, sent = voice
     made._conn = None
     asyncio.run(made.add_edit(jpeg(320, 180), "paint the doors matt black"))
+    assert sent == []
+
+
+# ---------------------------------------------------------------- work that outlives its call
+
+
+class Asked:
+    """A draw_diagram call, as much of one as the handler reads."""
+
+    def __init__(self, arguments: str) -> None:
+        self.name = "draw_diagram"
+        self.call_id = "call_2"
+        self.arguments = arguments
+
+
+def tool_result(made, call) -> dict:
+    """Drive one image tool and hand back the output it sent, without doing the work.
+
+    `_spawn` is stubbed for the reason `edit_result`'s docstring gives: the half of these that
+    talks to gpt-image-2 belongs to `cyclops-smoke` and the Pi, not to a suite with no key.
+    """
+    sent: list[dict] = []
+
+    async def _send_tool_output(call_id, output):
+        sent.append(output)
+
+    made._send_tool_output = _send_tool_output
+    made._request_response = _nothing
+    made._spawn = lambda coro: coro.close()
+    asyncio.run(made._run_draw_diagram(call))
+    return sent[0]
+
+
+def test_a_drawing_is_answered_before_it_has_been_drawn(voice) -> None:
+    """The change this whole mechanism is for.
+
+    The tool used to await gpt-image-2 here, so the call stayed open for eighty-odd seconds and
+    the model could not say another word - while its own description told it to say what it was
+    doing and carry on. Now it answers at once and is told separately when the picture lands.
+    """
+    made, _ = voice
+    output = tool_result(made, Asked('{"request": "wire a relay to GPIO 17", "style": "manual"}'))
+
+    assert output["ok"] is True and output["started"] is True
+    assert "told" in output["note"], "the model is told that it will be told"
+
+
+def test_a_drawing_says_on_the_panel_what_it_is_drawing(voice) -> None:
+    """The task and the caption say the same sentence, because they come from the same place -
+    `_activity_line`, which the panel has always used for this call."""
+    made, _ = voice
+    tool_result(made, Asked('{"request": "wire a relay to GPIO 17", "style": "manual"}'))
+
+    (row,) = tasks.read()
+    assert row.state == tasks.RUNNING
+    assert row.what == tasks.line() == "drawing wire a relay to GPIO 17…"
+    assert made.drawing_active, "the panel is in the drawing state before the call is answered"
+
+
+def test_nothing_described_is_refused_without_opening_a_task(voice) -> None:
+    """A guard clause is answered in the moment and there is nothing to watch."""
+    made, _ = voice
+    output = tool_result(made, Asked('{"request": "", "style": "manual"}'))
+
+    assert output["ok"] is False
+    assert tasks.read() == [], "no work started, so no row"
+    assert not made.drawing_active
+
+
+def test_a_finished_job_reaches_the_conversation_on_its_own(voice) -> None:
+    """There is no tool call left to answer by the time a picture lands, so the arrival is a
+    synthetic user turn - the shape `add_photo` uses, and for the same reason."""
+    made, sent = voice
+    asked: list[bool] = []
+    made._request_response = lambda: asked.append(True) or _nothing()
+
+    asyncio.run(made.announce("[The diagram you were drawing is now up on their screen.]"))
+
+    assert len(sent) == 1 and sent[0]["role"] == "user"
+    text = sent[0]["content"][0]["text"]
+    assert text.startswith("[") and text.endswith("]"), "flat, so it is not read out verbatim"
+    assert asked, "unlike add_edit, this one asks for a reply - nothing else is going to"
+
+
+def test_a_session_that_ended_mid_drawing_is_not_talked_to(voice) -> None:
+    made, sent = voice
+    made._conn = None
+    asyncio.run(made.announce("[The diagram you were drawing is now up on their screen.]"))
     assert sent == []

@@ -518,6 +518,59 @@ While it is up the panel belongs to it, which means a `screen` recording goes bl
 as you leave it there — the same as a diagram, and for the same reason. `CYCLOPS_IMAGINE=0`
 withholds the tool entirely.
 
+## Background tasks
+
+A **task** is a piece of work that outlives the call that started it. Drawing a diagram takes a
+minute and a half; naming, summarising and filing a session after you tap stop takes the better
+part of another one. Both used to happen with nothing anywhere saying so.
+
+```
+~/.cache/cyclops/tasks.yaml
+```
+
+```yaml
+tasks:
+  - id: 7f3a91
+    what: drawing the relay wiring…
+    state: running
+    started: 2026-09-05 12:41:07+0200
+  - id: 2b0c44
+    what: editing the picture to paint the doors matt black…
+    state: failed
+    started: 2026-09-05 12:38:02+0200
+    ended: 2026-09-05 12:38:24+0200
+    result: 'gpt-image-2 refused: content policy'
+```
+
+Newest first, the last twenty rows, and `cat` is the intended reader — that plus
+`curl cyclops.local/api/status | jq .task` is the whole interface. `cyclops.tasks` owns the file
+and any process or thread may write to it, which is the point: the agent, the kiosk, the admin
+service and the detached child that tidies up after a session share no memory at all. Writes are
+serialised with `flock` and land atomically through `cyclops.card`, so a reader never sees half a
+file and a box that loses power mid-write has nothing stale to unwedge.
+
+**It is a ledger, not a queue.** Nothing pulls work off it, nothing retries, nothing can be
+cancelled. By the time a row appears the work is already running. Its only job is so you can see
+whether anything is going on.
+
+**Cyclops never opens a task himself.** He calls a tool, and the tool spawns the work and opens
+the row. Three things do so today: `draw_diagram`, `edit_photo`, and the three jobs
+`cyclops.after` runs once a session has ended.
+
+**Where you see it.** The panel's caption line, under his eye — the same line that says
+"searching the web…", walking its dots. It is the last thing that line falls back to, behind the
+kiosk's own notices and the session's, so it is what fills the minute after a session ends where
+the panel used to sit on the snore. And, on the admin page, one amber line at the right-hand end
+of the header, on every screen, updated by the poll that was already running.
+
+**A tool that starts a task answers straight away.** This is the half worth knowing about if you
+are reading the code. `draw_diagram` used to `await` the image model inside the tool handler, so
+the call stayed open for eighty-odd seconds and the model could not say another word — while its
+own description told it to say what it was doing and carry on talking. It now answers in a
+moment, says it is drawing, and keeps talking; when the picture lands or fails it is told, in a
+synthetic user turn of the kind a photo arrives in, and says so out loud. Nothing polls, nothing
+waits, and a session that ends mid-drawing simply has nobody left to tell.
+
 ## Admin page
 
 `cyclops-admin` serves a small Django page on **port 80**, so from anywhere on your network you

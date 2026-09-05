@@ -144,3 +144,44 @@ header {
 }
 .brand { color: var(--dim); font-size: calc(14 * var(--u)); letter-spacing: .3em; }
 .bar { width: calc(2 * var(--u)); height: calc(18 * var(--u)); background: var(--dim); }
+
+/* What is running in the background, at the far end of the header - see cyclops.tasks. Amber,
+   because that is what this interface already means by "worth watching but not wrong": the same
+   colour the meters use at their warn band and the same one .flightbar uses in lan.css, whose
+   shape this borrows wholesale.
+
+   Out of flow, and that is the whole of what took two attempts. In the flex row it was a normal
+   item with `white-space: nowrap`, and <body> is a grid whose single implicit column is sized by
+   its content - so the header's width became the header's plus the whole sentence, the page laid
+   itself out 1338 px wide inside an 800 px panel, and `overflow: hidden` clipped the difference
+   in silence. `min-width: 0` does not fix it: it caps the flex item's minimum and leaves the
+   track sized by max-content. That is the bug tests/layout_check.mjs exists to catch, it caught
+   this one on 2026-09-05, and the only honest answer for a readout that must never move anything
+   is to take it out of the layout entirely - the same move `body.drawing .close` already makes.
+
+   Capped at 22% so it can never reach the tabs, whose row ends around 76% of the header. It
+   ellipsises rather than wrapping: this says *that* something is going on, and the sentence in
+   full is on the panel's own caption and in /api/status.
+
+   :empty rather than a hidden class, because the poll writes the payload's value straight into
+   the element and the resting value is "". Nothing has to remember to hide it, and there is no
+   state to get out of step with the file. It comes last, so it beats the display above. */
+header { position: relative; }
+.job {
+  position: absolute;
+  right: calc(16 * var(--u));
+  /* Centred on the header's row by the transform rather than by flex, and that is not a style
+     choice: text-overflow has no effect on a flex container, so the flex version cut the sentence
+     off square at the edge with no ellipsis to say it had been cut. */
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 22%;
+  color: var(--amber);
+  font-weight: normal;
+  font-size: calc(11 * var(--u));
+  letter-spacing: .1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.job:empty { display: none; }
