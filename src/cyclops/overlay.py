@@ -537,7 +537,12 @@ BOT_R_LAND = 26.0  # ...and the shorter one on the right, which is what makes it
 # into a case looks like. The rule it breaks is about *text*, and the text is still well inside:
 # the last line finishes about where the glow has already died.
 TERM_PAD = 6.0  # inside the screen, above the first line and below the last
-TERM_BEZEL = 6.0  # the metal between the rail's inner lip and the screen's top edge
+# ...and no bezel above the glass either, for the same reason there is no foot below it. There
+# were six pixels of chassis face between the rail's inner lip and the top of the screen, and at
+# this size that is not a bezel - it is a see-through gap with the room showing through it, which
+# reads as a module that has not been pushed all the way home. The rail lands *on* the glass
+# instead, so the recess starts where the metal stops and the rail's own cast shadow falls across
+# the top of the screen, which is the depth cue that six pixels of plate was standing in for.
 
 # The eye. He rides the left bracket's ramp, sunk halfway into it - `EYE_SEAT` is that depth as a
 # fraction of the swell's radius, and acos(0.5) is a 60-degree shoulder, which is where the rail
@@ -1064,7 +1069,7 @@ class Overlay:
         # in rather than drawn on. It is centred on the bay between them for free, both mounts
         # being measured from their own edge.
         self.term = Rect(bstep + blegs, roof, (width - rout) - (bstep + blegs), floor_ - roof)
-        self.term_top = roof - max(2, px(TERM_BEZEL)) - self.rail_w / 2.0
+        self.term_top = roof - self.rail_w / 2.0  # so the rail's lower lip is the glass's top edge
         # ...and the rail's two ends, solved off the mounts rather than written down: each sits
         # where that mount's own rail crosses the terminal's, which is what buries the joint. A
         # 45-degree rail is a rail-and-a-half wide measured across the horizontal, so it covers a
