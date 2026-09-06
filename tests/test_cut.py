@@ -417,6 +417,60 @@ def test_only_one_video_is_made_per_sweep(tmp_path, monkeypatch) -> None:
     assert len(made) == 1
 
 
+def test_a_render_killed_by_a_deploy_stops_claiming_to_be_running(tmp_path, monkeypatch) -> None:
+    """Marco read the header eight minutes after a deploy and asked whether it was true.
+
+    push.sh kills renders by design, and the ledger row goes with the process - nothing writes
+    "this process died". Holding CUT_LOCK is what makes a running row of ours provably stale.
+    """
+    from cyclops import tasks
+
+    orphan = tasks.start("Cutting the video of something that was killed…")
+    assert [one.id for one in tasks.running()] == [orphan]
+
+    folder = make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY, request="{}")
+    monkeypatch.setattr(cut.card, "locked", lambda f: False)
+    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    monkeypatch.setattr(cut, "probe", lambda folder, records: (90.0, True))
+    monkeypatch.setattr(cut, "render", lambda folder, plan, root: cut.Cut(True))
+    cut.one(settings_for(tmp_path))
+
+    closed = {one.id: one for one in tasks.read()}
+    assert closed[orphan].state == tasks.FAILED
+    assert closed[orphan].result == "interrupted"
+    assert folder  # and the session it was actually asked about still got its video
+
+
+def test_a_stranded_row_is_closed_even_with_nothing_left_to_render(tmp_path) -> None:
+    """The half of that bug the first fix missed.
+
+    A killed render has already had its request consumed by the attempt that died, so the queue
+    is empty and a sweep that tidied up only on its way to rendering something never ran. The
+    header went on saying "Cutting the video of…" until the row aged out fifteen minutes later.
+    """
+    from cyclops import tasks
+
+    orphan = tasks.start("Cutting the video of a render nobody is running…")
+    assert cut.one(settings_for(tmp_path)) == "", "there is nothing to render"
+    assert tasks.running() == [], "and nothing left claiming to be running either"
+    assert {one.id: one.state for one in tasks.read()}[orphan] == tasks.FAILED
+
+
+def test_somebody_elses_row_is_left_alone(tmp_path, monkeypatch) -> None:
+    """The lock says nothing about a diagram being drawn in another process."""
+    from cyclops import tasks
+
+    theirs = tasks.start("Drawing a diagram of the wiring…")
+    make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY, request="{}")
+    monkeypatch.setattr(cut.card, "locked", lambda f: False)
+    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    monkeypatch.setattr(cut, "probe", lambda folder, records: (90.0, True))
+    monkeypatch.setattr(cut, "render", lambda folder, plan, root: cut.Cut(True))
+    cut.one(settings_for(tmp_path))
+
+    assert {one.id for one in tasks.read() if one.is_running} >= {theirs}
+
+
 def test_no_key_still_produces_a_video(tmp_path, monkeypatch) -> None:
     """No key, no network, a refusing model - the rules cut it and the button has not lied."""
     folder = make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY, request="{}")

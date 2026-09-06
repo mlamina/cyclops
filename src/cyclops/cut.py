@@ -110,6 +110,11 @@ OUT_W, OUT_H = 1280, 720
 # are told apart the same way on the video as they are on the panel.
 GREEN_ASS = "&H008CFF56"
 
+# What this module calls its rows in the background ledger. Written once so that _stale_rows
+# below can recognise its own work and nobody else's.
+CHOOSING = "Choosing what to keep of"
+CUTTING = "Cutting the video of"
+
 _RANGE_LINE = re.compile(r"^\s*[-*]?\s*(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)\s*$")
 
 
@@ -946,21 +951,49 @@ def one(settings: Settings) -> str:
     if not settings.cut:
         return ""
     sessions_dir = settings.sessions_dir.expanduser()
-    queue = waiting(sessions_dir)
-    if not queue:
-        return ""
-    held_up = busy(sessions_dir)
-    if held_up:
-        return f"not cutting yet - {held_up}"
 
+    # The lock is taken before the queue is even looked at, and that ordering is the fix to a
+    # bug Marco found by reading the header: tidying the ledger only when there was something to
+    # render meant a killed render's row sat there claiming to be working right up until
+    # tasks.running() aged it out a quarter of an hour later - and the request that would have
+    # triggered a sweep had already been consumed by the attempt that died. Taking it first
+    # costs an open, a flock and a close on a sweep that was going to walk the card anyway.
     with _held() as mine:
         if not mine:
             return ""  # somebody else is rendering; the next sweep is soon enough
+        _drop_stale_rows()
+        queue = waiting(sessions_dir)
+        if not queue:
+            return ""
+        held_up = busy(sessions_dir)
+        if held_up:
+            return f"not cutting yet - {held_up}"
         folder = queue[0]
         if not card.written(folder / card.VIDEO):
             (folder / card.CUT_REQUEST).unlink(missing_ok=True)
             return f"cannot cut {folder.name}: it has no recording"
         return _make(folder, sessions_dir, settings)
+
+
+def _drop_stale_rows() -> None:
+    """Close any of our own ledger rows left open by a render that was killed.
+
+    Only ever called while this process holds CUT_LOCK, and that is what makes it safe: the lock
+    is exclusive and is held for the whole of a render, so a row of ours still saying `running`
+    while we hold it belongs to a process that is gone. Nothing has to guess at an age.
+
+    It exists because the deploy path kills renders *by design* - push.sh restarts the index
+    service, the cgroup takes ffmpeg with it, and the request on the card is what makes that free.
+    Free for the render, but the ledger row went with the process too, and cyclops.tasks has no
+    way to know: nothing writes "this process died". So the panel and every phone went on saying
+    "Cutting the video of…" for the fifteen minutes it takes tasks.running() to give up on it.
+    Found by Marco reading the header and asking whether it was true. It was not.
+    """
+    from . import tasks
+
+    for task in tasks.running():
+        if task.what.startswith((CHOOSING, CUTTING)):
+            tasks.fail(task.id, "interrupted")
 
 
 def _make(folder: Path, sessions_dir: Path, settings: Settings) -> str:
@@ -984,7 +1017,7 @@ def _make(folder: Path, sessions_dir: Path, settings: Settings) -> str:
     if plan is None or not plan.ranges:
         # Stage one. Skipped entirely on a retry, which is what makes a deploy that kills a
         # render cost the encode and never the model call.
-        task = tasks.start(f"Choosing what to keep of {folder.name}…")
+        task = tasks.start(f"{CHOOSING} {folder.name}…")
         captions = _captions(folder)
         title, desc, raw, asked = decide(timeline(records, captions), seconds, settings)
         ranges = sanitize(raw, seconds)
@@ -1012,7 +1045,7 @@ def _make(folder: Path, sessions_dir: Path, settings: Settings) -> str:
             (folder / card.CUT_REQUEST).unlink(missing_ok=True)
             return f"nothing to keep in {folder.name}"
 
-    task = tasks.start(f"Cutting the video of {plan.title}…")
+    task = tasks.start(f"{CUTTING} {plan.title}…")
     with suppress(OSError, ValueError):
         card.write_text(folder / card.CUT_SUBS, script(records, plan, library._started(folder)))  # noqa: SLF001
     done = render(folder, plan, sessions_dir)
