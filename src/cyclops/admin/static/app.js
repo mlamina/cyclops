@@ -608,15 +608,11 @@ talk.addEventListener('click', (e) => {
 const LIVE_EVERY = 2000, LIVE_SLOW = 10000;   // ...and slower still when nobody is looking
 let liveName = null;   // the session this screen is showing, as the server last named it
 let liveHeld = 0;      // how many of its lines we already have - the `since` we ask with
-let liveOver = false;  // ...and whether we have already said so; see the `!s.name` branch below
 let liveGen = 0;       // bumped on the way out, so a timer from a screen you left dies quietly
 
 function stopLive() {
   liveGen++;
-  liveName = null;
-  liveHeld = 0;
-  liveOver = false;
-  if (liveTalk) liveTalk.innerHTML = '';
+  liveReset();
 }
 
 // Newest first, which is the other way up from the recording this transcript was written for.
@@ -660,6 +656,23 @@ function liveHead(title, on) {
   if (liveTalk) liveIdle(!on && !liveTalk.childElementCount);
 }
 
+// The screen with nothing on it: no session, no lines, no name in the head, and no light on the
+// header's rule. What a companion shows most of the day, and where all three ways out of a
+// session land - opening this screen, leaving it, and one ending underneath it.
+//
+// The transcript is emptied before liveHead is asked, and that ordering is the whole of it:
+// liveIdle's test is "is there anything to show", so the mark and the button come back only once
+// there is not. The light is liveHead's doing too, and it matters that it is: #livebar rides the
+// header rule rather than this view, so it is on screen from the Sessions list as readily as from
+// here, and leaving it lit on the way out would leave it sweeping with nothing left polling to
+// ever put it out.
+function liveReset() {
+  liveName = null;
+  liveHeld = 0;
+  if (liveTalk) liveTalk.innerHTML = '';
+  liveHead('', false);
+}
+
 async function liveTick(mine) {
   if (mine !== liveGen) return;
   try {
@@ -667,19 +680,24 @@ async function liveTick(mine) {
                          '&since=' + liveHeld);
     if (mine !== liveGen) return;   // you left while this was in flight
     if (!s.name) {
-      // He stopped talking. The folder's lock goes the moment the session closes and well before
-      // it is renamed and summarised, so this arrives seconds after the last word - and clearing
-      // the screen here would wipe the conversation you are still reading. Freeze it instead.
+      // He stopped talking, and the screen goes back to what it opens on: the eye, and what to
+      // press. The folder's lock goes the moment the session closes - well before it is renamed
+      // and summarised - so this lands within a couple of seconds of the last word.
       //
-      // Written once and not on every poll after it. `liveName` is deliberately kept: it is what
-      // says a conversation ended rather than never started, and the next session will differ
-      // from it and reset the screen through the ordinary branch below.
-      if (!liveOver) {
-        liveOver = true;
-        liveHead(liveName ? 'that session has ended' : '', false);
-      }
+      // This used to freeze the transcript instead, on the argument that you might still be
+      // reading it. That is the wrong trade for this screen. A companion is propped against a
+      // vice and glanced at, and one still showing a conversation that ended twenty minutes ago
+      // is answering the only question it exists to answer - is he up, and what is he saying -
+      // with something that stopped being true. Nothing is lost by clearing it: seconds later
+      // that same conversation is a row on the Sessions screen with its video and its summary,
+      // which is where a finished one is read.
+      //
+      // `liveName` is the guard, and no second flag is needed for it: it holds a name only while
+      // a session is on the screen, so a name means there is something to put away and a null one
+      // means this has already been done. Every poll after the first one has nothing to do at
+      // all, which is what this branch is for the rest of the day.
+      if (liveName) liveReset();
     } else {
-      liveOver = false;
       if (s.name !== liveName) {
         // A different session, or the first one. Start again, and put its name up: /api/session
         // is the same route the Sessions screen opens with, asked once rather than polled.
@@ -719,11 +737,10 @@ async function liveTick(mine) {
 
 function showLive() {
   if (!liveTalk) return;   // the panel has no such screen
-  stopLive();
   // Opened on the idle screen rather than on an empty transcript, because until the first poll
-  // lands that is the honest answer and it is the commoner one.
-  liveIdle(true);
-  liveHead('', false);
+  // lands that is the honest answer and it is the commoner one - which is stopLive's doing now,
+  // since opening this screen and leaving it arrive at exactly the same blank.
+  stopLive();
   liveTick(liveGen);
 }
 

@@ -387,8 +387,18 @@ body:not(.kiosk) .livehead {
   padding-bottom: calc(9 * var(--u)); margin-bottom: calc(4 * var(--u));
   border-bottom: calc(1 * var(--u)) solid var(--dim);
 }
+/* White, and not the page's own green, because white is what Cyclops wears while he is up.
+   overlay.py hands the state's accent to the border, the signal meter and the session clock for
+   the length of a session and leaves the rest of the chrome green, on the argument that a screen
+   where everything is an accent has none. These two are this page's whole share of that - the
+   title of a session that is running, and the light travelling under the header - and they are
+   the only things here that mean anything only while one is. #e1fff0 is that white to the byte,
+   so the phone in your hand and the panel on the bench answer in the same colour.
+   The lines themselves stay phosphor. They are the conversation rather than chrome, and
+   overlay.py makes the same call about the caption for the same reason: a paragraph of running
+   text in white is harder to read than the same paragraph green. */
 body:not(.kiosk) .livetitle {
-  color: var(--green); font-size: calc(16 * var(--u)); line-height: 1.3;
+  color: var(--white); font-size: calc(16 * var(--u)); line-height: 1.3;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
 /* That he is still going, said as a thing that is moving rather than as a word that is not.
@@ -411,7 +421,7 @@ body:not(.kiosk) .livebar {
 body:not(.kiosk) .livebar[data-on] { display: block; }
 body:not(.kiosk) .livebar::after {
   content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 30%;
-  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  background: linear-gradient(90deg, transparent, var(--white), transparent);
   animation: livesweep 2.2s linear infinite;
 }
 /* -110% to 345%: the bar is 30% of the track, so 333% carries it exactly off the far end, and
@@ -423,7 +433,7 @@ body:not(.kiosk) .livebar::after {
 /* Somebody who would rather nothing moved still gets the answer, held still. */
 @media (prefers-reduced-motion: reduce) {
   body:not(.kiosk) .livebar::after { animation: none; width: 100%;
-    background: var(--green); opacity: .5; }
+    background: var(--white); opacity: .5; }
 }
 
 /* ---- the YouTube title and description, on the screens that can paste them ----

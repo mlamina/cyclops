@@ -101,7 +101,9 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
   letter-spacing: .12em; text-transform: uppercase;
 }
 .rowtime, .rowsub { display: block; margin-top: calc(2 * var(--u)); }
-.rowsub.live { color: var(--amber); }
+/* The session running right now, in the colour Cyclops wears while one is - see HALOS in
+   overlay.py. It was amber, which on the panel means waking or going to sleep, not up. */
+.rowsub.live { color: var(--white); }
 .rowsub.broke { color: var(--red); }
 .rowsum { display: none; }
 

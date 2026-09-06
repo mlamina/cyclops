@@ -16,6 +16,10 @@
   --dim: #207646;     /* the faintest thing still legible on the panel */
   --amber: #ffb83c;
   --red: #ff5646;
+  /* Not a second hue - the tube's own white, which on the panel is worn by the handful of
+     things that mean anything only while a session is up, and by nothing at all when none is.
+     See WHITE and HALOS in cyclops/overlay.py. */
+  --white: #e1fff0;
   --screen: #050f0a;  /* the green-black everything is drawn on */
   --ink: #030b07;     /* text on a filled control */
   --tint: var(--green);
