@@ -51,6 +51,10 @@ def _settle(ov: overlay.Overlay, **shown: object) -> None:
     Two renders at *different* phases, which is the whole trick: the engine starts its clock on
     the frame the state changes and moves on the ones after it, so settling with the same phase
     twice settles nothing.
+
+    It settles two things now. The caption types itself onto the terminal from the frame its
+    sentence turns up on, and MOOD_EASE_S * 4 clears TYPE_MAX_S four times over, so anything
+    rendered after this has its line printed out as well as its mood arrived at.
     """
     ov.render(phase=0.0, **shown)  # type: ignore[arg-type]
     ov.render(phase=eye.MOOD_EASE_S * 4, **shown)  # type: ignore[arg-type]
@@ -467,9 +471,12 @@ def test_his_line_snores_while_he_is_asleep() -> None:
     rows, cols = _line_box(ov)
     shown = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **shown)
+    # Every phase down here is a breath past where it wants to be, and BREATH_PERIOD_S is one
+    # breath and exactly two blinks - so both pulses are where they would have been anyway, and
+    # the snore has finished being typed onto the screen rather than still arriving.
     half = overlay.CURSOR_PERIOD_S / 2
-    bare = ov.render(phase=half * 1.5, **shown)[rows, cols]
-    full = ov.render(phase=half / 2, **shown)[rows, cols]
+    bare = ov.render(phase=overlay.BREATH_PERIOD_S + half * 1.5, **shown)[rows, cols]
+    full = ov.render(phase=overlay.BREATH_PERIOD_S + half / 2, **shown)[rows, cols]
     assert not np.array_equal(bare, full), "the cursor does not blink while he is asleep"
     # ...and the line still does not brighten and dim doing it. The eye gave that up - brightness
     # is how this panel says which state it is in - and a line that pulses under a face that has
@@ -487,7 +494,9 @@ def test_his_line_snores_while_he_is_asleep() -> None:
     # Whole cursor periods apart, so the cursor is showing in every sample and the breath is the
     # only thing left that could differ - and it runs at twice the cursor period, which puts these
     # alternately at the top and the bottom of it.
-    assert len({ink(i * overlay.CURSOR_PERIOD_S) for i in range(4)}) == 1, "the line breathes"
+    assert len({ink(overlay.BREATH_PERIOD_S + i * overlay.CURSOR_PERIOD_S) for i in range(4)}) == (
+        1
+    ), "the line breathes"
 
 
 RING_BAND = 0.75  # ...as a fraction of his radius: outside anything the gaze can reach
@@ -1052,9 +1061,9 @@ def test_the_caption_never_lands_on_a_mount() -> None:
         "looking for the torque specification for an M8 stainless bolt into aluminium…",
         "x" * 200 + "…",  # nowhere to break, so this one runs to the far edge on both lines
     ):
-        band = ov.render(
-            state=overlay.SEARCHING, level=0.0, elapsed=12.0, detail=detail, phase=10.0
-        )[rows, wide]
+        shown = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0, detail=detail)
+        _settle(ov, **shown)  # let the line finish printing; this is about where it lands
+        band = ov.render(phase=10.0, **shown)[rows, wide]
         ink = _ink(band)
         assert ink.any(), "nothing on the screen at all - this would pass on a blank line"
         xs = np.nonzero(ink.any(axis=0))[0] + wide.start
@@ -1070,11 +1079,12 @@ def test_a_long_caption_takes_a_second_line_rather_than_a_stub() -> None:
     # screen is two lines deep whatever is on it, so what has to grow is what is printed - and it
     # grows *downwards*, onto the second line, because a terminal prints from the top.
     ov = _panel()
-    shown = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0, phase=10.0)
+    shown = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0)
     rows, cols = _line_box(ov)
 
     def box(detail: str) -> tuple[int, int]:
-        ink = _ink(ov.render(detail=detail, **shown)[rows, cols])
+        _settle(ov, detail=detail, **shown)  # a line still arriving has no second line yet
+        ink = _ink(ov.render(detail=detail, phase=10.0, **shown)[rows, cols])
         lines = np.where(ink.any(axis=1))[0]
         return int(lines.min()), int(lines.max())
 

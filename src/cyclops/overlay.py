@@ -78,6 +78,7 @@ from __future__ import annotations
 
 import math
 import sys
+from bisect import bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -85,7 +86,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from .eye import EyeEngine, Mood, at, breath, linear, mix, smoothed, wide
+from .eye import BLINK_DRIFT, EyeEngine, Mood, at, breath, linear, mix, smoothed, wide
 from .stats import HOT_C, WARN_C, temp_band, temp_percent
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
@@ -422,6 +423,15 @@ CURSOR = "_"  # what a line about work in flight ends in: a cursor, blinking, ha
 CURSOR_PERIOD_S = 1.2  # one blink of it, half on and half off...
 BREATH_PERIOD_S = 2.4  # ...and one breath of the phosphor, at half that rate so the two never lock
 BREATH_DEPTH = 0.30  # how far the text sinks towards the glass at the bottom of a breath
+TYPE_CHAR_S = 0.028  # the terminal's own rate, near enough one character per frame at 30 fps
+TYPE_JITTER = 0.45  # ...and how far ahead of or behind it any one character may land
+TYPE_GAP = 2.0  # extra intervals the hand rests for after a word or the end of a clause
+TYPE_REST = " ,.;:—-…\n"  # what it rests after
+TYPE_MAX_S = 0.45  # the longest a whole line may take to arrive, however long it is. The binding
+# constraint here is not taste: agent.ACTIVITY_HOLD_S is 0.6, the floor under a tool that is off
+# the card and back in five milliseconds, and a line still being typed when it is taken down is a
+# worse strobe than the one that constant was added to stop. Raise it towards 0.55 if the hand
+# reads too smooth on the panel; 0.6 is the ceiling and it is somebody else's number.
 
 HALO_CORE = 0.004  # fraction of the height held at full brightness, hard against the edge
 HALO_FALLOFF = 0.024  # and how far the light reaches inwards before it is gone
@@ -864,6 +874,70 @@ def caption_pulse(phase: float) -> tuple[float, bool]:
             phase % CURSOR_PERIOD_S < CURSOR_PERIOD_S / 2)
 
 
+def type_stops(text: str) -> list[float]:
+    """When each character of *text* lands, in seconds after the line turned up.
+
+    A terminal prints; it does not publish. The line arriving whole, in one frame, is the one
+    thing on this panel that was never a machine doing something - and the cursor on the end of
+    it has been claiming otherwise since it replaced the three walking dots.
+
+    Not an even rate, because an even rate is a progress bar. Every character lands up to
+    TYPE_JITTER either side of the terminal's own interval, and the hand rests TYPE_GAP longer
+    after a space or the end of a clause - which is the half of this anybody actually sees, the
+    per-character wobble being under a frame on any line long enough to be squeezed.
+
+    The wobble comes off the golden ratio and off the character's own code point, for the reason
+    :func:`cyclops.eye.blink` gives for walking its offsets the same way: the sequence never
+    settles into a period anybody can anticipate, a multiply and a mod is the whole cost, and it
+    is the same on every boot. Not a PRNG and emphatically not `hash()` - a box that typed
+    differently each time it was switched on would be a box with a personality nobody chose.
+
+    The marker is not typed. It is the prompt, and a prompt is on the screen before anything is
+    printed at it, so it lands at zero and the first frame of any caption is `› _`.
+
+    Whatever it all comes to is squeezed into TYPE_MAX_S - see that constant for whose number it
+    really is.
+    """
+    lead = len(MARKER) if text.startswith(MARKER) else 0
+    stops: list[float] = []
+    when = 0.0
+    for i, char in enumerate(text):
+        if i >= lead:
+            drift = 2.0 * (((i + ord(char)) * BLINK_DRIFT) % 1.0) - 1.0
+            when += TYPE_CHAR_S * (1.0 + TYPE_JITTER * drift)
+            if i and text[i - 1] in TYPE_REST:
+                when += TYPE_CHAR_S * TYPE_GAP
+        stops.append(when)
+    return [stop * min(when, TYPE_MAX_S) / when for stop in stops] if when else stops
+
+
+class Typist:
+    """Which sentence the terminal is printing, and how much of it is on the screen.
+
+    The overlay's one piece of remembered state outside the eye, and it is the same three fields
+    for the same reason - see :meth:`cyclops.eye.EyeEngine.look`, which eases out of the mood it
+    was in by remembering exactly this much. A frame is handed what the panel is showing and
+    never what it was showing a moment ago, so the only thing that can notice a sentence has
+    *changed* is the thing that saw the last one.
+    """
+
+    def __init__(self) -> None:
+        self._key = ""
+        self._at = 0.0
+        self._stops: list[float] = []
+
+    def printed(self, key: str, phase: float) -> int:
+        """How many characters of *key* have landed by monotonic *phase*.
+
+        Any change at all starts the line again at the prompt, the screen being cleared and the
+        same sentence coming back included: that is new text appearing, and a terminal has no
+        way to tell it from any other.
+        """
+        if key != self._key:
+            self._key, self._at, self._stops = key, phase, type_stops(key)
+        return bisect_right(self._stops, phase - self._at)
+
+
 def rim_breath(phase: float) -> float:
     """How far the border has sunk towards SCREEN. A *mix*, not an alpha - see :func:`_mix`."""
     return RIM_DEPTH * breath(phase, RIM_PERIOD_S)
@@ -1125,6 +1199,9 @@ class Overlay:
         # One engine per window size: it owns the geometry, and it remembers which mood it is
         # easing out of, which is why it is built here and not per frame.
         self.engine = EyeEngine(self.eye_r, self.line, SCREEN, MOODS[IDLE])
+        # ...and the other one, for the same reason: it remembers which sentence it is printing
+        # and which frame that sentence turned up on. See :class:`Typist`.
+        self._typist = Typist()
         self._bases: dict[tuple[str, bool, str], Image.Image] = {}
         # The moving half of each instrument, one tile per appearance it can have. A level moves
         # when a finger moves it and a temperature moves once every five seconds, so at 25 frames
@@ -1775,9 +1852,19 @@ class Overlay:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
         ``phase`` is a monotonic clock in seconds, and the only argument here that is not about
-        what the panel is showing but about *when*. It is passed in rather than read here so a
-        frame is a pure function of its arguments and the caption's animation can be tested
-        without a clock - the same shape as ``flash``, which the kiosk has always computed.
+        what the panel is showing but about *when*. It is passed in rather than read here so the
+        animation can be tested without a clock - the same shape as ``flash``, which the kiosk
+        has always computed.
+
+        Two things here are drawn from more than the arguments, and both remember the same pair:
+        the last thing they were asked to show, and the phase it first turned up at. The eye
+        eases out of the mood it was in rather than snapping to the new one
+        (:meth:`cyclops.eye.EyeEngine.look`), and the caption types itself onto the terminal
+        rather than arriving whole (:class:`Typist`). Neither can be told from outside, because
+        a caller hands over what the panel is showing and never what it was showing a moment
+        ago. Neither costs the purity worth having either, which is that a frame is a function
+        of its arguments and of the order they arrived in and of nothing else: render twice and
+        the second one is settled, which is what every test down here does.
 
         Almost nothing here moves while he is asleep, and that is deliberate and half the
         design: the eye stays shut, the border holds still, the caption stops breathing and the
@@ -1957,6 +2044,9 @@ class Overlay:
         """
         text = detail or CAPTIONS.get(state, "")
         if not text:
+            # Cleared, and the typist has to hear about it: whatever turns up next is new text
+            # appearing on an empty screen, even if it is the same sentence as before.
+            self._typist.printed("", phase)
             return  # the strip already says the mode; saying it twice is not a caption
         busy = text.endswith(BUSY_MARK)
         if busy:
@@ -1976,6 +2066,16 @@ class Overlay:
             # one. Two marks doing one mark's job. The cursor wins, because it is the half that
             # moves, and it means what the ellipsis meant anyway.
             lines[-1] = lines[-1][: -len(BUSY_MARK)]
+        # How much of it has landed. Keyed on the wrapped lines rather than on the sentence, so
+        # the schedule is built from the exact string being drawn - and so two different
+        # paragraphs of API error that elide to the same visible line do not retype.
+        #
+        # A fault arrives whole. It is asking to be read, not watched, which is the argument
+        # that already denies it the breath and the blink below, and it is also the one caption
+        # that can be a paragraph long - the worst thing on this panel to watch being wiped on.
+        whole = "\n".join(lines)
+        printed = len(whole) if state == ERROR else self._typist.printed(whole, phase)
+        typing = printed < len(whole)
         top = self.caption_top
         # The breath runs under every caption of a session that is up - it is what makes the line
         # read as a live tube rather than a printed label - and the cursor after any line that
@@ -2000,17 +2100,31 @@ class Overlay:
         # marker is the part that is decoration anyway - so it is the part that gets to be a
         # colour, and it breathes with the words it introduces.
         accent = (*mix(halo, SCREEN, sunk), CAPTION_ALPHA)
+        at, y, taken = x, top + 0.5 * self.caption_h, 0
         for i, line in enumerate(lines):
+            head = printed - taken  # how much of this line has landed...
+            taken += len(line) + 1  # ...and the return that ends it, which costs the hand a beat
+            if head <= 0:
+                break  # the head is not on this line, and so cannot be on any line under it
             y = top + (i + 0.5) * self.caption_h
             at = x
             if line.startswith(MARKER):  # only ever the first, and only if the wrap left it there
                 at += self._text(d, at, y, MARKER, font, accent)
-                line = line[len(MARKER):]
-            at += self._text(d, at, y, line, font, (*colour, CAPTION_ALPHA))
-            if busy and lit and i == len(lines) - 1:
-                # Hard against the last letter, where a cursor belongs - it is standing in for the
-                # ellipsis the phrase arrived with, not sitting beside it as a separate mark.
-                self._text(d, at, y, CURSOR, font, (*colour, CAPTION_ALPHA))
+                line, head = line[len(MARKER):], max(0, head - len(MARKER))
+            at += self._text(d, at, y, line[:head], font, (*colour, CAPTION_ALPHA))
+        # Hard against the last letter printed, where a cursor belongs - it is standing in for the
+        # ellipsis the phrase arrived with, not sitting beside it as a separate mark. `at` and `y`
+        # are wherever the loop left them: the head while the line is still arriving, and the end
+        # of the last line once it has, which is where this has always been drawn.
+        #
+        # Solid while it types and blinking once it has stopped. A cursor that blinked mid-word
+        # would be two things moving where only one of them is the hand.
+        #
+        # The guard is for the resting line. Only a busy one had the cursor's width taken out of
+        # its wrap (see `limit`), so a full line of text nobody reserved room for has to give the
+        # mark up at the very end rather than stand it on the bracket.
+        if (typing or (busy and lit)) and at + self._cursor_w <= self.caption_right:
+            self._text(d, at, y, CURSOR, font, (*colour, CAPTION_ALPHA))
 
     def _draw_terminal(self, layer: Image.Image) -> None:
         """The screen the caption is printed on, and the rail that carries it.

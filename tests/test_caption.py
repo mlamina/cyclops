@@ -224,6 +224,98 @@ def _ink(frame: np.ndarray, ov: overlay.Overlay, line: int = 0) -> tuple[int, in
     ) else None
 
 
+def _typed(ov: overlay.Overlay, phase: float, **shown: object) -> np.ndarray:
+    """One frame at *phase*, with the line already printed out.
+
+    The typist starts its clock on the frame a sentence first turns up, so the first render of
+    anything is a bare prompt - which every assertion down here would read as a blank screen.
+    Hence two renders a whole breath apart: BREATH_PERIOD_S is one breath and exactly two cursor
+    blinks, so the frame that comes back moves precisely as it would have without the one that
+    primed it, and 2.4s is well past any schedule. The same trick tests/test_eye.py plays with
+    `_settle` for the eye's crossfade, for the same reason.
+    """
+    ov.render(phase=phase, **shown)  # type: ignore[arg-type]
+    return ov.render(phase=phase + overlay.BREATH_PERIOD_S, **shown)  # type: ignore[arg-type]
+
+
+def _band(frame: np.ndarray, ov: overlay.Overlay) -> np.ndarray:
+    """The whole of the terminal's screen between its two mounts, and nothing else on the panel."""
+    rows = slice(int(ov.caption_top), int(ov.caption_top + overlay.CAPTION_LINES * ov.caption_h))
+    return frame[rows, ov.caption_left - 2 : ov.caption_right + 2]
+
+
+def test_a_new_line_is_typed_onto_the_screen_rather_than_appearing_whole() -> None:
+    # The headline, and the only assertion in here that would notice the feature being deleted.
+    # The left edge is pinned because the prompt is not typed - it is already on the screen, the
+    # way a prompt is - so what moves is the far end of the line and nothing else.
+    #
+    # Sampled at 30 fps because that is the only rate the panel ever draws a caption at: the
+    # dark panel paints black without calling render at all, so SLEEP_FPS never sees one. And
+    # stopped before the blink comes round, which would take the cursor off the end of a line
+    # that has finished arriving and read here as the sentence going backwards.
+    ov = overlay.Overlay(800, 480)
+    shown = dict(state=overlay.SEARCHING, level=0.0, detail="searching for M8 torque…")
+    edges = [_ink(ov.render(phase=i / 30, **shown), ov) for i in range(16)]
+    assert all(edge is not None for edge in edges), "the screen was blank on some frame"
+    assert len({edge[0] for edge in edges}) == 1, "the sentence walked sideways as it was typed"
+    rights = [edge[1] for edge in edges]
+    assert rights == sorted(rights), "the line unprinted itself somewhere"
+    assert rights[-1] > rights[0], "it arrived whole"
+    assert len(set(rights)) > 6, "it arrived in three lumps, which is a wipe and not a hand"
+
+
+def test_no_line_is_still_arriving_when_it_can_be_taken_down() -> None:
+    # The one number in here that is not this module's own. A tool that finishes in five
+    # milliseconds holds its sentence up for agent.ACTIVITY_HOLD_S and no longer, and a line
+    # still being typed when it is replaced is exactly the strobe that constant was added to
+    # stop - only now it strobes half-sentences, which is worse than what it fixed.
+    assert overlay.TYPE_MAX_S < agent.ACTIVITY_HOLD_S
+
+
+def test_a_fault_arrives_whole() -> None:
+    # The panel's oldest rule, and the third animation to be told about it: the eye holds still
+    # in ERROR, the caption neither breathes nor blinks in ERROR, and a fault typing itself out
+    # would be the same mistake a third time. It is asking to be read, not watched - and it is
+    # also the one caption that can be a paragraph of API error, which is the worst thing on
+    # this panel to watch being wiped on.
+    ov = overlay.Overlay(800, 480)
+    shown = dict(state=overlay.ERROR, level=0.0, detail="OpenAI rejected the API key")
+    first = _band(ov.render(phase=0.0, **shown), ov)
+    for phase in (overlay.TYPE_MAX_S / 2, overlay.TYPE_MAX_S, overlay.BREATH_PERIOD_S):
+        assert np.array_equal(first, _band(ov.render(phase=phase, **shown), ov)), (
+            f"the fault was still arriving at {phase}s"
+        )
+
+
+def test_the_head_never_pushes_its_cursor_off_the_glass() -> None:
+    # Only a busy line had the cursor's width taken out of its wrap, so a resting line that
+    # fills the screen has no room reserved for the mark the head carries. It gives the mark up
+    # rather than stand it on the bracket - the same bargain the blinking cursor struck, arrived
+    # at from the other end.
+    ov = overlay.Overlay(800, 480)
+    for detail in (
+        "looking for the torque specification for an M8 stainless bolt into aluminium",
+        "x" * 200,  # no ellipsis on either: these are lines nobody reserved the room for
+    ):
+        for i in range(20):
+            frame = ov.render(phase=i / 30, state=overlay.LISTENING, level=0.0, detail=detail)
+            for line in range(overlay.CAPTION_LINES):
+                edges = _ink(frame, ov, line)
+                assert edges is None or edges[1] <= ov.caption_right, (
+                    f"{detail[:20]!r} line {line} ran to {edges} past {ov.caption_right}"
+                )
+
+
+def test_the_hand_does_not_type_to_a_metronome() -> None:
+    # An even rate is a progress bar. What makes this read as a hand is the rest after a word,
+    # which is the part still visible once a long line has been squeezed into TYPE_MAX_S.
+    stops = overlay.type_stops(overlay.MARKER + "a line of words")
+    assert stops[: len(overlay.MARKER)] == [0.0] * len(overlay.MARKER), "the prompt was typed"
+    assert stops == sorted(stops) and stops[-1] <= overlay.TYPE_MAX_S
+    gaps = [b - a for a, b in zip(stops, stops[1:], strict=False)]
+    assert len({round(gap, 4) for gap in gaps}) > 4, "every character landed on the same beat"
+
+
 def test_the_cursor_trails_the_sentence_rather_than_moving_it() -> None:
     # What the bubble could not do. It was sized to its own sentence, so an unreserved mark at the
     # end of a line made a dark rectangle grow and shrink behind the words - a thing no unit test
@@ -235,8 +327,8 @@ def test_the_cursor_trails_the_sentence_rather_than_moving_it() -> None:
     ov = overlay.Overlay(800, 480)
     half = overlay.CURSOR_PERIOD_S / 2
     shown = dict(state=overlay.IDLE, level=0.0, detail="searching for M8 torque…")
-    on = _ink(ov.render(phase=half / 2, **shown), ov)
-    off = _ink(ov.render(phase=half * 1.5, **shown), ov)
+    on = _ink(_typed(ov, half / 2, **shown), ov)
+    off = _ink(_typed(ov, half * 1.5, **shown), ov)
     assert on[0] == off[0], f"the sentence shuffled with the cursor: {on} then {off}"
     assert on[1] > off[1], "the cursor is supposed to appear off the end of the line, not in it"
     assert on[1] - off[1] == pytest.approx(ov._cursor_w, abs=3), (
@@ -252,7 +344,7 @@ def test_the_cursor_never_runs_off_the_glass() -> None:
     half = overlay.CURSOR_PERIOD_S / 2
     for detail in ("searching for an M8 stainless bolt…", "x" * 200 + "…", "wwwwww wwwwwwww w…"):
         for phase in (half / 2, half * 1.5):
-            frame = ov.render(state=overlay.SEARCHING, level=0.0, detail=detail, phase=phase)
+            frame = _typed(ov, phase, state=overlay.SEARCHING, level=0.0, detail=detail)
             for line in range(overlay.CAPTION_LINES):
                 edges = _ink(frame, ov, line)
                 assert edges is None or edges[1] <= ov.caption_right, (
@@ -265,9 +357,10 @@ def test_the_screen_is_the_same_size_whatever_is_on_it() -> None:
     # the sentence does; a terminal is a thing, and a thing that changed shape with what it was
     # printing would be a dialogue box with a bezel drawn on.
     ov = overlay.Overlay(800, 480)
-    at_rest = dict(state=overlay.LISTENING, level=0.0, phase=0.0)
-    short = ov.render(detail="doing a thing", **at_rest)
-    long_ = ov.render(detail="doing a considerably longer thing than the other one", **at_rest)
+    at_rest = dict(state=overlay.LISTENING, level=0.0)
+    short = _typed(ov, 0.0, detail="doing a thing", **at_rest)
+    long_ = _typed(ov, 0.0, detail="doing a considerably longer thing than the other one",
+                   **at_rest)
     band = slice(int(ov.caption_top), int(ov.caption_top + overlay.CAPTION_LINES * ov.caption_h))
     moved = np.argwhere(np.any(short != long_, axis=2))
     assert moved.size, "the two captions rendered identically"
@@ -284,8 +377,8 @@ def test_the_cursor_actually_lands_on_the_panel() -> None:
     ov = overlay.Overlay(800, 480)
     half = overlay.CURSOR_PERIOD_S / 2
     shown = dict(state=overlay.SEARCHING, level=0.0, detail="searching…")
-    assert not np.array_equal(ov.render(phase=half / 2, **shown),
-                              ov.render(phase=half * 1.5, **shown)), "nothing blinked"
+    assert not np.array_equal(_typed(ov, half / 2, **shown),
+                              _typed(ov, half * 1.5, **shown)), "nothing blinked"
 
 
 def test_the_wrapper_always_lets_the_line_go(
