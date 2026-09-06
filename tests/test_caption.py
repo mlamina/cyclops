@@ -264,14 +264,6 @@ def test_a_new_line_is_typed_onto_the_screen_rather_than_appearing_whole() -> No
     assert len(set(rights)) > 6, "it arrived in three lumps, which is a wipe and not a hand"
 
 
-def test_no_line_is_still_arriving_when_it_can_be_taken_down() -> None:
-    # The one number in here that is not this module's own. A tool that finishes in five
-    # milliseconds holds its sentence up for agent.ACTIVITY_HOLD_S and no longer, and a line
-    # still being typed when it is replaced is exactly the strobe that constant was added to
-    # stop - only now it strobes half-sentences, which is worse than what it fixed.
-    assert overlay.TYPE_MAX_S < agent.ACTIVITY_HOLD_S
-
-
 def test_a_fault_arrives_whole() -> None:
     # The panel's oldest rule, and the third animation to be told about it: the eye holds still
     # in ERROR, the caption neither breathes nor blinks in ERROR, and a fault typing itself out

@@ -423,15 +423,19 @@ CURSOR = "_"  # what a line about work in flight ends in: a cursor, blinking, ha
 CURSOR_PERIOD_S = 1.2  # one blink of it, half on and half off...
 BREATH_PERIOD_S = 2.4  # ...and one breath of the phosphor, at half that rate so the two never lock
 BREATH_DEPTH = 0.30  # how far the text sinks towards the glass at the bottom of a breath
-TYPE_CHAR_S = 0.028  # the terminal's own rate, near enough one character per frame at 30 fps
+TYPE_CHAR_S = 0.045  # the terminal's own rate, near enough a character every other frame at
+# 30 fps. It was 0.028 and read as a wipe: fast enough to be over before you had looked down at
+# it, which is a line that arrived whole with extra steps.
 TYPE_JITTER = 0.45  # ...and how far ahead of or behind it any one character may land
 TYPE_GAP = 2.0  # extra intervals the hand rests for after a word or the end of a clause
 TYPE_REST = " ,.;:—-…\n"  # what it rests after
-TYPE_MAX_S = 0.45  # the longest a whole line may take to arrive, however long it is. The binding
-# constraint here is not taste: agent.ACTIVITY_HOLD_S is 0.6, the floor under a tool that is off
-# the card and back in five milliseconds, and a line still being typed when it is taken down is a
-# worse strobe than the one that constant was added to stop. Raise it towards 0.55 if the hand
-# reads too smooth on the panel; 0.6 is the ceiling and it is somebody else's number.
+TYPE_MAX_S = 0.9  # the longest a whole line may take to arrive, however long it is. This used
+# to be held under agent.ACTIVITY_HOLD_S - 0.6, the floor under a tool that is off the card and
+# back in five milliseconds - so that no sentence could still be arriving when it was replaced.
+# That bought a guarantee about the rarest case on the panel, two instant tools back to back, at
+# the price of the only case anybody ever looks at, and it made the hand too quick to read. So a
+# burst of instant tools can now clip a sentence. If that ever strobes, the number to change is
+# ACTIVITY_HOLD_S, which is what decides how long a line is worth reading, not this one.
 
 HALO_CORE = 0.004  # fraction of the height held at full brightness, hard against the edge
 HALO_FALLOFF = 0.024  # and how far the light reaches inwards before it is gone
