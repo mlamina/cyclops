@@ -16,7 +16,7 @@ rsync -a --delete \
   --exclude 'captures' --exclude 'recordings' --exclude 'sessions' \
   --exclude '/projects' \
   --exclude '.ruff_cache' --exclude 'Plans' \
-  src pyproject.toml uv.lock README.md deploy "$TARGET:$DEST/"
+  src pyproject.toml uv.lock README.md docs deploy "$TARGET:$DEST/"
 
 ssh "$TARGET" "cd $DEST && ~/.local/bin/uv sync --quiet"
 
