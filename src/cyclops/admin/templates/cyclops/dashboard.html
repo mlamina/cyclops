@@ -15,9 +15,11 @@ a laptop on the LAN has nothing to close, everything else here is a read-only co
 the card, and the panel is meant to be the one place the box is set - a slider and a switch on
 every device on the network is exactly the sprawl this replaced.
 
-The navigation forks on the same flag, and it is the one fork that is about the screen rather
-than about what the client is allowed to do: the panel is a known 800x480 that can hold four
-tabs, and a phone is not, so everywhere else the four screens are one menu instead.
+The navigation forks too, but only half of that fork is the server's. `local` picks the panel's
+own four tabs, drawn for a known 800x480 it never leaves. Everything else on the LAN is a range -
+a phone, a tablet, a laptop - and which of those is on the other end is not something the request
+can tell us, so both a tab row and a menu are sent and lan.css shows whichever the screen has
+room for. That is the one question here answered by the stylesheet rather than by the view.
 {% endcomment %}<!doctype html>
 <html lang="en">
 <head>
@@ -57,10 +59,32 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
       {% else %}
-      <!-- Everywhere else: one control. Four monospace words at this tracking do not share a
-           390 px row, and the header used to wrap into a ragged second line to hold them. A
-           native select is what "a menu" already means on a phone - the platform draws its own
-           sheet under the thumb, and there is no popup of ours to place, clip or dismiss.
+      <!-- Everywhere else: both controls, and the screen picks. Six monospace words cannot share
+           a 390 px row - that is the bug that made this a menu in the first place - but they sit
+           easily on a tablet or a laptop, and a dropdown is a poor thing to hand somebody who has
+           the room for tabs. So the choice moves to lan.css, which is the only part of this that
+           can see how big the window is.
+
+           Neither control needs a script of its own. app.js drives whichever ones it finds, and
+           route() sets the tabs' aria-current and the menu's value on every hash change, so the
+           hidden one is already reading the right screen at the moment it is shown.
+
+           The cost is that a phone downloads six buttons it will never see. That is a few hundred
+           bytes on a LAN, and the alternative is guessing the device from the request, which is
+           the thing user-agent sniffing has always been worst at.
+
+           The two lists are the same six screens in the same order, and they have to stay in
+           step: data-go and option value are both read straight into location.hash. -->
+      <button class="tab" type="button" data-go="/live">Live</button>
+      <button class="tab" type="button" data-go="/sessions">Sessions</button>
+      <button class="tab" type="button" data-go="/videos">Videos</button>
+      <button class="tab" type="button" data-go="/projects">Projects</button>
+      <button class="tab" type="button" data-go="/media">Media</button>
+      <button class="tab" type="button" data-go="/">System</button>
+
+      <!-- The narrow screen's control. A native select is what "a menu" already means on a phone
+           - the platform draws its own sheet under the thumb, and there is no popup of ours to
+           place, clip or dismiss.
 
            Labels are written in caps here rather than transformed in CSS, so the closed control
            and the platform's own list agree about what they say. No `selected`: route() sets the

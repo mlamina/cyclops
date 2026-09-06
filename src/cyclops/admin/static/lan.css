@@ -36,22 +36,29 @@ body:not(.kiosk) {
    a session titled with one unbroken 44-character word is min-content all by itself. */
 body:not(.kiosk) .view { min-width: 0; }
 
-/* ---- the header is one row, and the four screens are a menu ---- */
-/* This block used to make the header wrap. Four monospace words at .2em tracking cannot share a
-   390 px row at any size worth reading - the nav's min-content is 430u, and still 344u with the
-   tracking halved and the padding gone - so the tabs took a second, ragged line of their own and
-   LINK OK had to be pinned into the corner to keep off a third. Two workarounds holding up a
-   layout that did not fit.
+/* ---- the header is one row, and the nav is whichever one fits ---- */
+/* This block used to make the header wrap. Monospace words at .2em tracking cannot share a
+   390 px row at any size worth reading - the nav's min-content is 430u for the panel's four, and
+   still 344u with the tracking halved and the padding gone - so the tabs took a second, ragged
+   line of their own and LINK OK had to be pinned into the corner to keep off a third. Two
+   workarounds holding up a layout that did not fit.
 
-   Off the panel the nav is one control instead. A native select and not a panel of our own: it
-   is what "a menu" already means on a phone, the platform draws its own sheet under the thumb,
-   and there is nothing here to open, place, clip, dismiss or z-index. The markup is forked in
-   dashboard.html rather than hidden here, so a phone never downloads four buttons it cannot see.
+   On a narrow screen the nav is one control instead. A native select and not a panel of our own:
+   it is what "a menu" already means on a phone, the platform draws its own sheet under the thumb,
+   and there is nothing here to open, place, clip, dismiss or z-index.
 
-   No width query, for the reason at the top of this file: this is not a phone rule that a laptop
-   grows out of. The panel is one known screen with four tabs on it and every other client is a
-   range, and one control is right across the whole range. */
+   It stops being the right answer the moment the row fits. A dropdown keeps five of the six
+   screens one tap out of sight, and on a tablet or a laptop that is a price paid for nothing. So
+   dashboard.html sends both controls to everything off the panel and the query at the end of this
+   block picks one. It is the only fork in this interface that a stylesheet is better placed to
+   make than the view: the server can see which client asked, and not how much room it has. */
 body:not(.kiosk) .nav { position: relative; min-width: 0; }
+/* The wide screen's row, waiting for the query at the end of this block. `display: none` rather
+   than a `hidden` attribute, because which control this screen gets is the stylesheet's decision
+   and nothing in app.js should have to know it was made - and because it takes the buttons out of
+   the accessibility tree and the tab order with them, so a phone is not offering a nav it cannot
+   reach. */
+body:not(.kiosk) .tab { display: none; }
 /* The phosphor treatment .newdir already gives a native control, at .tab's thumb target. */
 body:not(.kiosk) .menu {
   appearance: none; -webkit-appearance: none;
@@ -76,6 +83,58 @@ body:not(.kiosk) .nav::after {
   border-right: calc(5 * var(--u)) solid transparent;
   border-top: calc(5 * var(--u)) solid var(--dim);
   pointer-events: none;
+}
+
+/* ---- ...and when the room is there, the row ---- */
+/* Both terms carry weight, and the second is the one nobody expects: a phone held sideways is
+   844 px wide and a tablet stood upright is 820, so width on its own sorts those two the wrong
+   way round - it hands the six-tab row to the one screen with 390 px of height to spend on it.
+   Asking for room in both directions is what "bigger than a phone" actually means here.
+
+   In rem rather than px for the same reason --wide-q is: a reader who has set large type keeps
+   the menu for longer, and that is the right way round for this to fail.
+
+   No custom property for this query, unlike --wide-q below. That one is written down because
+   app.js reads it and two copies of it would drift apart; nothing reads this one, so this is
+   the only copy there is. */
+@media (min-width: 48rem) and (min-height: 30rem) {
+  body:not(.kiosk) .menu { display: none; }
+  /* The row is the fixed thing in this header and the sentence is the elastic one. .nav carries
+     min-width: 0 for the select's sake (a select is sized by its widest option), which would let
+     flexbox take the difference out of the tabs the moment .job is long - squeezing the row it is
+     supposed to be yielding to. So the nav stops shrinking here and the readout does all of it. */
+  body:not(.kiosk) .nav { flex-shrink: 0; }
+  /* The caret is the select's, drawn on .nav because a select cannot carry a pseudo-element of
+     its own. .nav is still here holding the tabs, so the caret has to be sent away by name. */
+  body:not(.kiosk) .nav::after { display: none; }
+  /* Six words where views.css was drawn for four. .2em tracking and 14u of padding are what a
+     four-tab row can afford across 766 px of panel; at six they run the row out under .job.
+     Tightened here and nowhere else, so the panel keeps the tabs it was measured with. */
+  body:not(.kiosk) .tab {
+    display: inline-flex; align-items: center;
+    font-size: calc(13 * var(--u)); letter-spacing: .1em; padding: 0 calc(10 * var(--u));
+  }
+  /* And the readout rejoins the row, which is the only thing that makes it *impossible* for the
+     tabs to run underneath rather than merely unlikely. base.css keeps .job out of flow because
+     <body>'s implicit grid column is sized by min-content, and one nowrap sentence in there once
+     laid the page out 1338 px wide inside an 800 px panel. That floor is already fixed for this
+     client at the top of this file - `grid-template-columns: minmax(0, 1fr)` - so the column can
+     no longer be widened by its own content, and the reason for the absolute positioning is gone
+     here and only here.
+
+     With that, flexbox does the arithmetic the 22% cap was standing in for. The cap was derived
+     for four tabs on the panel; six longer words at 768 px, the narrowest window this query
+     admits, end 33 px past where 22% starts - and any percentage that clears it there is a
+     readout too narrow to read anywhere else. So there is no number: the tabs take what they
+     need, the readout takes what is left and ellipsises inside it, at every width.
+
+     No `display` here on purpose - blockification makes it a block as a flex item anyway, and
+     declaring one would beat `.job:empty { display: none }` in base.css and put an empty box in
+     the row. min-width: 0 is what lets it shrink below its own sentence; without it a flex item
+     refuses, and the ellipsis never arrives. */
+  body:not(.kiosk) .job {
+    position: static; transform: none; margin-left: auto; min-width: 0; max-width: none;
+  }
 }
 
 /* ---- the four readings ---- */

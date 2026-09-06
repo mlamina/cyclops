@@ -262,13 +262,18 @@ async function navReachable(page) {
     // A recording gets the whole screen and the header goes with it - that is body.solo doing
     // what it is for, not a tab that has gone missing. See the `.solo` rules in the stylesheet.
     if (document.body.classList.contains('solo')) return bad;
-    // The panel gets four tabs and everything else one menu, and only one of them is ever in the
-    // document. Both are matched here rather than one, because a check that iterates a selector
-    // the page no longer has passes by finding nothing - which is the failure it was written to
-    // catch, wearing a tick.
+    // The panel gets four tabs. Every other client is sent both a tab row and a menu, and lan.css
+    // shows whichever the screen has room for - so off the panel one of the two is always
+    // display:none, by design and not by fault. Both selectors are still matched rather than one,
+    // because a check that iterates a selector the page no longer has passes by finding nothing,
+    // which is the failure this was written to catch wearing a tick. What the filter removes is
+    // the control this screen was never meant to show; the assertion that *something* here is
+    // navigable outlives it, and so does the measuring of whatever is on show.
     const found = [...document.querySelectorAll('.tab, .menu')];
     if (!found.length) return ['there is no navigation on this page at all'];
-    for (const el of found) {
+    const shown = found.filter((el) => getComputedStyle(el).display !== 'none');
+    if (!shown.length) return ['every nav control on this page is hidden'];
+    for (const el of shown) {
       const name = el.tagName === 'SELECT' ? 'the menu' : el.textContent;
       const r = el.getBoundingClientRect();
       if (r.width < 1 || r.height < 1) { bad.push(`${name} has no box`); continue; }
