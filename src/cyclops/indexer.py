@@ -44,7 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import captions, card, recall
+from . import captions, card, cut, recall
 from .config import RECALL_FILE, RECALL_LOCK, ConfigError, Settings, load_settings
 
 # How long the card must be quiet before a burst of events is treated as finished. Filing one
@@ -61,6 +61,10 @@ SWEEP_EVERY_S = 900.0
 # What a single reconcile is allowed before it is abandoned. Above a first run captioning forty
 # photos one at a time; a sweep that exceeds this is wedged, not slow.
 RECONCILE_BUDGET_S = 1800.0
+# And what one video is allowed. Comfortably above cut.RENDER_TIMEOUT_S, which is the budget that
+# should actually stop a wedged encode: this is the outer one, and an outer budget that can fire
+# first would cancel the coroutine and leave the ffmpeg it was waiting on still running.
+CUT_BUDGET_S = 960.0
 
 
 def _say(message: str, *, error: bool = False) -> None:
@@ -207,7 +211,7 @@ async def reconcile(settings: Settings, *, rebuild: bool = False) -> bool:
 
 
 async def _guarded(settings: Settings, *, rebuild: bool = False) -> None:
-    """One reconcile that cannot take the service down, however badly it goes."""
+    """One reconcile and one video, neither of which can take the service down."""
     try:
         async with asyncio.timeout(RECONCILE_BUDGET_S):
             await reconcile(settings, rebuild=rebuild)
@@ -215,6 +219,26 @@ async def _guarded(settings: Settings, *, rebuild: bool = False) -> None:
         _say(f"reconcile gave up after {RECONCILE_BUDGET_S:.0f}s", error=True)
     except Exception as exc:  # noqa: BLE001 - a bad file must never stop the watching
         _say(f"reconcile failed: {type(exc).__name__}: {exc}", error=True)
+
+    # A video somebody asked for, if there is one waiting. Beside the reconcile rather than
+    # inside it, and that placement is the whole of why this is safe to host here: reconcile
+    # holds RECALL_LOCK, and an encode running under it would make every search on the box wait
+    # on x264. Out here it holds only cut's own lock, and the bell goes on ringing throughout.
+    #
+    # Its own budget, because a cut must never spend the index's. Its own except, because a
+    # render that goes wrong must not cost the sweep that was already finished above.
+    #
+    # to_thread twice over: cyclops.cut is synchronous on purpose, and ruff's ASYNC rules - which
+    # this project selects - are right that subprocess.run has no business in a coroutine.
+    try:
+        async with asyncio.timeout(CUT_BUDGET_S):
+            said = await asyncio.to_thread(cut.one, settings)
+        if said:
+            _say(said)
+    except TimeoutError:
+        _say(f"the cut gave up after {CUT_BUDGET_S:.0f}s", error=True)
+    except Exception as exc:  # noqa: BLE001 - the same last stop, for the same reason
+        _say(f"cut failed: {type(exc).__name__}: {exc}", error=True)
 
 
 # ------------------------------------------------------------------ watching the card

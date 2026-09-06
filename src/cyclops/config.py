@@ -108,6 +108,13 @@ RECALL_FILE = Path.home() / ".cache" / "cyclops" / "recall.npz"
 # service that is already running.
 RECALL_LOCK = Path.home() / ".cache" / "cyclops" / "recall.lock"
 
+# And the lock that says one process is rendering a video - see cyclops.cut. A second one rather
+# than sharing RECALL_LOCK, because they answer different questions: a reconcile holds that one
+# for a second or two on almost every sweep, and "is an encode running?" has to be answerable
+# without an ordinary indexing pass making the answer yes. Same flock discipline either way, so a
+# render killed by a deploy or a power cut leaves nothing behind to unwedge.
+CUT_LOCK = Path.home() / ".cache" / "cyclops" / "cut.lock"
+
 # The one note that goes the other way: which screen the panel wants the page it is about to
 # uncover to be on. The warm browser is loaded once at boot and never navigated, and there are two
 # things on the panel that open it - his face, which promises the sessions, and the heat gauge,
@@ -148,6 +155,7 @@ class Settings:
     recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
     imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
     scratchpad: bool = True  # offer write_on_scratchpad, so he can write on the panel himself
+    cut: bool = True  # offer the Make a video button, and render what it asks for (cyclops.cut)
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the session to its folder (needs a camera, or a panel)
     record_source: str = "screen"  # "screen": the panel, UI and all; "camera": the raw picture
@@ -344,6 +352,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         recall=_flag("CYCLOPS_RECALL", Settings.recall),
         imagine=_flag("CYCLOPS_IMAGINE", Settings.imagine),
         scratchpad=_flag("CYCLOPS_SCRATCHPAD", Settings.scratchpad),
+        cut=_flag("CYCLOPS_CUT", Settings.cut),
         project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_source=_record_source("CYCLOPS_RECORD_SOURCE"),

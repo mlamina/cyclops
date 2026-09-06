@@ -1028,7 +1028,13 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
     if dry_run:
         return "nothing survived - would remove"
     try:
-        for name in (LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO):
+        for name in (
+            LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO,
+            # Everything cyclops.cut may have left. This list and card.KNOWN move together:
+            # a name in one and not the other is a folder that can never be removed, because
+            # surprises() would report the leftover as somebody else's file.
+            card.CUT_REQUEST, card.CUT_PLAN, card.CUT_SUBS, card.CUT,
+        ):
             (folder / name).unlink(missing_ok=True)
         for sub in (PHOTOS, PARTS):
             if (folder / sub).is_dir():

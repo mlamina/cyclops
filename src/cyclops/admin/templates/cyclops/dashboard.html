@@ -72,6 +72,11 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
              need to watch itself - which is also the four tabs' worth of header, spent. -->
         <option value="/live">LIVE</option>
         <option value="/sessions">SESSIONS</option>
+        <!-- Also not on the panel, and the same argument LIVE makes above: the header has
+             four tabs' worth of room and this is a fifth screen. It is no loss. This screen
+             exists to hand a title and a description to whatever you are uploading from,
+             which is this device and never the one bolted to the bench. -->
+        <option value="/videos">VIDEOS</option>
         <option value="/projects">PROJECTS</option>
         <option value="/media">MEDIA</option>
         <option value="/">SYSTEM</option>
@@ -255,7 +260,12 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
         </svg>
       </button>
       <div class="rig-time"><span id="vnow">0:00</span><span id="vall"></span></div>
-    </div>
+{% if cut %}      <!-- Asked for, never automatic: most sessions are half a minute of checking a figure
+           and are not videos. What this says is the state of one on the card - see
+           cyclops.cut.state - so it reads Cutting… through the two minutes it takes and
+           Watch it afterwards. -->
+      <button class="cutbtn" id="makecut" type="button"></button>
+{% endif %}    </div>
     <button class="back" id="back" type="button" aria-label="Back to sessions">&#8249;</button>
   </main>
 
@@ -296,6 +306,10 @@ tabs, and a phone is not, so everywhere else the four screens are one menu inste
     <div class="crumbs" id="fcrumbs"></div>
     <div class="doc" id="doc"></div>
   </main>
+
+  <!-- Last of the views, and only because of that: adding one anywhere else shifts every
+       .view index after it and turns one new screen into a page of baseline diff. -->
+  <main class="view videos" id="v-videos"></main>
 
   <!-- Flipping through, which is the verb the stream exists for. Outside the views on purpose:
        it covers whichever one you opened it from, and going back is closing it. -->

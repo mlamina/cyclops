@@ -54,6 +54,9 @@ ssh "$TARGET" "sudo install -m 644 $DEST/deploy/user/cyclops-*.service /etc/syst
 # left alone because it holds cyclops.recall and cyclops.captions in memory, so like the kiosk it
 # would otherwise quietly keep running the old build.
 ssh "$TARGET" "sudo systemctl restart cyclops-admin || true"
+# This can land on a video being rendered (cyclops.cut) and kill it halfway. That costs the
+# encode and nothing else: the request and the plan are both on the card, and the catch-up
+# sweep this very restart triggers picks it straight back up.
 ssh "$TARGET" "sudo systemctl restart cyclops-index || true"
 
 # Restart the kiosk too, and do not merely suggest it. Everything else here either re-reads the

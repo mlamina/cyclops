@@ -10,6 +10,17 @@
 # It is also the thing that gives every picture on the card a caption, because captioning and
 # indexing want the same trigger: a photo that appeared. See cyclops/indexer.py.
 #
+# Since 2026-09-05 it also renders the videos the Videos screen asks for (cyclops.cut). That is
+# a two-minute libx264 burn rather than a wait on the network, which is a real change to what
+# this unit does - but it is the same shape of work, wants the same tier, and a second
+# always-resident daemon to hold it would cost more than it saved. Two things keep it honest:
+# it refuses to start while any session is live and stands down mid-encode if one begins, and
+# it runs beside the reconcile rather than inside it, so it never holds the recall lock.
+#
+# push.sh restarting this service mid-render is safe by design rather than an accident to fix:
+# the request and the chosen ranges are both on the card, so the catch-up sweep at startup
+# finishes the encode without asking the model a second time.
+#
 # Nothing depends on this for correctness. The index is derived, the card holds every fact, and a
 # box where this never starts simply cannot answer "show me the photo of the torque spec" - it
 # loses nothing else and nothing gets written wrong.

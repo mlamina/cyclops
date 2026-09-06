@@ -17,7 +17,8 @@ body.view-session  .watch,
 body.view-projects .projects,
 body.view-browse   .browse,
 body.view-file     .file,
-body.view-media    .media { display: grid; }
+body.view-media    .media,
+body.view-videos   .videos { display: grid; }
 /* #v-live by id and not `.live` like its six neighbours: `.rowsub.live` is the word "recording"
    on a session row, and `body.view-live .live` would claim that too. */
 
@@ -46,7 +47,7 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
 .tab:active { border-color: var(--green); }
 
 /* ---- the session list ---- */
-.sessions, .media { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+.sessions, .media, .videos { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
 /* Two columns and no padding on the row itself - the gaps around the still *were* the padding.
    The still is flush to three of the row's edges and stretches to whatever height the title
    needs; the column is 4:3 against the min-height, which is a camera frame exactly and a
@@ -239,6 +240,20 @@ body.solo .rig { display: grid; }
   font-variant-numeric: tabular-nums; color: var(--dim);
 }
 #vnow { display: block; color: var(--green); }
+
+/* Make a video, and what became of the last one asked for. In the rig rather than in the
+   caption beside the summary, because body.solo hides the caption - and solo is on for the
+   panel and for a phone held upright, which is two of the three screens this runs on. */
+.cutbtn {
+  font-size: calc(12 * var(--u)); letter-spacing: .1em; padding: calc(7 * var(--u)) calc(10 * var(--u));
+  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid); color: var(--green);
+  white-space: nowrap;
+}
+.cutbtn:active { background: var(--green); color: var(--ink); }
+/* Queued and cutting are the two states with nothing to press. Amber rather than dim: it is
+   working, not broken, and that is the same word .rowsub.live uses on the list. */
+.cutbtn:disabled { color: var(--amber); border-color: var(--amber); opacity: 1; }
+.cutbtn[data-state="failed"] { color: var(--red); border-color: var(--red); }
 
 /* Two ways out, at opposite ends of the same bar so neither is the other by accident: back up
    one step to the list, and off the page entirely to the camera. */

@@ -142,10 +142,30 @@ const PROJECTS = {
 // screen around them on a device that is not the panel.
 const LIVE = { name: '2026-09-01_18-13-08', n: RECORDS.records.length, records: RECORDS.records };
 
+// cut.Video: what the VIDEOS screen lists. One row per state on purpose - the unfinished ones
+// are the reason that screen shows anything at all in the two minutes after you press the button,
+// and a fixture of four finished rows would leave that column unmeasured.
+const VIDEOS = {
+  videos: [
+    { name: '2026-09-01_18-13-08', title: 'Swapped the USB webcam for a Raspberry Pi camera module',
+      desc: 'Worked through the case cut-out, the ribbon length and whether the official module or the Arducam clone is the one to buy. Settled on the official Camera Module 3 Wide.',
+      started: '2026-09-01T18:13:08', seconds: 94, bytes: 12905984, by: 'model', state: 'done' },
+    { name: '2026-09-01_17-02-55', title: 'ThermalThrottlingInvestigationOnThePiFiveUnderLoad',
+      desc: 'A single unbroken word, which is the only input that finds a missing min-width.',
+      started: '2026-09-01T17:02:55', seconds: 31, bytes: 4194304, by: 'rules', state: 'done' },
+    { name: '2026-08-31_09-40-00', title: 'Blocked out what to build next',
+      desc: 'Still being made, which is what this row is here to measure.',
+      started: '2026-08-31T09:40:00', seconds: 0, bytes: 0, by: '', state: 'cutting' },
+    { name: '2026-08-30_21-15-42', title: 'Removed the background and brightened the result',
+      desc: 'And one that did not work.', started: '2026-08-30T21:15:42',
+      seconds: 0, bytes: 0, by: '', state: 'failed' },
+  ],
+};
+
 const STUBS = [
   ['**/api/status', STATUS], ['**/api/sessions', SESSIONS], ['**/api/media', MEDIA],
   ['**/api/projects', PROJECTS], ['**/api/session/*/records', RECORDS],
-  ['**/api/live*', LIVE], ['**/api/session/*', SESSION],
+  ['**/api/live*', LIVE], ['**/api/videos', VIDEOS], ['**/api/session/*', SESSION],
 ];
 
 async function stub(ctx) {
@@ -273,7 +293,7 @@ const SCREENS = [
 // ...and companion mode's own screen, which only the LAN run visits. The panel has no LIVE tab
 // and its kiosk never asks for that hash - the markup is inside {% if not local %} - so putting
 // it in the list above would baseline a blank screen that cannot happen.
-const LAN_SCREENS = [...SCREENS, ['live', '#/live']];
+const LAN_SCREENS = [...SCREENS, ['live', '#/live'], ['videos', '#/videos']];
 // Five shapes, chosen to be the ones in the house rather than a list of famous handsets: a
 // phone both ways up, a tablet upright, the smallest laptop worth naming, and a 15".
 const SIZES = [

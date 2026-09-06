@@ -66,6 +66,19 @@ CAPTIONS_NAME = "captions.json"
 PHOTOS = "photos"
 PARTS = "parts"
 VIDEO = "video.mp4"
+# The edited video somebody asked for, and the two files it is made from - see cyclops.cut.
+# CUT existing means one ffmpeg run returned zero, exactly as VIDEO does, because both land
+# through tmp_for/land rather than being written where they lie.
+#
+# Two markers rather than one, and that is the whole retry story: CUT_PLAN present means the
+# model has been asked, CUT present means the encode is done. A deploy that kills a render
+# halfway costs the encode and never the model call. CUT_REQUEST is the queue - the button
+# writes it, the worker removes it - and it lives here rather than in ~/.cache so that renaming
+# a session folder carries its request along with it.
+CUT_REQUEST = "cut.request"
+CUT_PLAN = "cut.json"
+CUT_SUBS = "cut.ass"
+CUT = "cut.mp4"
 
 STAMP = "%Y-%m-%d_%H-%M-%S"
 STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobody has named yet
@@ -74,7 +87,10 @@ STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobod
 # a folder holding anything not on this list is something a person put there, and is never
 # removed however empty triage thinks it is.
 KNOWN = frozenset(
-    {LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS}
+    {
+        LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS,
+        CUT_REQUEST, CUT_PLAN, CUT_SUBS, CUT,
+    }
 )
 
 
