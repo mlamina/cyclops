@@ -110,9 +110,12 @@ def test_only_the_broken_face_holds_still() -> None:
     # here now too - it breathes - and its own, much narrower rule is the test below.
     for state, mood in overlay.MOODS.items():
         # The gaze is in here because it is a way of moving: a mood that only looked around
-        # would otherwise pass this test as "still" while visibly not being.
+        # would otherwise pass this test as "still" while visibly not being. `gaze` covers all of
+        # it - it scales the anchor, every glance and the tremor, so a mood at zero is pinned dead
+        # centre whatever places it names - and `drift` is the float a sleeping face moves by
+        # while attending to nothing at all.
         moves = bool(mood.spin or mood.swell or mood.scan or mood.blink_s or mood.voice
-                     or mood.gaze or mood.look_x or mood.look_y)
+                     or mood.gaze or mood.drift)
         assert moves == (state != overlay.ERROR), state
 
 
@@ -243,6 +246,122 @@ def test_only_the_listening_face_opens_to_your_voice() -> None:
         if state not in (overlay.LISTENING, overlay.SPEAKING):
             assert mood.voice == 0.0, f"{state} opens its iris at a noise it is not listening to"
     assert overlay.MOODS[overlay.LISTENING].voice > overlay.MOODS[overlay.SPEAKING].voice
+
+
+def _longest_still(seen: list[tuple[float, float]], reach: float = 0.2) -> int:
+    """The longest unbroken run of frames he spends within *reach* of dead centre.
+
+    A count of frames rather than a fraction of them, because a gaze crossing the middle on its
+    way somewhere else is not a gaze resting in it - see the mood test below, where taking the
+    fraction instead calls a hunt a rest.
+    """
+    best = run = 0
+    for x, y in seen:
+        run = run + 1 if math.hypot(x, y) < reach else 0
+        best = max(best, run)
+    return best
+
+
+def test_every_place_a_mood_names_is_a_place_the_panel_knows() -> None:
+    # The whole point of naming the places is that a typo becomes a thing that can be caught, and
+    # this is where. An unknown name does not raise on the panel - gaze_at falls back to straight
+    # ahead rather than dropping a frame at 25 fps - so nothing else would ever tell you.
+    ov = _panel()
+    for state, mood in overlay.MOODS.items():
+        assert mood.look, f"{state} looks nowhere at all, not even ahead"
+        for name in mood.look:
+            assert name in ov.places, f"{state} looks at {name!r}, which is nowhere"
+
+
+def test_the_eyes_own_landmarks_are_the_panels() -> None:
+    # eye.LANDMARKS is what tools/eye_sheet.py renders against, and it is only honest while it
+    # agrees with what the panel actually resolves off its own geometry. Move the bracket he rides
+    # or the reticle he looks at and the sheet quietly stops being the eye that is shipping; this
+    # is the thing that says so.
+    ov = _panel()
+    for name, where in eye.LANDMARKS.items():
+        assert ov.places[name] == pytest.approx(where, abs=2e-3), name
+
+
+def test_a_window_of_attention_outlasts_a_saccade_and_the_way_home() -> None:
+    # A peek goes out and comes back inside its own window. Under eye.DART_FLOOR the way home is
+    # shorter than one saccade, so he has not finished arriving before the next window starts and
+    # the sequence stops being continuous. Asserted on the table rather than clamped in gaze_at,
+    # because a mood that asks for a window that short is a mood that wants telling.
+    for state, mood in overlay.MOODS.items():
+        if mood.dart > 0.0:
+            assert mood.dart_s >= eye.DART_FLOOR, f"{state} peeks faster than it can look back"
+
+
+def test_he_looks_at_you_while_he_listens_and_comes_back_from_every_peek() -> None:
+    """The row this whole model was written for, checked on the rendered vector rather than the
+
+    table: he holds you, glances at the picture now and then, and *returns*. The old gaze could
+    not have passed this - it wandered continuously and its targets had a reach floor, so looking
+    straight at you was the one thing it never did.
+    """
+    mood = overlay.MOODS[overlay.LISTENING]
+    ov = _panel()
+    frame = ov.places[eye.FRAME]
+    seen = [eye.gaze_at(i / 25.0, mood, ov.places) for i in range(25 * 240)]
+    home = [g for g in seen if math.hypot(*g) < 0.2]
+    assert len(home) / len(seen) > 0.75, "he is not looking at you for most of a conversation"
+    # ...and when he does look away it is at the picture, not at some angle off a walk.
+    out = max(seen, key=lambda g: math.hypot(*g))
+    assert math.hypot(*out) > 0.4, "the peek never actually goes anywhere"
+    cos = (out[0] * frame[0] + out[1] * frame[1]) / math.hypot(*out)
+    assert cos > 0.97, "he peeks somewhere that is not the middle of the picture"
+
+
+def test_the_hunting_face_never_settles_and_the_staring_one_never_leaves() -> None:
+    # The two ends of the same three numbers, and the reason they are numbers and not branches.
+    #
+    # "Never settles" is a statement about *dwell* and not about proximity, and the difference is
+    # the trap: a hunting eye crossing from one side of its travel to the other passes through the
+    # middle, so a fifth of its frames are near centre while it is never once resting there. What
+    # separates the two moods is how long a run near the middle lasts - 0.5 s of transit against
+    # eight seconds of holding your eye.
+    ov = _panel()
+    hunt = [eye.gaze_at(i / 25.0, overlay.MOODS[overlay.SEARCHING], ov.places) for i in range(1500)]
+    assert _longest_still(hunt) < 25, "a search that rests is not a search"
+    stare = [eye.gaze_at(i / 25.0, overlay.MOODS[overlay.LOOKING], ov.places) for i in range(750)]
+    frame = ov.places[eye.FRAME]
+    assert all(math.hypot(g[0] - frame[0] * 0.85, g[1] - frame[1] * 0.85) < 0.15 for g in stare), (
+        "a stare that wanders is not one"
+    )
+
+
+def test_the_gaze_never_jumps_further_than_a_saccade() -> None:
+    # The whole model in one assertion: every move he makes is either a tremor or a ballistic
+    # flick, and there is nothing sudden in between. It is here because the arithmetic that keeps
+    # it true is the least obvious part of gaze_at - the way home starts from where he actually
+    # *was* when he turned round, not from the place he was heading for, and taking the second
+    # teleports him out and then eases him back.
+    ov = _panel()
+    for state, mood in overlay.MOODS.items():
+        was, worst = None, 0.0
+        for i in range(25 * 300):
+            now = eye.gaze_at(i / 25.0, mood, ov.places)
+            if was is not None:
+                worst = max(worst, math.hypot(now[0] - was[0], now[1] - was[1]))
+            was = now
+        # the smoothstep's own slope, over the longest travel there is, plus room for the tremor
+        bound = 1.5 / eye.SACCADE_S / 25.0 * 2.0 + 0.02
+        assert worst <= bound, f"{state} teleports: {worst:.3f} against {bound:.3f}"
+
+
+def test_the_faces_that_hold_still_hold_completely_still() -> None:
+    # `gaze` at 0 has to pin him dead centre whatever else the row says, because three separate
+    # things lean on it: the fault, the working face with its head down, and the tap
+    # acknowledgement - which is the one gesture that must read the same from every mood.
+    ov = _panel()
+    for state in (overlay.ERROR, overlay.WORKING):
+        mood = overlay.MOODS[state]
+        assert {eye.gaze_at(p / 10.0, mood, ov.places) for p in range(600)} == {(0.0, 0.0)}, state
+    held = replace(overlay.MOODS[overlay.LOOKING], gaze=0.0, dart=0.0, drift=0.0)
+    assert {eye.gaze_at(p / 10.0, held, ov.places) for p in range(600)} == {(0.0, 0.0)}, (
+        "a tap has to bring him back to you even from a mood anchored somewhere else"
+    )
 
 
 def test_a_mood_travels_to_the_next_one_rather_than_snapping() -> None:

@@ -1040,17 +1040,29 @@ and both are free: the shell staying put, and the brow staying put with it, beca
 on the outer glass does not travel with what is underneath it — so the core slides out from under
 its own catchlight.
 
-Everything he does is a **mood** — fourteen numbers and a colour, one row per state in
-`overlay.MOODS`, with `cyclops/eye.py` as the mechanism underneath. Asleep he is a narrow ember
-in dim green, turning slowly and drifting, and he never darts — a sleeping face that flicks about
-is a dreaming one. Waking, he is amber, half open, rings running fast with a scanning arc, and
-looking about as he comes round. Listening, he is calm and attending, blinking every few seconds
-and never quite on the beat, his iris opening to your voice. Speaking, he breathes faster and
-wider and holds your eye. Searching, he narrows, the rings tear round, a bright trace sweeps a
-dimmed rim and his gaze flicks all over — he is looking *for* something rather than *at* it.
-Drawing, he leans down at the work. A fault is red and does not move at all, gaze included. He
-crossfades between them rather than snapping, because a face that jumped colour between two
-frames would read as a different creature.
+**And he looks at things, not around.** A mood names the *places* he attends to — straight out
+of the glass at you, the middle of the picture, his own caption, the readouts, the bench, or
+nothing at all — and the first of them is his anchor: where he rests, and what a glance comes
+back to. Attention runs in windows, and a walk decides whether each one is spent on the anchor or
+as a peek somewhere else. Runs of anchor windows merge into one long hold, so the dwell varies
+without a dwell setting, and under every fixation there is a tremor of about a pixel, because an
+eye that stops moving is a dead one.
+
+Everything he does is a **mood** — a dozen-odd numbers, a list of places and a colour, one row
+per state in `overlay.MOODS`, with `cyclops/eye.py` as the mechanism underneath. Asleep he is a
+narrow ember in dim green, turning slowly and floating, and he never darts — a sleeping face that
+flicks about is a dreaming one. Waking, he is amber, half open, rings running fast with a
+scanning arc, checking his own instruments as he comes round. Listening, he is calm and
+attending, blinking every few seconds and never quite on the beat, his iris opening to your
+voice — and he holds your eye for five to twelve seconds at a stretch, takes a second's peek at
+the picture he is sitting on, and comes straight back. Speaking, he breathes faster and wider,
+holds your eye harder, and glances at his own caption. Looking at a photo, he stares at the
+middle of the picture and never leaves it. Searching, he narrows, the rings tear round, a bright
+trace sweeps a dimmed rim and he goes place to place twice a second and hardly ever home — he is
+looking *for* something rather than *at* it. Drawing, he works with his head down and looks up at
+you now and then. A fault is red and does not move at all, gaze included. He crossfades between
+them rather than snapping, because a face that jumped colour between two frames would read as a
+different creature.
 
 Most of the variety is free rather than tuned: the core can only be as big as the hole the
 blades leave, and that hole grows as the iris opens — so a stare is a wide hot core and a fault

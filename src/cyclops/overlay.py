@@ -86,7 +86,24 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from .eye import BLINK_DRIFT, EyeEngine, Mood, at, breath, linear, mix, smoothed, wide
+from .eye import (
+    AHEAD,
+    AWAY,
+    BLINK_DRIFT,
+    DIALS,
+    FRAME,
+    LANDMARKS,
+    WORDS,
+    WORK,
+    EyeEngine,
+    Mood,
+    at,
+    breath,
+    linear,
+    mix,
+    smoothed,
+    wide,
+)
 from .stats import HOT_C, WARN_C, temp_band, temp_percent
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
@@ -292,55 +309,90 @@ MOODS = {
     # and shrinks rather than popping in and out - dozing, and nowhere near the 0.52 of a face
     # that is paying attention.
     #
-    # The gaze is the newest of these and the one worth reading as a set rather than a row at a
-    # time: `gaze` is how far he wanders, `dart` how much of that is flicking rather than
-    # drifting, `dart_s` how often, and `look_x`/`look_y` a lean he holds under all of it. What
-    # separates a creature from a turret is that the mix differs per state - a hunting eye flicks
-    # and a staring one does not - and it costs a number rather than a branch.
+    # The gaze is the set worth reading as a set rather than a row at a time. `look` is the list
+    # of *places* he attends to and the first of them is his anchor - where he rests and what a
+    # glance comes back to; `gaze` is how far he actually turns to reach one; `dart` is the share
+    # of his attention that goes anywhere but the anchor, and `dart_s` how long one span of it
+    # lasts; `drift` is a float on top of all of it. What separates a creature from a turret is
+    # that the mix differs per state - an attending eye holds you and a hunting one never rests -
+    # and it costs a list of names rather than a branch.
     #
-    # He drifts in his sleep and never darts: a sleeping face that flicks about is a dreaming
-    # one, and this panel is not claiming that. It is also the third thing that moves while he is
-    # asleep, after the rings and the breath, and that scarcity is what makes awake read as
-    # awake - so it is kept small.
+    # That the places are *named* is the whole of it. They used to be angles off a walk, which is
+    # a thing that looks around without ever looking *at* anything, and it had a reach floor - so
+    # the one direction the old eye could never manage was straight at you.
+    #
+    # He floats in his sleep and never darts: a sleeping face that flicks about is a dreaming one,
+    # and this panel is not claiming that. `drift` rather than a glance, because there is nothing
+    # he is attending to - the float is the third thing that moves while he is asleep, after the
+    # rings and the breath, and that scarcity is what makes awake read as awake.
     IDLE: Mood(tint=GREEN_MID, aperture=0.24, swell=0.14, breath_s=6.5, spin=2.5, sway=1.6,
-               gaze=0.30),
+               drift=0.30),
     # Coming round: the iris only half up, the rings running fast, and a highlight sweeping the
-    # rim - a thing spinning itself up rather than a thing paying attention. It looks about while
-    # it does it, which is the difference between waking and booting.
+    # rim - a thing spinning itself up rather than a thing paying attention. It checks its own
+    # instruments while it does it - the pod, the picture, then nothing in particular - which is
+    # the difference between waking and booting, and is why the list is longer here than anywhere
+    # except the hunt.
     STARTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0,
-                   gaze=0.55, dart=0.45, dart_s=1.1),
+                   look=(AHEAD, DIALS, FRAME, AWAY), gaze=0.70, dart=0.55, dart_s=1.1),
     CONNECTING: Mood(tint=AMBER, aperture=0.34, swell=0.10, breath_s=1.5, spin=54.0, scan=88.0,
-                     gaze=0.55, dart=0.45, dart_s=1.1),
-    # Winding down. The same transition run backwards, which is what the rings do - and the gaze
-    # settles as it goes, because a thing finishing is not still looking for anything.
-    STOPPING: Mood(tint=AMBER, aperture=0.10, swell=0.04, breath_s=3.0, spin=-22.0, gaze=0.14),
-    # Awake and attending. A resting breath, a barely-moving ring set, and the one mood whose
-    # iris opens to your voice - which is the panel saying it can hear you. It looks around a
-    # little and flicks now and then: attending, not staring you down.
+                     look=(AHEAD, DIALS, FRAME, AWAY), gaze=0.70, dart=0.55, dart_s=1.1),
+    # Winding down. The same transition run backwards, which is what the rings do - and he stops
+    # attending to anything as he goes, because a thing finishing is not still looking for
+    # something. What is left is a float settling out.
+    STOPPING: Mood(tint=AMBER, aperture=0.10, swell=0.04, breath_s=3.0, spin=-22.0, drift=0.12),
+    # Awake and attending, and the row the whole model was written for. A resting breath, a
+    # barely-moving ring set, and the one mood whose iris opens to your voice - which is the panel
+    # saying it can hear you.
+    #
+    # He looks at *you*: the anchor is AHEAD, which is the pupil dead centre and the eye looking
+    # out of its own glass. Every few seconds he takes a peek at the picture he is sitting on and
+    # comes straight back. That is the whole of it, and it is two names and three numbers.
+    #
+    # 0.26 over a 2.6 s window, measured rather than guessed: he holds you for 5, 8 or 13 seconds
+    # - three lengths, because the walk's gaps come in three (see eye.gaze_at) - and the peek
+    # itself lasts about a second. Nine in ten frames have him looking at you, which is roughly
+    # what a person listening does and is nothing like the old row, which wandered continuously
+    # and never came back anywhere.
     LISTENING: Mood(
         tint=WHITE, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4,
-        gaze=0.38, dart=0.30, dart_s=2.9,
+        look=(AHEAD, FRAME), gaze=0.62, dart=0.26, dart_s=2.6, drift=0.05,
     ),
-    # Talking: a faster breath and a wider iris, because he is doing the thing rather than
-    # waiting to. Barely opens to level here - the level *is* his own voice coming back. He
-    # holds your eye while he talks, which is why this wanders less than listening does.
+    # Talking: a faster breath and a wider iris, because he is doing the thing rather than waiting
+    # to. Barely opens to level here - the level *is* his own voice coming back.
+    #
+    # He holds your eye while he talks, and what he glances at when he does look away is his own
+    # caption - the one place on the panel that is what he is saying. Fewer glances than listening
+    # and a longer window between them, which is the opposite of a person (speakers avert more
+    # than listeners do) and right for this one: he is a face on a panel, and a panel that looked
+    # away while answering you would read as not answering.
     SPEAKING: Mood(
         tint=WHITE, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5,
-        gaze=0.22, dart=0.15, dart_s=3.7,
+        look=(AHEAD, WORDS), gaze=0.50, dart=0.18, dart_s=3.7, drift=0.04,
     ),
-    # Looking at a photo. Wide, still, and it does not blink: this is a stare. The gaze is barely
-    # off zero for the same reason - a stare that wanders is not one.
-    LOOKING: Mood(tint=WHITE, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0, gaze=0.10),
+    # Looking at a photo, and now actually at it. Wide, still, and it does not blink: this is a
+    # stare, and the thing it is aimed at is the middle of the picture rather than nowhere in
+    # particular. One name in `look` and no `dart` is how "he never takes his eyes off it" is
+    # said. The old row put him at 0.10 of the travel, which is a face examining a photograph by
+    # staring at the person holding it.
+    LOOKING: Mood(tint=WHITE, aperture=0.88, swell=0.02, breath_s=6.0, spin=3.0,
+                  look=(FRAME,), gaze=0.85, drift=0.04),
     # Hunting. Narrowed to a point, breathing fast, rings tearing round with a scanning arc, and
-    # the eye flicking all over: nearly the full travel, several times a second. This is the one
-    # mood where the gaze is the loudest thing about him, and it should be - he is looking *for*
-    # something rather than *at* something.
+    # the eye going place to place twice a second and hardly ever home. This is the one mood where
+    # the gaze is the loudest thing about him, and it should be - he is looking *for* something
+    # rather than *at* something, which is why the list is everything on the panel and why the
+    # anchor is the picture rather than you.
+    #
+    # `dart` at 0.90 is what makes it a search rather than a metronome: consecutive glances chain
+    # place to place instead of returning between them - see eye._hold - so what you get is runs
+    # of four to twelve saccades broken by one glance home.
     SEARCHING: Mood(tint=WHITE, aperture=0.36, swell=0.06, breath_s=0.9, spin=155.0, scan=118.0,
-                    gaze=0.95, dart=0.85, dart_s=0.6),
+                    look=(FRAME, WORDS, DIALS, AWAY, AHEAD), gaze=0.90, dart=0.90, dart_s=0.55),
     # Drawing. Deliberate, and turning the other way, because it is making rather than looking -
-    # and looking down at the work while it does, which is the one mood with a lean it holds.
+    # and head down at the work while it does. That used to be a lean it held and nothing else;
+    # now it is a place, which costs the same and buys the glance up at you that anybody looks up
+    # with every twenty seconds or so of doing something with their hands.
     DRAWING: Mood(tint=WHITE, aperture=0.46, swell=0.05, breath_s=2.2, spin=-34.0,
-                  gaze=0.26, look_x=-0.30, look_y=0.42),
+                  look=(WORK, AHEAD), gaze=0.60, dart=0.18, dart_s=4.5, drift=0.03),
     # Working, with nobody talking to him. The one mood in this table that is not a face at all,
     # and every number here is pushing away from the creature the rest of them describe.
     #
@@ -1202,7 +1254,23 @@ class Overlay:
         self._chrome_base = self._build_chrome()
         # One engine per window size: it owns the geometry, and it remembers which mood it is
         # easing out of, which is why it is built here and not per frame.
-        self.engine = EyeEngine(self.eye_r, self.line, SCREEN, MOODS[IDLE])
+        # Where the places he looks actually are, from where he is bolted. :mod:`cyclops.eye`
+        # knows their names and nothing else - it must not learn about this panel, which is what
+        # lets tools/eye_sheet.py import it on its own - so this is the one seam where a name
+        # becomes a direction. Unit vectors: how far he turns is the mood's `gaze`, and at nine
+        # pixels of travel it is the direction that reads, not the distance.
+        #
+        # AHEAD is not in here and never can be. (0, 0) is the pupil dead centre, looking out of
+        # the glass, and it is the only place he looks that is not on the panel.
+        #
+        # WORK and AWAY fall through from the defaults, because there is nothing on the screen to
+        # point at: the panel resolves what it can see and the eye keeps its own fictions.
+        self.places = LANDMARKS | {
+            FRAME: unit(*self.eye, self.width // 2, self.height // 2),  # the reticle, exactly
+            WORDS: unit(*self.eye, self.caption_left, self.caption_y),
+            DIALS: unit(*self.eye, self.pod.x + self.pod.w / 2, self.pod.h / 2),
+        }
+        self.engine = EyeEngine(self.eye_r, self.line, SCREEN, MOODS[IDLE], places=self.places)
         # ...and the other one, for the same reason: it remembers which sentence it is printing
         # and which frame that sentence turned up on. See :class:`Typist`.
         self._typist = Typist()
@@ -1923,7 +1991,7 @@ class Overlay:
             # it - which is what makes the acknowledgement read as brightening rather than as a
             # colour change he might have made on his own.
             mood = replace(mood, tint=GREEN, rings=1.7, aperture=1.0, swell=0.0,
-                           voice=0.0, gaze=0.0, dart=0.0)
+                           voice=0.0, gaze=0.0, dart=0.0, drift=0.0)
         self.engine.paint(layer, *self.eye, mood, phase, level)
         if hold > 0.0:
             self._draw_hold(layer, hold)

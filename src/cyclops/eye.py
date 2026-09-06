@@ -207,6 +207,65 @@ DRIFT_S = 7.3  # the shorter of the gaze's two drift periods; the longer is the 
 SACCADE_S = 0.13  # how long a dart takes. Shorter than this is indistinguishable from a dropped
 # frame; longer and it reads as a pan rather than as a flick.
 
+# ---------------------------------------------------------------- the places he looks
+#
+# Names in here and nothing else. *Which direction* each of them lies in depends on where he is
+# bolted and what is on the panel beside him, and this module knows neither - see the module
+# docstring, and see tools/eye_sheet.py, which is the reason it must not learn.
+# :mod:`cyclops.overlay` resolves the three that are really on the screen off its own geometry
+# and hands the map to :class:`EyeEngine`.
+#
+# AHEAD is (0, 0), and that it is the anchor for nearly every mood is the whole of the model: the
+# pupil dead centre is him looking out of the glass at whoever is standing there. Every other name
+# is something he may take his eyes off you for. This is what replaced a walk over arbitrary
+# angles, and the difference is not subtle - the old one had a reach *floor*, so the one direction
+# it could never manage was straight at you.
+AHEAD = "ahead"
+FRAME = "frame"  # the middle of the picture he is sitting on: the camera's own reticle
+WORDS = "words"  # the line of text under it, where his own caption is printed
+DIALS = "dials"  # the readouts along the top
+WORK = "work"    # down at his own hands. Nothing on the panel is there, and that is the point
+AWAY = "away"    # off past the edge of the thing entirely
+
+# The reference layout's answers, so the preview harness renders the eye the panel actually has
+# rather than a plausible one. The overlay recomputes the three geometric ones for its own window
+# size and overrides these; a test keeps the two in step, because nothing else would notice the
+# day the bracket moves.
+LANDMARKS: dict[str, tuple[float, float]] = {
+    AHEAD: (0.0, 0.0),
+    FRAME: (0.911, -0.413),   # up and to the right of him, at 800x480
+    WORDS: (0.924, 0.383),    # down and to the right, at the head of his own line
+    DIALS: (0.644, -0.765),   # steeply up, at the pod
+    WORK: (-0.55, 0.84),      # down and to his left, off the panel: the bench
+    AWAY: (-0.80, -0.60),     # up and to his left, at nothing at all
+}
+
+DART_PICK = 0.4142135624  # sqrt(2) - 1, and a *second* irrational on purpose.
+# Two walks decide a glance: whether this window is spent away from the anchor, and which place it
+# is spent on. Walk them both on the golden ratio and the second is a function of the first -
+# frac(3*phi*w) is frac(3*frac(phi*w)) - so where he looks becomes a function of whether he looks
+# at all, and the far end of the list starves. Measured over 20000 windows at dart 0.26 with four
+# places: on 3*phi the fourth gets 199 glances against about 1667 each for the other three; on
+# this, 1306/1294/1306/1295. 1, phi and sqrt(2) are rationally independent, which is the whole of
+# why. Not a PRNG and not hash(), for the reason :func:`blink` gives.
+
+PEEK_MIN, PEEK_MAX = 0.26, 0.62  # how much of one window a glance away may occupy. A glance that
+# fills its window is not a glance, it is a change of mind - coming back inside the window is what
+# makes it read as a peek. Never 1.0: the rest of the window is the way home, and see DART_FLOOR.
+DART_FLOOR = SACCADE_S / (1.0 - PEEK_MAX)  # 0.34 s, and the shortest window a mood may ask for.
+# Under it the home leg is shorter than a saccade, so he has not finished arriving before the next
+# window starts and the sequence stops being continuous. Asserted on the table rather than clamped
+# here, because a mood that asks for one is a mood that wants telling.
+
+MICRO_S = 1.7   # the tremor's shorter period, the same shape as the drift an order faster...
+MICRO = 0.10    # ...and how far a *held* gaze still moves, as a fraction of the full travel. An
+# eye that stops moving is a dead one, so this is under every fixation. It has to stay well below
+# a peek or it stops being a tremor and becomes the wander this model was written to remove: about
+# 1.6 px of spark travel at his panel size, which is a live edge rather than a motion.
+MICRO_LIT = 0.20  # the gaze below which the tremor fades out with it rather than snapping off at
+# zero. A mood that holds still - the fault, the working face, the tap acknowledgement - has to
+# hold *completely* still, and has to get there without a step at the end of the crossfade.
+
 BLINK_S = 0.22  # one blink, down and back up: five or six frames at 25 fps, and anything
 # shorter is indistinguishable from a dropped frame
 BLINK_DRIFT_S = 2.6  # how far a blink may wander inside its window: a blink on a fixed period
@@ -347,12 +406,22 @@ class Mood:
     blink_s: float = 0.0  # mean seconds between blinks; 0 for a mood that does not blink
     # ...and where he is looking. See :func:`gaze_at`. A mood with `gaze` at 0 and no lean stares
     # dead ahead forever, which is exactly the drawing that existed before any of this.
-    gaze: float = 0.0  # how far he wanders off centre, 0 .. 1 of the full travel
-    dart: float = 0.0  # ...and how much of that is flicking rather than drifting
-    dart_s: float = 1.7  # seconds between flicks. Short is restless, long is deliberate.
-    # Does not ease between moods - see lerp: it indexes a sequence rather than scaling one
-    look_x: float = 0.0  # a lean he holds under all of it: negative is left...
-    look_y: float = 0.0  # ...and positive is down, which is the way the panel's y runs
+    look: tuple[str, ...] = (AHEAD,)  # the places he looks, and the first of them is his anchor:
+    # where he sits by default and where a glance comes back to. A mood naming one place never
+    # takes its eyes off it. Names rather than vectors, because this module does not know where
+    # anything is - see LANDMARKS.
+    gaze: float = 0.0  # how far he actually turns to look at a place, 0 .. 1 of the full travel.
+    # It scales the anchor as well as the glances, so 0 is dead centre whatever `look` says -
+    # which is what the fault, the working face and the tap acknowledgement all rely on.
+    dart: float = 0.0  # how much of his attention goes anywhere but the anchor, 0 .. 1: the
+    # share of windows spent on a glance. 0 is a mood that never looks away from its anchor.
+    dart_s: float = 1.7  # one window of his attention. Short is restless, long is deliberate,
+    # and it may not go under DART_FLOOR. Does not ease between moods - see lerp: it indexes a
+    # sequence rather than scaling one
+    drift: float = 0.0  # a slow float on top of whatever he is fixed on, as a fraction of the
+    # full travel. Not the same thing as MICRO: that is the tremor every open eye has whether it
+    # is asked for or not, and this is a mood asking to wander. It is what a sleeping face is
+    # made of, and what nothing awake and attending should have much of.
 
     def lerp(self, other: Mood, t: float) -> Mood:
         """Part-way from this mood to *other*, colour included."""
@@ -387,45 +456,132 @@ class Mood:
                 # second during the crossfade, against a mood whose steady rate is 52, and it does
                 # it at every uptime. Snapped, the same transition stays inside its own rate. The
                 # amplitude eases and the period does not, which is the rule above after all.
+                #
+                # `look` is not a number at all and so cannot be on this line: it is taken from
+                # the destination and snaps, so the target changes once, at the instant the mood
+                # does. That is a saccade, and it is fine - what the rule above forbids is a
+                # *sliding* index, which changes dozens of times inside the 0.45 s. Changing
+                # where you are looking once is what a creature does when it is told something.
+                #
+                # `dart` is eased even though it is compared against a walk rather than scaling
+                # one, and that is safe for a reason worth writing down before somebody "fixes"
+                # it: the ease is monotone in t and t is monotone in time, so `walk(w) < dart`
+                # flips at most *once* per window however far the value travels. One flip is one
+                # saccade. `dart_s` is the counterexample sitting in the same expression - slide
+                # that and floor(phase / dart_s) sweeps through hundreds of windows, which is the
+                # measured disaster the paragraph above records.
                 for name in ("aperture", "swell", "breath_s", "voice", "spin", "sway", "core",
-                             "rings", "scan", "gaze", "dart", "look_x", "look_y")
+                             "rings", "scan", "gaze", "dart", "drift")
             },
         )
 
 
-def gaze_at(phase: float, mood: Mood) -> tuple[float, float]:
-    """Where the eye is looking at *phase*: the lean it holds, plus a drift, plus its darting.
+def gaze_at(phase: float, mood: Mood,
+            places: dict[str, tuple[float, float]] | None = None) -> tuple[float, float]:
+    """Where the eye is looking at *phase*: a place he is fixed on, and the tremor under it.
 
-    Two motions, mixed by ``dart``. The drift is two sines per axis on periods in the golden
-    ratio, which never come back into step - a wander that repeats is a windscreen wiper. The
-    darts hold a target and flick to the next one, and the targets are a golden-ratio walk, so
-    the sequence is deterministic, identical on every boot, and never settles into a round
-    anybody can anticipate. Not a PRNG, for the reason :func:`blink` gives.
+    He holds an anchor - ``mood.look[0]``, and for nearly every mood that is :data:`AHEAD`, which
+    is (0, 0), which is straight out of the glass at whoever is standing there. Attention comes in
+    windows of ``dart_s``, and a walk decides whether each one is spent on that anchor or as a
+    peek at one of the mood's other places. Consecutive anchor windows are the *same* target, so
+    nothing happens between them and they merge: what comes out is a long hold broken by short
+    glances, and the hold varies in length because the walk's gaps do. There is no dwell parameter
+    and there does not need to be one.
 
-    Returns a vector no longer than 1. A mood with ``gaze`` at 0 returns its lean and nothing
-    else, so a fault holds still however long the panel has been up.
+    Between two targets he is ballistic - :data:`SACCADE_S` on a smoothstep, quick and not
+    instantaneous - and while he is fixed there is always :data:`MICRO` under him, because an eye
+    that stops moving is a dead one.
+
+    The sequence is a golden-ratio walk for the reason :func:`blink` gives: deterministic,
+    identical on every boot, and never settling into a round anybody can anticipate. Not a PRNG
+    and pointedly not ``hash()``. *Which* place is picked walks a second irrational - see
+    :data:`DART_PICK`, where sharing one is measured going wrong.
+
+    Pure and O(1): a handful of modulos and sines, whatever the uptime.
+
+    Returns a vector no longer than 1. ``gaze`` at 0 returns (0, 0) whatever ``look`` says, so a
+    fault holds dead centre however long the panel has been up.
     """
-    if mood.gaze <= 0.0:
-        return steady(mood.look_x, mood.look_y)
-    long = DRIFT_S * (1.0 + BLINK_DRIFT)
-    dx = 0.5 * (math.sin(TAU * phase / DRIFT_S) + math.sin(TAU * (phase / long + 0.37)))
-    dy = 0.5 * (math.sin(TAU * (phase / DRIFT_S + 0.61)) + math.sin(TAU * (phase / long + 0.11)))
-    if mood.dart > 0.0 and mood.dart_s > 0.0:
+    spots = LANDMARKS if places is None else places
+    home = spots.get(mood.look[0], (0.0, 0.0)) if mood.look else (0.0, 0.0)
+    bx, by = home
+    n = len(mood.look)
+    if mood.gaze > 0.0 and mood.dart > 0.0 and mood.dart_s > 0.0 and n > 1:
         window = math.floor(phase / mood.dart_s)
-        t = min(1.0, (phase - window * mood.dart_s) / SACCADE_S)
-        t = t * t * (3.0 - 2.0 * t)  # smoothstep: a dart is quick, not instantaneous
-        ax, ay = _target(window - 1)
-        bx, by = _target(window)
-        dx = dx * (1.0 - mood.dart) + (ax + (bx - ax) * t) * mood.dart
-        dy = dy * (1.0 - mood.dart) + (ay + (by - ay) * t) * mood.dart
-    return steady(mood.look_x + dx * mood.gaze, mood.look_y + dy * mood.gaze)
+        since = phase - window * mood.dart_s
+        held = _hold(window, mood, n)  # how much of this window is spent away, 0 if none of it
+        where, _ = _stray(window, mood.dart, n)
+        out = spots.get(mood.look[where], home) if where else home
+        came = _settled(window - 1, mood, n, spots, home)  # where the last window left him
+        if since < held:
+            bx, by = _flick(came, out, since)
+        else:
+            # The way home, and its start is *where he actually was* when he turned round rather
+            # than the place he was heading for. Those are the same only when the peek outlasted a
+            # saccade, which at a short window it does not - take the place instead and he
+            # teleports out and then eases back, a step of 0.23 of the travel in one frame at
+            # dart_s 0.35 against a ballistic bound of 0.058.
+            bx, by = _flick(_flick(came, out, held) if held > 0.0 else came, home, since - held)
+    gx, gy = bx * mood.gaze, by * mood.gaze
+    # The tremor, and a mood's own float on top of it. Two sines per axis on periods in the golden
+    # ratio, which never come back into step - a wander that repeats is a windscreen wiper. Added
+    # after the gaze scale rather than before it: this is the eyeball being alive, not part of the
+    # excursion, so it does not shrink with a mood that looks less far.
+    for amount, short, ox, oy in ((mood.drift, DRIFT_S, 0.37, 0.11),
+                                  (MICRO * min(1.0, mood.gaze / MICRO_LIT), MICRO_S, 0.83, 0.29)):
+        if amount <= 0.0:
+            continue
+        long = short * (1.0 + BLINK_DRIFT)
+        gx += amount * 0.5 * (math.sin(TAU * phase / short)
+                              + math.sin(TAU * (phase / long + ox)))
+        gy += amount * 0.5 * (math.sin(TAU * (phase / short + 0.61))
+                              + math.sin(TAU * (phase / long + oy)))
+    return steady(gx, gy)
 
 
-def _target(window: int) -> tuple[float, float]:
-    """Where dart *window* lands, on the golden-ratio walk :func:`gaze_at` describes."""
-    angle = ((window * BLINK_DRIFT) % 1.0) * TAU
-    reach = 0.35 + 0.65 * ((window * 3 * BLINK_DRIFT) % 1.0)
-    return math.cos(angle) * reach, math.sin(angle) * reach
+def _flick(a: tuple[float, float], b: tuple[float, float], since: float) -> tuple[float, float]:
+    """*since* seconds into a saccade from *a* to *b*. Ballistic, and finished by SACCADE_S."""
+    k = 1.0 if SACCADE_S <= 0.0 else min(1.0, max(0.0, since) / SACCADE_S)
+    k = k * k * (3.0 - 2.0 * k)  # smoothstep: a dart is quick, not instantaneous
+    return a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k
+
+
+def _stray(window: int, dart: float, n: int) -> tuple[int, float]:
+    """Which of *n* places attention *window* is spent on, and where in that place's slot it fell.
+
+    0 is the anchor, and is what most windows come back. The second number is what is left of the
+    picking walk once the index has been taken out of it - free, uniform, and used for how long
+    the glance lasts, so a peek is never quite the same length twice without a third walk.
+    """
+    if n < 2 or dart <= 0.0 or (window * BLINK_DRIFT) % 1.0 >= dart:
+        return 0, 0.0
+    pick = ((window * DART_PICK) % 1.0) * (n - 1)
+    return 1 + int(pick), pick - int(pick)
+
+
+def _hold(window: int, mood: Mood, n: int) -> float:
+    """How many seconds of *window* are spent away from the anchor. 0 for one spent on it.
+
+    A peek goes out and comes back inside its own window - that is what makes it a peek rather
+    than a change of mind - *unless* the next window is a glance too, in which case he stays out
+    and goes straight on to the next thing. Without that, a hunting eye at dart 0.9 would bounce
+    place, home, place, home twice a second, which is a metronome and not a search.
+    """
+    where, part = _stray(window, mood.dart, n)
+    if where == 0:
+        return 0.0
+    if _stray(window + 1, mood.dart, n)[0] != 0:
+        return mood.dart_s
+    return mood.dart_s * (PEEK_MIN + (PEEK_MAX - PEEK_MIN) * part)
+
+
+def _settled(window: int, mood: Mood, n: int, spots: dict[str, tuple[float, float]],
+             home: tuple[float, float]) -> tuple[float, float]:
+    """Where *window* left him: the place he was on if he never came home, the anchor if he did."""
+    where, _ = _stray(window, mood.dart, n)
+    if where == 0 or _hold(window, mood, n) < mood.dart_s:
+        return home
+    return spots.get(mood.look[where], home)
 
 
 def at(p: float) -> float:
@@ -736,8 +892,13 @@ class EyeEngine:
     and gets the gaze - or the lack of it - for free.
     """
 
-    def __init__(self, radius: int, line: int, screen: tuple[int, int, int], resting: Mood) -> None:
+    def __init__(self, radius: int, line: int, screen: tuple[int, int, int], resting: Mood,
+                 places: dict[str, tuple[float, float]] | None = None) -> None:
         self.r = radius
+        # Where the names in `Mood.look` actually are, from where he is bolted. That is geometry,
+        # so it lives here with the rest of it; optional, so the preview harness can build an
+        # engine without a panel and still get the panel's own answers - see LANDMARKS.
+        self.places = dict(LANDMARKS if places is None else places)
         self.screen = screen
         self.stroke = max(1, line)
         self.thin = max(1, line // 2)
@@ -811,7 +972,7 @@ class EyeEngine:
         pen = Pen(d, self._c, self._c, self.screen, mood.tint,
                   max(0.0, mood.rings), self._stroke, self._thin)
         self._shell(pen, mood, phase)
-        gx, gy = gaze_at(phase, mood)
+        gx, gy = gaze_at(phase, mood, self.places)
         self._optic(pen.shifted(gx * self._c * GAZE_SHIFT, gy * self._c * GAZE_SHIFT),
                     mood, phase, level, gx, gy)
         # The brow last, and on the *unshifted* pen. It is a highlight on the outer glass, and a
