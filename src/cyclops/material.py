@@ -8,6 +8,12 @@ is a pure function from a shape to a float field: the normals of a rolled edge, 
 specular light on them, brushed grain, hairline scratches, the shadow a raised part drops, the
 glare a sheet of glass gives back, and a hex-socket cap screw assembled out of all of those.
 
+Nothing in here may be a sprite. A tile is cached, but on everything that makes it different
+from the next one: :func:`screw` takes the bearing to the lamp from where it is standing, its own
+clocking, its own dirt and its own share of the falloff, because a panel with a dozen fixings on
+it that share sixty-six per cent of their pixels has one fixing on it a dozen times, and that is
+provable in a diff. If you add a part here, give it the arguments that make each of them itself.
+
 It must never be reached from a frame. Nothing in here is cheap enough for ``Overlay.render`` and
 nothing needs to be: metal does not move, so every field is built once into a cached layer or a
 tile. It must never put an opaque fill over the camera either. A texture is a modulation - a
@@ -59,8 +65,16 @@ SHADOW_SOFT = 1.3  # ...and how soft its edge is, in the same currency
 STEEL = (78, 84, 80)  # a flat face square to the viewer, once the lamp has had its say
 STEEL_LIT = (152, 162, 156)  # a rolled edge turned into the lamp
 STEEL_DARK = (16, 20, 18)  # the floor of a socket, the inside of a shadow
-STEEL_SPEC = (206, 216, 210)  # the brightest a highlight may get. Short of the tube's white on
-# purpose: a piece of steel outshining the phosphor would be a second light on the panel.
+STEEL_SPEC = (206, 216, 210)  # the brightest a *face* may get. Short of the tube's white on
+# purpose: a sheet of steel outshining the phosphor would be a second light on the panel.
+STEEL_HOT = (249, 253, 250)  # ...and the brightest the one pixel a specular actually is may get.
+# A highlight is not a bright surface, it is a picture of the lamp reflected in the surface, and
+# it may be as bright as the lamp. Holding it to STEEL_SPEC put a ceiling of 212 on every arris
+# on the panel and every critic measured it: our chrome topped out at 209-214 where the panel it
+# is being judged against blows a one-pixel ridge to 240-255. It is reached through HOT_SHINE, so
+# it is only ever the ridge that gets there - a face at half the specular gets a *tenth* of the
+# extra headroom - and a piece of steel still cannot out-glow the tube over any area at all.
+HOT_SHINE = 3.0  # how fast the extra headroom falls away from a mirror-perfect reflection
 GRAIN = 0.13  # how far the brushing moves brightness either way
 SPECKLE = 0.40  # of the brushing: the fine tooth under it, which is what varies *along* a fibre.
 # Brushing on its own is a set of streaks, each the same brightness from one end of a bar to the
@@ -115,18 +129,46 @@ def roll_normals(
     return gx * tilt, gy * tilt, np.sqrt(np.maximum(1.0 - tilt * tilt, 0.0))
 
 
-def shade(nx: Field, ny: Field, nz: Field) -> tuple[Field, Field]:
+def bearing(dx: float, dy: float) -> tuple[float, float, float]:
+    """The lamp as seen from a part that is (*dx*, *dy*) away from it: same height, its own way.
+
+    :data:`LAMP` is one direction for the whole panel, which is right for a lamp at infinity and
+    wrong for a bench light standing over the top-left corner of a 800x480 sheet. A fixing at the
+    bottom right of that sheet sees the light from a different bearing than one at the top left,
+    and it is *that* difference - not a random per-instance jitter - that stops a dozen bolts
+    reading as one bolt pasted a dozen times. Elevation is kept: the lamp is the same height
+    above the panel wherever you stand on it, and only the compass direction turns.
+    """
+    reach = math.hypot(dx, dy) or 1.0
+    lateral = math.hypot(_L[0], _L[1])
+    return dx / reach * lateral, dy / reach * lateral, _L[2]
+
+
+def _half(lamp: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Half-way between a lamp and the viewer: where a surface must face to mirror it."""
+    return _unit((lamp[0], lamp[1], lamp[2] + 1.0))
+
+
+def shade(nx: Field, ny: Field, nz: Field,
+          lamp: tuple[float, float, float] | None = None) -> tuple[Field, Field]:
     """Diffuse and specular light, 0..1 each, on a field of normals under the one lamp.
 
     The specular is two things added: the lamp's own highlight, which lands where a surface
     faces half-way between the lamp and the viewer, and the rim light an edge catches where it
     turns end-on towards the lamp - squared twice, as the terminal's sheen is, so it stays on
     the edge and off the face.
+
+    *lamp* is that light's direction, and defaults to :data:`LAMP` - the panel's one lamp seen
+    from far enough away that everything on it agrees. A part that knows where on the panel it
+    is passes its own :func:`bearing` instead, which is the same lamp from where it stands.
     """
-    diffuse = np.clip(nx * _L[0] + ny * _L[1] + nz * _L[2], 0.0, 1.0)
-    spec = np.clip(nx * _H[0] + ny * _H[1] + nz * _H[2], 0.0, 1.0) ** SHINE
+    lamp = _L if lamp is None else lamp
+    hx, hy, hz = _H if lamp is _L else _half(lamp)
+    diffuse = np.clip(nx * lamp[0] + ny * lamp[1] + nz * lamp[2], 0.0, 1.0)
+    spec = np.clip(nx * hx + ny * hy + nz * hz, 0.0, 1.0) ** SHINE
     tilt = np.sqrt(nx * nx + ny * ny)
-    facing = np.clip((nx * _L2[0] + ny * _L2[1]) / np.maximum(tilt, 1e-6), 0.0, 1.0)
+    flat = math.hypot(lamp[0], lamp[1]) or 1.0
+    facing = np.clip((nx * lamp[0] + ny * lamp[1]) / (flat * np.maximum(tilt, 1e-6)), 0.0, 1.0)
     rim = tilt * tilt * facing * facing
     return diffuse, np.minimum(spec + RIM * rim, 1.0)
 
@@ -135,16 +177,21 @@ def steel(diffuse: Field, spec: Field, grain: Field | None = None, colour: Colou
     """The colour of lit steel, rows by columns by three.
 
     *colour* where a face is square to the viewer, darker as it turns from the lamp, STEEL_SPEC
-    laid on where the highlight lands, and brushed by *grain* if there is any. Never brighter
-    than STEEL_SPEC in any channel, however the terms add up.
+    laid on where the highlight lands, and brushed by *grain* if there is any.
+
+    The ceiling is STEEL_SPEC over a face and lifts towards STEEL_HOT as the specular approaches
+    a true mirror of the lamp - see HOT_SHINE. That is the difference between a bar with a bright
+    edge and a bar with a *ridge* on it: the surface is held down where it is a surface, and the
+    one or two pixels that are actually reflecting the lamp are allowed to blow.
     """
     albedo = np.asarray(colour, np.float32) / (AMBIENT + (1.0 - AMBIENT) * _L[2])
     lit = AMBIENT + (1.0 - AMBIENT) * diffuse
     if grain is not None:
         lit = lit * (1.0 + GRAIN * grain)
     ceiling = np.asarray(STEEL_SPEC, np.float32)
+    blown = np.asarray(STEEL_HOT, np.float32) - ceiling
     rgb = albedo * lit[..., None] + ceiling * (SPEC * spec)[..., None]
-    return np.minimum(rgb, ceiling)
+    return np.minimum(rgb, ceiling + blown * (spec**HOT_SHINE)[..., None])
 
 
 def _noise1d(coord: Field, period: float, rng: np.random.Generator) -> Field:
@@ -230,13 +277,15 @@ def pits(width: int, height: int, count: int, seed: int = SEED,
     return np.asarray(sheet.reduce(2), np.float32) / 255.0
 
 
-def cast(coverage: Field, lift: float) -> Field:
+def cast(coverage: Field, lift: float, away: tuple[float, float] | None = None) -> Field:
     """The shadow a part standing *lift* pixels proud drops on what it is bolted to, 0..1.
 
     Its own coverage, pushed away from the lamp and softened by the same distance. Composited
-    under the part, so the part covers its own shadow the way a real one does.
+    under the part, so the part covers its own shadow the way a real one does. *away* is the
+    direction the lamp lies in, defaulting to the panel's; a part that knows where it is passes
+    its own, so its shadow and its highlight are thrown by the same light.
     """
-    dx, dy = lamp_2d()
+    dx, dy = lamp_2d() if away is None else away
     sheet = Image.fromarray((np.clip(coverage, 0.0, 1.0) * 255.0).astype(np.uint8), "L")
     shifted = Image.new("L", sheet.size, 0)
     shifted.paste(sheet, (round(-dx * lift * SHADOW_DROP), round(-dy * lift * SHADOW_DROP)))
@@ -384,18 +433,36 @@ SCREW_SLOPE = 0.62  # sin of the dish's slope. Steep: a shallow countersink is a
 SCREW_DISH_GLOSS = 0.35  # how much of the steel's highlight the dish keeps. It is cut, not
 # polished: its far wall is a step lighter than its near one and not the brightest thing on the
 # screw, which is the collar's rim, on the side the lamp is
-SCREW_RIM = 1.4  # px of the collar's edge that roll down to the bar - the ring that is read
+SCREW_RIM = 1.8  # px of the collar's edge that roll down to the bar - the ring that is read.
+# It was 1.4, which at a seven-pixel head left the angle that actually mirrors the lamp inside a
+# single supersampled pixel: the ring averaged out at 160 where the panel being matched blows its
+# rim to 203. A rolled edge two pixels of a seven-pixel radius wide is what bar stock does anyway
 SCREW_CROWN = 0.18  # sin of the tilt the head has reached by its edge - barely domed
-SCREW_SOCKET = 0.30  # of the radius: the hex socket, corner to centre
+SCREW_SOCKET = 0.34  # of the radius: the hex socket, corner to centre. It was 0.30, and at that
+# the hole in a seven-pixel head was two pixels of grey that measured 42 against a rim of 158 -
+# a soft concentric donut. A real cap screw's socket takes most of its head and goes black.
+SCREW_FLOOR = 0.45  # how much of the light that reaches the socket's far wall survives the trip
+# back out of it. The hole is deep and the mouth is narrow: what a camera sees down there is a
+# hint of a wall, not a lit surface
 SCREW_LIFT = 0.11  # of the radius: how proud the collar stands. A seated head, not a bead, so
 # its shadow is a pixel down and right of it and no more
 SCREW_SEAT = 0.40  # that shadow's alpha where it is deepest
 SCREW_WEAR = 0.13  # how much darker the bar is in the ring round the head a spanner has been in
 SCREW_WEAR_W = 2.0  # ...and how wide that ring is, in px
+SCREW_GRIME = 5  # specks of dirt round one head's rim, unevenly placed...
+SCREW_GRIME_A = 0.45  # ...and how much of the collar's light one of them takes
+SCREW_GRIME_W = 0.34  # of the radius: how far in from the rim they sit
+SCREW_SPREAD = 0.07  # how far the head, the socket and the dish's slope vary from screw to screw.
+# Not decoration: two heads 34 px apart on the same rail still came back 6.5% bit-identical with
+# only their light and their dirt differing, and a box of screws is not a box of one screw
+SCREW_SKEW = 0.05  # ...and how far off square the driver left one, as a sine. A fixing driven
+# dead perpendicular in every hole is the other half of the same tell
+SCREW_DUST = (0.55, 1.5)  # how much light the bottom of one socket gives back, against the rest
 
 
-@lru_cache(maxsize=32)
-def screw(r: float, fx: float = 0.0, fy: float = 0.0) -> Image.Image:
+@lru_cache(maxsize=64)
+def screw(r: float, fx: float = 0.0, fy: float = 0.0, ax: float = 0.0, ay: float = 0.0,
+          clock: float = 0.0, mark: int = 0, tone: float = 1.0) -> Image.Image:
     """A socket screw countersunk into flat bar, as an RGBA tile with the head at its centre.
 
     A flat collar with a rolled edge one pixel wide - lit where it faces the lamp, dark where it
@@ -405,7 +472,29 @@ def screw(r: float, fx: float = 0.0, fy: float = 0.0) -> Image.Image:
     the bottom; and a hex socket near black except for the wall the light gets down to. Round
     the outside, the ring of bar a spanner has darkened and the shadow a head a fraction proud
     drops down and right of itself. *fx*, *fy* as for :func:`bolt`.
+
+    Every argument after those is what stops a panel's dozen fixings being one fixing pasted a
+    dozen times, which is the thing a critic can prove with an exact-pixel test and did: five of
+    our seven heads came back identical to the decimal. (*ax*, *ay*) is the way to the lamp
+    **from where this screw is** - see :func:`bearing` - so the crescent on its rim rotates
+    across the panel and its seat shadow follows; *clock* is how far round the driver left the
+    hex, which no two screws in a real assembly agree on; *mark* seeds the grime round the rim
+    and the unevenness of the spanner's ring; and *tone* is the panel-wide falloff at its
+    position, so a screw in the far corner is a screw in the far corner. Give it none of them
+    and it is still the old sprite, which is what :func:`bolt` and any tool wanting one head
+    want.
     """
+    lamp = bearing(ax, ay) if ax or ay else _L
+    flat = (lamp[0], lamp[1])
+    # This one's own tolerances: nothing off a shelf is to the drawing, and the whole point of
+    # the exercise is that no two of these come out of the same mould.
+    rng = np.random.default_rng(mark + 5)
+    seat, socket_r, slope = rng.uniform(1.0 - SCREW_SPREAD, 1.0 + SCREW_SPREAD, 3)
+    skew = rng.uniform(-SCREW_SKEW, SCREW_SKEW, 2)
+    # ...and how much of its own walls the floor of the hole bounces back, which is the one thing
+    # in a socket that is not geometry. Left at one number it was a nine-pixel block of the same
+    # three bytes in every head on the panel - five per cent of a patch, bit-identical, on its own.
+    dust = rng.uniform(*SCREW_DUST)
     lift = r * SCREW_LIFT
     margin = math.ceil(max(lift * (SHADOW_DROP + 3 * SHADOW_SOFT), SCREW_WEAR_W)) + 1
     half = math.ceil(r) + margin
@@ -421,38 +510,65 @@ def screw(r: float, fx: float = 0.0, fy: float = 0.0) -> Image.Image:
     # The dish: a cone falling towards the centre, so its normals point inward and the wall the
     # lamp lights is the far one - the opposite of a dome, and the whole difference between a
     # head sunk into a bar and a bead sitting on it.
-    dish = (dist < r * SCREW_DISH) & (dist >= r * SCREW_HEAD)
-    nx = np.where(dish, -gx * SCREW_SLOPE, nx)
-    ny = np.where(dish, -gy * SCREW_SLOPE, ny)
-    nz = np.where(dish, math.sqrt(1.0 - SCREW_SLOPE * SCREW_SLOPE), nz)
-    head = dist < r * SCREW_HEAD
-    crown = SCREW_CROWN * np.clip(dist / max(r * SCREW_HEAD, 1e-6), 0.0, 1.0)
-    nx = np.where(head, gx * crown, nx)
-    ny = np.where(head, gy * crown, ny)
+    sink = SCREW_SLOPE * slope
+    top = r * SCREW_HEAD * seat
+    dish = (dist < r * SCREW_DISH) & (dist >= top)
+    nx = np.where(dish, -gx * sink, nx)
+    ny = np.where(dish, -gy * sink, ny)
+    nz = np.where(dish, math.sqrt(max(1.0 - sink * sink, 0.0)), nz)
+    head = dist < top
+    crown = SCREW_CROWN * np.clip(dist / max(top, 1e-6), 0.0, 1.0)
+    nx = np.where(head, gx * crown + skew[0], nx)
+    ny = np.where(head, gy * crown + skew[1], ny)
     nz = np.where(head, np.sqrt(np.maximum(1.0 - crown * crown, 0.0)), nz)
-    diffuse, spec = shade(nx, ny, nz)
+    diffuse, spec = shade(nx, ny, nz, lamp)
     rgb = steel(diffuse, np.where(dish, spec * SCREW_DISH_GLOSS, spec))
-    # The socket, as in bolt(): a dark floor and the far wall the light gets down to.
-    hexd = _hexagon(xs, ys, r * SCREW_SOCKET)
+    # The socket, as in bolt(): a dark floor and the far wall the light gets down to - clocked
+    # where the driver left it, and dark enough that the head reads as a hole with a ring round
+    # it rather than as a dished disc.
+    turn, spin = math.cos(clock), math.sin(clock)
+    hexd = _hexagon(xs * turn - ys * spin, xs * spin + ys * turn, r * SCREW_SOCKET * socket_r)
     hy, hx = np.gradient(hexd)
     hlen = np.maximum(np.hypot(hx, hy), 1e-6)
-    facing = np.clip(-(hx * _L[0] + hy * _L[1]) / hlen, 0.0, 1.0)
+    facing = np.clip(-(hx * flat[0] + hy * flat[1]) / hlen, 0.0, 1.0)
     wall = np.clip(1.0 - np.maximum(-hexd, 0.0) / BOLT_WALL, 0.0, 1.0) * facing
-    floor_ = np.asarray(STEEL_DARK, np.float32) * 0.8
-    socket = floor_ + (np.asarray(STEEL, np.float32) - floor_) * wall[..., None]
+    floor_ = np.asarray(STEEL_DARK, np.float32) * 0.8 * dust
+    socket = floor_ + (np.asarray(STEEL, np.float32) - floor_) * (SCREW_FLOOR * wall)[..., None]
     inside = np.clip(0.5 - hexd * _SS, 0.0, 1.0)[..., None]
     rgb = rgb * (1.0 - inside) + socket * inside
     mouth = np.clip(1.0 - np.maximum(hexd, 0.0) / BOLT_EDGE, 0.0, 1.0) * (1.0 - inside[..., 0])
     rgb = rgb * (1.0 - 0.4 * mouth)[..., None]
+    rgb = rgb * (1.0 - _grime(xs, ys, dist, r, mark))[..., None]
     rgb, cover = _boxed(rgb, cover)
+    rgb = rgb * tone  # the lamp's falloff at this screw's own corner of the panel
     # What goes under the collar: the seat shadow and the spanner's ring, both black, both soft,
-    # and both composited under the head so the head covers its own shadow.
+    # and both composited under the head so the head covers its own shadow. The ring is heavier
+    # on one side, and which side is this screw's own business: a spanner is swung, not centred.
     at = np.arange(size, dtype=np.float32)
-    ring_d = np.hypot(at[None, :] - (half + fx), at[:, None] - (half + fy)) - r
-    ring = SCREW_WEAR * np.clip(1.0 - ring_d / SCREW_WEAR_W, 0.0, 1.0)
+    rx, ry = at[None, :] - (half + fx), at[:, None] - (half + fy)
+    ring_d = np.hypot(rx, ry) - r
+    swing = np.random.default_rng(mark + 17).uniform(0.0, 2.0 * math.pi)
+    lean = 1.0 + 0.5 * (rx * math.cos(swing) + ry * math.sin(swing)) / max(r, 1e-6)
+    ring = SCREW_WEAR * np.clip(lean, 0.0, 1.5) * np.clip(1.0 - ring_d / SCREW_WEAR_W, 0.0, 1.0)
     ring = ring * np.clip(ring_d + 0.5, 0.0, 1.0)
-    shadow = cast(cover, lift) * SCREW_SEAT
+    shadow = cast(cover, lift, flat) * SCREW_SEAT
     under = 1.0 - (1.0 - shadow) * (1.0 - ring)
     alpha = cover + under * (1.0 - cover)
     rgb = rgb * (cover / np.maximum(alpha, 1e-6))[..., None]
     return to_image(rgb, alpha)
+
+
+def _grime(xs: Field, ys: Field, dist: Field, r: float, mark: int) -> Field:
+    """SCREW_GRIME specks of dirt caught round one head's rim, 0..1 of the light they take.
+
+    Placed from *mark* alone, so no two heads on the panel are dirty in the same places. A
+    fixing is the smallest thing a panel repeats, which makes it the first place a repeat shows.
+    """
+    rng = np.random.default_rng(mark + 31)
+    out = np.zeros(dist.shape, np.float32)
+    for turn in rng.uniform(0.0, 2.0 * math.pi, SCREW_GRIME):
+        at = r * (1.0 - SCREW_GRIME_W * rng.uniform(0.2, 1.0))
+        px, py = xs - at * math.cos(turn), ys - at * math.sin(turn)
+        size = r * rng.uniform(0.08, 0.20)
+        out = np.maximum(out, np.clip(1.0 - np.hypot(px, py) / size, 0.0, 1.0))
+    return SCREW_GRIME_A * out * (dist < r)
