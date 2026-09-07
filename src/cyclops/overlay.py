@@ -696,15 +696,40 @@ POD_TAG_GAP = 8.0  # ...and the tighter one between two tags, which read as one 
 # the glass is the terminal's own (TERM_ALPHA, TERM_SCAN) let into a narrow flange of the rail's
 # steel. The flange is what makes it an instrument fitted into the frame rather than a hole in
 # it, and the reveal is what makes the glass sit *below* the steel.
-POD_LAND = 4.5  # reference px of flat steel inside the rail before the reveal starts. Wide
-# enough that the lip round the glass and the rail's own rolled edge read as two edges of one
-# rebated frame; narrower, and the two bright lines sit close enough to read as a second rail
-POD_REVEAL = 1.5  # ...and the chamfer down from it to the glass - a hairline, because a
-# chamfer this way up sits square on the lamp's highlight and comes out as bright as steel gets
-POD_CHAMFER = 0.45  # sin of the reveal's slope
-POD_LIP_SHINE = 0.55  # of the material's full highlight the lip gives back. A rebate is cut,
-# not rolled and handled like the rail is, and at full it came out the brightest line on the
-# panel - a second lit edge a few pixels inside the rail's own
+POD_LAND = 7.0  # reference px of flange inside the rail, from the rail's foot to the glass.
+# It was three visible pixels and a hairline chamfer at their edge, which is a line and not a
+# face: nothing to grade along, nothing to brush, nowhere to put a mark. Wide enough now that
+# the whole of it is one rounded arris rolling down into the window, so the light on it is a
+# ramp five pixels deep instead of a stroke, and there is somewhere for a plate to be set in
+POD_REVEAL = 1.5  # ...and how far inside the flange's edge the glass starts, so the steepest of
+# the roll is steel and the glass meets it in a dark seam rather than on a bright line
+POD_ROLL_TILT = 0.46  # sin of the tilt the flange has reached where the glass starts. Short of
+# a chamfer's 45 on purpose: this is where the lamp's highlight peaks, so the brightest of the
+# roll is the edge nearest the glass and everything falls away from it back towards the rail.
+# One lit edge per face, on the lamp's side of it, is what a lamp does; two is what an emboss does
+POD_LIP_SPEC = 0.34  # of the material's full highlight the roll keeps. At full the arris was
+# the brightest thing on the panel - brighter than the bolts it sits between, which is a light
+# nobody has ever stood under
+POD_DRIFT = 0.26  # how much brighter the flange is at the lamp's end of the module than at the
+# far one, top to bottom of the range: a face lit from one side is never one grey along its
+# length, and a 200-pixel run of exactly one grey is the single loudest thing that says vector
+POD_GRAIN = 1.6  # of the material's brushing, on the flange. A rolled edge catches the brush
+# harder than a flat does, and a face five pixels deep has to say metal in five rows
+POD_SCRATCHES = 26  # hairlines dragged across the pod's own box, of which the flange keeps the
+# few that cross it - on top of the sheet's own, which run onto it from the plates
+POD_SCRATCH = 0.38  # ...and how pale the palest of them shows
+POD_PITS = 70  # single pixels over the pod's box where the finish has chipped...
+POD_PIT = 0.78  # ...and how far towards black one goes
+POD_PLATE_W = 48.0  # reference px of the blank nameplate let into the bottom flange...
+POD_PLATE_IN = 26.0  # ...and how far in from the right-hand knee it sits. Right third, because
+# that is where a hand reaching past the module would not rub it. Blank: there is no word this
+# panel needs that it is not already saying, and a plate is a depth before it is a label
+POD_PLATE_A = 0.78  # how far its floor is put towards the dark - it is a pocket milled into the
+# flange, so its floor is a face turned out of the lamp's way
+POD_PLATE_WALL = 0.60  # ...how much further into the dark its near wall goes, which is the
+# side of any pocket the light cannot get to and the line that tells you it is a pocket
+POD_PLATE_LIP = 0.85  # ...and how much of the flange's own highlight its far wall gives back,
+# which is the one bright line a pocket has and it is along the bottom
 POD_SEAM = 2.5  # px over which the glass eases from opaque at the reveal to the terminal's
 # depth - the dark seam round any pane set in a frame, and the terminal's own bezel ease. The
 # phosphor's cast and the room's reflection stop at it: it is the one part of the glass that
@@ -712,13 +737,24 @@ POD_SEAM = 2.5  # px over which the glass eases from opaque at the reveal to the
 POD_RECESS = 3.0  # px the glass sits below the flange, which sets the shadow the lip nearest
 # the lamp drops onto it - with the seam, the whole of what says recess rather than decal
 POD_SHADOW_A = 0.85  # how dark that shadow is where it is deepest
-POD_GLARE_A = 0.46  # how much of the room the glass gives back along its upper edge...
-POD_GLARE_FLOOR = 0.16  # ...the little it gives back everywhere, because no glass goes dead
-# black - and what lifts the pane off its own seam
-POD_GLARE_REACH = 0.9  # ...how far the lamp's light carries, in window widths, and...
-POD_GLARE_STREAK = (0.06, 0.22, 0.12)  # ...the wipe it makes: where down the left edge it
+POD_AO = 10.0  # reference px in from its edge over which the recess's walls shade the glass,
+# all the way round - the fall to near-black along the bottom of any pane set down in a frame,
+# and what puts the readouts *in* the window rather than printed on it
+POD_AO_A = 0.58  # ...and how dark it is right at the wall
+POD_LIP_SHADE = 6.0  # reference px down from the panel's edge the border's shadow falls on the
+# glass. The window is open at the top and runs up under the border, which makes the border its
+# lip, and a lip drops a shadow on whatever is under it
+POD_LIP_SHADE_A = 0.85  # ...and how dark, hard against the edge
+POD_GLARE_A = 0.42  # how much of the room the glass gives back along its upper edge...
+POD_GLARE_FLOOR = 0.07  # ...the little it gives back everywhere, because no glass goes dead
+# black - and what lifts the pane off its own seam. Low: the segments are read against this,
+# and a floor lifted by a wash is a floor the meter has to shout over
+POD_GLARE_REACH = 0.62  # ...how far the lamp's light carries, in window widths, and...
+POD_GLARE_STREAK = (0.20, 0.30, 0.10)  # ...the wipe it makes: where down the left edge it
 # passes, how broad it is, how far it drops on its way across - all as fractions of the glass's
-# own depth, not of the pod's. A band along the top third, brightest where the lamp is
+# own depth, not of the pod's. One soft blob at the top left, under the border's own shadow and
+# falling away across the pane, rather than a band the whole width of the window: a reflection
+# that covers a face evenly is a tint, and the lamp is in one place
 BOT_L = 250.0  # the bottom-left bracket's reach along both edges
 BOT_L_STEP = 38.0  # its square landings
 BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
@@ -1245,14 +1281,18 @@ METER_SEGMENTS = 8  # steps in the signal bar
 METER_OFF = 0.45  # an unlit signal segment, where one is still a filled slab (the slider)
 METER_CELL = 0.90  # ...and the outline of an empty cell in the pod's glass, which has nothing
 # inside it and has to be found against dark glass rather than against the wash
-LAMP_BLOOM_R = 2.2  # reference px of the tight skirt round a lit segment or a lit tag, seen
+LAMP_BLOOM_R = 3.8  # reference px of the tight skirt round a lit segment or a lit tag, seen
 # through the pod's glass, and...
-LAMP_BLOOM_A = 0.90  # ...how much of the lamp's own alpha goes into it. The caption's
+LAMP_BLOOM_A = 1.00  # ...how much of the lamp's own alpha goes into it. The caption's
 # halation, a shade tighter and brighter: a bar is a harder edge than a letter.
-LAMP_HALO_R = 6.0  # ...and the soft one round that, which is the lamp lighting the glass near
+LAMP_HALO_R = 7.0  # ...and the soft one round that, which is the lamp lighting the glass near
 # it rather than its own edge blooming, and...
-LAMP_HALO_A = 0.45  # ...how much of it there is. Both baked into a tile per reading rather than
+LAMP_HALO_A = 0.58  # ...how much of it there is. Both baked into a tile per reading rather than
 # blurred per frame - see _meter.
+# Both were half this, and at half the light stopped at the segment's own edge: the gaps between
+# eight lit cells measured within twenty levels of the dead glass at the far end of the window,
+# which is a bar drawn on a window rather than eight lamps behind one. A lamp behind glass lights
+# the glass, and the count is read off the block of light as much as off the cells in it.
 STEEL = 0.58  # how far the rail's body is stirred towards SCREEN out of GREEN_MID
 
 # ---- the power menu ----
@@ -3381,28 +3421,74 @@ class Overlay:
         """Coverage of the glass proper - inside the lip by the reveal's width, anti-aliased."""
         return np.clip(0.5 - (sdf + max(1.0, POD_REVEAL * self.scale)), 0.0, 1.0)
 
+    def _pod_plate(
+        self, rgb: np.ndarray, tags: int, xs: np.ndarray, sdf: np.ndarray,
+        land: float, reveal: float,
+    ) -> np.ndarray:
+        """A blank nameplate milled into the right third of the flange's bottom run.
+
+        Every instrument panel worth copying has one, and what it does for this module is not
+        the word on it - there is no word this panel needs that it is not already saying - but
+        the second depth. A flange with a pocket in it has a floor, a near wall and a far wall,
+        which is three levels of light where a plain flange has one, and it breaks a
+        two-hundred-pixel run of steel into two runs and a thing.
+
+        A pocket is lit the way the window it sits beside is: the floor is turned out of the
+        lamp's way and goes dark, and the one bright line it has is its far wall - the bottom,
+        under this lamp. Placed in the right third because that is the end furthest from the
+        lamp, so the drift has already taken the steel down there and the pocket is the darkest
+        thing on the face rather than a second event competing with the lit edge.
+        """
+        right = self.pods[tags].spine[2][0] - POD_PLATE_IN * self.scale
+        left = right - POD_PLATE_W * self.scale
+        span = np.clip(xs - left, 0.0, 1.0) * np.clip(right - xs, 0.0, 1.0)
+        near = reveal + 0.5  # its walls, in the same distance the roll is measured in: hard
+        far = land - 0.4  # against the arris at one end and the rail's foot at the other
+        floor = span * np.clip(sdf - near, 0.0, 1.0) * np.clip(far - sdf, 0.0, 1.0)
+        # Three levels, which is what makes a pocket a pocket rather than a stripe: the near wall
+        # is turned away from the lamp and goes to the floor of a socket, the floor is a face in
+        # its own shade, and the far wall is the one thing in here that faces the light.
+        lip = span * np.clip(sdf - near, 0.0, 1.0) * np.clip(near + 1.4 - sdf, 0.0, 1.0)
+        wall = span * np.clip(sdf - (far - 1.4), 0.0, 1.0) * np.clip(far - sdf, 0.0, 1.0)
+        dark, lit = (np.asarray(c, np.float32) for c in (material.STEEL_DARK, material.STEEL_LIT))
+        sunk = (POD_PLATE_A * floor)[..., None]
+        rgb = rgb * (1.0 - sunk) + dark * sunk
+        shade = (POD_PLATE_WALL * lip)[..., None]
+        rgb = rgb * (1.0 - shade) + dark * shade
+        shine = (POD_PLATE_LIP * wall)[..., None]
+        return rgb * (1.0 - shine) + lit * shine
+
     def _draw_pod_face(self, layer: Image.Image, tags: int) -> None:
         """The instrument in the pod: a dark glass window let into a steel flange, under the rail.
 
         The rail is the frame. What it framed used to be the same brushed wash the mounts are
         cut from, with the meter and the clock lying flat on it, and a readout lying on a plate
         is a label. These are lamps, and lamps sit behind glass: so the flat is a window now -
-        the terminal's glass at the terminal's depth, on the filter's raster - cut a reveal down
-        into a narrow land of the rail's own steel. Open at the top, because the module hangs
+        the terminal's glass at the terminal's depth, on the filter's raster - set down inside a
+        flange of the rail's own steel. Open at the top, because the module hangs
         off the frame: the glass runs up under the border the way the terminal's runs under its
         moulding, and a lip along the top would make it a box sitting on the panel.
 
-        Fields off one distance function, the way the rail and the terminal are. The land is
-        flat steel with the sheet's grain and scratches across it. The reveal is a chamfer whose
-        normals lean down into the hole, so under the lamp the far wall - along the bottom, and
-        up the right-hand ramp - is the brighter one, which is how any recess anybody has looked
-        at is lit. The glass goes opaque hard against the reveal and eases to the terminal's
-        depth over a few pixels, which is the dark seam round any pane in a frame, and the lip
-        nearest the lamp drops a shadow onto it by exactly the depth the glass sits down. Those
-        two are the whole of the difference between a recessed window and a dark decal. The
-        glass itself is opacity, the phosphor's own cast, and a glare - SCREEN is near enough
-        black that darkening it says nothing - with the room wiped along its upper edge from the
-        same lamp as everything else.
+        Fields off one distance function, the way the rail and the terminal are. The flange is
+        one rounded arris: flat where it leaves the rail's foot and turned POD_ROLL_TILT down
+        into the window by the time the glass starts, leaning inwards the whole way. Under the
+        lamp that puts its highlight along the edge nearest the glass and lets it fall away over
+        five pixels back to the rail - on the bottom run that is the top edge, on the right-hand
+        ramp the upper-left one - and there is no second line anywhere on it. It is brushed
+        along its length, it drifts brighter towards the lamp's end of the module, it wears the
+        sheet's hairlines and its own, it is chipped, and a blank plate is milled into the
+        bottom run: five pixels of steel that is different in every one of them, because a face
+        that is one grey for two hundred pixels is a fill and everybody can see that it is.
+
+        The glass goes opaque hard against the reveal and eases to the terminal's depth over a
+        few pixels, which is the dark seam round any pane in a frame; the recess's walls shade
+        it for a few pixels more all the way round, deepest at the wall; the lip nearest the
+        lamp drops a shadow onto it by exactly the depth the glass sits down; and the border
+        along the top, which is this window's own lip, drops its own. Those are the whole of the
+        difference between a recessed window and a dark decal. The glass itself is opacity, the
+        phosphor's cast, and a glare - SCREEN is near enough black that darkening it says
+        nothing - with one soft reflection of the room at its top left, from the same lamp as
+        everything else.
 
         Once per pod width, before the rail, so the rail's shadow falls on the land and the bolts
         sit over both. Nothing in here may be reached from a frame.
@@ -3420,23 +3506,39 @@ class Overlay:
         sdf, ox, oy, along = self._pod_field(tags, x0, y0, w, h)
         glass = self._pod_glass(sdf)
 
-        # The steel: the land out to the rail's centreline, and the chamfer down from it. On the
-        # chamfer the normal leans in towards the middle of the window - (ox, oy) is the way from
-        # the lip to the pixel, which inside the lip is inwards - and on the land it is straight
-        # up, so the land comes out STEEL exactly and only the grain moves it. The lip sits
-        # square on the lamp's highlight, so it is held back to POD_LIP_SHINE and comes and goes
-        # along its length the way the rail's does.
-        chamfer = (sdf < 0.0).astype(np.float32)
-        nx, ny = ox * POD_CHAMFER * chamfer, oy * POD_CHAMFER * chamfer
-        nz = np.sqrt(np.maximum(1.0 - nx * nx - ny * ny, 0.0))
-        diffuse, spec = material.shade(nx, ny, nz)
-        held = 1.0 - chamfer * (1.0 - POD_LIP_SHINE)
-        spec = spec * held * (1.0 + RAIL_WEAR * material.wear(along))
+        # The steel: one rounded arris from the rail's foot down into the window. The tilt runs
+        # from nothing at the foot to POD_ROLL_TILT where the glass starts, and it leans in
+        # towards the middle of the window the whole way - (ox, oy) is the way from the lip to
+        # the pixel, which is outwards on the flange and inwards past it, so the lean is the
+        # negative of it out here. Squared, so the steel nearest the rail stays flat and the
+        # turn is all in the last two pixels, which is what a rolled edge does. The highlight is
+        # held to POD_LIP_SPEC and comes and goes along its length the way the rail's does.
         ys = (np.arange(h, dtype=np.float32) + y0)[:, None]
         xs = (np.arange(w, dtype=np.float32) + x0)[None, :]
-        rgb = material.steel(diffuse, spec, material.grain(ys, xs))  # brushed along the flange
-        marks = (self._marks[y0:y1, x0:x1] * RAIL_SCRATCH)[..., None]
+        roll = np.clip((land - sdf) / max(1.0, land - reveal), 0.0, 1.0)
+        tilt = POD_ROLL_TILT * roll * roll
+        into = np.where(sdf < 0.0, 1.0, -1.0).astype(np.float32)
+        nx, ny = ox * tilt * into, oy * tilt * into
+        nz = np.sqrt(np.maximum(1.0 - tilt * tilt, 0.0))
+        diffuse, spec = material.shade(nx, ny, nz)
+        spec = spec * POD_LIP_SPEC * (1.0 + RAIL_WEAR * material.wear(along))
+        rgb = material.steel(diffuse, spec, POD_GRAIN * material.grain(ys, xs))  # along the flange
+        # Nearer the lamp is brighter, across the whole module. The lamp is up and to the left,
+        # so this is a fall from the left-hand knee to the right one - the drift a milled face
+        # has under one light and a fill can never have.
+        drift = 1.0 + POD_DRIFT * (0.5 - (xs - x0) / max(1.0, w - 1.0))
+        rgb = np.minimum(rgb * drift[..., None], np.asarray(material.STEEL_SPEC, np.float32))
+        rgb = self._pod_plate(rgb, tags, xs, sdf, land, reveal)
+        # The wear: the sheet's own hairlines where they run onto the flange, the pod's own
+        # dragged across it, and the chips - single pixels gone nearly black where the finish is
+        # off. All three deterministic off material.SEED, so the module is the same every boot.
+        own = material.scratches(w, h, POD_SCRATCHES, (1.0, 0.0), seed=material.SEED + 9,
+                                 spread=30.0, length=(20.0 * self.scale, 60.0 * self.scale))
+        marks = (np.maximum(own, self._marks[y0:y1, x0:x1]) * POD_SCRATCH)[..., None]
         rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+        pits = material.scratches(w, h, POD_PITS, (1.0, 0.0), seed=material.SEED + 11,
+                                  spread=180.0, length=(0.5, 1.2))
+        rgb = rgb * (1.0 - POD_PIT * (pits > 0.5))[..., None]
         flange = (1.0 - glass) * np.clip(0.5 + (half + land) - sdf, 0.0, 1.0)
         layer.alpha_composite(_to_image(rgb, flange), (x0, y0))
 
@@ -3453,6 +3555,12 @@ class Overlay:
         open_ = open_ * open_ * (3.0 - 2.0 * open_)
         pane = _over(pane, SCREEN, 1.0 - (1.0 - TERM_ALPHA / 255.0) * open_)
         pane = _over(pane, GREEN, TUBE_GLOW_A * open_)
+        # The recess's walls shade the glass all round its edge, deepest at the wall and gone
+        # POD_AO in - squared, so it is a falloff and not a band. This is the fall to near-black
+        # along the bottom of the pane and up both ramps, and it is most of what puts the
+        # readouts *in* the window instead of printed on it.
+        wall = np.clip(np.maximum(-(sdf + reveal), 0.0) / max(1.0, POD_AO * self.scale), 0.0, 1.0)
+        pane = _over(pane, (0, 0, 0), POD_AO_A * (1.0 - wall) ** 2)
         recess = max(1.0, POD_RECESS * self.scale)
         pane = _over(pane, (0, 0, 0), material.cast(1.0 - glass, recess) * POD_SHADOW_A)
         pane = _over(pane, (0, 0, 0), np.broadcast_to(self._raster(y0, h)[:, None], (h, w)))
@@ -3464,6 +3572,11 @@ class Overlay:
         shine[:deep] = material.glare(w, deep, (GLARE_X * w, GLARE_Y * deep),
                                       POD_GLARE_REACH * w, POD_GLARE_FLOOR, POD_GLARE_STREAK)
         pane = _over(pane, WHITE, shine * POD_GLARE_A * open_)
+        # ...and the border's shadow over the top of it, because the border is this window's lip
+        # and the reflection is on the glass underneath it, not over it. Squared for the same
+        # reason the walls are: a shadow with an edge on it is a stripe.
+        lip = np.clip(1.0 - ys / max(1.0, POD_LIP_SHADE * self.scale), 0.0, 1.0)
+        pane = _over(pane, (0, 0, 0), np.broadcast_to(POD_LIP_SHADE_A * lip * lip, (h, w)))
         layer.alpha_composite(_to_image(pane[0], pane[1] * glass), (x0, y0))
 
     def _raster(self, y0: int, h: int) -> np.ndarray:
@@ -3624,17 +3737,24 @@ class Overlay:
         clock_right, _, meter_right = self._readouts(tags)
         whole = 0 if elapsed is None else int(elapsed)
         clock = "--:--" if elapsed is None else f"{whole // 60:02d}:{whole % 60:02d}"
-        # Dim green with nothing to count, the state's accent the moment there is - the numbers
-        # that only mean something during a session are the right place for the colour that only
-        # appears during one.
-        colour = (*GREEN_DIM, 255) if elapsed is None else (*halo, 255)
+        # Phosphor at rest with nothing to count, the state's accent the moment there is - the
+        # numbers that only mean something during a session are the right place for the colour
+        # that only appears during one. The middle green and not the faintest: the dashes are a
+        # lamp behind glass sitting beside a lit meter, and at GREEN_DIM they read as a dead one.
+        colour = (*GREEN_MID, 255) if elapsed is None else (*halo, 255)
         self._text(d, clock_right, self.row, clock, self.font_read, colour, align="r")
 
         # The bar is a cached tile per reading - see _meter - and one composite of it is the
         # whole of what a frame pays for it. The layer is recovered from the draw, as _draw_bolt
         # does, so render keeps its one line.
+        #
+        # A segment is a lamp, and a lamp is lit or it is not. Asleep the accent is the dim green
+        # the empty cells are already outlined in, so a lit cell drawn in it came out ten levels
+        # brighter than an empty one's border and the count could not be read from a pace. A
+        # resting panel's lit cells are the phosphor at full instead - still green, which is the
+        # whole of what asleep promises - and every awake state's are its own accent, as before.
         lit = round(max(0.0, min(1.0, level)) * METER_SEGMENTS)
-        tile, row = self._meter(lit, halo)
+        tile, row = self._meter(lit, GREEN if halo == GREEN_DIM else halo)
         layer: Image.Image = d._image
         layer.alpha_composite(tile, (math.floor(self._meter_x(meter_right)) - self._skirt, row))
 
