@@ -109,16 +109,19 @@ LUG_THICK = 0.03
 SEAM_AT = 43  # a seam at an angle that agrees with none of the rings
 SEAM_IN = 0.70  # running from here out to the castellated ring
 
-KNURL_IN, KNURL_OUT = 0.617, 0.658  # a grip band, and only part of the way round. It rides the
-# inner half of the index ring the panel builds into the well behind him (`INDEX_IN` in
-# :mod:`cyclops.overlay`), which is the whole reason it is dark: it is the serrated edge of a
-# drum turning under a fixed scale, and a scale you cannot read the drum against is a decoration.
+KNURL_IN, KNURL_OUT = 0.685, 0.735  # a grip band, and only part of the way round. It runs in
+# the seat the panel turns into the well behind him (`SEAT_IN` in :mod:`cyclops.overlay`), which
+# is clear of everything that follows his gaze: the diaphragm reaches 0.60 and the gaze carries
+# it another 0.105, so a mark inside 0.705 is a mark a blade tip sweeps across. It sat at 0.617
+# for a round, under the tips and over a band of pale brass, and the two together took the one
+# ring on him you can watch turn and froze it - measured, at r60-65, from a temporal spread of
+# 8.4 levels to 0.3. Bright on a dark seat, and out where nothing else is moving.
 KNURL_N = 22
 KNURL_FROM, KNURL_SPAN = 196, 214
 
 DOTS = 0.760  # ...and the dotted ring out where the stator can pass in front of it. It used to
-# sit at 0.72, which is now brass; a row of marks appearing and going again behind eighteen vanes
-# says "turning" harder than the same row in the open ever did.
+# sit at 0.72, in the open; a row of marks appearing and going again behind eighteen vanes says
+# "turning" harder than the same row with nothing in front of it ever did.
 DOT_N = 16
 
 IRIS = 0.60  # the diaphragm's outer edge, and everything inside it moves with his gaze
@@ -151,30 +154,40 @@ BROW_W = 1.2
 # reference's rather than a HUD's: the machine is cold and the core is hot. That is a real trade
 # and not a preference - the rim is the outermost thing on him and used to be the brightest, and
 # turning it down is what makes the core read as the only lit part of a dark instrument.
-RIM_LIT = 0.30  # the seam between his glass and the bezel's steel, and no more than that. It
-# was 0.60 and read as a drawn green stroke bounding the whole instrument - the brightest ring on
-# him and the first thing the eye landed on. What holds the glass now is the collar's machined
-# bevel, outside his rim and in metal; this is the dark line under its edge.
-CASTLE_LIT = 0.45
-VANE_LIT = 0.26
-DATUM_LIT = 0.26
+RIM_LIT = 0.44  # the seam between his glass and the bezel's steel. Not the brightest ring on him
+# - it was 0.60 once and read as a drawn green stroke bounding the whole instrument, which is the
+# first thing the eye landed on and the last thing a bezel does. What holds the glass is the
+# collar's machined lip, outside his rim and in metal; this is the line of phosphor under it, and
+# it has to be bright enough to be the boundary between a dark cavity and a lit piece of steel.
+CASTLE_LIT = 0.50
+VANE_LIT = 0.34
+DATUM_LIT = 0.34
 GREEBLE_LIT = 0.75
 GREEBLE_DARK = 0.26  # the one indicator in the row that is out. A row all lit is a decoration
 GREEBLE_BAR_LIT = 0.40
 LUG_LIT = 0.55
-SEAM_LIT = 0.30
-DOT_LIT = 0.30
-KNURL_LIT = 0.05  # dark: it is a serration cut into brass, not a lit mark on glass
-LEAF_LIT = 0.13  # the flat of a blade at its hinge, out at the iris...
-LEAF_FACE = 0.36  # ...and at the aperture edge, where it has turned into the lamp. Stepped
+SEAM_LIT = 0.35
+DOT_LIT = 0.44
+KNURL_LIT = 0.34  # a lit serration, read against the dark seat it runs in. It was 0.05 for a
+# round, on the theory that it was a cut in brass; a dark mark on a pale band is the one way of
+# drawing this that has no contrast to move with, and it cost the ring its motion.
+LEAF_LIT = 0.012  # the flat of a blade at its hinge, out at the iris...
+LEAF_FACE = 0.085  # ...and at the aperture edge, where it has turned into the lamp. Stepped
 # rather than graded - `LEAF_BANDS` chords across the same segment, each one flat, because a real
 # gradient inside this tile is a numpy pass over half a million pixels every frame. Three steps
 # and the hatch across them is four values on a plate that had one.
+#
+# Both are a quarter of what they were, and dropping them is the whole of this round's repair.
+# The ramp was right and the level was not: at 0.13 -> 0.36 the plate came out a mid grey-green,
+# the same drawing read 20% weaker everywhere, and two motion critics preferred the flat dark
+# blade it replaced. A diaphragm is a stack of blackened leaves in a lens - it is nearly black,
+# and everything you can see of it is the light along its edges. Keep the ramp, drop the floor.
 LEAF_BANDS = 3
-HATCH_LIT = 0.08  # ...and the hatch across it, which is the only thing telling two blades apart.
-# Cut into the plate rather than laid on it, now the plate itself is graded: a bright hatch over
-# a flat fill was the only thing separating two blades, and over three shaded bands it was a set
-# of drawn lines competing with the shading for what the blade's surface is.
+HATCH_LIT = 0.235  # ...and the hatch across it, which is the only thing telling two blades apart.
+# Brighter than any of the three bands, now they are all dark: what shows on a blackened leaf is
+# where the light catches its rolling marks, and a *darker* line on a plate this dark is nothing
+# at all. It was 0.08 against a plate of 0.36, which is a cut - the right mark on the wrong
+# plate, and worth naming because the pair have to be retuned together or neither reads.
 EDGE_LIT = 0.92  # the bright chord where one blade lies over the next
 EDGE_SHADE = 0.02  # ...and the dark line beside it on the blade's own face: the blade's
 # thickness, seen edge-on. A lit line on its own is a drawn edge; a lit line with a dark one
@@ -1082,9 +1095,9 @@ class EyeEngine:
         # Sorting these lines outside-in looks tidier and quietly redraws the eye - it was tried,
         # and it moved 0.4% of his pixels.
         #
-        # Nothing is drawn on the index ring's band but the knurl, and the ring itself is not
-        # here at all: it is built into the well behind him, and what the tile leaves alone in
-        # that band is what shows of it.
+        # Nothing is drawn on the seat's band but the knurl, and the seat itself is not here at
+        # all: it is turned into the well behind him, and what the tile leaves alone in that band
+        # is what shows of it.
         pen.castle(r * CASTLE, CASTLE_N, r * CASTLE_JOG, CASTLE_ARC, CASTLE_AT + mid, CASTLE_LIT,
                    self._thin * CASTLE_W)
         pen.ring(r * DATUM, DATUM_LIT, pen.hair)
