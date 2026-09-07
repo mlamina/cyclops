@@ -239,13 +239,14 @@ def test_the_states_do_not_all_look_the_same() -> None:
     assert len({m.tint for m in overlay.MOODS.values()}) >= 3, "the eye should change colour"
 
 
-def test_only_the_listening_face_opens_to_your_voice() -> None:
-    # SPEAKING hears its own output on the meter, so it may lean on level a little; nothing that
-    # is not listening to a room should react to one at all.
+def test_only_the_face_hearing_itself_opens_to_a_level() -> None:
+    # SPEAKING hears its own output on the meter, and a face moving with what it is saying is a
+    # face doing the right thing. Every other row, listening loudest among them, leaves it alone:
+    # an iris that widens on your vowels reads as a mouth, and the level already has a meter.
     for state, mood in overlay.MOODS.items():
-        if state not in (overlay.LISTENING, overlay.SPEAKING):
-            assert mood.voice == 0.0, f"{state} opens its iris at a noise it is not listening to"
-    assert overlay.MOODS[overlay.LISTENING].voice > overlay.MOODS[overlay.SPEAKING].voice
+        if state != overlay.SPEAKING:
+            assert mood.voice == 0.0, f"{state} opens its iris at a sound that is not its own"
+    assert overlay.MOODS[overlay.SPEAKING].voice > 0.0, "his own voice should still show on him"
 
 
 def _longest_still(seen: list[tuple[float, float]], reach: float = 0.2) -> int:
@@ -473,11 +474,23 @@ def test_the_iris_never_leaves_its_range_whatever_the_mood_asks_for() -> None:
                 assert 0.0 <= engine.aperture(mood, i / 7, level) <= 1.0
 
 
-def test_your_voice_opens_the_listening_iris() -> None:
+def test_the_listening_iris_does_not_move_with_the_room() -> None:
+    # The level goes on arriving while he listens - the signal bar is drawn off the same number -
+    # and the eye is the one thing that must ignore it. Somebody shouting at him should change
+    # nothing about his face.
     engine = eye.EyeEngine(50, 2, overlay.SCREEN, overlay.MOODS[overlay.IDLE])
     mood = overlay.MOODS[overlay.LISTENING]
     quiet = engine.aperture(mood, 2.0, 0.0)
-    assert engine.aperture(mood, 2.0, 1.0) > quiet + 0.1
+    assert engine.aperture(mood, 2.0, 1.0) == pytest.approx(quiet)
+
+
+def test_his_own_voice_still_opens_the_talking_iris() -> None:
+    # The knob is not dead, and this is the case it was right for all along: the level under
+    # SPEAKING is his own output coming back, so the face moves with what the face is saying.
+    engine = eye.EyeEngine(50, 2, overlay.SCREEN, overlay.MOODS[overlay.IDLE])
+    mood = replace(overlay.MOODS[overlay.SPEAKING], blink_s=0.0)  # no blink to swamp the term
+    quiet = engine.aperture(mood, 2.0, 0.0)
+    assert engine.aperture(mood, 2.0, 1.0) > quiet
 
 
 def test_the_breath_comes_back_round_and_stays_inside_its_swell() -> None:
@@ -921,10 +934,25 @@ def test_the_iris_is_narrower_asleep_than_awake() -> None:
     assert overlay.MOODS[overlay.IDLE].aperture < overlay.MOODS[overlay.LISTENING].aperture
 
 
-def test_the_pupil_widens_with_your_voice() -> None:
+def test_the_listening_pupil_holds_while_you_shout_at_it() -> None:
+    # The whole face, not just the aperture number: nothing he is drawn out of - iris, bezel,
+    # core - may move with the room while he is listening to it. The level is still arriving on
+    # this frame; the signal bar is what is supposed to be reading it.
     ov = _panel()
     _settle(ov, **AWAKE)
     shown = dict(state=overlay.LISTENING, elapsed=12.0, phase=10.0)
+    quiet = _face(ov, ov.render(level=0.0, **shown))
+    loud = _face(ov, ov.render(level=1.0, **shown))
+    assert np.array_equal(quiet, loud), "his face moved at a noise that is not his"
+
+
+def test_the_talking_pupil_widens_with_his_own_voice() -> None:
+    # And the same measurement where the gesture belongs: under SPEAKING the level is his own
+    # output coming back off the speaker, so the face may move with what the face is saying.
+    ov = _panel()
+    talking = dict(state=overlay.SPEAKING, level=0.0, elapsed=12.0)
+    _settle(ov, **talking)
+    shown = dict(state=overlay.SPEAKING, elapsed=12.0, phase=10.0)
     quiet = _lit(_face(ov, ov.render(level=0.0, **shown)))
     loud = _lit(_face(ov, ov.render(level=1.0, **shown)))
     assert loud > quiet
@@ -1122,49 +1150,64 @@ def test_his_swell_stays_on_the_panel(width: int, height: int) -> None:
 def _ink(band: np.ndarray) -> np.ndarray:
     """Lit text in a crop of the terminal's screen.
 
-    The glass itself is no use to measure. It is baked with the rest of the chrome and is the
-    same rectangle whatever is printed on it, which is the whole point of it - so what gets
-    measured is the words.
+    The front itself is no use to measure. It is baked with the rest of the chrome and is the
+    same object whatever is printed on it, which is the whole point of it - so what gets measured
+    is the words.
 
-    The upper alpha bound is what separates a letter from a rail, and it is why this can be
-    pointed at a crop wider than the screen. Every glyph on this panel is drawn at CAPTION_ALPHA
-    and every piece of chrome at 255: the two mounts run over the screen's own side edges, and
-    they are brighter phosphor than the text is.
+    Two tests, and it needs both. Bright enough to be a letter, *and* the colour of one. Bright
+    alone stopped working the day the case got a lamp in the top-left corner: the glare is put
+    down in WHITE and a threshold cannot tell a lit letter from a lit corner. The colour can -
+    phosphor is (86, 255, 140), which is green by a hundred and fifteen over its own red and
+    blue, and the tube's white is green by fifteen. Nothing else on this panel sits between them.
+
+    This replaces an upper bound on alpha, which used to be what separated a letter from chrome.
+    That bound was a fact about the old flat well and died with it: the front's alpha across the
+    caption band now runs 227 to 250 against a CAPTION_ALPHA of 245, so the rule it encoded threw
+    away a third of the real text.
     """
-    rgb, alpha = band[:, :, :3].astype(int), band[:, :, 3]
-    return (rgb.sum(axis=2) > 300) & (alpha > 150) & (alpha <= overlay.CAPTION_ALPHA)
+    rgb = band[:, :, :3].astype(int)
+    green = rgb[:, :, 1] - np.maximum(rgb[:, :, 0], rgb[:, :, 2])
+    return (rgb.sum(axis=2) > 300) & (green > 60) & (band[:, :, 3] > 150)
 
 
-def test_the_screen_runs_under_both_mounts() -> None:
-    """The whole of why this stopped being a bubble: it is bolted in, not laid on.
+def test_the_screen_stands_clear_of_both_mounts() -> None:
+    """The whole of why this stopped being a slab: it is a monitor, and you can see all of it.
 
-    A bracket's plate is see-through here, so z-order alone cannot say "behind" - the only chrome
-    that can hide anything is a rail, a bolt, his own disc and the wells the dials sit in. So the
-    screen is cut from the middle of one mount's bottom rail to the middle of the other's, and
-    what proves it is that its side edges are *not visible* down there: a rail is opaque and the
-    glass is not, so alpha alone separates them.
+    It used to run from the middle of one mount's bottom rail to the middle of the other's, buried
+    at both ends for the lower half of its depth, and that burial was what said "bolted in rather
+    than laid on". It bought that sentence with the two ends of the shape. A monitor is a thing
+    you can see the whole of - four corners, four edges - and ends that disappear under a bracket
+    make it a slot again however round its corners are.
 
-    Both halves matter and pull against each other. Buried for the whole depth and the screen is
-    a slot with no sides at all; buried for none of it and it is a box standing between two
-    brackets with a gap either side.
+    So the case stands clear of both rails and a little ear bridges each gap instead. That is the
+    same sentence said in something visible: a tab off the side of the chassis, landing on the
+    mount's rail, with a bolt through where it lands.
+
+    Both halves matter and pull against each other. No gap and the ends are buried again; a gap
+    with nothing in it and the monitor is floating in the bay rather than mounted in it.
     """
     ov = _panel()
-    frame = ov.render(state=overlay.LISTENING, level=0.0, elapsed=12.0, phase=10.0)
-    box = ov.term
-    buried = [
-        y for y in range(box.y, box.bottom)
-        if frame[y, box.x, 3] == 255 and frame[y, box.right - 1, 3] == 255
-    ]
-    assert buried, "neither edge of the screen is under a rail - it is sitting on the panel"
-    assert buried[-1] == box.bottom - 1, "the screen comes back out from under the mounts"
-    depth = len(buried) / box.h
-    assert 0.4 < depth < 0.8, (
-        f"{depth:.0%} of the screen's depth is buried; it wants to be about half, so that it "
-        "reads as sliding behind the mounts rather than as a slot or as a box between them"
-    )
+    half = ov.rail_w / 2.0
+    for name, edge, sign in (("bl", ov.term.x, 1), ("br", ov.term.right, -1)):
+        rail = ov._rail_at(name, ov.ear_y)
+        gap = sign * (edge - rail) - half
+        assert gap > 2, (
+            f"the {name} mount's rail reaches within {gap:.1f}px of the case - the monitor is "
+            "buried in it again rather than standing clear"
+        )
+        assert gap < ov.term.h / 2, (
+            f"{gap:.1f}px between the case and the {name} mount is a monitor adrift in the bay, "
+            "not one bracketed into it"
+        )
+    # ...and an ear across each of those gaps, touching the case at one end and the rail at the
+    # other. An ear that reaches neither is a tab drawn beside the joint rather than making it.
+    for ear, name, edge in zip(ov.ears, ("bl", "br"), (ov.term.x, ov.term.right), strict=True):
+        near, far = min(ear.x, ear.right), max(ear.x, ear.right)
+        assert near <= edge <= far, f"the {name} ear does not reach the case"
+        assert near <= ov._rail_at(name, ov.ear_y) <= far, f"the {name} ear lands on nothing"
 
 
-def test_the_caption_never_lands_on_a_mount() -> None:
+def test_the_caption_never_lands_on_the_moulding() -> None:
     """However long the sentence, and whatever it wraps to.
 
     The text is inset from the two rails rather than from the glass's own corners, which are half
@@ -1173,8 +1216,11 @@ def test_the_caption_never_lands_on_a_mount() -> None:
     """
     ov = _panel()
     rows, _ = _line_box(ov)
-    # Looked at from outside the screen, so that ink landing on a bracket is ink this can see.
-    wide = slice(ov.term.x - 30, ov.term.right + 30)
+    # The whole of the glass, so that ink landing on the moulding is ink this can see. It used to
+    # look thirty pixels outside the case, back when the case ran into both mounts and the thing
+    # a long line could stand on was a bracket; the monitor stands clear of them now, so the only
+    # thing left for a sentence to run onto is its own bezel.
+    wide = slice(ov.tube.x, ov.tube.right)
     for detail in (
         "listening — talk to me",
         "looking for the torque specification for an M8 stainless bolt into aluminium…",
@@ -1188,7 +1234,7 @@ def test_the_caption_never_lands_on_a_mount() -> None:
         xs = np.nonzero(ink.any(axis=0))[0] + wide.start
         assert ov.caption_left <= xs.min() and xs.max() <= ov.caption_right, (
             f"{detail[:30]!r} put ink at {xs.min()}..{xs.max()}, outside "
-            f"{ov.caption_left}..{ov.caption_right} - it is standing on a bracket"
+            f"{ov.caption_left}..{ov.caption_right} - it is standing on the moulding"
         )
 
 
@@ -1200,7 +1246,6 @@ def test_a_long_caption_takes_a_second_line_rather_than_a_stub() -> None:
     ov = _panel()
     shown = dict(state=overlay.SEARCHING, level=0.0, elapsed=12.0)
     rows, cols = _line_box(ov)
-
     def box(detail: str) -> tuple[int, int]:
         _settle(ov, detail=detail, **shown)  # a line still arriving has no second line yet
         ink = _ink(ov.render(detail=detail, phase=10.0, **shown)[rows, cols])

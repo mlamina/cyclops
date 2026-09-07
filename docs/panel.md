@@ -108,12 +108,24 @@ uv run python tools/eye_sheet.py --state searching --frames 16 --scale 2
 
 ## The line along the bottom
 
-It is a terminal rather than a speech bubble: a chassis bolted between the two mounts, its rail
-running out of sight behind the eye's housing at one end and the volume knob at the other, with
-the caption printed on its screen. It is there whether or not there is anything to say, which is
-the whole difference — a bubble with no words in it is a bug, a terminal with a blank screen is a
-terminal. A phrase ending in `…` is work in flight and gets a blinking `_` where the ellipsis
-was; anything else is a state and holds still.
+It is a terminal rather than a speech bubble: a small monochrome monitor standing in the middle
+of the bottom bay, with the caption printed on its glass. It is there whether or not there is
+anything to say, which is the whole difference — a bubble with no words in it is a bug, a
+terminal with a blank screen is a terminal. A phrase ending in `…` is work in flight and gets a
+blinking `_` where the ellipsis was; anything else is a state and holds still.
+
+The front is one surface, not a case with a window cut in it: opaque and near-black hard against
+the outside, easing over the moulding's width into glass you can see the room through, blank at
+the edge and coming up green towards the middle so it reads slightly bulged. A white lamp up and
+to the left throws a wipe across the whole of it, moulding included — that continuity is most of
+what says "glass" — and leaves a rim highlight that follows the case round rather than stopping
+on a straight row. Every letter blooms into its own skirt, which is the one part of the terminal
+that is not baked into the cached chrome.
+
+It stands clear of both mounts and off the panel's bottom edge, held at either end by a clamp: a
+strap standing on the case's edge, an arm back to the mount, bolted top and bottom. The clamps
+are machined from the same rail the mounts are — the same extrusion drawn by the same code, in a
+thinner section — which is why they read as part of the frame rather than as shapes beside it.
 
 While he is asleep **nothing on the panel moves at all** — not the eye, not the border, not the
 caption. Two frames of a resting panel are identical, and that stillness is what makes any of the

@@ -9,18 +9,18 @@ element returns its rectangle, so a tap can be resolved without a second layout.
 The layout is two corner mounts, a status pod, a terminal and a picture. A mount's rail comes in
 square to one panel edge, ramps across the corner at 45 degrees and lands square on the other,
 and the two of them carry the three controls; the pod is that same shape turned inwards, hanging
-off the middle of the top edge with the readouts in it; and the terminal is a chassis bolted
-between the two mounts along the bottom, with the caption printed on its screen. The middle of
-the panel, which is what somebody holding a camera down a pipe is actually looking at, is nothing
-but picture and a four-arc reticle on the lens axis.
+off the middle of the top edge with the readouts in it; and the terminal is a monitor in the
+middle of the bottom bay, bracketed to a mount at either end, with the caption on its glass. The
+middle of the panel, which is what somebody holding a camera down a pipe is actually looking at,
+is nothing but picture and a four-arc reticle on the lens axis.
 
-The chrome covers 22% of the panel, against 29% for the strip and three-cell tab row this layout
+The chrome covers 18% of the panel, against 29% for the strip and three-cell tab row this layout
 replaced. That is a much thinner win than it was - it was 15% before the terminal arrived, which
 took the caption off the middle of the picture and put eight per cent of chassis along the bottom
 to do it - and it is only a win at all because of what *kind* of coverage each is. The tab row
 was an opaque near-black bar. Everything here is the tube filter over the live picture, so the
 room runs behind the metal as well as between it; the only parts you cannot see through are the
-terminal's glass and the wells the two dials are sunk into. Re-measure with
+terminal's bezel, its glass and the wells the two dials are sunk into. Re-measure with
 `Overlay(800, 480)._bracket_mask(0).mean()` rather than reasoning about it, which is how both of
 the numbers on this line came to be wrong for a while.
 
@@ -63,8 +63,11 @@ Everything that holds still while the state does - the halo, the brackets and th
 reticle, the pod's tags, the switches at rest - is built once and cached, keyed on the state. A
 Pi rendering this at 25 fps has 40 ms for the whole loop and the camera wants most of them; what
 is left for a frame here is a signal meter, a clock, a caption, one ring, the border line and the
-eye. Every part of the eye moves, so none of it is cached at all; measured on the Pi, he is 10.5
-ms of a 13 ms frame, which is the single largest thing this loop does and is meant to be - he is
+eye. The terminal is baked with the rest of the chrome except for the line printed on it, whose
+halation is 1.3 ms of that - measured on the Pi against the same frame drawn crisp-only, and
+worth having at the price because it is what makes the glass read as lit rather than printed.
+Every part of the eye moves, so none of it is cached at all; measured on the Pi, he is 10.5
+ms of a 15.5 ms frame, which is the single largest thing this loop does and is meant to be - he is
 the only part of the panel anybody looks at. He grew from r60 to r88 when he moved into the
 corner and took about 3.5 ms with him, which is the whole of the difference between this and the
 tab row; the board sat at 59 C and 0x0 throttled afterwards, so it is a price that is being paid
@@ -341,8 +344,17 @@ MOODS = {
     # something. What is left is a float settling out.
     STOPPING: Mood(tint=AMBER, aperture=0.10, swell=0.04, breath_s=3.0, spin=-22.0, drift=0.12),
     # Awake and attending, and the row the whole model was written for. A resting breath, a
-    # barely-moving ring set, and the one mood whose iris opens to your voice - which is the panel
-    # saying it can hear you.
+    # barely-moving ring set, and an iris that holds where it is while you talk.
+    #
+    # It used to open to your voice, on the argument that an iris moving with the room is the
+    # panel saying it can hear you. It says something else. A face that widens on your vowels and
+    # settles in your pauses is a mouth, or a meter with a face painted on it - and it is the one
+    # thing on here nobody has to be taught to read, so it was loud about the wrong idea. Nobody
+    # listening to you does that; what they do is hold still and hold your eye, which is the rest
+    # of this row. The level has a place on this panel already - the signal bar beside the clock,
+    # where a number belongs and where moving with the room is the whole job. Leaving it there and
+    # taking it off his face costs nothing: the bar is what proves he can hear you, and the eye
+    # goes back to being what proves somebody is home.
     #
     # He looks at *you*: the anchor is AHEAD, which is the pupil dead centre and the eye looking
     # out of its own glass. Every few seconds he takes a peek at the picture he is sitting on and
@@ -354,11 +366,14 @@ MOODS = {
     # what a person listening does and is nothing like the old row, which wandered continuously
     # and never came back anywhere.
     LISTENING: Mood(
-        tint=WHITE, aperture=0.52, swell=0.07, breath_s=4.0, voice=0.30, spin=7.0, blink_s=4.4,
+        tint=WHITE, aperture=0.52, swell=0.07, breath_s=4.0, spin=7.0, blink_s=4.4,
         look=(AHEAD, FRAME), gaze=0.62, dart=0.26, dart_s=2.6, drift=0.05,
     ),
     # Talking: a faster breath and a wider iris, because he is doing the thing rather than waiting
-    # to. Barely opens to level here - the level *is* his own voice coming back.
+    # to. The one row left that opens to level at all, and the reason the knob still exists: the
+    # level here *is* his own voice coming back, so a face moving with it is a face moving with
+    # what it is saying. That is the case the gesture was always right for. A tenth, because his
+    # own words should show on him without him mouthing them.
     #
     # He holds your eye while he talks, and what he glances at when he does look away is his own
     # caption - the one place on the panel that is what he is saying. Fewer glances than listening
@@ -467,6 +482,10 @@ CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead,
 # it. Two is where it stops: a third is a screen deep enough to start eating the picture, and a
 # caption that big is a dialogue box rather than something said in passing.
 CAPTION_ALPHA = 245
+BLOOM_R = 2.6  # reference px of skirt round a lit glyph. 1.3 ms a frame on the Pi...
+BLOOM_ALPHA = 0.62  # ...and how much of the letter's own alpha goes into it. Both are held well
+# under what a photograph shows: a real tube blooms far harder than this, and at 14 px a line that
+# blooms like a photograph is a line nobody can read. It is a depth cue here, not an effect.
 CURSOR = "_"  # what a line about work in flight ends in: a cursor, blinking, hard against the
 # last letter. It was three dots walking up and starting over for a long time, which is the same
 # sentence in a language this panel does not speak any more - the line is printed on a terminal
@@ -585,31 +604,114 @@ BOT_R_LAND = 26.0  # ...and the shorter one on the right, which is what makes it
 #
 # The line that says what he is doing was a speech bubble for a long time - a slab with a tail
 # leaning down towards his face, sized to its sentence, floating over the middle of the picture.
-# It is a machine now: a chassis bolted into the one strip of this panel that had nothing in it,
-# the bottom middle, with its rail running out of sight behind the eye's housing at one end and
-# behind the volume knob at the other. Nothing about what the line *says* changed. What changed
-# is that it is printed on something - and that the something is still there when there is nothing
-# to say, which is the whole difference between the two. A bubble with no words in it is a bug; a
+# It is a machine now: a monitor standing in the one strip of this panel that had nothing in it,
+# the bottom middle. Nothing about what the line *says* changed. What changed is that it is
+# printed on something - and that the something is still there when there is nothing to say,
+# which is the whole difference between the two. A bubble with no words in it is a bug; a
 # terminal with a blank screen is a terminal.
 #
 # It is not a fourth bracket. A bracket is a spine with a corner to brace or an edge to land
-# square on, and this has neither: it lands on the other two mounts. One straight rail and one
-# rectangle, which is what a thing bolted between two other things looks like.
-# There is no foot under the glass. It ran to PAD above the panel's own edge for a while, on the
-# rule that keeps every legible thing clear of the border's inward glow - and what that bought
-# was a strip of see-through chassis along the bottom of the screen with nothing on it, which
-# reads as a gap the module has not been pushed all the way into rather than as a bezel. The
-# glass goes to the edge instead and the border is drawn over it, which is what a screen fitted
-# into a case looks like. The rule it breaks is about *text*, and the text is still well inside:
-# the last line finishes about where the glow has already died.
-TERM_PAD = 6.0  # inside the screen, above the first line and below the last
-# ...and no bezel above the glass either, for the same reason there is no foot below it. There
-# were six pixels of chassis face between the rail's inner lip and the top of the screen, and at
-# this size that is not a bezel - it is a see-through gap with the room showing through it, which
-# reads as a module that has not been pushed all the way home. The rail lands *on* the glass
-# instead, so the recess starts where the metal stops and the rail's own cast shadow falls across
-# the top of the screen, which is the depth cue that six pixels of plate was standing in for.
-
+# square on, and this has neither. It had a rail across its top for a while and both its ends
+# buried in a mount, which is what a thing bolted *between* two other things looks like - and it
+# cost the shape its two ends and its top edge, which is most of what there is to see of a
+# monitor. So: a case standing clear in the middle of the bay, held at either end by a clamp -
+# a strap standing on the case's edge and an arm back to the mount. The joint is a thing you can
+# look at now instead of a thing hidden behind the bracket that makes it.
+#
+# The clamps are built out of :meth:`Overlay._draw_rail`, which is the whole reason they read as
+# part of this machine: the same extrusion the mounts are made of, drawn by the same method, in a
+# thinner section. They were drawn as filled rounded rectangles for an afternoon and no amount of
+# shading rescued that - a bracket made of anything but the frame's own metal is a shape sitting
+# next to a frame. Nor do they stand on a plate: a plate is what a *mount* is built out of, and
+# giving one to a stay across open picture put a stripe of washed, scanlined chrome behind each
+# clamp. A stay is a bar in the air with a shadow under it.
+# What is in the housing is a monitor, and a monitor has a bezel with the tube's four corners
+# inside it. That is nearly the whole of what makes this read as a screen rather than as a hole:
+# a rectangle with square corners is a cut-out however it is shaded, and the same rectangle with
+# its corners pulled in is a piece of glass sitting in a moulding. So the glass no longer runs to
+# the edges of the chassis - it is a rounded face with metal all the way round it.
+#
+# That reverses two things this file argued for at length, and both were arguments about a
+# *see-through* strip rather than about a bezel. There was no foot under the glass because a band
+# of translucent chassis along the bottom "reads as a gap the module has not been pushed all the
+# way into rather than as a bezel", and no bezel above it for the same reason. Both are right, and
+# neither applies to opaque moulding with a lit lower lip: that is not a gap with the room showing
+# through it, it is the thing the old strip was failing to be. The rail lands on the bezel now
+# instead of on the glass, which is what a rail bolted across a monitor's housing does, and its
+# cast shadow still falls - onto moulding rather than onto the picture.
+TERM_FOOT = 6.0  # how far the case stands off the panel's own bottom edge. It sat on it while
+# it was a slab bolted between the two mounts, where the edge was one of the things holding it;
+# a monitor on its own brackets is a thing with air all the way round, and the border's glow
+# running under it is what says so.
+TERM_CLEAR = 9.0  # how far the monitor's case stands clear of each mount's rail, so that
+# all four of its corners are its own. It used to run from the middle of one mount's bottom rail
+# to the middle of the other's, buried at both ends for the lower half of its depth - which read
+# as bolted in, and which cost the two ends of the shape. A monitor is a thing you can see the
+# whole of; buried ends make it a slot again however round its corners are.
+EAR_BOLT = 1.6  # how far a bracket's bolt head reaches past the member it goes through, in
+# reference px. The head is sized off the strap rather than off the mounts' bolts, because what
+# it has to do here is cover a square butt cap - see Overlay.ear_bolt.
+EAR_RAIL = 9.0  # the section of a mounting bracket's members, against RAIL's seventeen for the
+# mounts. Thinner because it is secondary metal - a stay carrying a screen, not a spine carrying
+# the panel - and the same extrusion otherwise, drawn by the same method, so it is visibly the
+# same alloy machined to a smaller size rather than a different thing that happens to be green.
+TERM_EAR_H = 0.5  # how tall each mounting bracket is, as a fraction of the case's own depth - so
+# it stays half of it at any window size rather than being a pixel count that drifts. Half is
+# what makes it read as *mounting*: a thin tab reads as a wire or a seam, and the monitor above
+# it looks like it is floating in the middle of the bay with two scratches beside it. Something
+# with real depth is a bracket, and a bracket is the thing that says the screen is held. Not the
+# full depth either - a bracket as deep as what it carries is a shelf, and the sentence is that
+# this is held at two points rather than sitting on something. Its reach is
+# not a number here: it is whatever the gap turns out to be. A rack ear: a tab off the side of
+# the chassis reaching out
+# to land on the mount's rail, with a bolt through where it lands. It is what carries the sentence
+# the buried ends used to carry - that this is mounted rather than drawn on - and it says it in
+# something you can see the whole of rather than by hiding the ends of the thing it holds.
+TERM_BEZEL = 7.0  # the moulding round the tube - and it is a *transition* rather than a band.
+# Nothing here draws an edge between the case and the glass. The front is one field: opaque and
+# near-black hard against the outside, easing over this many pixels into glass you can see the
+# room through. That is what a monitor actually looks like from a pace away - one smooth glassy
+# face with the picture fading out into its surround - and it is what a bezel drawn as a ring of
+# lit metal cannot look like however the profile is stepped. There was a bright lip round the
+# aperture here for an afternoon and it read as a glowing pill, which is the opposite of glass.
+TERM_PAD = 3.0  # inside the glass, above the first line and below the last. It was 6.0 while the
+# glass ran to the chassis edges and the text had nothing but its own padding holding it off
+# them; the moulding is that separation now.
+TERM_RADIUS = 22.0  # the corner of the front. One radius and not two: the case and the glass are
+# the same shape at different depths into the same field, so there is one fillet to turn and no
+# pair of concentric ones to keep from drifting apart.
+TUBE_GLOW = 15.0  # how far in from the moulding the phosphor takes to come up...
+TUBE_GLOW_A = 0.085  # ...and how much of it there is at full. Blank at the edge and a little
+# green towards the middle is the way round a tube does it; bright at the rim and dark in the
+# centre is a hole with a lamp behind it.
+TUBE_SHADOW = 0.24  # how far down the glass the case's own shadow falls, as a fraction of its
+# depth, and...
+TUBE_SHADOW_A = 22  # ...how much opacity it puts there at the top.
+# The room, and where it is coming from. Everything below is one lamp: a white source up and to
+# the left of the panel, which is where a bench light is and where anybody reads a highlight from
+# without having to be told. Two terms make it - how much of its light reaches a point at all,
+# which falls away with distance from the source, and the streak it draws down the face, which is
+# what a long glossy surface does with a small bright thing.
+GLARE_X = 0.02  # the source, in face widths across...
+GLARE_Y = -0.16  # ...and in face heights down, so it sits just off the top-left corner
+GLARE_REACH = 2.1  # how far its light carries, in face heights
+GLARE_ALPHA = 0.30  # and how bright it is where it lands hardest
+GLARE_AT = 0.18  # where down the left-hand edge the streak passes...
+GLARE_DEPTH = 0.36  # ...and how broad it is either side of that
+GLARE_TILT = 0.62  # how far down the face the streak's middle travels on its way across. A screen
+# this wide cannot have a forty-five degree sheen - it would cross the whole depth inside fifty
+# pixels and read as a scratch on the glass. What a letterbox catches is a shallow wipe.
+GLARE_ON_CASE = 2.4  # how much more of it the moulding returns than the glass does. Gloss black
+# gives back nearly all of what falls on it; a phosphor face is already lit, so the same
+# reflection is a far smaller part of what it is doing. This is what keeps the brightest part of
+# the highlight on the surround rather than across the first word of the sentence.
+SHEEN_D = 3.5  # how far in from the case's edge its own rim light reaches...
+SHEEN_A = 0.50  # ...and how strong it is where the moulding faces the lamp squarely...
+SHEEN_AMBIENT = 0.22  # ...against how much it still catches where it faces away. Not zero: a room
+# bounces light back into the far corner of anything in it, and an edge with none at all reads as
+# a hole cut in the panel rather than as the dark side of an object.
+GLARE_AMBIENT = 0.20  # the same floor under the wipe across the face, for the same reason. The
+# corner furthest from the lamp was going dead black without it, which no glass does.
 # The eye. He rides the left bracket's ramp, sunk halfway into it - `EYE_SEAT` is that depth as a
 # fraction of the swell's radius, and acos(0.5) is a 60-degree shoulder, which is where the rail
 # leaves the straight and goes round him. Half of him is in the bracket and half is over the
@@ -1064,6 +1166,138 @@ def vignette_alpha(width: int, height: int) -> np.ndarray:
     return ramp * ramp * VIGNETTE_ALPHA
 
 
+def tube_field(width: int, height: int, radius: int) -> np.ndarray:
+    """Signed distance to the tube's edge: negative inside the glass, zero on it, positive out.
+
+    One field, and everything the face is made of comes off it - the coverage that anti-aliases
+    the corners, the dark band hugging the rim, and the phosphor wash that fades up out of it.
+    That is why it is a distance and not a mask: a mask can only say in or out, and every one of
+    those three wants to know *how far* in.
+
+    Distance to a rounded rectangle, which is the standard fold: measure to the corner box, keep
+    the outside part as a radius and the inside part as the larger of the two axes, then step in
+    by the fillet. Cheaper than rasterising the shape at four times the size and it is exact at
+    every pixel rather than averaged, which is what lets the rim band be a hard edge.
+    """
+    ys = (np.arange(height, dtype=np.float32) - (height - 1) / 2.0)[:, None]
+    xs = (np.arange(width, dtype=np.float32) - (width - 1) / 2.0)[None, :]
+    qx = np.abs(xs) - (width / 2.0 - radius)
+    qy = np.abs(ys) - (height / 2.0 - radius)
+    outside = np.sqrt(np.maximum(qx, 0.0) ** 2 + np.maximum(qy, 0.0) ** 2)
+    return outside + np.minimum(np.maximum(qx, qy), 0.0) - radius
+
+
+def tube_alpha(width: int, height: int, radius: int, bezel: int, top: int) -> np.ndarray:
+    """How opaque the monitor's whole front is, from its outside edge in.
+
+    One field for the case *and* the glass, which is the only way to get what a monitor actually
+    looks like: no edge between them at all. Opaque and near-black hard against the outside,
+    easing over the moulding's width into glass you can see the room through, flat from there in.
+    Draw them as two shapes and there is a seam wherever they meet, and no amount of profile on
+    the moulding hides it - a ring of lit metal round a dark hole reads as a glowing pill.
+
+    Opacity is the only currency this surface has. SCREEN is near enough black that darkening it
+    says nothing (see TERM_ALPHA), so every shade here is depth of glass instead: the ease from
+    the rim, the shadow the case's top lip drops down it, and the raster.
+
+    *top* is where the front sits on the panel, and it is an argument rather than a detail because
+    the raster has to land on the filter's own rows. Phased any other way the two beat against
+    each other and the one surface here that is literally a CRT ends up the flattest thing on it.
+    """
+    edge = tube_field(width, height, radius)
+    inward = np.maximum(-edge, 0.0)  # how far in from the case's own edge, in pixels
+    open_ = np.clip(inward / max(1.0, bezel), 0.0, 1.0)
+    open_ = open_ * open_ * (3.0 - 2.0 * open_)  # smooth at both ends, so neither end is a line
+    body = 255.0 - (255.0 - TERM_ALPHA) * open_
+    # The case's own shadow, falling down the glass from under its top lip.
+    drop = max(1.0, TUBE_SHADOW * height)
+    down = np.clip(1.0 - np.arange(height, dtype=np.float32) / drop, 0.0, 1.0)
+    body += TUBE_SHADOW_A * (down * down)[:, None] * open_
+    # ...and the raster, on the filter's pitch and in the filter's phase, and only where there is
+    # glass for it to be on - a scanline running out across the moulding is a crack in the case.
+    rows = (np.arange(height) + top) % SCANLINE_EVERY == 0
+    body[rows] += TERM_SCAN * open_[rows]
+    return np.minimum(body, 255.0) / 255.0 * np.clip(0.5 - edge, 0.0, 1.0)
+
+
+def tube_glow(width: int, height: int, radius: int, bezel: int) -> np.ndarray:
+    """The phosphor the face is made of, fading up out of the dark surround towards the middle.
+
+    The half of the bulge the opacity cannot say. Shade alone gets a flat sheet with a dark
+    border; what makes a tube look like it is standing proud is that the glass is *lit* in the
+    middle - not by anything on it, just the wash a driven phosphor sits in when it is switched
+    on with nothing to show.
+
+    Held very low on purpose. This runs under a live camera and under the line anybody is meant
+    to be reading, and a green fog over either is worse than a flat screen.
+    """
+    inward = np.maximum(-tube_field(width, height, radius), 0.0)
+    lit = np.clip((inward - bezel) / max(1.0, TUBE_GLOW), 0.0, 1.0)
+    return lit * lit * (3.0 - 2.0 * lit) * TUBE_GLOW_A
+
+
+def glare_alpha(width: int, height: int, radius: int, bezel: int) -> np.ndarray:
+    """The room, wiped across the front - over the moulding as well as over the glass.
+
+    Across *both* is the whole point, and it is what was missing while the surround was uniformly
+    black. A monitor's front is one sheet: the same reflection runs over the bezel and the picture
+    without a break, and that continuity is most of what tells you the thing is made of glass.
+    Mask the wipe to the screen and the moulding goes dead flat beside it, which reads as a matte
+    plastic frame with a shiny window cut in it.
+
+    Stronger over the moulding than over the glass, because it is darker. Gloss black returns
+    almost all of what falls on it and a driven phosphor is already putting out light of its own,
+    so the same reflection is a much larger fraction of what the surround is doing.
+    """
+    ys = np.arange(height, dtype=np.float32)[:, None]
+    xs = np.arange(width, dtype=np.float32)[None, :]
+    # How much of the lamp reaches here at all. Measured in real pixels rather than in fractions
+    # of each axis - the face is five times wider than it is deep, so a falloff computed on
+    # normalised coordinates comes out as an ellipse lying on its side rather than as light.
+    reach = np.exp(-(((xs - GLARE_X * width) ** 2 + (ys - GLARE_Y * height) ** 2)
+                     / (GLARE_REACH * height) ** 2))
+    # ...and the streak it draws, running down and to the right across the whole front.
+    down = ys / max(1.0, height - 1)
+    along = xs / max(1.0, width - 1)
+    streak = np.exp(-(((down - (GLARE_AT + GLARE_TILT * along)) / GLARE_DEPTH) ** 2))
+    edge = tube_field(width, height, radius)
+    open_ = np.clip(np.maximum(-edge, 0.0) / max(1.0, bezel), 0.0, 1.0)
+    on_case = 1.0 + GLARE_ON_CASE * (1.0 - open_ * open_ * (3.0 - 2.0 * open_))
+    lit = GLARE_AMBIENT + (1.0 - GLARE_AMBIENT) * reach * streak
+    return lit * GLARE_ALPHA * on_case * np.clip(0.5 - edge, 0.0, 1.0)
+
+
+def sheen_alpha(width: int, height: int, radius: int) -> np.ndarray:
+    """The light the case's own edge catches, all the way round it.
+
+    Driven off which way the moulding faces rather than off where it is. The distance field's
+    gradient is the surface normal, so dotting it with the direction to the lamp says how squarely
+    each piece of the rim is turned into the light - brightest at the top-left where the lamp is,
+    easing round to dimmest at the bottom-right, with no line anywhere for the eye to catch on.
+
+    It was a horizontal band across the top before, and that is what put the hard wedge in the lit
+    corner: the rim term follows the outline round the fillet while the band ends on a straight
+    row, so the two disagreed exactly where the corner turns. A rim light has to be cut by the
+    shape it is on or not cut at all.
+
+    *SHEEN_AMBIENT* is the floor under it, and it is the difference between a moulding and a
+    silhouette. Nothing in a real room is lit from one side only - there is always something
+    bouncing back into the far corner - and an unlit edge reads as a hole cut in the panel rather
+    than as the dark side of an object.
+    """
+    edge = tube_field(width, height, radius)
+    gy, gx = np.gradient(edge)
+    length = np.maximum(np.sqrt(gx * gx + gy * gy), 1e-6)
+    ys = np.arange(height, dtype=np.float32)[:, None]
+    xs = np.arange(width, dtype=np.float32)[None, :]
+    lx, ly = GLARE_X * width - xs, GLARE_Y * height - ys
+    reach = np.maximum(np.sqrt(lx * lx + ly * ly), 1e-6)
+    facing = np.clip((gx / length) * (lx / reach) + (gy / length) * (ly / reach), 0.0, 1.0)
+    near = np.clip(1.0 - np.maximum(-edge, 0.0) / max(1.0, SHEEN_D), 0.0, 1.0)
+    lit = SHEEN_AMBIENT + (1.0 - SHEEN_AMBIENT) * facing * facing
+    return near * near * lit * SHEEN_A * np.clip(0.5 - edge, 0.0, 1.0)
+
+
 def _over(
     dst: tuple[np.ndarray, np.ndarray], colour: tuple[int, int, int], alpha: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -1204,46 +1438,63 @@ class Overlay:
                            max(track_w, track_foot - track_top))
         self._rung = self.slider.h / SLIDER_RUNGS
 
-        # The terminal, solved from the bottom up: the screen is as deep as two lines and their
-        # padding, it sits on the panel's own bottom edge, and the rail goes above it. Written the
-        # other way round - a rail at a chosen height with a screen hung underneath - the glass
-        # ends up short of the edge at one window size and past it at another, because the bottom
-        # is the only fixed thing here.
+        # The terminal, solved from the bottom up: the glass is as deep as two lines and their
+        # padding, the moulding goes round it, and the whole thing stands on the panel's own
+        # bottom edge. Written the other way round - a top edge at a chosen height with a screen
+        # hung underneath - the glass ends up short of the edge at one window size and past it at
+        # another, because the bottom is the only fixed thing here.
         self.caption_h = round(24 * scale)  # one line of it
         pad = max(2, px(TERM_PAD))
-        floor_ = self.height
-        roof = floor_ - CAPTION_LINES * self.caption_h - 2 * pad
-        # From the middle of one mount's bottom rail to the middle of the other's, which is what
-        # makes the screen a piece of the same machine rather than a panel laid over it. Each of
-        # its side edges is therefore buried in a rail for the lower half of the screen's depth
-        # and stands clear of one for the upper half, where the two mounts have turned into ramps
-        # - a screen sliding down behind two brackets, and the whole of why this reads as bolted
-        # in rather than drawn on. It is centred on the bay between them for free, both mounts
-        # being measured from their own edge.
-        self.term = Rect(bstep + blegs, roof, (width - rout) - (bstep + blegs), floor_ - roof)
-        self.term_top = roof - self.rail_w / 2.0  # so the rail's lower lip is the glass's top edge
-        # ...and the rail's two ends, solved off the mounts rather than written down: each sits
-        # where that mount's own rail crosses the terminal's, which is what buries the joint. A
-        # 45-degree rail is a rail-and-a-half wide measured across the horizontal, so it covers a
-        # square butt end through the whole of that end's thickness - and on the left the crossing
-        # lands on the arc round his housing rather than on the ramp, which the search finds and
-        # arithmetic here would not.
-        self.term_rail = [
-            (self._rail_at("bl", self.term_top), self.term_top),
-            (self._rail_at("br", self.term_top), self.term_top),
+        bezel = max(2, px(TERM_BEZEL))
+        floor_ = self.height - max(2, px(TERM_FOOT))
+        roof = floor_ - CAPTION_LINES * self.caption_h - 2 * pad - 2 * bezel
+        # Solved off where each mount's rail actually is at the monitor's own mid-height rather
+        # than off the spine table, which is what puts the clearance where somebody looking at it
+        # would measure it - and what keeps it right if either mount is ever moved.
+        middle = (roof + floor_) / 2.0
+        self.ear_y = middle
+        clear = max(4, px(TERM_CLEAR)) + self.rail_w / 2.0
+        left = round(self._rail_at("bl", middle) + clear)
+        right = round(self._rail_at("br", middle) - clear)
+        self.term = Rect(left, roof, right - left, floor_ - roof)
+        # ...and the glass inside it, inset by the moulding on every side. Both rectangles are
+        # kept: the chassis is what the plate mask and the two bolts are measured from, and the
+        # tube is what the caption, the scanlines and the vignette live on. Solving the chassis
+        # first and insetting is the way round that keeps the *interior* exactly two lines and
+        # their padding at every window size - inset the other way and the bezel is what rounds.
+        self.tube = Rect(self.term.x + bezel, self.term.y + bezel,
+                         self.term.w - 2 * bezel, self.term.h - 2 * bezel)
+        self.case_r = max(2, px(TERM_RADIUS))
+        self.bezel = bezel
+        self.bloom_r = max(1.0, BLOOM_R * scale)
+        # The two clamps, one either side. Geometry only here - what they are made of is in
+        # :meth:`_draw_terminal`, and it is the same rail the mounts are.
+        ear_h = max(4, round(self.term.h * TERM_EAR_H))
+        self.ear_w = max(4, px(EAR_RAIL))
+        # A bolt sized to the member it passes through, and never smaller than half of it plus a
+        # margin. That is what makes the head cover the strap's square butt at every window size
+        # rather than at the one somebody looked at: the far corner of a butt cap sits half a
+        # member's width from the centreline, so anything from there out hides it.
+        self.ear_bolt = max(2.0, self.ear_w / 2.0 + max(1.0, EAR_BOLT * self.scale))
+        half = self.ear_w // 2 + 1
+        top = round(middle - ear_h / 2)
+        # Each bracket's own bounds, strap included. The strap stands *on* the case's edge rather
+        # than inside it - a clamp grips an edge, and one set back onto the face is a bar lying
+        # across the screen - so the box reaches half a member past that edge at one end.
+        self.ears = [
+            Rect(round(self._rail_at("bl", middle)), top,
+                 self.term.x + half - round(self._rail_at("bl", middle)), ear_h),
+            Rect(self.term.right - half, top,
+                 round(self._rail_at("br", middle)) - self.term.right + half, ear_h),
         ]
-        # The text inside the screen. Both edges are layout now, not results: the well does not
-        # resize with its sentence, so what a longer line does is wrap and then elide, and the
-        # cursor at the end of a busy one no longer has a slab edge to shove.
-        #
-        # Measured in from the *rails* and not from the screen's own corners, which are half a
-        # rail further out and buried for the whole of the lower line's height. Inset from the
-        # glass instead and the second line starts underneath the left-hand mount: the first cut
-        # of this had an "s" growing out of the bracket.
-        inset = self.rail_w / 2.0 + max(3, round(6 * scale))
-        self.caption_left = round(self.term.x + inset)
-        self.caption_right = round(self.term.right - inset)
-        self.caption_top = self.term.y + pad
+        # The text inside the screen, inset from the glass's own edge. It used to be measured in
+        # from the two rails instead, because the glass ran under both of them and its corners
+        # were a rail's half-width further out and buried; nothing is buried now, so the thing to
+        # measure from is the thing anybody can see.
+        inset = max(3, round(6 * scale))
+        self.caption_left = round(self.tube.x + inset)
+        self.caption_right = round(self.tube.right - inset)
+        self.caption_top = self.tube.y + pad
         self.caption_y = self.caption_top + self.caption_h / 2  # the *first* line's middle now
 
         self._halo = halo_alpha(width, height)
@@ -1392,8 +1643,13 @@ class Overlay:
         # ...and the terminal, which has no spine to lay down a polygon from - it is a rectangle
         # standing on the bottom edge, and where it runs under the two mounts the two footprints
         # are simply the same metal, so the union leaves no seam to line up.
-        d.rectangle([self.term_rail[0][0], self.term_top, self.term_rail[1][0], self.height],
-                    fill=255)
+        d.rounded_rectangle([self.term.x, self.term.y, self.term.right, self.term.bottom],
+                            radius=self.case_r, fill=255)
+        # ...and nothing for the two brackets. A plate is what a *mount* stands on - it is the
+        # see-through metal a corner assembly is built out of - and giving one to a stay across
+        # open picture put a broad stripy rectangle of washed, scanlined chrome behind each
+        # clamp. A stay has no plate. It is a bar in the air with a shadow under it, which is
+        # exactly what _draw_rail draws when there is nothing beneath it.
         holes = Image.new("L", (self.width, self.height), 0)
         hd = ImageDraw.Draw(holes)
         cx, cy, r = *self.eye, self.shoulder
@@ -1529,7 +1785,8 @@ class Overlay:
             return mix(steel, GREEN, 0.18 * (across - RAIL_BODY) / (RAIL_LIP - RAIL_BODY))
         return mix(steel, SCREEN, 0.80 * (RAIL_BODY - across) / RAIL_BODY)
 
-    def _draw_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]]) -> None:
+    def _draw_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]],
+                   thick: int | None = None) -> None:
         """An extrusion, not a stroke: a shadow cast onto the plate, then a profile across it.
 
         The shadow is what does most of the work. A rail with a chamfer and no shadow reads as a
@@ -1540,7 +1797,7 @@ class Overlay:
         Both halves are built here rather than at a frame: this whole layer is cached per window
         size, so the cost is four Gaussians once and nothing at all at 25 fps.
         """
-        thick = self.rail_w
+        thick = self.rail_w if thick is None else thick
         shade = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
         ImageDraw.Draw(shade).line(
             [tuple(p) for p in offset_path(points, -thick * 0.3)],
@@ -1964,7 +2221,7 @@ class Overlay:
         d = ImageDraw.Draw(layer)
 
         self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat))
-        self._draw_caption(d, state, halo, detail, phase)
+        self._draw_caption(layer, state, halo, detail, phase)
         held = pressed == "eye"
         # The pointers, over the faces the chrome laid down once. Neither inverts under a thumb
         # the way the switches here used to: you do not press an instrument, you turn one and
@@ -2094,7 +2351,7 @@ class Overlay:
             )
 
     def _draw_caption(
-        self, d: ImageDraw.ImageDraw, state: str, halo: tuple, detail: str, phase: float
+        self, layer: Image.Image, state: str, halo: tuple, detail: str, phase: float
     ) -> None:
         """Plain English across the bottom of the panel, printed on the terminal's screen.
 
@@ -2172,6 +2429,9 @@ class Overlay:
         # marker is the part that is decoration anyway - so it is the part that gets to be a
         # colour, and it breathes with the words it introduces.
         accent = (*mix(halo, SCREEN, sunk), CAPTION_ALPHA)
+        # Laid out once into a list of draws rather than straight onto the panel, because the same
+        # layout is wanted twice: once blurred for the halation and once crisp on top of it.
+        ops: list[tuple[float, float, str, tuple]] = []
         at, y, taken = x, top + 0.5 * self.caption_h, 0
         for i, line in enumerate(lines):
             head = printed - taken  # how much of this line has landed...
@@ -2181,9 +2441,11 @@ class Overlay:
             y = top + (i + 0.5) * self.caption_h
             at = x
             if line.startswith(MARKER):  # only ever the first, and only if the wrap left it there
-                at += self._text(d, at, y, MARKER, font, accent)
+                ops.append((at, y, MARKER, accent))
+                at += self._width(MARKER, font, 0.0)
                 line, head = line[len(MARKER):], max(0, head - len(MARKER))
-            at += self._text(d, at, y, line[:head], font, (*colour, CAPTION_ALPHA))
+            ops.append((at, y, line[:head], (*colour, CAPTION_ALPHA)))
+            at += self._width(line[:head], font, 0.0)
         # Hard against the last letter printed, where a cursor belongs - it is standing in for the
         # ellipsis the phrase arrived with, not sitting beside it as a separate mark. `at` and `y`
         # are wherever the loop left them: the head while the line is still arriving, and the end
@@ -2196,10 +2458,43 @@ class Overlay:
         # its wrap (see `limit`), so a full line of text nobody reserved room for has to give the
         # mark up at the very end rather than stand it on the bracket.
         if (typing or (busy and lit)) and at + self._cursor_w <= self.caption_right:
-            self._text(d, at, y, CURSOR, font, (*colour, CAPTION_ALPHA))
+            ops.append((at, y, CURSOR, (*colour, CAPTION_ALPHA)))
+        self._print(layer, ops, font)
+
+    def _print(self, layer: Image.Image, ops: Sequence[tuple[float, float, str, tuple]],
+               font: ImageFont.FreeTypeFont) -> None:
+        """Put the line on the glass: once blurred for the halation, once crisp on top of it.
+
+        Halation is what separates a lit tube from a printed label - a glyph on a phosphor screen
+        is a spot of light with a skirt round it, and the skirt is most of why a photograph of a
+        CRT does not look like text on paper. It is also the one part of the terminal that is not
+        baked, because it is the one part that changes with the sentence.
+
+        Drawn *once* into a tile and composited twice. The obvious way round - draw the glow into
+        a scratch layer, then draw the line again onto the panel - costs two text passes, and on
+        the Pi laying this many glyphs is 2 ms while blurring them is 0.9. Doing it this way put
+        the whole effect back under a millisecond and a half.
+
+        Compositing rather than drawing onto the chrome directly, which is not just an
+        optimisation: ImageDraw *writes*, so a glyph laid straight onto the layer replaces the
+        glass's alpha with its own instead of adding light to it - the rule that makes every
+        brightness on this panel a mix towards SCREEN (see :func:`caption_pulse`). A composite is
+        the operation that means "there is more light here now", which is what a lit phosphor is.
+        """
+        if not ops:
+            return
+        tube = self.tube
+        tile = Image.new("RGBA", (tube.w, tube.h), (0, 0, 0, 0))
+        td = ImageDraw.Draw(tile)
+        for gx, gy, glyphs, fill in ops:
+            self._text(td, gx - tube.x, gy - tube.y, glyphs, font, fill)
+        glow = tile.filter(ImageFilter.GaussianBlur(self.bloom_r))
+        glow.putalpha(glow.getchannel("A").point(lambda a: round(a * BLOOM_ALPHA)))
+        layer.alpha_composite(glow, (tube.x, tube.y))
+        layer.alpha_composite(tile, (tube.x, tube.y))
 
     def _draw_terminal(self, layer: Image.Image) -> None:
-        """The screen the caption is printed on, and the rail that carries it.
+        """The monitor the caption is printed on: a tube in a bezel, and the rail that carries it.
 
         This replaced a speech bubble, and the argument is the same one the words themselves
         settled a while ago. A bubble is him talking: it is the right shape for a sentence and the
@@ -2209,45 +2504,71 @@ class Overlay:
         screen in a housing bolted into the bottom middle of the panel, the one strip of it that
         had nothing in it. The sentence changes; the machine it is printed on does not.
 
-        All of it is fixed by the window size, so all of it is baked. What that buys is the half
-        of the idea that a per-frame drawing could not have: the chassis is on the panel whether
-        or not there is a caption, which is what makes it furniture rather than a slab that
-        appears under some words.
+        What is in the housing is a monitor and is drawn as one, because for a long time it was
+        drawn as a hole - a rectangle with square corners, a flat fill and a hairline chamfer,
+        which is a cut-out however carefully it is shaded. The corners are the whole of it: pull
+        them in and put metal all the way round, and the same rectangle is a piece of glass in a
+        moulding. Everything else here follows from having a tube to be honest about - it shades
+        into its corners, the bezel drops a shadow down it, the room wipes across it, and the
+        letters on it bloom (:meth:`_print`, the one part of this that is not baked).
+
+        All the rest is fixed by the window size, so all the rest is baked. What that buys is the
+        half of the idea that a per-frame drawing could not have: the chassis is on the panel
+        whether or not there is a caption, which is what makes it furniture rather than a slab
+        that appears under some words.
 
         Nothing here wears the state's accent. The border does that, and the eye, and the marker
         on the line itself - a housing that changed colour with the conversation would be a fourth
         voice saying what three already say.
+
+        The letters that go on it are :meth:`_print`, which is the only part of this that runs
+        at a frame.
         """
-        d = ImageDraw.Draw(layer)
         box = self.term
-        # The well, sunk into the face rather than sitting on it. Flat fill first: ImageDraw
-        # writes rather than composites, so the raster below is drawn as *more opaque* rows and
-        # not as dark ones - a black line at a low alpha would punch a hole in the glass instead
-        # of dimming it, and SCREEN is already near enough black that darkening it says nothing.
-        d.rectangle([box.x, box.y, box.right, box.bottom], fill=(*SCREEN, TERM_ALPHA))
-        for y in range(box.y + (-box.y) % SCANLINE_EVERY, box.bottom, SCANLINE_EVERY):
-            d.line([(box.x, y), (box.right, y)], fill=(*SCREEN, min(255, TERM_ALPHA + TERM_SCAN)))
-        # ...and the chamfer round it, which is the rail's own profile turned inside out: the same
-        # light from above, falling into a hole instead of onto a lip, so the dark edge is the top
-        # and the left and the lit one is the bottom and the right. Both come off _rail_colour, so
-        # the well and the rail it hangs under are the same alloy.
-        lip, flank = (*self._rail_colour(1.0), 255), (*self._rail_colour(0.0), 255)
-        edge = max(1, self.line // 2)
-        d.line([(box.x, box.y), (box.right, box.y)], fill=flank, width=edge)
-        d.line([(box.x, box.y), (box.x, box.bottom)], fill=flank, width=edge)
-        d.line([(box.x, box.bottom), (box.right, box.bottom)], fill=lip, width=edge)
-        d.line([(box.right, box.y), (box.right, box.bottom)], fill=lip, width=edge)
-        # The rail last, so its cast shadow falls across the top of the screen - which is most of
-        # what sells the depth, and which the well's flat fill would wipe if the two swapped.
-        self._draw_rail(layer, self.term_rail)
-        # Two bolts, over the screen's own top corners and a rail's half-width in from them. Every
-        # other rail here is bolted where it turns; this one does not turn, so it is bolted where
-        # it lands, which is the same sentence. The inset is what keeps the right-hand one clear
-        # of the volume knob, whose bezel is drawn over this a few lines later.
+        # The whole front in one composite: the case and the glass are the same field, so there is
+        # no edge between them to line up and none to see. Built out here rather than drawn
+        # because ImageDraw writes rather than composites - a translucent stroke laid over this
+        # would punch a hole through the glass onto the camera instead of dimming it.
+        shape = (box.h, box.w)
+        face: tuple[np.ndarray, np.ndarray] = (
+            np.zeros((*shape, 3), dtype=np.float32),
+            np.zeros(shape, dtype=np.float32),
+        )
+        face = _over(face, SCREEN, tube_alpha(box.w, box.h, self.case_r, self.bezel, box.y))
+        face = _over(face, GREEN, tube_glow(box.w, box.h, self.case_r, self.bezel))
+        face = _over(face, WHITE, glare_alpha(box.w, box.h, self.case_r, self.bezel))
+        face = _over(face, WHITE, sheen_alpha(box.w, box.h, self.case_r))
+        layer.alpha_composite(_to_image(*face), (box.x, box.y))
+        # The two mounting brackets, one either side, and they are *rails* - the same extrusion
+        # the mounts are made of, drawn by the same method, just a thinner member. That is the
+        # whole of why they now look like part of this machine: a bracket built out of anything
+        # else is a shape drawn next to a frame, however carefully it is shaded, and the panel
+        # already has one language for "a piece of metal bolted to something".
+        #
+        # Each is a clamp: a strap standing across the screen's end, and an arm back to the mount.
+        # Drawn after the front and lapping over it, so the screen sits *in* them.
+        # The strap stops at its two bolt centres rather than running the full height of the
+        # bracket. PIL gives a line butt caps, so a member drawn past its bolt leaves two square
+        # corners sticking out from under the head - which is the one thing on this panel that
+        # would say "drawn" rather than "made". Ending on the centre puts the whole butt inside
+        # the head, and see `ear_bolt` for why the head is always big enough to hold it.
+        r = self.ear_bolt
+        for ear in self.ears:
+            strap = self.term.x if ear.x < self.term.x else self.term.right
+            self._draw_rail(layer, [(strap, ear.y + r), (strap, ear.bottom - r)], self.ear_w)
+            arm = self._rail_at("bl" if ear.x < self.term.x else "br", self.ear_y)
+            self._draw_rail(layer, [(arm, self.ear_y), (strap, self.ear_y)], self.ear_w)
         d = ImageDraw.Draw(layer)
-        half = self.rail_w / 2.0
-        for x in (box.x + half, box.right - half):
-            self._draw_bolt(d, x, self.term_top)
+        # Two bolts per strap, at its ends, and smaller than the ones on the mounts. At the ends
+        # because that is where a clamp is actually fixed - a strap bolted through its middle
+        # would pivot on it - and it also gets them off the arm's centreline, where a single bolt
+        # sat level with the mount's own a couple of dozen pixels away and the pair of them read
+        # as a face. Smaller because this is the lighter member: a bolt is sized to what it is
+        # holding, and the panel already says so everywhere else.
+        for ear in self.ears:
+            strap = self.term.x if ear.x < self.term.x else self.term.right
+            for y in (ear.y + r, ear.bottom - r):
+                self._draw_bolt(d, strap, y, r)
 
     def _draw_rim(self, d: ImageDraw.ImageDraw, halo: tuple, phase: float) -> None:
         """Re-stroke the border, sunk by one breath. Only ever called while a session is up.
@@ -2765,7 +3086,7 @@ def composite(frame_bgr: np.ndarray, rgba: np.ndarray) -> np.ndarray:
 
 # Unsharp masking, for a camera that cannot be asked to do better. The endoscope streams
 # 640x480 JPEG at quality ~44 and ignores the protocol's resolution command, so this is the only
-# remaining lever on how much of the room you can actually make out - see the README.
+# remaining lever on how much of the room you can actually make out - see docs/camera.md.
 #
 # The floor and the ceiling are what separate this from a sharpen slider. Detail below the floor
 # is the sensor's noise and the encoder's blocking, and amplifying that is how a sharpened cheap

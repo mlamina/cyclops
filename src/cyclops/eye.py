@@ -234,7 +234,7 @@ AWAY = "away"    # off past the edge of the thing entirely
 LANDMARKS: dict[str, tuple[float, float]] = {
     AHEAD: (0.0, 0.0),
     FRAME: (0.911, -0.413),   # up and to the right of him, at 800x480
-    WORDS: (0.924, 0.383),    # down and to the right, at the head of his own line
+    WORDS: (0.952, 0.305),    # down and to the right, at the head of his own line
     DIALS: (0.644, -0.765),   # steeply up, at the pod
     WORK: (-0.55, 0.84),      # down and to his left, off the panel: the bench
     AWAY: (-0.80, -0.60),     # up and to his left, at nothing at all
@@ -382,7 +382,9 @@ class Mood:
     aperture: float = 0.5  # how far the iris stands open at rest, 0 shut .. 1 wide
     swell: float = 0.06  # ...and how much of that the breath gives and takes back
     breath_s: float = 4.0  # seconds per breath. A resting creature is twelve to fifteen a minute
-    voice: float = 0.0  # how much further your voice opens it, on top of the breath
+    voice: float = 0.0  # how much further the level on the meter opens it, on top of the
+    # breath. Only a mood hearing its *own* sound should touch this: an iris moving with the
+    # room is a mouth, not an eye - see overlay.MOODS, where listening pointedly leaves it at 0.
     spin: float = 6.0  # degrees a second the ring set turns; the sign is a direction
     sway: float = 0.0  # ...and how far each ring wanders off that rate, as a multiple of it.
     # 0 is a gear train, every ring locked to every other. Past 1 a ring's wander outruns its
@@ -614,7 +616,9 @@ def linear(colour: tuple[int, int, int], alpha: int = 255) -> tuple:
     return (*(LINEAR[c] * alpha // 255 for c in colour), alpha)
 
 
-def smoothed(size: int, paint: Callable[[ImageDraw.ImageDraw], None]) -> Image.Image:
+def smoothed(
+    size: int | tuple[int, int], paint: Callable[[ImageDraw.ImageDraw], None]
+) -> Image.Image:
     """*paint* drawn into a tile ``SUPERSAMPLE`` times *size*, handed back at *size*, unstepped.
 
     The whole of the anti-aliasing on this panel, in four lines. What *paint* draws must be laid
@@ -625,8 +629,14 @@ def smoothed(size: int, paint: Callable[[ImageDraw.ImageDraw], None]) -> Image.I
     the empty pixels in with the drawn ones, so what comes out is already multiplied by its own
     coverage - the form a composite wants, and the only one that does not leave a dark fringe down
     the outside of every curve.
+
+    *size* is one number for a square tile, which is what every dial and the eye want, or a
+    ``(width, height)`` pair for something that is not - the terminal's screen is six times as
+    wide as it is deep, and squaring it off would supersample a quarter of a megapixel of empty
+    tile to draw one letterbox.
     """
-    tile = Image.new("RGBA", (size * SUPERSAMPLE, size * SUPERSAMPLE), (0, 0, 0, 0))
+    w, h = (size, size) if isinstance(size, int) else size
+    tile = Image.new("RGBA", (w * SUPERSAMPLE, h * SUPERSAMPLE), (0, 0, 0, 0))
     paint(ImageDraw.Draw(tile))
     # reduce() rather than resize(): the same box average, told up front that the ratio is a whole
     # number, and half the time for it on the Pi.

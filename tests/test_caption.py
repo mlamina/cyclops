@@ -353,7 +353,10 @@ def test_the_screen_is_the_same_size_whatever_is_on_it() -> None:
     short = _typed(ov, 0.0, detail="doing a thing", **at_rest)
     long_ = _typed(ov, 0.0, detail="doing a considerably longer thing than the other one",
                    **at_rest)
-    band = slice(int(ov.caption_top), int(ov.caption_top + overlay.CAPTION_LINES * ov.caption_h))
+    # The glass, and not the two lines' own rows. What must not move is the *case*, and a letter
+    # on a phosphor screen is a spot of light with a skirt round it - see Overlay._print -
+    # so the ink from a longer sentence reaches a pixel or two past the band its glyphs sit in.
+    band = slice(int(ov.tube.y), int(ov.tube.bottom))
     moved = np.argwhere(np.any(short != long_, axis=2))
     assert moved.size, "the two captions rendered identically"
     assert moved[:, 0].min() >= band.start and moved[:, 0].max() < band.stop, (
