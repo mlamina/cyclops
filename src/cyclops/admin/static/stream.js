@@ -103,6 +103,18 @@ if (cam) {
   let ctx = null;
   let node = null;
   let stop = null;
+  let beat = null;
+  const BEAT_MS = 3000;   // companion.LISTEN_BEAT_S; the kiosk gives the claim 8 s to be renewed
+
+  // Saying, every few seconds, that this device is still the one being used as the speaker. The
+  // panel takes his voice back the moment these stop - which is what makes a locked phone, a
+  // closed laptop and a browser that died all end the same way, instead of leaving a box that
+  // makes no sound and nothing on screen to explain why. An open socket cannot say this: a dead
+  // peer holds one for as long as TCP takes to notice, which is a minute or never.
+  const thump = () => {
+    fetch(FROM + '/listening', { cache: 'no-store' }).catch(() => {});
+    beat = setTimeout(thump, BEAT_MS);
+  };
 
   const fill = (samples) => {
     for (let i = 0; i < samples.length; i++) {
@@ -160,6 +172,7 @@ if (cam) {
   };
 
   const hush = () => {
+    clearTimeout(beat); beat = null;
     if (stop) { stop.abort(); stop = null; }
     wrote = read = 0; filling = true;
     if (ctx && ctx.suspend) ctx.suspend();
@@ -191,6 +204,8 @@ if (cam) {
     ctx.resume().then(() => {
       if (ctx.state !== 'running') { paint(false, 'this device would not play sound'); return; }
       stop = new AbortController();
+      clearTimeout(beat);
+      thump();
       drink(stop.signal).catch(() => {
         if (spk.getAttribute('aria-checked') === 'true') setTimeout(ears, 2000);
       });

@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -53,6 +54,10 @@ SILENCE = bytes(int(PACE_S * SAMPLE_RATE) * BYTES_PER_FRAME)  # what a listener 
 VOICE_LAG_MAX = SAMPLE_RATE * BYTES_PER_FRAME  # a second; past this a slow reader is skipped on
 MAX_VIEWERS = 4  # per stream. A page left open in ten tabs is not a reason to cook the Pi
 SEND_TIMEOUT_S = 10.0  # a phone that walks out of range is dropped, not left holding a thread
+# How long a device's claim on his voice stands without being renewed, and how often the page
+# renews it. An open socket is *not* the claim - see listening(), which is where the reasoning is.
+LISTEN_FRESH_S = 8.0
+LISTEN_BEAT_S = 3.0  # the page's interval; two may be missed before the panel takes his voice back
 
 
 # ------------------------------------------------------------------ the voice
@@ -235,6 +240,7 @@ def _encode(frame) -> bytes:
 
 voice = _Voice()
 preview = _Preview()
+_heard_at = 0.0  # when a device last said it is still being used as the speaker; see listening()
 
 
 def watching() -> bool:
@@ -243,8 +249,36 @@ def watching() -> bool:
 
 
 def listening() -> bool:
-    """Whether a device has taken his voice, which is when the box should be quiet."""
-    return voice.listeners > 0
+    """Whether a device is being used as the speaker *right now* - see ``Kiosk._sync_handover``.
+
+    A heartbeat and deliberately not ``voice.listeners``, which is the obvious answer and is
+    wrong. An open socket is not somebody listening: a browser that died, a phone that slept, a
+    curl left running in another room and a connection whose peer has gone without saying so all
+    hold one open, and every one of them silenced the panel until something noticed - which for a
+    half-open TCP connection is a minute of send buffer, and for a live-but-idle one is never.
+    That is a bad way round for a fault to fall. The panel is the speaker somebody is standing
+    at, so it keeps his voice unless a device is actively still asking to have it.
+
+    So the claim has to be renewed (``GET /listening``, every ``LISTEN_BEAT_S`` from the page
+    while its switch is on) and it lapses on its own. Same shape as every other note between the
+    two halves of this box, and the same reason: staleness is the only liveness test that a
+    process dying cannot lie about.
+    """
+    return time.monotonic() - _heard_at < LISTEN_FRESH_S
+
+
+def _keepalive(sock) -> None:
+    """Notice a peer that has gone, without first filling a socket buffer at 48 KB/s.
+
+    Linux-only options, suppressed elsewhere: this runs on a Mac under ``uv run cyclops`` too,
+    where there is no panel to take a voice from and nothing to protect.
+    """
+    with contextlib.suppress(OSError, AttributeError):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 5)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 3)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 2)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_USER_TIMEOUT, 10_000)
 
 
 # ------------------------------------------------------------------ the port
@@ -295,8 +329,10 @@ class _Handler(BaseHTTPRequestHandler):
                 self._stream()
             elif route == "/voice.pcm":
                 self._voice()
+            elif route == "/listening":
+                self._still_listening()
             else:
-                self._refuse(404, "try /, /camera.jpg, /camera.mjpg or /voice.pcm")
+                self._refuse(404, "try /, /camera.jpg, /camera.mjpg, /voice.pcm or /listening")
         except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
             pass  # somebody closed a tab, or wifi went. Not news.
         except Exception as exc:  # noqa: BLE001 - one bad request must not end the server
@@ -315,6 +351,12 @@ class _Handler(BaseHTTPRequestHandler):
         ).encode()
         self._open("application/json", 200, len(body))
         self.wfile.write(body)
+
+    def _still_listening(self) -> None:
+        """A device renewing its claim on his voice. Cheap on purpose: it is asked every 3 s."""
+        global _heard_at
+        _heard_at = time.monotonic()
+        self._open("text/plain", 204)
 
     def _still(self) -> None:
         """One frame. The insurance policy: every browser can show this, whatever it makes of
@@ -335,6 +377,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._refuse(503, "too many are already watching")
             return
         self.connection.settimeout(SEND_TIMEOUT_S)
+        _keepalive(self.connection)
         preview.join()
         first = preview.watchers == 1
         if first:
@@ -363,8 +406,15 @@ class _Handler(BaseHTTPRequestHandler):
             self._refuse(503, "too many are already listening")
             return
         self.connection.settimeout(SEND_TIMEOUT_S)
+        _keepalive(self.connection)
+        # Opening the stream is deliberately *not* a claim on his voice, though it was for an
+        # afternoon. The page beats the moment its switch goes on, so there is no gap to cover -
+        # and leaving the open here would put back exactly the hole the beat was written to close:
+        # anything at all that connects would take the sound off the panel, for eight seconds a
+        # go, forever, if it kept reconnecting. One route says "I am the speaker", and it is the
+        # only one that does.
         sink = voice.join()
-        print("· companion has his voice", flush=True)
+        print("· companion opened the voice stream", flush=True)
         try:
             # Self-describing rather than audio/L16, which is registered *big*-endian: claiming
             # it for native little-endian samples would be a lie a decoder could act on.
@@ -381,7 +431,7 @@ class _Handler(BaseHTTPRequestHandler):
                 self.wfile.write(voice.drain(sink))
         finally:
             voice.leave(sink)
-            print("· companion gave his voice back", flush=True)
+            print("· companion closed the voice stream", flush=True)
 
 
 def serve(camera: object, port: int = COMPANION_PORT) -> None:

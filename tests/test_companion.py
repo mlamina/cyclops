@@ -376,11 +376,51 @@ def test_somebody_watching_counts_as_company() -> None:
 
     sink = companion.voice.join()
     try:
-        assert companion.watching() and companion.listening()
+        assert companion.watching()
     finally:
         companion.voice.leave(sink)
 
     assert not companion.watching()
+
+
+def test_an_open_socket_is_not_somebody_listening(monkeypatch) -> None:
+    """The bug this was written for, and it silenced the whole box.
+
+    A curl left running on another machine held /voice.pcm open, the panel handed its voice to
+    it, and there was no sound anywhere: not on the panel, which had given the voice away, and
+    not on the phone, which was not the thing holding the socket. Nothing on screen said so and
+    nothing timed out - a peer that has gone holds a socket for as long as TCP takes to notice.
+
+    So the claim is a heartbeat that has to be renewed, and the panel keeps his voice by default.
+    """
+    monkeypatch.setattr(companion, "_heard_at", 0.0)
+    sink = companion.voice.join()
+    try:
+        assert not companion.listening(), "an open socket took the voice off the panel"
+    finally:
+        companion.voice.leave(sink)
+
+
+def test_a_claim_lapses_rather_than_having_to_be_withdrawn(monkeypatch) -> None:
+    """A locked phone sends no "stop". It simply stops asking, and that has to be enough."""
+    now = 1000.0
+    monkeypatch.setattr(companion.time, "monotonic", lambda: now)
+    monkeypatch.setattr(companion, "_heard_at", now)
+    assert companion.listening()
+
+    now += companion.LISTEN_FRESH_S + 0.1
+    assert not companion.listening(), "his voice stayed on a device that stopped asking for it"
+
+
+def test_the_page_renews_before_the_kiosk_gives_up() -> None:
+    """Two beats may be missed. One interval that crept past the other would make the panel snatch
+    his voice back mid-sentence, on a phone that is doing nothing wrong."""
+    page = (
+        pathlib.Path(views.__file__).parent / "static/stream.js"
+    ).read_text()
+
+    assert f"const BEAT_MS = {int(companion.LISTEN_BEAT_S * 1000)};" in page
+    assert companion.LISTEN_BEAT_S * 2 < companion.LISTEN_FRESH_S
 
 
 def test_the_recorder_still_owns_the_first_tap() -> None:

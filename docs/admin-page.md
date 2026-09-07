@@ -60,12 +60,20 @@ the panel's own words on a black card rather than freezing on the last frame it 
 
 **The switch hands the voice over rather than copying it.** Turning it on plays what Cyclops says
 through the device, and the panel's own amp stops playing him — two copies of the same sentence a
-few hundred milliseconds apart is worse than one. The page POSTs nothing to do it: the kiosk
-notices that something has taken his voice and stops putting it on the wire to the amplifier,
-and puts it back the moment nothing is listening. So a phone that walks out of range, a locked
-screen and a closed tab all end the same way, within about half a second and without anybody
-having to remember to switch it back. The four routes that really do set the box still answer to
+few hundred milliseconds apart is worse than one. The page POSTs nothing to do it: while the
+switch is on it says every three seconds that it is still the speaker, and the claim lapses after
+eight. So a phone that walks out of range, a locked screen, a closed tab and a browser that died
+all end the same way — his voice is back on the panel within a few seconds, and nobody has to
+remember to switch anything back. The four routes that really do set the box still answer to
 loopback and nothing else.
+
+**A held connection is deliberately not the claim**, and that was learned the hard way: a `curl`
+left running on another machine held the voice stream open, the panel handed its voice to it, and
+there was no sound anywhere — not on the panel, which had given the voice away, and not on the
+phone, which was not the thing holding the socket. A peer that has gone keeps a socket for as long
+as TCP takes to notice, which is a minute of send buffer or never. A claim that has to be renewed
+cannot fail that way round: the panel is the speaker somebody is standing at, so it keeps his
+voice unless a device is actively still asking to have it.
 
 **It takes his voice and nothing else.** Turning the *volume* down was the first attempt at this
 and it was wrong: the sound cues — the shutter, the wake chime, the rungs of the volume knob —
