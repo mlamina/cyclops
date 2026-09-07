@@ -236,10 +236,21 @@ SWAY_S = 16.3  # the shorter of the two periods the wander is built out of. The 
 # any few seconds is rings speeding up, falling back and turning over, not a cycle.
 
 # ---------------------------------------------------------------- looking around
-GAZE_SHIFT = 0.105  # how far the optic travels at full gaze, as a fraction of the eye. Tighter
-# than this and it does not register at 120 px; looser and the optic crowds the vane ring.
-GAZE_LEAD = 0.26  # how much further the hot middle goes than the core around it, as a fraction
-# of the core. It is what puts a pupil inside the lens rather than dragging one flat disc about.
+GAZE_SHIFT = 0.130  # how far the optic travels at full gaze, as a fraction of the eye. It was
+# 0.105, which is 9 px of spark travel at his panel size and is not a look - across six seconds
+# on a seven-inch panel it reads as a still picture with a mechanism turning behind it. What caps
+# it is what the diaphragm has to slide past: the blade tips reach IRIS + this, and the ring set
+# they cross starts at KNURL_IN. Crossing it *now and then* is parallax and is what makes the
+# move read; sitting on it is what froze the knurl the round it lived at 0.617, so the ceiling is
+# the vane ring at VANE_IN, which the tips must not reach even at the hunt's 0.90 of full gaze.
+GAZE_LEAD = 0.65  # how much further the hot middle goes than the core around it, as a fraction
+# of the core. It is what puts a pupil inside the lens rather than dragging one flat disc about,
+# and it is where most of the travel now comes from: the plate is fenced in by the ring set and
+# the pupil is not, so the eye rolls inside its own lens the way a real one does in its socket.
+LEAD_EDGE = 0.86  # ...but no further than this: the hot middle's own outer edge, as a fraction
+# of the core's radius, so the pupil rides inside the lens and never over the rim drawn at
+# CORE_EDGE. It only bites on the moods that look hardest - the hunt and the stare - where the
+# lead alone would carry the pupil out over the blades, and it bites inside one saccade.
 DRIFT_S = 7.3  # the shorter of the gaze's two drift periods; the longer is the golden ratio
 # times it, for the reason every other pair of periods on this panel is irrational.
 SACCADE_S = 0.13  # how long a dart takes. Shorter than this is indistinguishable from a dropped
@@ -287,10 +298,14 @@ DART_PICK = 0.4142135624  # sqrt(2) - 1, and a *second* irrational on purpose.
 # this, 1306/1294/1306/1295. 1, phi and sqrt(2) are rationally independent, which is the whole of
 # why. Not a PRNG and not hash(), for the reason :func:`blink` gives.
 
-PEEK_MIN, PEEK_MAX = 0.26, 0.62  # how much of one window a glance away may occupy. A glance that
+PEEK_MIN, PEEK_MAX = 0.42, 0.72  # how much of one window a glance away may occupy. A glance that
 # fills its window is not a glance, it is a change of mind - coming back inside the window is what
 # makes it read as a peek. Never 1.0: the rest of the window is the way home, and see DART_FLOOR.
-DART_FLOOR = SACCADE_S / (1.0 - PEEK_MAX)  # 0.34 s, and the shortest window a mood may ask for.
+# It was 0.26 to 0.62, which at listening's 2.6 s window is a peek of 0.7 to 1.6 s - shorter than
+# the gap between two frames of the strip the motion is judged in, so the one glance in six
+# seconds fell between two samples as often as not and the face read as fixed. Long enough to be
+# caught is also long enough to be a *look*: he goes, he arrives, he stays a beat, he comes back.
+DART_FLOOR = SACCADE_S / (1.0 - PEEK_MAX)  # 0.46 s, and the shortest window a mood may ask for.
 # Under it the home leg is shorter than a saccade, so he has not finished arriving before the next
 # window starts and the sequence stops being continuous. Asserted on the table rather than clamped
 # here, because a mood that asks for one is a mood that wants telling.
@@ -926,9 +941,23 @@ class Pen:
         n = max(12, min(CORE_N, round(TAU * rad / (1.2 * SUPERSAMPLE))))
         self.disc(rad, CORE_FLOOR)
         thread, hair = self.shade(THREAD_LIT), max(1, round(self.hair))
+        # CORE_HUB leaves a gap the filaments do not fill, and it is meant to spend its life
+        # under the hot middle. At the lead this eye now uses it does not: left where it is, that
+        # gap is a small dark disc at the tile's centre while the pupil is off to one side, which
+        # reads as a second and truer pupil - and dragging it the whole way instead skews the fan
+        # until it stops being radial and turns into a moire. Both were rendered; this is the
+        # third thing. The inner ends hold still until the hot middle is about to slide off the
+        # gap and then follow only as far as it takes to stay under it, so the fan is exactly
+        # radial while he is looking at you and no more skewed than it has to be when he is not.
+        # Free either way: the same lines, moved.
+        dx, dy = lead
+        mag = math.hypot(dx, dy)
+        over = max(0.0, mag - rad * (HOT - CORE_HUB)) / mag if mag > 0.0 else 0.0
+        hx, hy = dx * over, dy * over
         for i in range(n):
             a = i * 360.0 / n
-            self.d.line([self.point(rad * CORE_HUB, a), self.point(rad * CORE_EDGE, a)],
+            x, y = self.point(rad * CORE_HUB, a)
+            self.d.line([(x + hx, y + hy), self.point(rad * CORE_EDGE, a)],
                         fill=thread, width=hair)
         for k in CORE_RINGS:
             self.loop(rad * k, CORE_RING_LIT, self.hair, 40)
@@ -949,7 +978,6 @@ class Pen:
         # 1.2 dilutes the spark at 4 of them (peak 691 against 699) while 1.0 passes all 576.
         # 1.0 is not safer - it is a rasterising coincidence at that one radius, and the kind of
         # thing that comes back on a different panel. Take the bound, not the measurement.
-        dx, dy = lead
         self.d.ellipse([self.cx + dx - rad * HOT, self.cy + dy - rad * HOT,
                         self.cx + dx + rad * HOT, self.cy + dy + rad * HOT],
                        fill=self.heat(HOT_MIX))
@@ -1130,4 +1158,9 @@ class EyeEngine:
             return
         pen.loop(hole * BEZEL, BEZEL_LIT, self._stroke * BEZEL_W)
         pen.sweep(hole * BEZEL, BEZEL_HI_FROM, BEZEL_HI_TO, BEZEL_HI, self._stroke * BEZEL_W)
-        pen.core(hole, (gx * hole * GAZE_LEAD, gy * hole * GAZE_LEAD))
+        # The pupil rolls inside the lens, and stops at its rim rather than climbing over it -
+        # see LEAD_EDGE. One hypot and a min: the moods that look hardest are the only ones that
+        # ever reach the stop, and none of them reaches it except at the far end of a saccade.
+        room, mag = LEAD_EDGE - HOT, math.hypot(gx, gy)
+        lead = GAZE_LEAD if mag * GAZE_LEAD <= room else room / mag  # mag 0 takes the first
+        pen.core(hole, (gx * hole * lead, gy * hole * lead))

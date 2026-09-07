@@ -644,7 +644,7 @@ def _rings(crop: np.ndarray) -> np.ndarray:
     passes on the gaze alone and says nothing about whether anything turns. Verified - freeze
     spin and scan and the face crops still differ, while this band does not.
 
-    The optic reaches eye.IRIS + eye.GAZE_SHIFT = 0.705 of him at full lean, so 0.75 clears it.
+    The optic reaches eye.IRIS + eye.GAZE_SHIFT = 0.730 of him at full lean, so 0.75 clears it.
     """
     r = crop.shape[0] // 2
     ys, xs = np.ogrid[-r:r, -r:r]
