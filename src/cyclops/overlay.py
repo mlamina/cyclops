@@ -1464,6 +1464,32 @@ COLLAR_BEVEL = 0.35  # sin of the tilt that face keeps right across itself, so t
 # bevel is a white stroke again with a shadow on the far side of it.
 COLLAR_BEVEL_SHINE = 0.55  # ...and how much of the lamp it gives back. A machined face, not a
 # mirror: at full it saturates flat across the whole lit half and the gradient disappears.
+COLLAR_REVEAL = 2.4  # reference px of the lip's outer edge that lie in the brass's shadow. The
+# brass stands proud of the steel - the lip is sunk under it, holding the glass down - so the
+# last pixels before the seam are occluded all the way round. Without this the lip is brightest
+# where it is *flattest*, which is at its outer edge everywhere except on the lamp's own
+# bearing: this lamp has more height (0.63) than reach (0.78), so a face square to the viewer
+# takes more of it than an edge-on one does. A section that climbs outwards on every bearing but
+# one is a ring drawn at a constant offset, which is the tell every critic of this panel has
+# measured, and a reveal is what a real bezel has there anyway.
+COLLAR_REVEAL_DARK = 0.62  # ...and how much of the light is gone at the bottom of it
+COLLAR_CATCH = 0.22  # what the rolled edge at the glass picks up away from the lamp, as a
+# fraction of the way to STEEL_LIT. A face turned right away from a lamp goes matte and reads as
+# paint; a rolled edge over there still gathers the room along its length, and it is that
+# terminating line - not a second highlight out on the face - that says the dark half is metal.
+# Broad rather than confined to the far bearing, because a roll gathers the room everywhere the
+# lamp's own highlight is not, and capped: any light on this panel arriving from anywhere but
+# the lamp is held to a third of the member's own crest, which is what stops a fill becoming a
+# second lamp.
+COLLAR_INDEX = 24  # the index cut round the lip, one mark every fifteen degrees...
+COLLAR_INDEX_LONG = 4  # ...one in four of them deeper, so it reads in quarters
+COLLAR_INDEX_TICK = 0.30  # how far a short one reaches down the face, as a fraction of its width
+COLLAR_INDEX_DEEP = 0.62
+# A fifth of the marks the brass carries, and cut with the same tool (TICK_W): this is the ring
+# you read a setting off, not the one you count degrees on. It costs the section nothing, which
+# is the point of putting it here - a graduation is angular, so it puts detail on a band without
+# adding a band to the radial profile, and this panel has already been told it wins on having
+# fewer, larger rings than the photograph does.
 COLLAR_SEAM = (14, 15, 12)  # the reveal where the brass meets the bevel - the dark line every
 # two-part bezel has, and without it the two metals read as one band that changed colour. Near
 # black rather than merely dim: what is at the bottom of a reveal is nothing, and a groove whose
@@ -1502,14 +1528,26 @@ COLLAR_FACETS = 3  # ...and how many facets that crown is cut in. A turned bezel
 # measured against steps its chamfers by about thirty counts a facet rather than airbrushing
 # them. Quantising the *tilt* rather than the colour is what makes the step land where the metal
 # actually changes direction, so the same three flats run all the way round the ring.
-BRASS = (96, 86, 58)  # a flat face of it square to the viewer. Well short of the metal in a
+BRASS = (96, 84, 58)  # a flat face of it square to the viewer. Well short of the metal in a
 # catalogue: this is brass seen by a phosphor tube, and it borrows what little colour it has.
-# Never orange, and never brighter than STEEL_SPEC in any channel.
-BRASS_SPEC = (196, 176, 128)  # where the lamp lands hardest on it. Warm where steel's is cool,
+# Never orange, and never brighter than STEEL_SPEC in luminance - in luminance and not in any
+# one channel, because a per-channel ceiling clips a warm metal's red first and hands the
+# picture a brass bezel whose highlights are green.
+BRASS_SPEC = (198, 169, 128)  # where the lamp lands hardest on it. Warm where steel's is cool,
 # because a highlight carries the metal's own colour, and no brighter than the steel's ceiling.
-BRASS_BOUNCE = 0.34  # how much of the brass the steel lip picks up on the side turned away from
+# Both of these lost two or seven counts of green this round. Greenbias - G above the mean of R
+# and B - is the number that separates hardware from phosphor on this panel, and it is held at
+# +7 everywhere: the brass was at +9 on its face and +14 on its highlight, which is what a
+# critic measured as "the brass band washes olive-green" under the west fixing. It is still
+# brass and it is still warm - R over B by 38 on the face and 70 on the highlight - it simply
+# no longer borrows the tube's colour to be warm with.
+BRASS_BOUNCE = 0.12  # how much of the brass the steel lip picks up on the side turned away from
 # the lamp. A ring of steel set inside a ring of brass has no other light on that side, and it is
 # what stops the two metals reading as one cool band with a warm one beside it.
+# It was 0.34, which is where a bounce stops being a fill and becomes a second lamp: laid flat
+# across a face that was already climbing outwards, it made the lip's brightest pixel its outer
+# edge on every bearing but the lamp's. COLLAR_CATCH puts the same amount of light back on the
+# rolled edge, where a bounce actually lands.
 BRASS_BLOWN = (250, 246, 232)  # ...and the lamp's own image in the polished roll, which is not
 # the metal at all: a specular is the source reflected, so it is the source's colour and it is
 # allowed past every ceiling the metal has. One line, a pixel or two wide, on one arc of one
@@ -1566,6 +1604,12 @@ WELL_SHADE = 0.38  # ...and what the half turned away from it loses, as a fracti
 # darker median, and more Weber on every mark out there, all measured.
 # All three are grey-green rather than phosphor-green, and that is the difference between glass
 # with light on it and a lit screen: the pane is not a source, it is a thing being shone at.
+# They keep that tint where every piece of metal on this panel has had its taken away, and the
+# reason is that this is not metal: it is the ground the iris is drawn on, seen through glass,
+# and it is 20 counts of luminance. Neutralising it at constant luminance was measured and cost
+# the face 0.157 saturation to 0.153 - the blades are blended against it - which is the one
+# trade this round is not allowed to make. What IS metal down here is the groove turned into
+# it, and that is where the tint comes out: see SEAT_METAL.
 WELL_HATCH = 0.10  # the pane's own brushing, either way, running on the lamp's diagonal
 _HALF_ROOT = math.sqrt(0.5)  # a panel pixel measured along that diagonal, and across it
 WELL_SPOT = 0.030  # the pane's reflection of the lamp, as a fraction of the way to WHITE...
@@ -1594,19 +1638,38 @@ WELL_CEILING = 195  # no pixel of the well may reach the 200 the face's colour i
 # where the panel's palette puts it and where nothing is trying to move underneath it.
 SEAT_IN = 0.685  # of his rim: the groove's inner wall - clear of the diaphragm's own reach...
 SEAT_OUT = 0.735  # ...and its outer, where the stator's vanes take over
-SEAT_DEEP = 0.42  # how far the floor of the groove is taken down from the well's own, which is
+SEAT_DEEP = 0.60  # how far the floor of the groove is taken down from the well's own, which is
 # what makes the knurl look sunk into it rather than laid across it
 SEAT_WALL = 2.2  # px of each wall, which is where the depth is actually read: a groove is two
 # lines - one dark where the wall turns from the lamp, one lit where it turns into it
-SEAT_LIP = 1.45  # how much of the lamp the wall facing it gives back, as a fraction of the way
+SEAT_LIP = 2.95  # how much of the lamp the wall facing it gives back, as a fraction of the way
 # from the sunk floor back up to the well's own colour. Over one, so the lit wall comes out
 # *brighter* than the floor around the groove: a wall tilted into the lamp catches more of it
-# than the flat does, and one that only climbs back to level is a fade rather than an edge. Not
-# much over: it is a turned edge in a dark cavity, and nothing in here may compete with the
-# phosphor drawn over it.
+# than the flat does, and one that only climbs back to level is a fade rather than an edge.
+# Well over, now that only one wall of the two lights at all: the lit wall reads 24 counts over
+# its own baseline where the lamp lands and 7 under it opposite, which is a groove with a
+# section, where at 1.45 across both walls it was a two count wobble on a black band. It fits
+# the bezel's lamp to within a degree and a half at an amplitude of 12.5, which is the number
+# the material critics ask every annulus of this housing for. It is still a turned edge in a
+# dark cavity: its brightest pixel is 52, against a pupil at 253.
 SEAT_GRAIN = 1.9  # its turning marks, as a fraction of material.GRAIN. Coarser than the floor's
 # because the groove was cut with the tool still in the work, not skimmed flat afterwards.
 SEAT_SHADOW = 0.7  # how dark the shadow the near wall drops across the floor of the groove is
+SEAT_METAL = (33, 42, 37)  # the groove is machined steel and not more of the pane, so it is
+# neutral where the floor round it is green: greenbias +7 against the floor's +15, which is the
+# ceiling this panel now holds every metal surface to. Laid on at the *level* the floor has
+# already reached at that radius rather than at its own, so the hue changes across the edge of
+# the cut and nothing else does - the well keeps its depth, its vignette, its lamp and its
+# shadow, and the one band of it a lathe touched stops wearing the tube's colour. Green belongs
+# to the phosphor drawn over this and to the glass above it.
+SEAT_ARC = 1.5  # the power on how squarely a pixel of the groove faces the lamp. The same
+# argument as MOUTH_ARC and the reason it is here: `rise` is positive on the inner wall and
+# negative on the outer one, and the outer one geometrically faces the lamp wherever the inner
+# one does not - so a groove four pixels wide came out lit on BOTH sides of the ring, from
+# opposite directions, which is an emboss and not a cut. A groove at the bottom of a cavity does
+# not see the room from over there: what reaches it comes in over the bezel's lip on the lamp's
+# own bearing, so one wall lights and the other goes into its own shade.
+SEAT_TERMINATOR = 0.55  # ...and how far under the sunk floor that far wall goes
 SEAT_FACETS = 2  # how many flats each wall of the groove is cut in. The same argument as
 # COLLAR_FACETS at a smaller size: two is all a two-pixel wall has room for, and two hard steps
 # still read as a cut edge where a smooth ramp reads as a fade.
@@ -1635,7 +1698,7 @@ SEAT_FACETS = 2  # how many flats each wall of the groove is cut in. The same ar
 MOUTH_IN = 0.938  # of his radius: the bottom of the cut. There are five pixels of bare floor
 # between the castellated ring and the rim's own stroke, and this is them: further out and the
 # rim writes over the whole section, further in and the cut is under a ring that turns.
-MOUTH_LAND = 0.18  # of the mouth's width: the relief groove at the foot before the face climbs.
+MOUTH_LAND = 0.26  # of the mouth's width: the relief groove at the foot before the face climbs.
 # Every cut has one, and it is what stops the chamfer reading as the floor tipping up.
 MOUTH_FOOT = 0.50  # sin of the tilt the face already has where it leaves the relief...
 MOUTH_TILT = 0.85  # ...and what it has reached at the crest. Both steep, and that is the whole
@@ -1646,22 +1709,27 @@ MOUTH_TILT = 0.85  # ...and what it has reached at the crest. Both steep, and th
 MOUTH_FACETS = 2  # flats across that ramp - see COLLAR_FACETS. Two and not three: there are
 # four pixels of section here once the rim's own stroke has taken the outer two, and a flat
 # narrower than a pixel is a gradient with extra steps in it.
-MOUTH_ARC = 3.0  # the power on how squarely a pixel of the cut faces the lamp. A countersink
+MOUTH_ARC = 1.9  # the power on how squarely a pixel of the cut faces the lamp. A countersink
 # at the bottom of a bore does not see the room, it sees the lamp through the hole the bezel
-# leaves, so the arc that is lit at all is short - and a short arc is what keeps the well's
-# median black where the last round left it while the section still carries a real highlight.
+# leaves, so the arc that is lit at all is short. It was 3.0 and that was too short to be the
+# same lamp as the bezel outside it: a lobe that narrow carries a huge peak-to-trough swing and
+# almost no first harmonic, so the ring measured as a bright spot rather than as a lit annulus.
+# At 1.9 the fit is 12.8 counts of amplitude against the brass's 55 to 84, on the same bearing.
 MOUTH_METAL = 0.62  # how far the mouth's steel is put from STEEL towards STEEL_DARK. Dark: it
 # is inside a cavity, under an overhanging bezel, and its unlit side has to sit down with the
 # well's own floor or the cavity has a grey ring painted round the inside of it
-MOUTH_SHINE = 0.30  # how much of the lamp its crest gives back
+MOUTH_SHINE = 0.44  # how much of the lamp its crest gives back
 MOUTH_GRAIN = 1.5  # its turning marks, as a fraction of material.GRAIN. Coarser than the
 # floor's, like the seat's: a countersink is cut, not skimmed
 MOUTH_REVEAL = 3.0  # reference px of it that go into the lip's shadow at the outer edge
 MOUTH_DARK = 0.86  # ...and how far under the room's own light that reveal and the relief go
-MOUTH_LIFT = 2.4  # how proud the crest stands of the well's floor, which is what sets the
+MOUTH_LIFT = 4.3  # how proud the crest stands of the well's floor, which is what sets the
 # shadow it drops back down into the well - multiplicative on the floor, and recovering over a
-# dozen pixels rather than stopping at an opaque line
-MOUTH_SHADOW = 0.85
+# dozen pixels rather than stopping at an opaque line. It reaches further than it did, and that
+# is bought rather than free: this shadow is the one lever on the ring band's black median that
+# does not touch the floor's own level, and the median is half of what the moat between the
+# still bezel and the turning eye is made of.
+MOUTH_SHADOW = 0.92
 # The glass over him. A dome held down by the lip, and the one part of him that is not drawn
 # every frame: the lamp's reflection on it and the light it gathers along its edge are a tile
 # built once and laid over the eye after it is painted. It has to stay off everything that moves.
@@ -3349,8 +3417,11 @@ class Overlay:
         what says the well has a step in it - a flat annulus in another colour is a printed ring,
         however carefully it is graded round.
 
-        No second metal and nothing pale. What is inside his rim is a dark cavity and the light
-        drawn on it; the panel's brass is on the bezel, outside, where nothing turns underneath.
+        Nothing pale, and the one metal down here is steel: what is inside his rim is a dark
+        cavity and the light drawn on it, and the panel's brass stays on the bezel outside where
+        nothing turns underneath it. The groove takes its *level* from the pane it is cut in and
+        its *hue* from SEAT_METAL, which is how it stops carrying the tube's green without
+        moving a count of the well's own shading.
         """
         inn, out = self.eye_r * SEAT_IN, self.eye_r * SEAT_OUT
         wall = max(1.0, SEAT_WALL * self.scale)
@@ -3363,9 +3434,19 @@ class Overlay:
         # are subtracted, so the inner wall's steps and the outer one's are the same cut.
         rise = (self._facets(1.0 - (dist - inn) / wall, SEAT_FACETS)
                 - self._facets(1.0 - (out - dist) / wall, SEAT_FACETS))
-        lit = np.clip(rise * into, 0.0, 1.0) * SEAT_LIP
-        floor = rgb * (1.0 - SEAT_DEEP)
-        face = floor + (rgb - floor) * lit[..., None]
+        # One wall and one side - see SEAT_ARC. Only the wall the lamp's own bearing turns into
+        # lights; the one opposite it goes under the sunk floor rather than catching a second
+        # arc of the same lamp from the other end of the ring.
+        lit = np.clip(rise, 0.0, 1.0) * np.clip(into, 0.0, 1.0) ** SEAT_ARC * SEAT_LIP
+        # The groove's own metal, at whatever level the floor has reached where it is cut - see
+        # SEAT_METAL. Taking the level from the pane and the hue from the steel is what keeps
+        # the well's vignette, its lamp and its depth unchanged across the edge of the cut.
+        metal = np.asarray(SEAT_METAL, np.float32)
+        metal = metal * ((rgb @ np.asarray(LUMA, np.float32))
+                         / float(np.dot(SEAT_METAL, LUMA)))[..., None]
+        floor = metal * (1.0 - SEAT_DEEP)
+        face = floor + (metal - floor) * lit[..., None]
+        face = face * (1.0 - SEAT_TERMINATOR * np.clip(-rise, 0.0, 1.0))[..., None]
         face = face * (1.0 + material.GRAIN * SEAT_GRAIN
                        * material.grain(dist, self._round(xs, ys), seed=material.SEED + 3))[
             ..., None]
@@ -4345,9 +4426,19 @@ class Overlay:
         up-left and goes dark down-right, a face crowned just enough to be lighter on the lamp's
         side, brushed round the way a turned part is, its highlight and its colour drifting round
         the ring where it has been handled, and the sheet's own scratches running across it. Then
-        the bevel: a machined face of steel tilted out towards the glass all the way across, lit
-        at ten o'clock and dark at four, with one bright line where it rolls over into the well.
-        Then the reveal between the two, a pixel of black. The well inside is the plate's.
+        the lip: a machined face of steel tilted out towards the glass all the way across, lit at
+        ten o'clock and dark at four, with one bright line where it rolls over into the well, an
+        index cut round its face, a catch along that same roll on the half the lamp never
+        reaches, and a reveal at its outer edge where the brass stands over it. Then the seam
+        between the two, a pixel of black. The well inside is the plate's.
+
+        The lip's section is the one that had to be argued out. Left as a plain graded face it
+        was brightest at its OUTER edge on every bearing but the lamp's - this lamp has more
+        height than reach, so a face square to the viewer takes more of it than an edge-on one
+        does - and a bright band holding one radius all the way round a ring is the tell that it
+        was drawn rather than turned. The reveal is what a real bezel has there, it is not a
+        function of where the lamp is, and it puts the fall back the right way: crest at the
+        glass, graded face, dark reveal, black seam, brass.
 
         Each of the two metals carries a full section across its own width rather than a fill and
         an edge: a blown line of the lamp itself a pixel or two in from the lit edge, a graded
@@ -4364,6 +4455,7 @@ class Overlay:
         out = float(self.shoulder)
         inn = out * COLLAR_IN
         lip = max(1.5, COLLAR_LIP * self.scale)
+        reveal = min(lip * 0.5, max(1.0, COLLAR_REVEAL * self.scale))
         roll = max(1.0, COLLAR_ROLL * self.scale)
         step = max(0.5, COLLAR_STEP * self.scale)
         lift = max(1.0, COLLAR_LIFT * self.scale)
@@ -4409,7 +4501,12 @@ class Overlay:
         sheet = self._marks[y0:y1, x0:x1]
         marks = (sheet * COLLAR_SCRATCH)[..., None]
         rgb = rgb * (1.0 - marks) + np.asarray(BRASS_SPEC, np.float32) * marks
-        rgb = np.minimum(rgb, np.asarray(material.STEEL_SPEC, np.float32))
+        # Held to the steel's ceiling in luminance and not per channel. A per-channel clip lands
+        # on red first on a warm metal, which leaves green the tallest channel it has: 177 px of
+        # this face read G above R and came out at greenbias +31 with a p99 of +32, which is a
+        # brass bezel with green highlights on it and is exactly the fault this round is about.
+        # The same scale STILL_CEILING is applied with, one ceiling earlier.
+        rgb = self._stilled(rgb)
         # ...and the two things that happen at the edges of the roll, both of them past what a
         # shaded face is allowed to reach. The far edge is occluded by the part it belongs to, so
         # it goes under the room's own light; the near one carries the lamp's own image, which is
@@ -4452,7 +4549,23 @@ class Overlay:
         # the same instrument.
         rgb = rgb + (np.asarray(BRASS, np.float32) * BRASS_BOUNCE
                      * (1.0 - diffuse)[..., None])
-        rgb = np.minimum(rgb, np.asarray(material.STEEL_SPEC, np.float32))
+        # ...the index cut round it, from the same tool as the brass's scale and at a fifth of
+        # its pitch. It hangs off the face rather than off the reveal, so the marks are read
+        # against metal and not against the shadow the brass drops.
+        rgb = rgb * self._graduation(dist, along / out, brass_in - reveal, lip - reveal,
+                                     COLLAR_INDEX, COLLAR_INDEX_LONG, COLLAR_INDEX_TICK,
+                                     COLLAR_INDEX_DEEP)[..., None]
+        # ...the catch on the rolled edge at the glass, which is the whole of what the far side
+        # of this ring gets. See COLLAR_CATCH: it goes on the edge and not on the face, and it
+        # is capped at a third of the crest the lamp's own side carries.
+        rgb = rgb + (np.asarray(material.STEEL_LIT, np.float32) - rgb) * (
+            COLLAR_CATCH * rise * rise * (1.0 - np.clip(facing, 0.0, 1.0)))[..., None]
+        # ...and the reveal at its outer edge, under the brass standing over it. All the way
+        # round, because an overhang occludes on every bearing - it is the one band of this
+        # section that is not a function of where the lamp is.
+        rgb = rgb * (1.0 - COLLAR_REVEAL_DARK * np.clip(
+            1.0 - (brass_in - dist) / reveal, 0.0, 1.0))[..., None]
+        rgb = self._stilled(rgb)
         # ...and the lamp itself in the lip, on the arc that faces it: the same line the brass's
         # roll carries, at the other end of the section and in the steel's own hue, so the two
         # metals are lit by one source and say so.
