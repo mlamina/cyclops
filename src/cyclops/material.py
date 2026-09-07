@@ -55,6 +55,16 @@ SPEC = 0.9  # ...and how much of STEEL_SPEC it lays down where it lands hardest
 RIM = 0.8  # how brightly an edge seen end-on lights up where it faces the lamp. The terminal's
 # moulding already does this (its sheen); it is what puts the one crisp bright line on the near
 # edge of every bar, and without it a rolled edge is a gradient and reads as rubber.
+BRUSH = 0.62  # how much of a highlight a brushed surface spreads ALONG its own fibres. Machined
+# stock is a bundle of micro-grooves running the length of the bar, so it does not mirror the
+# lamp at exactly one bearing and go dark at every other: it mirrors it over a band of them,
+# which is why every bar in a photograph of a rack carries a bright arris whichever way it runs.
+# Shaded isotropically, ours did not. A horizontal bar's lit edge measured 198 against a face of
+# 137 and the diagonal strut bolted to it measured 119 against a face of 111 - the same steel,
+# the same lamp, and one member with a section and one with a filled shape, because the mirror
+# direction happened to lie along the diagonal's own axis. At 1 the highlight would be identical
+# on every bearing, which is a fill of another kind; this is most of the way there and still
+# leaves a bar pointing away from the lamp visibly duller than one facing it.
 SHADOW_DROP = 1.4  # how far a shadow falls per pixel a part stands proud...
 SHADOW_SOFT = 1.3  # ...and how soft its edge is, in the same currency
 
@@ -159,8 +169,25 @@ def _half(lamp: tuple[float, float, float]) -> tuple[float, float, float]:
     return _unit((lamp[0], lamp[1], lamp[2] + 1.0))
 
 
+def _off_fibre(vx: Field | float, vy: Field | float, vz: Field | float,
+               fibre: tuple[Field, Field], brush: float) -> tuple[Field, Field, Field]:
+    """*v* with *brush* of its along-the-fibre part taken out, back to unit length.
+
+    The one operation an anisotropic highlight needs: a groove running along *fibre* cannot tell
+    where along itself the light is, so the direction it answers to is the one left when that
+    component is removed. Removing all of it is a perfect groove; removing some is stock.
+    """
+    fx, fy = fibre
+    along = (vx * fx + vy * fy) * brush
+    vx, vy = vx - along * fx, vy - along * fy
+    length = np.maximum(np.sqrt(vx * vx + vy * vy + vz * vz), 1e-6)
+    return vx / length, vy / length, vz / length
+
+
 def shade(nx: Field, ny: Field, nz: Field,
-          lamp: tuple[float, float, float] | None = None) -> tuple[Field, Field]:
+          lamp: tuple[float, float, float] | None = None,
+          fibre: tuple[Field, Field] | None = None,
+          brush: float = BRUSH) -> tuple[Field, Field]:
     """Diffuse and specular light, 0..1 each, on a field of normals under the one lamp.
 
     The specular is two things added: the lamp's own highlight, which lands where a surface
@@ -171,14 +198,27 @@ def shade(nx: Field, ny: Field, nz: Field,
     *lamp* is that light's direction, and defaults to :data:`LAMP` - the panel's one lamp seen
     from far enough away that everything on it agrees. A part that knows where on the panel it
     is passes its own :func:`bearing` instead, which is the same lamp from where it stands.
+
+    *fibre* is the direction the surface's brushing runs, across the panel and unit length -
+    a pair of numbers for a whole part or a pair of fields for one that bends. Given it, both
+    the highlight and the rim answer to the lamp with :data:`BRUSH` of its along-the-fibre
+    component removed, which is what a bundle of micro-grooves does to a reflection and what
+    keeps a bar's lit arris lit whichever way the bar runs. Left out, the surface is isotropic
+    and this is the shading every part on the panel had before.
     """
     lamp = _L if lamp is None else lamp
     hx, hy, hz = _H if lamp is _L else _half(lamp)
     diffuse = np.clip(nx * lamp[0] + ny * lamp[1] + nz * lamp[2], 0.0, 1.0)
+    # The lamp's own bearing across the panel, unit length, which is what the rim measures
+    # against; taking it off the fibre as well keeps the two halves of the highlight agreeing
+    # about where the light is.
+    px, py = _L2 if lamp is _L else _unit((lamp[0], lamp[1]))
+    if fibre is not None:
+        px, py, _ = _off_fibre(px, py, 0.0, fibre, brush)
+        hx, hy, hz = _off_fibre(hx, hy, hz, fibre, brush)
     spec = np.clip(nx * hx + ny * hy + nz * hz, 0.0, 1.0) ** SHINE
     tilt = np.sqrt(nx * nx + ny * ny)
-    flat = math.hypot(lamp[0], lamp[1]) or 1.0
-    facing = np.clip((nx * lamp[0] + ny * lamp[1]) / (flat * np.maximum(tilt, 1e-6)), 0.0, 1.0)
+    facing = np.clip((nx * px + ny * py) / np.maximum(tilt, 1e-6), 0.0, 1.0)
     rim = tilt * tilt * facing * facing
     return diffuse, np.minimum(spec + RIM * rim, 1.0)
 

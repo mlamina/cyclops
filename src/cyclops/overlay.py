@@ -693,11 +693,14 @@ RAIL_FACE_GLOSS = 0.22  # how much of the material's highlight the face keeps. T
 # a face crowned far enough to grade at all sits on the shoulder of it: at full gloss the first
 # three pixels in from the lit chamfer came out at 200 too, which is a four-pixel highlight
 # however narrow the chamfer is. One bright line means the face under it is matt
-RAIL_CROWN = 0.16  # sin of the tilt the face has reached by its chamfers, from none at its
+RAIL_CROWN = 0.12  # sin of the tilt the face has reached by its chamfers, from none at its
 # middle - towards the lamp on the lit half, away from it on the other, so the face falls from
 # its bright edge to its dark one. It was 0.02 to keep the face from reading as a tube, and a
 # face with no gradient at all was read as dead flat instead: 87 to 95 across the whole width,
-# where a frame member in the reference falls about forty from its lit edge to its far one
+# where a frame member in the reference falls about forty from its lit edge to its far one. Back
+# from 0.16 now that RAIL_SHUT carries part of that fall: the two together put a horizontal run
+# at forty levels across its face and a strut at twenty-six, and the crown alone put the first
+# at thirty-five and the second at twelve
 RAIL_LIFT = 3.0  # how proud the bar stands of what it is bolted to, which sets its cast shadow
 RAIL_CONTACT = 0.95  # alpha of the hard contact line where the bar meets the plate. Near
 # total: what is under a bar touching a plate is not a dark tint, it is occluded, and the fifth
@@ -709,14 +712,19 @@ RAIL_WEAR = 0.30  # how much the highlight comes and goes along a length - handl
 # polished where hands have been and dull between. It only ever takes the ridge *down* from a
 # true mirror of the lamp (see `polish`), so at the old 0.45 most of a run sat a third under the
 # ceiling and the bar never blew anywhere along its length...
-RAIL_DRIFT = 0.055  # ...and how much the face under it does, either way, at the same pitch...
-RAIL_SWEEP = 0.030  # ...over a slow one four times its length, which is the light in the room
+RAIL_DRIFT = 0.030  # ...and how much the face under it does, either way, at the same pitch...
+RAIL_SWEEP = 0.018  # ...over a slow one four times its length, which is the light in the room
 # rather than the hands on the bar. These two used to be 0.30 and 0.20, which is half the face's
 # light moving either way: on a strut whose shading spans 54 levels the texture swung 45, so the
 # noise was larger than the thing it was meant to be noise ON and the section stopped reading.
 # Texture that outruns its own gradient is a grain overlay, not a surface. Together with
 # RAIL_GRAIN the three of them now hold every face inside about fifteen per cent of its own
-# local value, which is where wear stays a finish rather than becoming the subject
+# local value, which is where wear stays a finish rather than becoming the subject. Halved again
+# from 0.055 and 0.030 because form has to outrank texture along a member as well as across it:
+# the panel this is judged against varies about three levels down the length of a bar and forty
+# across its section, and the lengthwise drift that is *form* is the lamp's own falloff, not
+# these. Measured, the foot rail's face now moves sixteen levels over 145 px of run against a
+# hundred and thirty-five across its width
 RAIL_GRAIN = 0.55  # of the material's brushing. Under one and the bar is smoother than the
 # sheet it is on; under half and at arm's length it is plastic
 RAIL_RIDGE_WEAR = 0.18  # how much of the lit arris a chip takes, at the brushing's own pitches
@@ -733,20 +741,28 @@ RAIL_TURN_FALL = 1.5  # how fast a turned bar's far half rolls away from its cro
 # inside its own silhouette, which is what puts a core shadow in the section instead of a floor.
 # The two frame rails are round bar and everything bolted to them is flat plate, which is one
 # more thing telling a member from the thing it carries
-RAIL_OCCLUDE = 0.70  # how much of the room the far side of a bar loses to the plate it is lying
-RAIL_OCC_AT = 0.30  # on, and how far down the section that starts. A section whose dark half
-# sits at the ambient floor is a *fill* at 39 levels; a bar touching a plate cannot see the room
-# down there at all, and the last of its far half goes to about 20 - which is the core shadow
-# every critic measured the absence of. Ambient occlusion, and it belongs to the diffuse floor
-# rather than to the colour: see material.steel's `ambient`
-RAIL_BOUNCE = 0.36  # ...and how much light comes back UP off the plate onto the last of it,
+RAIL_SHUT = 0.42  # how much of the room the far side of a *flat* bar loses to the plate under
+# it, which is the fall that does not care which way the bar runs. The crown does care: it is
+# the lamp's bearing projected onto the section, and on a 45-degree strut that projection is
+# 0.40 where a horizontal run gets 0.93. So the same crown that fell 35 levels across the bar
+# along the bottom edge fell 12 across the strut bolted to it, and three of our seven runs came
+# out flat to within the brushing - "a flat fill bracketed by edge strokes", measured four
+# rounds running. Occlusion is geometry rather than bearing and lands the same on all of them
+RAIL_OCCLUDE = 0.70  # ...and how much a turned one loses, which is more, because a round bar
+RAIL_OCC_AT = 0.30  # curls right under itself; and how far down the section either of them
+# starts. A dark half sitting at the ambient floor is a *fill* at 39 levels; a bar touching a
+# plate cannot see the room down there at all, and the last of its far half goes to about 20 -
+# which is the core shadow every critic measured the absence of. Ambient occlusion, and it
+# belongs to the diffuse floor rather than to the colour: see material.steel's `ambient`
+RAIL_BOUNCE = 0.26  # ...and how much light comes back UP off the plate onto the last of it,
 RAIL_BOUNCE_AT = 0.74  # over the outer quarter of the far side. This is the fourth event in the
 # section and the one that says the bar is round: core shadow, then a line of reflected light
 # under it. Capped hard - the whole point of the round bar is one specular, and a bounce that
 # gets near it is the two-lights fault this panel has been marked down for three rounds running.
-# At 0.36 it lands about three tenths of the crest - under the 0.35 ceiling a down-facing surface
-# is held to, and still twice the core shadow it sits below, so it reads as a bounce and not as a
-# second light. It reaches only the one row the section actually turns under: see RAIL_BOUNCE_AT
+# It is also scaled by how squarely the member's section lies to the lamp, because the crest it
+# has to stay under is: see `bear` in :meth:`_draw_rail`. Between them the foot rail's bounce
+# measures a tenth of its own crest and the head rail's corner legs six hundredths, where a flat
+# 0.36 put those legs at four fifths. It reaches only the rows the section actually turns under
 RAIL_GRAIN_DARK = 0.45  # ...and how much of it goes the other way. Brushed steel scatters more
 # than it swallows, so its tooth is bright specks on a face rather than noise about a mean: a
 # symmetric field measures as a grain overlay laid over the render, which is what it is
@@ -757,6 +773,13 @@ RAIL_SUN = 0.60  # what is left of the lamp at the far corner of the panel, as a
 # top frame at a median of 116 and its bottom-right corner at 37, and a rail system of one
 # brightness end to end is the flattest thing on a panel however well each bar is shaded. The
 # field is :func:`material.glare` about PLATE_LAMP, the same one the plate itself is lit by
+RAIL_SUN_SPEC = 0.30  # ...as a power, for the highlight. A face in the far corner is dimmer
+# because less light reaches it; a *highlight* there is a picture of the lamp, and the lamp is
+# the same lamp from anywhere on an eight-inch panel. Taking the full falloff off the ridge as
+# well put our bottom-right corner at a chamfer of 101 over a face of 90 - a member with no
+# section - where the reference holds 157 to 179 over a face of 85 in the same corner. Not zero:
+# the ridge is a reflection of a lamp seen at a longer grazing angle out there, and a corner
+# whose highlight is as hot as the one under the lamp says the lamp is everywhere
 RAIL_SCRATCHES = 26  # hairlines drawn over each bar's box, of which seven or eight cross it.
 # Wear on metal is an event and events are bright: a scuff takes the oxide off and what is under
 # it catches the lamp. Eight of them over a whole mount was a clean bar with a mark on it
@@ -4140,13 +4163,29 @@ class Overlay:
         :func:`material.lamp_2d` does, so a diagonal rail's bright edge is its upper-left one and
         a horizontal rail's is its top.
 
-        The face is brushed along its length, drifts forty levels or so from one end of a run to
-        the other, is crossed by the sheet's hairlines and a couple of dozen of its own, and
-        pitted here and there. None of that is decoration: a face with nothing in it measures
-        flat to within a level and is read as a fill at a glance, and a face whose only variation
-        is across its width measures as an extruded swatch, which is the same sentence. Over all
-        of it, the lamp's own falloff across the panel (:meth:`_sunlight`), so a bar in the far
-        corner is dimmer than one under the lamp.
+        Which edge is lit is one thing and whether that edge is lit *at all* is another, and the
+        second is what the brushing settles. The bar is ground along its own run, so its
+        highlight answers to the lamp anisotropically (:data:`material.BRUSH`, the bar's tangent
+        passed in as the fibre). Isotropic, a member's ridge dies whenever the direction that
+        mirrors the lamp happens to lie along the member's own axis - which is exactly where a
+        45-degree strut sits, and ours measured a lit edge of 119 over a face of 111 beside a
+        horizontal at 198 over 137. A bar whose section falls but whose edge does not catch is a
+        filled shape.
+
+        The fall across the face is two things, because one of them cannot do the job alone. The
+        crown is the lamp's bearing projected onto the section, so it is worth forty levels on a
+        horizontal run and twelve on a strut; the far half's ambient occlusion (RAIL_SHUT) is
+        geometry and lands the same on every bearing. Together the face falls monotonically from
+        its lit chamfer to a far edge that is the darkest metal on the member, whichever way the
+        member runs, which is the whole of what a single lamp looks like.
+
+        The face is brushed along its length, is crossed by the sheet's hairlines and a couple of
+        dozen of its own, and pitted here and there. None of that is decoration: a face with
+        nothing in it measures flat to within a level and is read as a fill at a glance. Nor may
+        it be the subject - texture along a run stays well under the section's own gradient, or
+        the member reads as a swatch with noise on it. Over all of it, the lamp's own falloff
+        across the panel (:meth:`_sunlight`), which the face takes whole and the ridge takes a
+        fraction of: see RAIL_SUN_SPEC.
 
         The shadows are still most of the work. A bar with a bright edge and no shadow reads as
         a drawing of a bar; the same bar with a hard line of contact shadow hugging it and a soft
@@ -4242,16 +4281,39 @@ class Overlay:
         away = crown + (1.0 - crown) * out**RAIL_TURN_FALL
         far = np.where(arris, RAIL_FAR_TILT, np.maximum(crown, turned * away))
         tilt = np.where(lit, crown + (1.0 - crown) * rolled, far)
-        diffuse, spec = material.shade(ex * tilt, ey * tilt, np.sqrt(1.0 - tilt * tilt))
+        # Brushed along its own length, so the highlight answers to the lamp anisotropically -
+        # see material.BRUSH. Without the fibre the mirror direction for a 45-degree strut lies
+        # almost along the strut's own axis, no normal on it ever crosses that direction, and
+        # the member comes out with no lit edge at all beside the horizontal it is bolted to.
+        diffuse, spec = material.shade(ex * tilt, ey * tilt, np.sqrt(1.0 - tilt * tilt),
+                                       fibre=(tx, ty))
         # What the far half can see of the room, which is what turns its dark side from a floor
         # into a section. Two things and they land in different places: the plate shuts the
         # underside in (deepest at the contact), and the plate also throws a little light back up
-        # onto the last of it. Occlusion first, bounce over it, and the bounce is held to a
-        # third of the crest so the member keeps one specular - see RAIL_BOUNCE.
+        # onto the last of it. Occlusion first, bounce over it, and the bounce is held well under
+        # the crest so the member keeps one specular - see RAIL_BOUNCE.
+        #
+        # Every bar is shut in on its far side, not only a turned one. A flat bar's face is a
+        # shallow cylinder and the tilt across it is worth about twenty levels on a horizontal
+        # run - but only eight on a 45-degree one and nine on a vertical, because the lamp's
+        # bearing barely projects onto those sections at all. Measured, that left three of our
+        # seven runs with a face flat to within the brushing, which is what a critic reads as a
+        # fill bracketed by edge strokes. Occlusion does not care which way a bar points: the
+        # far half of any bar lying on a plate sees less of the room than the near half, and it
+        # is what carries the fall on the runs the crown cannot.
         under = np.clip((out - RAIL_OCC_AT) / (1.0 - RAIL_OCC_AT), 0.0, 1.0) * ~lit
         bounce = np.clip((out - RAIL_BOUNCE_AT) / (1.0 - RAIL_BOUNCE_AT), 0.0, 1.0) ** 2 * ~lit
-        room = (material.AMBIENT * (1.0 - turned * RAIL_OCCLUDE * under * under)
-                + turned * RAIL_BOUNCE * bounce)
+        shut = RAIL_SHUT + (RAIL_OCCLUDE - RAIL_SHUT) * turned
+        # How squarely this member's section lies to the lamp, which is how big a crest it has to
+        # sit under. The bounce off the plate is much the same whichever way a bar runs; the
+        # crest beside it is not, and the ceiling a bounce has to stay under is a fraction of
+        # *that*. Left flat, the same reflected line that reads as a bounce on the foot rail -
+        # a seventh of its crest - came out four fifths of the crest on the head rail's corner
+        # legs, where the lamp barely grazes the section at all: two comparable highlights on
+        # one member, which is a panel with two lamps on it however each was arrived at.
+        bear = np.abs(ex * lx + ey * ly)
+        room = (material.AMBIENT * (1.0 - shut * under * under)
+                + turned * RAIL_BOUNCE * bear * bounce)
         rub = material.wear(along)
         # ...and how polished the bar is where the ridge crosses it. Down from the mirror, never
         # up: a highlight that is already reflecting the lamp cannot reflect more of it, and
@@ -4291,7 +4353,18 @@ class Overlay:
         # polished. Laid over the finished colour instead, they pushed the ridge past the tube.
         sweep = material.wear(along * RAIL_SWEEP_PITCH, seed=material.SEED + 8)
         drift = (RAIL_DRIFT * rub + RAIL_SWEEP * sweep) / material.GRAIN
-        rgb = material.steel(diffuse, spec, tooth * RAIL_GRAIN + drift, face, ambient=room)
+        # The lamp is one lamp standing over the top left of the panel, and a bar in the far
+        # corner takes less of it. The face takes all of that falloff; the highlight takes a
+        # fraction of it, because a specular is not a lit surface, it is a picture of the lamp
+        # reflected in one - and a picture of the lamp is nearly as bright wherever on the panel
+        # you stand. Taken off the finished colour instead, as it was, the ridge in the bottom
+        # right corner fell with its own face and the member lost its section: ours measured a
+        # chamfer of 101 over a face of 90 there, against 157-179 over 85 on the panel this one
+        # is judged against, which is the whole of that corner's read in one number.
+        sun = self._sunlight(x0, y0, w, h)
+        lamp_spec = sun**RAIL_SUN_SPEC
+        rgb = material.steel(diffuse * sun, spec * lamp_spec, tooth * RAIL_GRAIN + drift,
+                             face, ambient=room * sun)
         rgb = rgb * (1.0 - chip)[..., None]
         # Hairlines: the sheet's, where they happen to cross, and a few of the bar's own, dragged
         # along its length. Seeded off where the bar is, so every bar is scratched differently
@@ -4305,14 +4378,14 @@ class Overlay:
                                  length=tuple(2 * n * self.scale for n in RAIL_SCRATCH_LEN))
         own = own.reshape(h, 2, w, 2).mean(axis=(1, 3)) * 2.0
         marks = (np.maximum(own, self._marks[y0:y1, x0:x1]) * RAIL_SCRATCH)[..., None]
-        rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+        # Under the same lamp as the bar it is cut into: a scratch is bare metal catching the
+        # room, not a light of its own, so it dims with the corner it is in.
+        bare = np.asarray(material.STEEL_SPEC, np.float32) * lamp_spec[..., None]
+        rgb = rgb * (1.0 - marks) + bare * marks
         # ...and the odd pit where the finish has gone through. Kept off the lit chamfer: a hole
         # in the one bright line reads as a break in the bar rather than as a mark on it.
         pitted = material.pits(w, h, RAIL_PITS, seed=seed) * ((depth >= edge) | ~lit)
         rgb = rgb * (1.0 - RAIL_PIT_DEPTH * pitted)[..., None]
-        # The lamp is one lamp and it stands over the top left of the panel: a bar in the bottom
-        # right of it gets about half of what a bar under it does, highlight and all.
-        rgb = rgb * self._sunlight(x0, y0, w, h)[..., None]
         # A cut end is where a bar rusts first.
         total = sum(math.hypot(b[0] - a[0], b[1] - a[1])
                     for a, b in zip(points, points[1:], strict=False))
@@ -4578,7 +4651,11 @@ class Overlay:
         ribs = Image.new("RGBA", layer.size, (0, 0, 0, 0))
         sd, rd = ImageDraw.Draw(shade), ImageDraw.Draw(ribs)
         sun = float(self._sunlight(round(corner[0]), round(corner[1]), 1, 1)[0, 0])
-        crest = (*(round(c * sun) for c in material.STEEL_LIT), RIB_CREST)
+        # The web's own hairline takes the falloff the way a bar's ridge does - as a fraction,
+        # because it is a reflection of the lamp and not a lit face (see RAIL_SUN_SPEC). Taking
+        # all of it, the three stiffeners in the deepest corner of the panel came out a dozen
+        # levels off the plate they stand on, which is a gusset with no relief on it at all.
+        crest = (*(round(c * sun**RAIL_SUN_SPEC) for c in material.STEEL_LIT), RIB_CREST)
         # The face between the two arrises, in two facets rather than one flat band. A web this
         # narrow has no room for a ramp, and a ramp is not what a milled chamfer does anyway: it
         # breaks into facets and each one holds its own angle, so the section steps down from the
