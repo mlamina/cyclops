@@ -1019,8 +1019,17 @@ def test_the_live_readouts_wear_the_accent_and_the_furniture_does_not() -> None:
     assert wears((at + marker_w, top, at + marker_w + 60, top + 14)) == "phosphor"
     # ...and the furniture: the volume knob, which reads the same number in every state and so
     # wears the panel's own phosphor in all of them.
-    box = ov.hitboxes.volume
-    assert wears((box.x, box.y, box.right, box.bottom)) == "phosphor"
+    #
+    # What is asked is the knob's *reading* - the face inside the bezel - and not the whole
+    # hitbox. The hitbox used to be the same thing, because the bezel was a dull ring that never
+    # crossed the brightness at which a pixel counts as lit; now that the instruments are turned
+    # steel under the panel's lamp, a box round one averages the ring, and the rail in the box's
+    # corners, in with the reading. Metal on this panel is grey by rule, so a box that includes
+    # it can only ever come out grey; the question this test exists to ask is whether the
+    # phosphor printed on the face went and took the accent, and the face is where to ask it.
+    cx, cy = (round(v) for v in ov.switches[overlay.VOLUME])
+    face = int(overlay.DIAL_BEZEL_IN * ov.btn_r / math.sqrt(2))  # the square inside the glass
+    assert wears((cx - face, cy - face, cx + face, cy + face)) == "phosphor"
 
 
 def test_the_accent_belongs_to_the_same_tube_as_the_phosphor() -> None:
