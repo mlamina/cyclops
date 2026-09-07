@@ -145,15 +145,15 @@ INDEX_TICKS = 60  # one cut every six degrees...
 INDEX_MAJOR = 5  # ...and every fifth of them run the full width, which is what makes a ring of
 # marks read as a scale rather than as a knurl
 INDEX_TICK = 0.45  # how far across the face a minor cut reaches, as a fraction of the width
-INDEX_LIT = 0.34  # the flat of the brass where it is turned away from the lamp...
-INDEX_TOP = 0.50  # ...and where it faces it. Two arcs rather than a grade, for the reason
+INDEX_LIT = 0.26  # the flat of the brass where it is turned away from the lamp...
+INDEX_TOP = 0.37  # ...and where it faces it. Two arcs rather than a grade, for the reason
 # LEAF_FACE gives: a gradient inside this tile is a numpy pass over half a million pixels a frame
 INDEX_FROM = 200  # where the lit arc starts and how far it runs, set on the panel's own lamp -
 INDEX_SPAN = 160  # up and to the left - so the ring agrees with every bevel outside him
 INDEX_CUT = 0.16  # the cut itself. A groove in brass is darker than the face it is cut into
-INDEX_LIP = 0.60  # the polished outer edge, one hair wide: a machined ring reads from its edge
+INDEX_LIP = 0.42  # the polished outer edge, one hair wide: a machined ring reads from its edge
 # before it reads from its face
-BRASS_EYE = (178, 128, 38)  # what the ring is made of, and the one part of him that is not his
+BRASS_EYE = (206, 168, 84)  # what the ring is made of, and the one part of him that is not his
 # tint. Darker than the collar's brass outside him (overlay.BRASS) because it is seen through the
 # same glass as the phosphor, and because the face's colour is measured over what it lights: at
 # INDEX_TOP this lands near 160 of the 200 that measurement starts counting at, so the ring is a
@@ -163,6 +163,13 @@ CORE_HUB = 0.10  # the filaments start here rather than at a point, or they pile
 # a blob at the centre and the falloff stops being a falloff
 CORE_EDGE = 0.97  # ...and stop just short of the rim, so the rim reads as a rim
 CORE_RINGS = (0.44, 0.72)  # two faint circles across them, which says "lens" and not "fan"
+GLOW_N = 5  # rings of bloom around the hot middle: the halo a bright filament throws into the
+# glass in front of it. Stepped, and cheap on purpose - five loops against a numpy pass over the
+# tile every frame, which is what a real radial falloff would cost in here (see LEAF_FACE).
+GLOW_TO = 2.9  # how far out the last of them reaches, as a multiple of the hot middle
+GLOW_LIT = 0.80  # the innermost ring's strength...
+GLOW_FALL = 1.6  # ...and the power the rest fall off at, so the bloom is tight to the middle
+# rather than a wash across the whole aperture
 HOT = 0.30  # the hot middle, as a fraction of the core...
 SPARK = 0.13  # ...and the brightest part of that again
 SPARK_FLOOR = 1.5  # ...but never a smaller radius than this in panel pixels. sqrt(2) is the
@@ -1060,7 +1067,15 @@ class Pen:
         the core is small enough for that to bite.
         """
         n = max(12, min(CORE_N, round(TAU * rad / (1.2 * SUPERSAMPLE))))
+        dx, dy = lead
         self.disc(rad, CORE_FLOOR)
+        # The bloom the hot middle throws into the glass in front of it, laid straight onto the
+        # core's floor so the threads and the middle itself are drawn over it. Discs and not
+        # rings, largest first: ImageDraw writes rather than composites, so a dim ring laid over
+        # a bright thread is a dark hole - which is exactly what the first attempt at this drew.
+        for i in range(GLOW_N, 0, -1):
+            k = i / GLOW_N
+            self.disc(rad * HOT * GLOW_TO * k, GLOW_LIT * (1.0 - k) ** GLOW_FALL, dx, dy)
         thread, hair = self.shade(THREAD_LIT), max(1, round(self.hair))
         # CORE_HUB leaves a gap the filaments do not fill, and it is meant to spend its life
         # under the hot middle. At the lead this eye now uses it does not: left where it is, that
@@ -1071,7 +1086,6 @@ class Pen:
         # gap and then follow only as far as it takes to stay under it, so the fan is exactly
         # radial while he is looking at you and no more skewed than it has to be when he is not.
         # Free either way: the same lines, moved.
-        dx, dy = lead
         mag = math.hypot(dx, dy)
         over = max(0.0, mag - rad * (HOT - CORE_HUB)) / mag if mag > 0.0 else 0.0
         hx, hy = dx * over, dy * over
