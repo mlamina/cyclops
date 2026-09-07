@@ -331,3 +331,88 @@ def bolt(r: float, fx: float = 0.0, fy: float = 0.0) -> Image.Image:
     alpha = cover + shadow * (1.0 - cover)
     rgb = rgb * (cover / np.maximum(alpha, 1e-6))[..., None]
     return to_image(rgb, alpha)
+
+
+# ---- a socket screw seated in flat bar ----
+#
+# What :func:`bolt` is not. That one is a crowned cap screw standing on the bar, and at panel size
+# a crowned head on a bar reads as a bead on a tube. This one is sunk into it: a flat collar of the
+# bar's own grey, a countersunk dish, a head at the bottom of the dish and a socket in the head.
+SCREW_DISH = 0.74  # of the radius: where the countersink starts, inside the flat collar
+SCREW_HEAD = 0.52  # of the radius: the head sitting at the bottom of the dish
+SCREW_SLOPE = 0.62  # sin of the dish's slope. Steep: a shallow countersink is a saucer
+SCREW_DISH_GLOSS = 0.35  # how much of the steel's highlight the dish keeps. It is cut, not
+# polished: its far wall is a step lighter than its near one and not the brightest thing on the
+# screw, which is the collar's rim, on the side the lamp is
+SCREW_RIM = 1.4  # px of the collar's edge that roll down to the bar - the ring that is read
+SCREW_CROWN = 0.18  # sin of the tilt the head has reached by its edge - barely domed
+SCREW_SOCKET = 0.30  # of the radius: the hex socket, corner to centre
+SCREW_LIFT = 0.11  # of the radius: how proud the collar stands. A seated head, not a bead, so
+# its shadow is a pixel down and right of it and no more
+SCREW_SEAT = 0.40  # that shadow's alpha where it is deepest
+SCREW_WEAR = 0.13  # how much darker the bar is in the ring round the head a spanner has been in
+SCREW_WEAR_W = 2.0  # ...and how wide that ring is, in px
+
+
+@lru_cache(maxsize=32)
+def screw(r: float, fx: float = 0.0, fy: float = 0.0) -> Image.Image:
+    """A socket screw countersunk into flat bar, as an RGBA tile with the head at its centre.
+
+    A flat collar with a rolled edge one pixel wide - lit where it faces the lamp, dark where it
+    turns away, and the one specular on it where the roll faces the lamp squarely; inside it a
+    countersunk dish whose far wall the lamp reaches down into and whose near wall it does not,
+    which is what says the head is *below* the collar rather than on it; a barely-domed head at
+    the bottom; and a hex socket near black except for the wall the light gets down to. Round
+    the outside, the ring of bar a spanner has darkened and the shadow a head a fraction proud
+    drops down and right of itself. *fx*, *fy* as for :func:`bolt`.
+    """
+    lift = r * SCREW_LIFT
+    margin = math.ceil(max(lift * (SHADOW_DROP + 3 * SHADOW_SOFT), SCREW_WEAR_W)) + 1
+    half = math.ceil(r) + margin
+    size = 2 * half + 1
+    grid = (np.arange(size * _SS, dtype=np.float32) + 0.5) / _SS - 0.5
+    xs, ys = grid[None, :] - (half + fx), grid[:, None] - (half + fy)
+    dist = np.sqrt(xs * xs + ys * ys)
+    safe = np.maximum(dist, 1e-6)
+    gx, gy = xs / safe, ys / safe
+    cover = np.clip(0.5 - (dist - r) * _SS, 0.0, 1.0)
+    # The collar: flat, with its outer pixel rolled down to the bar.
+    nx, ny, nz = roll_normals(np.maximum(r - dist, 0.0), gx, gy, SCREW_RIM, dome=0.0)
+    # The dish: a cone falling towards the centre, so its normals point inward and the wall the
+    # lamp lights is the far one - the opposite of a dome, and the whole difference between a
+    # head sunk into a bar and a bead sitting on it.
+    dish = (dist < r * SCREW_DISH) & (dist >= r * SCREW_HEAD)
+    nx = np.where(dish, -gx * SCREW_SLOPE, nx)
+    ny = np.where(dish, -gy * SCREW_SLOPE, ny)
+    nz = np.where(dish, math.sqrt(1.0 - SCREW_SLOPE * SCREW_SLOPE), nz)
+    head = dist < r * SCREW_HEAD
+    crown = SCREW_CROWN * np.clip(dist / max(r * SCREW_HEAD, 1e-6), 0.0, 1.0)
+    nx = np.where(head, gx * crown, nx)
+    ny = np.where(head, gy * crown, ny)
+    nz = np.where(head, np.sqrt(np.maximum(1.0 - crown * crown, 0.0)), nz)
+    diffuse, spec = shade(nx, ny, nz)
+    rgb = steel(diffuse, np.where(dish, spec * SCREW_DISH_GLOSS, spec))
+    # The socket, as in bolt(): a dark floor and the far wall the light gets down to.
+    hexd = _hexagon(xs, ys, r * SCREW_SOCKET)
+    hy, hx = np.gradient(hexd)
+    hlen = np.maximum(np.hypot(hx, hy), 1e-6)
+    facing = np.clip(-(hx * _L[0] + hy * _L[1]) / hlen, 0.0, 1.0)
+    wall = np.clip(1.0 - np.maximum(-hexd, 0.0) / BOLT_WALL, 0.0, 1.0) * facing
+    floor_ = np.asarray(STEEL_DARK, np.float32) * 0.8
+    socket = floor_ + (np.asarray(STEEL, np.float32) - floor_) * wall[..., None]
+    inside = np.clip(0.5 - hexd * _SS, 0.0, 1.0)[..., None]
+    rgb = rgb * (1.0 - inside) + socket * inside
+    mouth = np.clip(1.0 - np.maximum(hexd, 0.0) / BOLT_EDGE, 0.0, 1.0) * (1.0 - inside[..., 0])
+    rgb = rgb * (1.0 - 0.4 * mouth)[..., None]
+    rgb, cover = _boxed(rgb, cover)
+    # What goes under the collar: the seat shadow and the spanner's ring, both black, both soft,
+    # and both composited under the head so the head covers its own shadow.
+    at = np.arange(size, dtype=np.float32)
+    ring_d = np.hypot(at[None, :] - (half + fx), at[:, None] - (half + fy)) - r
+    ring = SCREW_WEAR * np.clip(1.0 - ring_d / SCREW_WEAR_W, 0.0, 1.0)
+    ring = ring * np.clip(ring_d + 0.5, 0.0, 1.0)
+    shadow = cast(cover, lift) * SCREW_SEAT
+    under = 1.0 - (1.0 - shadow) * (1.0 - ring)
+    alpha = cover + under * (1.0 - cover)
+    rgb = rgb * (cover / np.maximum(alpha, 1e-6))[..., None]
+    return to_image(rgb, alpha)

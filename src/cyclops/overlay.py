@@ -557,24 +557,48 @@ PAD = 0.036  # inner padding - wide enough that the inward glow never reaches an
 # off the frame at an angle and eats the edges either side of the corner, and these give that
 # room back to the picture.
 #
-# The rail on that spine is a bar of steel rather than a stroke: a round-edged section standing
-# proud of the plate, lit by the panel's one lamp (:mod:`cyclops.material`) so the edge turned
-# towards it is bright and the edge turned away is dark, with the shadow it drops falling the
-# other way from the light. That is what makes a bracket read as something bolted to the panel
-# rather than as a line drawn on it, and it is why the rail is this thick: at a hairline there is
-# no width for an edge to roll in. It is not any thicker for being machined - the section is the
-# same seventeen the profile used to be painted across.
+# The rail on that spine is flat bar stock rather than a stroke: a mitred bar with a flat face,
+# a chamfer down each long edge and square ends, standing a little proud of the plate and lit by
+# the panel's one lamp (:mod:`cyclops.material`) so the chamfer turned towards it is one bright
+# line and the one turned away gives back a duller glint off the plate below, with a hard line of
+# contact shadow under it and a soft one falling the other way from the light. That is what makes
+# a bracket read as something bolted to the panel rather than as a line drawn on it, and it is
+# why the rail is this thick: at a hairline there is no width for a chamfer. It was a round-edged
+# section for a while and read as a tube - a bright edge fading to dark is a pipe whatever it is
+# made of, and flat stock is what a bracket is cut from.
 RAIL = 17.0  # reference pixels, and the one number the whole bracket language rests on
-RAIL_ROLL = 2.5  # reference px of each edge that turn down to the plate - the rolled corner
-# that catches the lamp on one side and goes dark on the other, and the whole of the depth
-RAIL_LIFT = 2.5  # how proud the bar stands of what it is bolted to, which sets its shadow
+RAIL_EDGE = 1.2  # reference px of the chamfer the lamp lights: one crisp line, no wider. The
+# whole of what says "edge" at arm's length is that it is a line and not a band
+RAIL_CHAMFER = 3.0  # reference px of the chamfer turned away from it, which is read as a ramp
+# rather than a line and can afford the width; capped for a thin member so a clamp's nine-pixel
+# strap keeps a flat between its two chamfers
+RAIL_CHAMFER_TILT = 0.75  # sin of the lit chamfer's slope: a machinist's 45
+RAIL_CROWN = 0.02  # sin of the tilt the flat face has reached by the chamfer. Nearly nothing:
+# any more and the face is a gradient again, and a gradient across a bar is a tube
+RAIL_RETURN = 0.85  # how far the far chamfer is put towards STEEL_LIT at its arris - the lit
+# plate under the bar reflected in it. Duller than the lit edge on purpose: brighter and the bar
+# is lit from two sides, which is the one thing the panel's single lamp must never look like
+RAIL_LIFT = 2.0  # how proud the bar stands of what it is bolted to, which sets its cast shadow
+RAIL_CONTACT = 0.72  # alpha of the hard contact line where the bar meets the plate...
+RAIL_CONTACT_W = 1.6  # ...how far out from the edge it reaches before it is gone...
+RAIL_CONTACT_LIT = 0.55  # ...and how much of it survives on the edge the lamp lights
 RAIL_WEAR = 0.45  # how much the highlight comes and goes along a length - handled steel is
 # polished where hands have been and dull between
-RAIL_SCRATCH = 0.40  # how pale the sheet's hairlines show where they cross a bar. The same
-# marks as the plates', because a scratch that stops at the rail is a scratch on a drawing.
+RAIL_GRAIN = 0.8  # of the material's brushing. Under one and the bar is smoother than the
+# sheet it is on; under half and at arm's length it is plastic
+RAIL_SCRATCHES = 8  # hairlines drawn over each bar's box, of which two or three cross the bar
+RAIL_SCRATCH_SPREAD = 4.0  # degrees either side of the bar's own run they wander - dragged
+# along it, not across it
+RAIL_SCRATCH_LEN = (12.0, 60.0)  # reference px, shortest to longest: long enough to read as a
+# scratch and never the whole bar
+RAIL_SCRATCH = 0.35  # how pale a hairline shows where it crosses a bar - its own and the
+# sheet's, because a scratch that stops at the rail is a scratch on a drawing
+RAIL_END_WEAR = 0.13  # how much darker the last few pixels of a bar are, where a cut end rusts
+RAIL_END_W = 3.0  # ...and how many pixels that is
 RAIL_LIP = 0.78  # fraction of a ring's width that is the lit chamfer, for the collar and the
 RAIL_BODY = 0.28  # dial bezels, which still bend the old three-band profile - see _rail_colour
-RAIL_SHADOW = 165  # alpha of the shadow the rail casts onto its own plate
+RAIL_SHADOW = 150  # alpha of the soft shadow the rail casts onto its own plate
+BAR_SS = 4  # a bar's outline is filled this many times over and boxed down - its anti-aliasing
 BOLT_R = 7.0  # a socket head, sunk through the rail wherever it turns
 RIB_N = 3  # stiffeners across the deep corner of a bracket
 RIB_W = 4.0  # ...their section, in reference px
@@ -587,6 +611,14 @@ PLATE_STEEL = 0.04  # ...and the grey stirred into that wash. A plate is gunmeta
 PLATE_GRAIN = 0.07  # how much the brushing shows through the wash, either way
 PLATE_SCRATCHES = 70  # hairlines across the whole sheet, of which the plates keep about a sixth
 PLATE_SCRATCH_ALPHA = 0.30  # ...and how pale the palest of them is
+PLATE_LIGHT = 0.11  # how far towards STEEL_LIT the sheet is lifted where the lamp is nearest it.
+# A wash is the same everywhere; a surface is lit, and falls off away from the light
+PLATE_LAMP = (0.12, -0.30)  # where over the panel the lamp stands, in widths across and heights
+# down - the same up-and-left the terminal's glare and every bar's bright edge agree on
+PLATE_REACH = 1.7  # how far its light carries across the sheet, in panel heights. Long: the
+# corners are still lit, only less
+PLATE_WEAR = 0.035  # how much the lift comes and goes across the sheet - a plate handled for
+# years is brighter where it is rubbed and duller between, and never the same shade twice
 
 # The spines, at the reference. Anything on the right or the bottom is written as a distance in
 # from that edge, so one table lays out all four and mirrors without a second.
@@ -1714,6 +1746,15 @@ class Overlay:
         base = _over(base, material.STEEL_LIT, np.clip(grain, 0.0, 1.0) * PLATE_GRAIN)
         base = _over(base, (0, 0, 0), np.clip(-grain, 0.0, 1.0) * PLATE_GRAIN)
         base = _over(base, material.STEEL_SPEC, self._marks * PLATE_SCRATCH_ALPHA)
+        # ...and lit, by the same lamp as the bars on it: brightest where it stands, falling off
+        # towards the far corners, and rubbed unevenly along the grain. Still a modulation - the
+        # lift is a tenth, and the room keeps coming through the brighter part as it does the
+        # duller.
+        lamp = (PLATE_LAMP[0] * self.width, PLATE_LAMP[1] * self.height)
+        lit = material.glare(self.width, self.height, lamp, PLATE_REACH * self.height, ambient=0.0)
+        rubbed = 1.0 + material.wear(along, seed=material.SEED + 5)
+        base = _over(base, material.STEEL_LIT,
+                     np.clip(lit * PLATE_LIGHT + rubbed * PLATE_WEAR, 0.0, 1.0))
         base = _over(base, (0, 0, 0), vignette_alpha(self.width, self.height))
         base = _over(base, (0, 0, 0), scanline_alpha(self.width, self.height))
         return base
@@ -1824,65 +1865,167 @@ class Overlay:
             return mix(steel, GREEN, 0.18 * (across - RAIL_BODY) / (RAIL_LIP - RAIL_BODY))
         return mix(steel, SCREEN, 0.80 * (RAIL_BODY - across) / RAIL_BODY)
 
+    @staticmethod
+    def _bar_frame(
+        points: Sequence[tuple[float, float]], half: float, margin: float,
+        x0: int, y0: int, width: int, height: int,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Where every pixel of a box sits on a mitred bar *half* wide either side of *points*.
+
+        Signed distance across from the centreline (positive on :func:`offset_path`'s side), arc
+        length along it, the unit tangent of the segment the pixel belongs to, and how far past
+        a square end it is. Pixels no segment claims come back infinitely far across.
+
+        :func:`material.bar_field` measures to the nearest point of the polyline, which rounds
+        every knee; a bar cut from flat stock is mitred, and at a mitre the face and both edge
+        lines have to turn through the angle without a break. The bisector of two lines is the
+        set of points the same distance from both, so a pixel goes to whichever of its candidate
+        segments' lines it lies nearest - and a segment is a candidate only within its own
+        length plus the mitre's reach at each end, so a segment further round a curve cannot
+        claim a pixel its line happens to pass close to. *margin* extends the two free ends,
+        which is what lets the contact shadow wrap a square end.
+        """
+        pts = [points[0]]
+        for p in points[1:]:
+            if math.hypot(p[0] - pts[-1][0], p[1] - pts[-1][1]) > 1e-6:
+                pts.append(p)
+        ys = (np.arange(height, dtype=np.float32) + y0)[:, None]
+        xs = (np.arange(width, dtype=np.float32) + x0)[None, :]
+        dirs = [unit(*a, *b) for a, b in zip(pts, pts[1:], strict=False)]
+        lens = [math.hypot(b[0] - a[0], b[1] - a[1]) for a, b in zip(pts, pts[1:], strict=False)]
+        reach = [0.0] * len(pts)
+        for k in range(1, len(pts) - 1):
+            cos = dirs[k - 1][0] * dirs[k][0] + dirs[k - 1][1] * dirs[k][1]
+            turn = math.acos(max(-1.0, min(1.0, cos)))
+            reach[k] = half * min(math.tan(turn / 2.0), 2.0)
+        best = np.full((height, width), np.inf, np.float32)
+        across, along, tx, ty, beyond = (np.zeros((height, width), np.float32) for _ in range(5))
+        run = 0.0
+        last = len(dirs) - 1
+        for i, ((ax, ay), (dx, dy), length) in enumerate(zip(pts, dirs, lens, strict=False)):
+            t = (xs - ax) * dx + (ys - ay) * dy
+            s = (xs - ax) * dy - (ys - ay) * dx
+            lo = -reach[i] - (margin if i == 0 else 0.0)
+            hi = length + reach[i + 1] + (margin if i == last else 0.0)
+            closer = (t >= lo) & (t <= hi) & (np.abs(s) < best)
+            best = np.where(closer, np.abs(s), best)
+            across, along = np.where(closer, s, across), np.where(closer, run + t, along)
+            tx, ty = np.where(closer, dx, tx), np.where(closer, dy, ty)
+            past = np.maximum(np.maximum(-t, 0.0) if i == 0 else 0.0,
+                              np.maximum(t - length, 0.0) if i == last else 0.0)
+            beyond = np.where(closer, past, beyond)
+            run += length
+        across = np.where(np.isinf(best), np.inf, across)
+        return across, along, tx, ty, beyond
+
     def _draw_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]],
                    thick: int | None = None) -> None:
-        """A bar of steel along the spine, under the panel's one lamp, and the shadow it drops.
+        """A bar of flat steel along the spine, under the panel's one lamp, and its shadows.
 
-        Built as fields rather than strokes, the way the terminal's face is: one distance field
-        off the centreline, and the coverage, the rolled edges' normals and the brushing all come
-        off it. The lamp does the rest - the edge turned towards it is bright, the edge turned
-        away is dark, the highlight lands where the roll faces half-way between the lamp and the
-        viewer, and the shadow falls the other way from the light. Nothing here decides which
-        side is lit: :mod:`cyclops.material` does, once, for every bar on the panel.
+        One mitred outline - the spine offset both ways and closed, so the knees are corners and
+        the ends are square - filled for coverage, and one frame off the same spine
+        (:meth:`_bar_frame`) that says how far across the bar every pixel is and which edge it is
+        nearest. The section is read straight off that: a chamfer's width in from either edge
+        and a flat between. The lamp lights the chamfer turned towards it into one crisp line,
+        the flat stays the steel's own grey brushed along its length, and the chamfer turned away
+        gives back a duller glint of the lit plate under it. Nothing here decides which edge is
+        which: the edge's own normal against :func:`material.lamp_2d` does, so a diagonal rail's
+        bright edge is its upper-left one and a horizontal rail's is its top.
 
-        The shadow is still most of the work. A bar with a bright edge and no shadow reads as a
-        drawing of a bar; the same bar with something dark falling off it sits *on* something.
-        Both go on as composites from a private tile, never as writes - a translucent write is
-        a window onto the camera - and only over the box the bar actually occupies, so the eight
-        of these a panel builds are eight small tiles and not eight full frames.
+        The shadows are still most of the work. A bar with a bright edge and no shadow reads as
+        a drawing of a bar; the same bar with a hard line of contact shadow hugging it and a soft
+        one falling away from the lamp sits *on* something. Both go on as composites from a
+        private tile, never as writes - a translucent write is a window onto the camera - and
+        only over the box the bar occupies, so the eight of these a panel builds are eight small
+        tiles and not eight full frames.
 
         Everything here is once per window size. Nothing in it may be reached from a frame.
         """
         thick = self.rail_w if thick is None else thick
         half = thick / 2.0
         lift = max(1.0, RAIL_LIFT * self.scale)
-        reach = math.ceil(half + lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT)) + 1
-        x0 = max(0, math.floor(min(p[0] for p in points)) - reach)
-        y0 = max(0, math.floor(min(p[1] for p in points)) - reach)
-        x1 = min(self.width, math.ceil(max(p[0] for p in points)) + reach + 1)
-        y1 = min(self.height, math.ceil(max(p[1] for p in points)) + reach + 1)
+        contact = RAIL_CONTACT_W * self.scale
+        drop = lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT)
+        reach = math.ceil(half + contact + drop) + 1
+        rim = [*offset_path(points, half), *reversed(offset_path(points, -half))]
+        x0 = max(0, math.floor(min(p[0] for p in rim)) - reach)
+        y0 = max(0, math.floor(min(p[1] for p in rim)) - reach)
+        x1 = min(self.width, math.ceil(max(p[0] for p in rim)) + reach + 1)
+        y1 = min(self.height, math.ceil(max(p[1] for p in rim)) + reach + 1)
         if x1 <= x0 or y1 <= y0:
             return
-        dist, ox, oy, along, side = material.bar_field(list(points), x0, y0, x1 - x0, y1 - y0)
-        cover = np.clip(half + 0.5 - dist, 0.0, 1.0)
+        w, h = x1 - x0, y1 - y0
+        outline = Image.new("L", (w * BAR_SS, h * BAR_SS), 0)
+        ImageDraw.Draw(outline).polygon(
+            [((px - x0) * BAR_SS, (py - y0) * BAR_SS) for px, py in rim], fill=255
+        )
+        cover = np.asarray(outline.reduce(BAR_SS), np.float32) / 255.0
+        across, along, tx, ty, beyond = self._bar_frame(points, half, contact + 1.0, x0, y0, w, h)
+        across = np.where(np.isfinite(across), across, float(reach))  # unclaimed: far outside
+        depth = half - np.abs(across)  # in from the nearest long edge; negative outside
+        # The outward normal of the edge each pixel is nearest, and whether it faces the lamp.
+        side = np.sign(across)
+        ex, ey = side * ty, -side * tx
+        lx, ly = material.lamp_2d()
+        lit = (ex * lx + ey * ly) > 0.0
+        # What is under the bar: a soft shadow thrown away from the lamp, and a hard line of
+        # contact shadow all the way round it - deepest on the far edge, faint on the lit one,
+        # wrapping the square ends - which is what says the bar is touching the plate and not
+        # floating a pixel above it.
         shadow = material.cast(cover, lift) * (RAIL_SHADOW / 255.0)
-        layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), shadow),
+        outside = np.hypot(np.maximum(-depth, 0.0), beyond)
+        hug = RAIL_CONTACT * np.clip(1.0 - outside / contact, 0.0, 1.0)
+        hug = hug * np.where(lit, RAIL_CONTACT_LIT, 1.0) * (1.0 - cover)
+        under = 1.0 - (1.0 - shadow) * (1.0 - hug)
+        layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), under),
                               (x0, y0))
-        # The roll is a fixed size in reference pixels, capped so a thin member keeps a flat: a
-        # clamp's nine-pixel strap rolled by three a side would be a wire.
-        roll = min(max(1.5, RAIL_ROLL * self.scale), half * 0.7)
-        # The flat between the two rolls is very slightly crowned, from level at the centreline
-        # to DOME at the roll - a field, not a number, or the crown would step where the side
-        # changes sign and put a seam down the middle of every bar.
-        crown = material.DOME * np.clip(dist / max(half - roll, 1e-3), 0.0, 1.0)
-        normals = material.roll_normals(np.maximum(half - dist, 0.0), ox, oy, roll, dome=crown)
-        diffuse, spec = material.shade(*normals)
-        spec = spec * (1.0 + RAIL_WEAR * material.wear(along))
-        rgb = material.steel(diffuse, spec, material.grain(dist * side, along))
-        marks = (self._marks[y0:y1, x0:x1] * RAIL_SCRATCH)[..., None]
+        # The section. Only the lit chamfer is shaded as a tilt, because that is the one the lamp
+        # can see; the far one is coloured below, from the flat, and the flat itself is all but
+        # level.
+        edge = min(RAIL_EDGE * self.scale, half * 0.2)
+        chamfer = min(RAIL_CHAMFER * self.scale, half * 0.35)
+        crown = RAIL_CROWN * np.clip(np.abs(across) / max(half - chamfer, 1e-3), 0.0, 1.0)
+        tilt = np.where((depth < edge) & lit, RAIL_CHAMFER_TILT, crown)
+        diffuse, spec = material.shade(ex * tilt, ey * tilt, np.sqrt(1.0 - tilt * tilt))
+        rub = material.wear(along)
+        spec = spec * (1.0 + RAIL_WEAR * rub)
+        rgb = material.steel(diffuse, spec, material.grain(across, along) * RAIL_GRAIN)
+        # The far chamfer's return: the lit plate under the bar, seen in a face tilted towards
+        # it. Brightest at the arris and gone by the flat, and always short of the lit edge.
+        arris = np.clip(1.0 - depth / max(chamfer, 1e-3), 0.0, 1.0) * ((depth < chamfer) & ~lit)
+        glint = (RAIL_RETURN * arris * arris * (1.0 + 0.5 * RAIL_WEAR * rub))[..., None]
+        rgb = rgb + (np.asarray(material.STEEL_LIT, np.float32) - rgb) * glint
+        # Hairlines: the sheet's, where they happen to cross, and a few of the bar's own, dragged
+        # along its length. Seeded off where the bar is, so every bar is scratched differently
+        # and the same way on every boot. Drawn twice over and boxed down, because a hairline
+        # nearly parallel to a diagonal bar is a staircase at one pixel and a line at half.
+        longest = max(zip(points, points[1:], strict=False),
+                      key=lambda ab: math.hypot(ab[1][0] - ab[0][0], ab[1][1] - ab[0][1]))
+        own = material.scratches(w * 2, h * 2, RAIL_SCRATCHES, unit(*longest[0], *longest[1]),
+                                 seed=material.SEED + x0 * 13 + y0 * 7, spread=RAIL_SCRATCH_SPREAD,
+                                 length=tuple(2 * n * self.scale for n in RAIL_SCRATCH_LEN))
+        own = own.reshape(h, 2, w, 2).mean(axis=(1, 3)) * 2.0
+        marks = (np.maximum(own, self._marks[y0:y1, x0:x1]) * RAIL_SCRATCH)[..., None]
         rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+        # A cut end is where a bar rusts first.
+        total = sum(math.hypot(b[0] - a[0], b[1] - a[1])
+                    for a, b in zip(points, points[1:], strict=False))
+        to_end = np.minimum(along, total - along) / max(RAIL_END_W * self.scale, 1e-3)
+        rgb = rgb * (1.0 - RAIL_END_WEAR * np.clip(1.0 - to_end, 0.0, 1.0))[..., None]
         layer.alpha_composite(material.to_image(rgb, cover), (x0, y0))
 
     def _draw_bolt(
         self, d: ImageDraw.ImageDraw, x: float, y: float, r: float | None = None
     ) -> None:
-        """A hex-socket cap screw through the rail, under the same lamp as everything else.
+        """A socket screw countersunk into the rail, under the same lamp as everything else.
 
         The one detail that says a bracket is bolted on rather than drawn on. It is a sprite
-        from :mod:`cyclops.material` - crowned head, rolled rim, a socket the lamp reaches down
-        into, and the head's own shadow - composited rather than drawn, because the shadow and
-        the rim are translucent and a translucent *write* is a hole through the rail onto the
-        camera, which is what the old seat shadow was.
+        from :mod:`cyclops.material` - a flat collar of the rail's own grey with a rolled rim,
+        a countersunk dish, a head at the bottom of it with a hex socket the lamp reaches down
+        into, and the seat shadow and spanner's ring round it - composited rather than drawn,
+        because the shadow and the ring are translucent and a translucent *write* is a hole
+        through the rail onto the camera, which is what the old seat shadow was. It was a
+        crowned cap screw for a while, and a crowned head on a bar reads as a bead on a tube.
 
         Takes the draw and not the layer so that every caller keeps its one line. The layer is
         recovered from the draw, which Pillow has exposed since 9.x; the panel runs 12.
@@ -1890,7 +2033,7 @@ class Overlay:
         r = self.bolt_r if r is None else r
         layer: Image.Image = d._image
         cx, cy = math.floor(x), math.floor(y)
-        tile = material.bolt(round(r, 2), round(x - cx, 2), round(y - cy, 2))
+        tile = material.screw(round(r, 2), round(x - cx, 2), round(y - cy, 2))
         half = tile.width // 2
         # A head at the panel's edge would put the tile's corner off it, which alpha_composite
         # refuses; nothing here does, but a window size that did should lose a corner of shadow
