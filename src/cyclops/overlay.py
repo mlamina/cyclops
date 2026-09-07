@@ -1014,12 +1014,14 @@ POD_FALL_A = 0.46  # how far into the dark the rake takes the pane at the end aw
 POD_TINT_A = 0.26  # the phosphor's own wash on the glass, at the lamp's end of it. It was a
 # flat 0.07 everywhere, which is a tint; this is a field, brightest where the lamp is and gone
 # by the far knee, so the pane has a top-left and a bottom-right like every other lit thing here
-POD_SEPTUM_A = 0.62  # how far towards black the mask between two of the meter's windows takes
+POD_SEPTUM_A = 0.88  # how far towards black the mask between two of the meter's windows takes
 # the glass. A segmented meter is a dark plate with eight windows cut in it and the metal
 # between two of them is a septum - ours had lit glass there, so with the skirt cut back to
 # nothing the five pixels between two cells still came back at the wash's own 108, against a
 # cell at 189: 43 %, and the count still could not be read from a pace. The reference's gaps
-# measure *darker* than its own glass and this is the whole of why
+# measure *darker* than its own glass and this is the whole of why. Deep enough that the pair
+# still separates once a lens or a pair of eyes has softened the panel by a pixel and a half,
+# which is the distance the count actually has to survive
 POCKET_W = 60.0  # reference px of the legend pocket milled into the rail under the window...
 POCKET_H = 10.0  # ...how much of the rail's face it takes, which leaves two rows of face above
 # it and one below rather than being a band across the bar...
@@ -1040,6 +1042,27 @@ POCKET_LIP = 0.72  # ...and how much of the steel's own highlight the two it can
 POCKET_CAST = 0.35  # the shadow the near wall throws across the floor
 POCKET_TOOTH = 0.11  # the mill's marks on the floor, running across the pocket where the rail's
 # brushing runs along it: a cut face does not keep the finish of the face it was cut into
+MARK_INSET = 5.5  # reference px in from each end of the pocket the mark cut into it starts. The
+# pocket was milled and left empty, and an empty slot the exact shape of a nameplate reads as a
+# missing part - a critic called it the loudest missing small thing on the module. What fills it
+# is not a *word*: this panel gave its words up on purpose and got quieter for it. What a blank
+# plate on a real instrument carries is evidence of the machine that made it, so this is a datum
+# cross and a drilled index row, which is read at a glance and never has to be read twice
+MARK_CROSS = 2.9  # px each arm of the datum cross reaches from its centre...
+MARK_SCORE = 1.1  # ...and how wide the scored line that makes it is
+MARK_R = 1.55  # px radius of one drilled pilot dimple...
+MARK_PITCH = 5.6  # ...and roughly how far apart they sit. Roughly: the row is stretched to land
+# its last dimple on the mark's far end, because a drilled row that stops short of the plate is
+# a row somebody gave up on
+MARK_GAP = 5.0  # px between the cross and the first dimple, which is what makes them two marks
+MARK_CUT = 0.58  # how far towards black the cut goes - another forty-five counts under the
+# pocket's own floor, the same step again. Multiplicative like the pocket, so the mill's tooth
+# and the shadow the near wall throws run on through it
+MARK_WALL = 0.9  # px of wall round the cut...
+MARK_SHADE = 0.62  # ...how dark the walls the lamp cannot get down to are...
+MARK_LIP = 0.80  # ...and how much of the steel's highlight the ones it can give back. Dark above
+# and light below, the pocket's own section one step smaller, because a mark cut into a floor is
+# lit by the same lamp as the floor
 BOT_L = 250.0  # the bottom-left bracket's reach along both edges
 BOT_L_STEP = 38.0  # its square landings
 BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
@@ -2123,26 +2146,30 @@ SEG_VARY = 0.045  # ...and how much hotter or colder than its neighbours it burn
 SEG_WELL = 0.52  # how far below the glass round it an empty cell's floor sits. It used to sit
 # level with it - interior 40 against a field of 41 - which is a cell drawn on the mask rather
 # than milled into it, and there is nothing for the lit ones to be read against
-SEG_WELL_NEAR = 0.42  # of the outline's colour, the wall on the lamp's own side: a well's near
-# wall is the one the light cannot get down to...
-SEG_WELL_RIM = 2.10  # ...and the far one is the only lit line it has, as in every socket on
-# this panel. Symmetric, they are a stroke round a rectangle
+SEG_WELL_NEAR = 1.28  # of the outline's colour, the walls on the lamp's own side. A well's near
+# walls are the ones the light cannot get down to - but an aperture in a mask is a *lit edge on
+# all four sides*, and ours carried a stroke on the right and the bottom only, with the top and
+# the left left at the floor's own value. That reads as a bevel bug rather than as an empty
+# cell, and half a scale nobody can see is a scale nobody can count...
+SEG_WELL_RIM = 2.35  # ...and the far ones still carry more than the near ones, because the lamp
+# is a place. The reference's empty cell is a hairline at L148 round an interior at L58; ours
+# measured L80 on L33, half as bright as the thing it has to be read against
 SEG_GRAIN = 0.030  # the phosphor's own tooth inside a lit cell, running with the raster. Small,
 # and the single thing that turns a cell from a handful of levels into continuous tone: ours held
 # two, the reference sixty-two, and at a glance the difference is between a lit thing and a swatch
 SEG_SCAN = 0.26  # of the glass's raster the emitters take. At full it quantised a lit cell to
 # two values twenty-six levels apart - a 13 % stripe running straight through the lit element,
 # which is the loudest thing in the window and it is an artefact
-SEG_SPREAD = (0.12, 0.22)  # of each skirt's radius that reaches *sideways*, along the bar: the
-# tight bloom hardly at all, the wide halo about a fifth. The cells are windows in a mask
-# and the metal between two of them is a septum: light from one may bloom up onto the glass
-# above it and down onto the rail below it, and it may not cross to its neighbour. Round, the
-# two skirts saturated the five pixels between two lit cells - the gap came back within 12 % of
-# the cells either side of it, so five lit cells read as one slab, and a segmented meter that
-# cannot be counted has no reason to be segmented. The septum stops the light at the mask, so
-# it is the *tight* skirt it stops: what has got far enough out to be the wide halo has left
-# the mask behind and opened, which is what keeps the column over a lit cell a cone and not a
-# pipe. At these the gap falls by half, as the reference's does
+SEG_BLOOM_R = 0.62  # px the halation a lit cell lays outside its own window falls off over...
+SEG_BLOOM_A = 0.44  # ...and the alpha it starts at, hard against the rim, which puts about a
+# fifth of the cell's colour on the pixel next to it and nothing two pixels out. Tight,
+# and drawn into the cell's own tile rather than blurred off it, because the cells are windows
+# in a mask and the metal between two of them is a septum: a cell may fatten its own edge by a
+# pixel and it may not cross to its neighbour. Two skirts blurred over four and seven pixels
+# used to do this and they welded two lit cells into one slab - the gap between them came back
+# +43 over the glass round it, a +115 halo sat on the metal above the bar, and a full-height
+# column of light ran up through the top of the window. A meter that cannot be counted has no
+# reason to be segmented
 CLOCK_PAD = 2  # reference px round a baked clock glyph, so its own halation is not clipped by
 # the edge of its tile
 CLOCK_HALATION = 0.55  # how far towards the screen's own black the pixel of bleed round a glyph
@@ -5448,36 +5475,18 @@ class Overlay:
         rows = (np.arange(h) + y0) % SCANLINE_EVERY == 0
         return rows.astype(np.float32) * (TERM_SCAN / 255.0)
 
-    @staticmethod
-    def _blur_1d(field: np.ndarray, sigma: float, axis: int) -> np.ndarray:
-        """*field* softened by a Gaussian of *sigma* along one *axis* only, dark outside it.
-
-        PIL's blur is round, and a lamp behind a mask does not spread the same distance in both
-        directions - see SEG_SPREAD. Separable and built once into a tile, so a couple of
-        hundred taps a pixel is paid when a reading first appears and never in a frame.
-        """
-        if sigma < 0.1:
-            return field
-        reach = max(1, math.ceil(3.0 * sigma))
-        kernel = np.exp(-0.5 * (np.arange(-reach, reach + 1, dtype=np.float32) / sigma) ** 2)
-        kernel /= kernel.sum()
-        pad = [(0, 0), (0, 0)]
-        pad[axis] = (reach, reach)
-        wide = np.pad(field, pad)  # zero past the edge: there is no lamp out there
-        return np.lib.stride_tricks.sliding_window_view(wide, 2 * reach + 1, axis=axis) @ kernel
-
     def _lamp(
-        self, lamps: Image.Image, emitter: np.ndarray, colour: tuple[int, int, int],
+        self, lamps: Image.Image, emitter: np.ndarray | None, colour: tuple[int, int, int],
         left: int, top: int, tags: int, scan: float = 1.0,
-        spread: tuple[float, float] = (1.0, 1.0),
     ) -> tuple[Image.Image, tuple[int, int]]:
         """*lamps* - solid shapes in their own light - as seen through the pod's glass.
 
         The skirt is blurred off *emitter*, the coverage of the lit part alone, and worn in
         *colour*: twice over, tight and bright for the edge's own bloom and wide and faint for
-        the glass lit round it. *spread* is how much of each of those two is allowed to reach
-        sideways: ones for a lamp on its own, and SEG_SPREAD for a row of them in a mask, where
-        the metal between two windows stops the light of one from crossing its neighbour's gap.
+        the glass lit round it. Pass ``None`` for a lamp that is not allowed one - the meter's
+        cells are windows in a mask, and a mask's whole job is to stop the light of one window
+        reaching its neighbour's gap, so the bar draws its own pixel of halation inside each
+        cell and asks for no skirt at all.
 
         The skirt used to be blurred out of the lamps' own RGBA, and PIL blurs the colour
         channels through the transparency around a shape as well as the alpha - so every pixel
@@ -5499,32 +5508,33 @@ class Overlay:
         every caller bakes the result.
         """
         w, h = lamps.width, lamps.height
-        source = np.clip(emitter, 0.0, 1.0)
-        mask = Image.fromarray((source * 255.0).astype(np.uint8), "L")
-        def blurred(radius: float, across: float = 1.0) -> np.ndarray:
-            if across < 1.0:  # cut sideways: separable, one sigma per axis
-                return self._blur_1d(self._blur_1d(source, radius * across, 1), radius, 0)
-            round_ = mask.filter(ImageFilter.GaussianBlur(radius))  # PIL's box passes are cheaper
-            return np.asarray(round_, np.float32) / 255.0
-        skirt = np.clip(LAMP_BLOOM_A * blurred(self.glow_r, spread[0])
-                        + LAMP_HALO_A * blurred(self.halo_r, spread[1]), 0.0, 1.0)
         body = np.asarray(lamps, np.float32)
         sdf, _, _, _ = self._pod_field(tags, left, top, w, h)
         glass = self._pod_glass(sdf)
-        # The body is cut to the pane. Past it the skirt keeps LAMP_SPILL of itself and the
-        # widest of the three - the light thrown down onto the metal - is laid over that, both
-        # cut to the module: the rail's outer edge is where this instrument stops, and a skirt
-        # this wide would otherwise haze the camera under the whole pod.
-        land = max(1.0, POD_LAND * self.scale)
-        module = np.clip(0.5 + (self.rail_w + land) - sdf, 0.0, 1.0)
-        metal = np.clip(module - glass, 0.0, 1.0)
-        bounce = LAMP_BOUNCE_A * blurred(max(1.0, LAMP_BOUNCE_R * self.scale))
-        under = np.clip(skirt * glass + (LAMP_SPILL * skirt + bounce) * metal, 0.0, 1.0)
         over = body[:, :, 3] / 255.0 * glass
-        alpha = over + under * (1.0 - over)
-        lit = np.asarray(colour, np.float32) * (under * (1.0 - over))[..., None]
-        rgb = (body[:, :, :3] * over[..., None] + lit) / np.maximum(alpha, 1e-6)[..., None]
-        rgb *= (1.0 - scan * self._raster(top, h))[:, None, None]
+        if emitter is None:
+            alpha, rgb = over, body[:, :, :3]
+        else:
+            source = np.clip(emitter, 0.0, 1.0)
+            mask = Image.fromarray((source * 255.0).astype(np.uint8), "L")
+            def blurred(radius: float) -> np.ndarray:
+                round_ = mask.filter(ImageFilter.GaussianBlur(radius))
+                return np.asarray(round_, np.float32) / 255.0
+            skirt = np.clip(LAMP_BLOOM_A * blurred(self.glow_r)
+                            + LAMP_HALO_A * blurred(self.halo_r), 0.0, 1.0)
+            # The body is cut to the pane. Past it the skirt keeps LAMP_SPILL of itself and the
+            # widest of the three - the light thrown down onto the metal - is laid over that,
+            # both cut to the module: the rail's outer edge is where this instrument stops, and
+            # a skirt this wide would otherwise haze the camera under the whole pod.
+            land = max(1.0, POD_LAND * self.scale)
+            module = np.clip(0.5 + (self.rail_w + land) - sdf, 0.0, 1.0)
+            metal = np.clip(module - glass, 0.0, 1.0)
+            bounce = LAMP_BOUNCE_A * blurred(max(1.0, LAMP_BOUNCE_R * self.scale))
+            under = np.clip(skirt * glass + (LAMP_SPILL * skirt + bounce) * metal, 0.0, 1.0)
+            alpha = over + under * (1.0 - over)
+            lit = np.asarray(colour, np.float32) * (under * (1.0 - over))[..., None]
+            rgb = (body[:, :, :3] * over[..., None] + lit) / np.maximum(alpha, 1e-6)[..., None]
+        rgb = rgb * (1.0 - scan * self._raster(top, h))[:, None, None]
         tile = _to_image(rgb, alpha)
         cut = max(0, -top), max(0, -left)
         if cut != (0, 0):
@@ -5547,10 +5557,16 @@ class Overlay:
         sixty-two and no two of its seven agree, and that difference is the whole of whether a
         meter is a light or a swatch.
 
-        An empty cell is a well: a floor a little darker than the glass round it, a wall on the
-        far side lit by what the room gives it and a near wall in its own shade. Ours was a flat
-        one-pixel stroke round an interior that measured the same as the field it sat on - which
-        is a drawing of a cell rather than a cell milled into a mask.
+        An empty cell is a well: a floor a little darker than the glass round it, walls on the
+        far side lit by what the room gives them and near walls in their own shade - but lit on
+        all four, because an aperture in a mask has an edge all the way round and ours drew two
+        of them at the floor's own value, so half the scale could not be counted at all.
+
+        Its light stops at its own window. What a lit cell lays outside the cell rect is one
+        pixel of halation at SEG_BLOOM_R, drawn into this tile: no skirt is asked of
+        :meth:`_lamp` at all. The two blurred skirts that used to do it reached four and seven
+        pixels, which is further than the septum between two windows is wide, and the meter came
+        back as one lit slab with a halo on the metal above it.
 
         The window round the bar is the same shape whichever pod is up - every pod pads the
         meter off its left-hand ramp by the same POD_PAD - so one tile per reading serves all
@@ -5563,11 +5579,12 @@ class Overlay:
         if cached is not None:
             return cached
         seg_w, seg_h, gap = self._seg
-        m = self._skirt
-        # Taller below than above: the light this thing throws downwards has to reach the far
-        # edge of the rail under the window, and above it there is only the panel's own border.
-        low = math.ceil(self.pod.bottom + self.rail_w / 2.0 - (self.row + seg_h / 2.0)) + 2
-        w, h = self._meter_w + 1 + 2 * m, seg_h + 1 + m + max(m, low)
+        m = self._skirt  # the margin _draw_readouts places this tile by, left and right
+        # Only the halation stands outside a cell now, so the tile is the bar's own height and
+        # two pixels: it used to run down to the far edge of the rail to carry a bounce that no
+        # longer exists, and a frame paid to composite three times the transparent pixels.
+        pad = max(1, math.ceil(2.5 * SEG_BLOOM_R * self.scale))
+        w, h = self._meter_w + 1 + 2 * m, seg_h + 1 + 2 * pad
         xs = np.arange(w, dtype=np.float32)[None, :]
         ys = np.arange(h, dtype=np.float32)[:, None]
         lx, ly = material.lamp_2d()
@@ -5577,13 +5594,12 @@ class Overlay:
         body: tuple[np.ndarray, np.ndarray] = (
             np.zeros((h, w, 3), np.float32), np.zeros((h, w), np.float32)
         )
-        emit = np.zeros((h, w), np.float32)
         # The phosphor's tooth, laid on every cell alike: fibres along the raster, a speck under
         # them. One field for the whole bar, so two cells at the same brightness still differ.
         tooth = 1.0 + SEG_GRAIN * material.grain(ys, xs)
         for index in range(METER_SEGMENTS):
             x = m + index * (seg_w + gap)
-            cx, cy = x + seg_w / 2.0, m + seg_h / 2.0
+            cx, cy = x + seg_w / 2.0, pad + seg_h / 2.0
             hw, hh = (seg_w + 1) / 2.0, (seg_h + 1) / 2.0
             ax, ay = np.abs(xs - cx) - hw, np.abs(ys - cy) - hh
             edge = np.maximum(ax, ay)
@@ -5593,10 +5609,11 @@ class Overlay:
             gy = np.where(ax >= ay, 0.0, np.sign(ys - cy))
             away = np.clip(-(gx * lx + gy * ly), 0.0, 1.0)
             if index >= lit:
-                # A well: the floor under the glass, a rim lit on the far side and dark on the
-                # near one. The stroke lands on the pixels PIL's outline used to. Its rim takes
-                # the same per-cell offset and the same tooth a lamp does, because six empty
-                # cells drawn to one number are one cell blitted six times.
+                # A well: the floor under the glass, and a rim brighter on the far walls than on
+                # the near ones but standing off the floor on all four. The stroke lands on the
+                # pixels PIL's outline used to. Its rim takes the same per-cell offset and the
+                # same tooth a lamp does, because six empty cells drawn to one number are one
+                # cell blitted six times.
                 ring = np.clip(1.0 - np.abs(edge + 0.5), 0.0, 1.0)
                 floor_ = np.clip(0.5 - (edge + 1.0), 0.0, 1.0)
                 body = _over(body, (0, 0, 0), SEG_WELL * floor_)
@@ -5619,15 +5636,21 @@ class Overlay:
             core = SEG_FLOOR + (1.0 - SEG_FLOOR) * t * t * (3.0 - 2.0 * t)
             back = np.clip(1.0 + (edge + 0.5) / max(0.5, SEG_RIM_W * self.scale), 0.0, 1.0)
             value = (core * (1.0 + SEG_VARY * amp) + SEG_RIM * back * back * away) * tooth
-            emit = np.maximum(emit, cover * np.clip(value, 0.0, 1.0))
+            # Its halation, and only its own: a Gaussian pixel of the cell's colour outside the
+            # window, under the cell itself. At SEG_BLOOM_R nothing of it reaches the middle of a
+            # septum, so the gap between two lit cells falls to the glass floor and the bar can
+            # be counted - which is the only reason it is drawn in cells.
+            out = np.clip(edge + 0.5, 0.0, None) / max(0.4, SEG_BLOOM_R * self.scale)
+            bleed = SEG_BLOOM_A * (1.0 + SEG_VARY * amp) * np.exp(-out * out) * (1.0 - cover)
+            body = _over(body, halo, bleed)
             over = cover[..., None]
             glow = np.clip(accent * value[..., None], 0.0, 255.0)
             body = (body[0] * (1.0 - over) + glow * over, np.maximum(body[1], cover))
         lamps = _to_image(body[0], body[1])
         _, _, meter_right = self._readouts(0)
         left = math.floor(self._meter_x(meter_right)) - m
-        top = math.floor(self.row - seg_h / 2) - m
-        tile, (_, row) = self._lamp(lamps, emit, halo, left, top, 0, SEG_SCAN, SEG_SPREAD)
+        top = math.floor(self.row - seg_h / 2) - pad
+        tile, (_, row) = self._lamp(lamps, None, halo, left, top, 0, SEG_SCAN)
         cached = self._meters[key] = (tile, row)
         return cached
 
@@ -5734,6 +5757,68 @@ class Overlay:
         pocket = _over(pocket, material.STEEL_LIT, POCKET_LIP * wall * facing)
         layer.alpha_composite(_to_image(*pocket), (left, top))
 
+    def _mark(self, layer: Image.Image, tags: int) -> None:
+        """The maker's mark cut into the legend pocket: a datum cross and a row of pilot dimples.
+
+        The pocket was milled and left blank, and a slot the exact shape of a nameplate with
+        nothing in it reads as a missing part. What goes in it is deliberately not a word - see
+        MARK_INSET - but a plate with no mark at all is not a decision anybody can see.
+
+        The pocket's own section, one step smaller: cut MARK_CUT below its floor, the walls the
+        lamp cannot get down to dark and the ones it can giving back the steel's highlight, so
+        every dimple carries a shadow on its upper edge and a lit crescent on its lower. All
+        modulation over what the pocket left there, so the mill's tooth and the shadow its near
+        wall throws run on through the marks.
+
+        Laid out off the pocket's own box rather than a box of its own, because it is cut into
+        the pocket: move POCKET_IN and the mark follows. Baked with the header, right after the
+        floor it is cut into and long before the bolts, so nothing here composites over hardware.
+        """
+        knee_x, spine_y = self.pods[tags].spine[2]  # the pocket's own knee - see :meth:`_pocket`
+        w, h = POCKET_W * self.scale, POCKET_H * self.scale
+        cx = knee_x - POCKET_IN * self.scale - w / 2.0
+        cy = spine_y + POCKET_DROP * self.scale
+        m = math.ceil(2.0 * max(1.0, POCKET_DEEP * self.scale))
+        left, top = math.floor(cx - w / 2.0) - m, math.floor(cy - h / 2.0) - m
+        tw = math.ceil(cx + w / 2.0) + m - left
+        th = math.ceil(cy + h / 2.0) + m - top
+        xs = (np.arange(tw, dtype=np.float32) + left)[None, :]
+        ys = (np.arange(th, dtype=np.float32) + top)[:, None]
+        arm = max(1.0, MARK_CROSS * self.scale)
+        score = max(0.5, MARK_SCORE * self.scale) / 2.0
+        radius = max(0.6, MARK_R * self.scale)
+        inset = MARK_INSET * self.scale
+        start = cx - w / 2.0 + inset + arm  # the cross sits against the near end of the mark
+
+        def slot(half_w: float, half_h: float, at_x: float) -> np.ndarray:
+            dx, dy = np.abs(xs - at_x) - half_w, np.abs(ys - cy) - half_h
+            return (np.hypot(np.maximum(dx, 0.0), np.maximum(dy, 0.0))
+                    + np.minimum(np.maximum(dx, dy), 0.0))
+
+        sdf = np.minimum(slot(arm, score, start), slot(score, arm, start))
+        # The dimples: one pitch stretched to land the last of them on the mark's far end, so the
+        # row reads as drilled to a plan rather than as however many happened to fit.
+        first = start + MARK_GAP * self.scale + radius
+        last = cx + w / 2.0 - inset - radius
+        count = max(2, round((last - first) / max(1.0, MARK_PITCH * self.scale)) + 1)
+        for index in range(count):
+            at = first + (last - first) * index / (count - 1)
+            sdf = np.minimum(sdf, np.hypot(xs - at, ys - cy) - radius)
+        cut = np.clip(0.5 - sdf, 0.0, 1.0)
+        lx, ly = material.lamp_2d()
+        rise_y, rise_x = np.gradient(sdf)
+        facing = np.clip(-(rise_x * lx + rise_y * ly)
+                         / np.maximum(np.hypot(rise_x, rise_y), 1e-6), 0.0, 1.0)
+        deepen = np.maximum(-sdf, 0.0) / max(0.6, MARK_WALL * self.scale)
+        wall = np.clip(1.5 - deepen, 0.0, 1.0) * cut
+        mark: tuple[np.ndarray, np.ndarray] = (
+            np.zeros((th, tw, 3), np.float32), np.zeros((th, tw), np.float32)
+        )
+        mark = _over(mark, (0, 0, 0), MARK_CUT * cut)
+        mark = _over(mark, (0, 0, 0), MARK_SHADE * wall * (1.0 - facing))
+        mark = _over(mark, material.STEEL_LIT, MARK_LIP * wall * facing)
+        layer.alpha_composite(_to_image(*mark), (left, top))
+
     def _bake_header(
         self, d: ImageDraw.ImageDraw, state: str, recording: bool, heat: str = ""
     ) -> None:
@@ -5744,9 +5829,9 @@ class Overlay:
         it). The tags go here and not in :meth:`_draw_readouts` because they change with the
         state and the board and with nothing else, and the base is keyed on both.
 
-        The legend pocket comes along with them - see :meth:`_pocket` for why it is milled
-        here rather than with the rest of the face - because this is the pass that runs after
-        the rail, and the rail is what it is cut into.
+        The legend pocket and the mark cut into it come along with them - see :meth:`_pocket`
+        for why they are milled here rather than with the rest of the face - because this is the
+        pass that runs after the rail, and the rail is what they are cut into.
 
         No state word. It had a corner of its own for a long time and three other things were
         already saying it better - the border's colour, the eye's mood, and the line under the
@@ -5755,6 +5840,7 @@ class Overlay:
         taping = self._taping(state, recording)
         count = self._tag_count(state, recording, heat)
         self._pocket(d._image, count)
+        self._mark(d._image, count)
         _, at, _ = self._readouts(count)
         if taping:
             # Red, and a filled tag rather than a dot. Red is what a record light is on every
