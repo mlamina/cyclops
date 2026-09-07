@@ -7,8 +7,6 @@ lists a directory without loading OpenCV to do it.
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from cyclops import card, library

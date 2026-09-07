@@ -958,22 +958,36 @@ def test_the_talking_pupil_widens_with_his_own_voice() -> None:
     assert loud > quiet
 
 
-def test_awake_is_a_different_colour_and_not_just_a_brighter_green() -> None:
-    # The whole point of the accent. Dim green and bright green are the same colour to anyone
-    # more than a pace away, so a panel that said "awake" by getting brighter did not say it.
-    # Measured on the border, which is the one thing meant to be read from across a workshop.
+def test_the_face_is_where_the_state_is_read() -> None:
+    """Awake is a different COLOUR and not a brighter one, and the face is what says so.
+
+    This rule used to be measured on the border - a green ring round the whole picture that took
+    the session's colour and breathed. That was taken off on 2026-09-07: it was the last thing on
+    the panel still drawn as a HUD rather than as a machine. The rule outlived it, because it was
+    never about the border. Dim green and bright green are the same colour to anyone more than a
+    pace away, so a panel that says "awake" by getting brighter has not said it - and the thing
+    somebody actually looks at when they want to know is his face.
+
+    Measured over his rim rather than the whole square, for the reason :func:`_face` gives: the
+    housing around him never changes colour, and a mood measured over it is measured over steel.
+    """
     ov = _panel()
 
-    def rim(state: str) -> np.ndarray:
+    def hue(state: str) -> np.ndarray:
         shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
         _settle(ov, **shown)
-        row = ov.render(phase=0.0, **shown)[0].astype(float)
-        px = row[row[:, 3] > 200][:, :3]
-        return px.mean(axis=0) / max(1.0, px.mean(axis=0).sum())  # hue, with brightness divided out
+        # Well past MOOD_EASE_S, and forwards: `look` eases from the phase the state arrived at,
+        # so rendering at 0.0 after settling at 1.8 winds its clock back and every mood comes out
+        # resting. That is what this test measured on its first draft, and it read four identical
+        # faces without complaining once.
+        crop = _face(ov, ov.render(phase=10.0, **shown)).astype(float)
+        px = crop[(crop[:, :, 3] > 200) & (crop[:, :, :3].sum(axis=2) > 200)][:, :3]
+        assert len(px), f"nothing lit on his face in {state}"
+        return px.mean(axis=0) / max(1.0, px.mean(axis=0).sum())  # brightness divided out
 
-    asleep = rim(overlay.IDLE)
+    asleep = hue(overlay.IDLE)
     for state in (overlay.LISTENING, overlay.SEARCHING, overlay.CONNECTING, overlay.ERROR):
-        apart = float(np.abs(rim(state) - asleep).sum())
+        apart = float(np.abs(hue(state) - asleep).sum())
         assert apart > 0.1, f"{state} is the same hue as asleep, only brighter ({apart:.3f})"
 
 
@@ -1109,18 +1123,6 @@ def test_he_acknowledges_a_tap_without_going_photographic_negative() -> None:
     held = _face(ov, ov.render(phase=10.0, pressed="eye", **AWAKE))
     assert not np.array_equal(rest, held), "a tap on his face changed nothing"
     assert _lit(held) > _lit(rest), "...and it should brighten him, not invert him"
-
-
-def test_the_border_breathes_while_he_is_up() -> None:
-    ov = _panel()
-    top = lambda p: ov.render(phase=p, **AWAKE)[0]  # noqa: E731
-    bright, sunk = top(0.0), top(overlay.RIM_PERIOD_S / 2)
-    assert not np.array_equal(bright, sunk), "the rim held still"
-    # It dims and never goes dark, and it never brightens past what _base already drew.
-    lit = bright[:, :3].astype(int).sum(axis=1)
-    dim = sunk[:, :3].astype(int).sum(axis=1)
-    assert (dim <= lit).all(), "the breath brightened the border past its own state colour"
-    assert dim[bright[:, 3] > 200].min() > 0
 
 
 # ---------------------------------------------------------------- the room he takes up

@@ -3451,7 +3451,6 @@ class Overlay:
         self.caption_top = self.tube.y + pad
         self.caption_y = self.caption_top + self.caption_h / 2  # the *first* line's middle now
 
-        self._halo = halo_alpha(width, height) * (1.0 - self._terminal_front())
         # One set of hairlines for the whole sheet, before the filter and the chrome are built
         # from it: the plates wear them and so do the bars bolted across them, and a scratch that
         # runs from one onto the other is most of what says they are the same piece of metal.
@@ -5248,7 +5247,6 @@ class Overlay:
         cached = self._bases.get((state, recording, heat))
         if cached is not None:
             return cached
-        halo = HALOS.get(state, GREEN_DIM)
         # The filter, and then the chrome drawn on it. There is nothing opaque underneath either
         # of them any more: the strip, the tab row and the four scraps outside the border's
         # rounded corners are all just the wash and the scanlines over the live picture, and the
@@ -5265,21 +5263,12 @@ class Overlay:
         d = ImageDraw.Draw(image)
         self._bake_header(d, state, recording, heat)
 
-        # The state light, pooled under the surround's inner lip and falling inwards over
-        # everything drawn so far - a tube blooms in front of what it is showing, not behind it.
-        # It reaches about 16 px at 480, and PAD keeps every word further in than that.
-        rim = Image.new("RGBA", image.size, (*halo, 0))
-        rim.putalpha(Image.fromarray((self._halo * 255.0).astype(np.uint8), "L"))
-        image = Image.alpha_composite(image, rim)
-
-        # ...and the border itself, crisp on the surround's outer arris and in the state's
-        # colour: the light let into the edge of the case, which is what a workshop reads the
-        # session off from across the room. Square, because the arris it is let into is.
-        ImageDraw.Draw(image).rectangle(
-            [self.frame.x, self.frame.y, self.frame.right - 1, self.frame.bottom - 1],
-            outline=(*halo, 255),
-            width=self.line,
-        )
+        # No state light and no border. Both were taken off on 2026-09-07 at the owner's word:
+        # a green ring round the whole picture, changing colour with the session, was the last
+        # thing on this panel still drawn as a HUD rather than as a machine. What it was for has
+        # not gone away - the panel and the room still have to agree about whether a session is
+        # running - it is the FACE that says so now, in the tint every mood carries, which is
+        # where somebody looks anyway. See test_the_face_is_where_the_state_is_read.
         self._bases[(state, recording, heat)] = image
         return image
 
@@ -5482,11 +5471,6 @@ class Overlay:
         layer.alpha_composite(self._glass, (self.eye[0] - self.eye_r, self.eye[1] - self.eye_r))
         if hold > 0.0:
             self._draw_hold(layer, hold)
-        if session_up(state):
-            # The teardown breathes too. He is not listening any more - the eye is already shut -
-            # but the box is still working, and a panel that went stone still the moment you
-            # pressed stop would look like it had stopped rather than like it was finishing.
-            self._draw_rim(d, halo, phase)
         if menu:
             # Last of everything, because it is the only thing here that is asked a question
             # rather than told one: nothing behind it is live while it is up.
@@ -6585,28 +6569,6 @@ class Overlay:
             strap = self.term.x if ear.x < self.term.x else self.term.right
             for y in (ear.y + r, ear.bottom - r):
                 self._draw_bolt(d, strap, y, r)
-
-    def _draw_rim(self, d: ImageDraw.ImageDraw, halo: tuple, phase: float) -> None:
-        """Re-stroke the border, sunk by one breath. Only ever called while a session is up.
-
-        The state light *around* it is baked - it is a full-screen composite and would cost
-        milliseconds a frame - so what breathes is the crisp line on top of it, which is the
-        brightest edge on the panel and the one a workshop reads from across the room. At the top
-        of the breath the mix is zero and this puts back exactly the pixels ``_base`` drew, so the
-        rim only ever dims from where it is now and never brightens past it.
-
-        Redrawing over the same geometry is safe because ImageDraw does not anti-alias: the sunk
-        stroke covers precisely the pixels the bright one did, with no fringe left showing. That
-        is also why what breathes is only ever this stroke and never the steel behind it - the
-        surround is a baked layer, and re-laying a shaded section every frame is milliseconds.
-        """
-        d.rectangle(
-            [self.frame.x, self.frame.y, self.frame.right - 1, self.frame.bottom - 1],
-            outline=(*mix(halo, SCREEN, rim_breath(phase)), 255),
-            width=self.line,
-        )
-
-    # ---- the two instruments ----
 
     def _dial_angle(self, value: float) -> float:
         """Where *value*, 0 to 1, lands on the sweep, in PIL's clockwise-from-three-o'clock."""
