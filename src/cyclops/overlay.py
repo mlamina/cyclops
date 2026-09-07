@@ -560,32 +560,60 @@ PAD = 0.036  # inner padding - wide enough that the inward glow never reaches an
 # The rail on that spine is flat bar stock rather than a stroke: a mitred bar with a flat face,
 # a chamfer down each long edge and square ends, standing a little proud of the plate and lit by
 # the panel's one lamp (:mod:`cyclops.material`) so the chamfer turned towards it is one bright
-# line and the one turned away gives back a duller glint off the plate below, with a hard line of
-# contact shadow under it and a soft one falling the other way from the light. That is what makes
-# a bracket read as something bolted to the panel rather than as a line drawn on it, and it is
-# why the rail is this thick: at a hairline there is no width for a chamfer. It was a round-edged
-# section for a while and read as a tube - a bright edge fading to dark is a pipe whatever it is
-# made of, and flat stock is what a bracket is cut from.
+# line and the one turned away is a dark one, with a hard line of contact shadow under it and a
+# soft one falling the other way from the light. That is what makes a bracket read as something
+# bolted to the panel rather than as a line drawn on it, and it is why the rail is this thick: at
+# a hairline there is no width for a chamfer. It was a round-edged section for a while and read
+# as a tube - a bright edge fading to dark is a pipe whatever it is made of, and flat stock is
+# what a bracket is cut from.
+#
+# One lit edge, and only one. For a round the far chamfer gave back a glint of the lit plate
+# under it (RAIL_RETURN), and three critics measured a hairline at 212 on the edge turned *away*
+# from the lamp against 211 on the edge turned towards it and read the whole rail system as an
+# emboss - a bar lit from two sides. The far edge is dark now, the face grades away from the
+# light, and nothing on the shadow side of anything is a light line.
 RAIL = 17.0  # reference pixels, and the one number the whole bracket language rests on
+RAIL_STEEL = 0.58  # how far the bar's face is put from STEEL towards STEEL_LIT. Bar stock is
+# the brightest metal on the panel short of a highlight: it stands proud and square to the lamp
+# where the plate under it lies back in its own shadow. At STEEL itself a face came out at 82
+# against a plate at 88 - the same slab twice, which is what three critics measured and called
+# fused. At this it runs 145 down to 105 under the lamp and 120 to 85 in the far corner, which
+# is two to three times the plate it is bolted to wherever it is standing
 RAIL_EDGE = 1.2  # reference px of the chamfer the lamp lights: one crisp line, no wider. The
 # whole of what says "edge" at arm's length is that it is a line and not a band
-RAIL_CHAMFER = 3.0  # reference px of the chamfer turned away from it, which is read as a ramp
-# rather than a line and can afford the width; capped for a thin member so a clamp's nine-pixel
-# strap keeps a flat between its two chamfers
+RAIL_CHAMFER = 2.0  # reference px of the chamfer turned away from it, which is the dark edge:
+# wide enough to be read at arm's length, narrow enough to stay an edge rather than a band;
+# capped for a thin member so a clamp's nine-pixel strap keeps a face between its two chamfers
 RAIL_CHAMFER_TILT = 0.75  # sin of the lit chamfer's slope: a machinist's 45
-RAIL_CROWN = 0.02  # sin of the tilt the flat face has reached by the chamfer. Nearly nothing:
-# any more and the face is a gradient again, and a gradient across a bar is a tube
-RAIL_RETURN = 0.85  # how far the far chamfer is put towards STEEL_LIT at its arris - the lit
-# plate under the bar reflected in it. Duller than the lit edge on purpose: brighter and the bar
-# is lit from two sides, which is the one thing the panel's single lamp must never look like
-RAIL_LIFT = 2.0  # how proud the bar stands of what it is bolted to, which sets its cast shadow
-RAIL_CONTACT = 0.72  # alpha of the hard contact line where the bar meets the plate...
-RAIL_CONTACT_W = 1.6  # ...how far out from the edge it reaches before it is gone...
+RAIL_FAR_TILT = 0.60  # ...and of the far one's. Shallower, because a chamfer turned right away
+# from the lamp is black, and a black line down a bar reads as a gap rather than as an edge
+RAIL_FACE_GLOSS = 0.22  # how much of the material's highlight the face keeps. The arris is
+# polished by the tool that cut it and the face is not, and the lamp's lobe is broad enough that
+# a face crowned far enough to grade at all sits on the shoulder of it: at full gloss the first
+# three pixels in from the lit chamfer came out at 200 too, which is a four-pixel highlight
+# however narrow the chamfer is. One bright line means the face under it is matt
+RAIL_CROWN = 0.16  # sin of the tilt the face has reached by its chamfers, from none at its
+# middle - towards the lamp on the lit half, away from it on the other, so the face falls from
+# its bright edge to its dark one. It was 0.02 to keep the face from reading as a tube, and a
+# face with no gradient at all was read as dead flat instead: 87 to 95 across the whole width,
+# where a frame member in the reference falls about forty from its lit edge to its far one
+RAIL_LIFT = 3.0  # how proud the bar stands of what it is bolted to, which sets its cast shadow
+RAIL_CONTACT = 0.78  # alpha of the hard contact line where the bar meets the plate...
+RAIL_CONTACT_W = 1.8  # ...how far out from the edge it reaches before it is gone...
 RAIL_CONTACT_LIT = 0.55  # ...and how much of it survives on the edge the lamp lights
 RAIL_WEAR = 0.45  # how much the highlight comes and goes along a length - handled steel is
-# polished where hands have been and dull between
-RAIL_GRAIN = 0.8  # of the material's brushing. Under one and the bar is smoother than the
+# polished where hands have been and dull between...
+RAIL_DRIFT = 0.07  # ...and how much the face under it does, either way. Ten levels or so from
+# one span of a bar to the next: no two feet of real stock are the same shade
+RAIL_GRAIN = 0.9  # of the material's brushing. Under one and the bar is smoother than the
 # sheet it is on; under half and at arm's length it is plastic
+RAIL_PITS = 6  # pits drawn over each bar's box, of which a couple land on the bar...
+RAIL_PIT_DEPTH = 0.5  # ...and how much of the face's light goes at the bottom of one
+RAIL_SUN = 0.60  # what is left of the lamp at the far corner of the panel, as a fraction of
+# what a bar under it gets. One lamp means one falloff: the bar this is judged against runs its
+# top frame at a median of 116 and its bottom-right corner at 37, and a rail system of one
+# brightness end to end is the flattest thing on a panel however well each bar is shaded. The
+# field is :func:`material.glare` about PLATE_LAMP, the same one the plate itself is lit by
 RAIL_SCRATCHES = 8  # hairlines drawn over each bar's box, of which two or three cross the bar
 RAIL_SCRATCH_SPREAD = 4.0  # degrees either side of the bar's own run they wander - dragged
 # along it, not across it
@@ -597,21 +625,39 @@ RAIL_END_WEAR = 0.13  # how much darker the last few pixels of a bar are, where 
 RAIL_END_W = 3.0  # ...and how many pixels that is
 RAIL_LIP = 0.78  # fraction of a ring's width that is the lit chamfer, for the collar and the
 RAIL_BODY = 0.28  # dial bezels, which still bend the old three-band profile - see _rail_colour
-RAIL_SHADOW = 150  # alpha of the soft shadow the rail casts onto its own plate
+RAIL_SHADOW = 230  # alpha of the soft shadow the rail casts onto whatever is behind it - its
+# plate, the glass, the room. It was 150, which is a tint: under a bar in the reference the
+# ground goes to a fifth of what it was, and that drop is most of what lifts a bar off a surface
 BAR_SS = 4  # a bar's outline is filled this many times over and boxed down - its anti-aliasing
 BOLT_R = 7.0  # a socket head, sunk through the rail wherever it turns
 RIB_N = 3  # stiffeners across the deep corner of a bracket
 RIB_W = 4.0  # ...their section, in reference px
 RIB_ALPHA = 0.36  # how much steel a rib lays over the plate. Translucent like the plate it
 # stiffens, so the room keeps running behind it.
-PLATE_WASH = 0.34  # how far a bracket's plate is put towards SCREEN. Not opaque: a bracket you
-# cannot see the room through is a bar, and this layout exists to stop having those.
-PLATE_STEEL = 0.04  # ...and the grey stirred into that wash. A plate is gunmetal seen through
+RIB_CREST = 105  # alpha of the one lit hairline along a rib's near edge. It was 150, against a
+# plate half as dark as this one; on the plate as it is now that was a bright line in the corner
+# of the panel furthest from the lamp
+RIB_SHADOW = 120  # ...and of the shadow it drops. A web four pixels wide stands a fraction as
+# proud as a bar does, so it may not drop a bar's shadow: at RAIL_SHADOW the three of them read
+# as three dark scratches gouged across the corner rather than as stiffeners standing on it
+PLATE_WASH = 0.66  # how far a bracket's plate is put towards SCREEN. Not opaque: a bracket you
+# cannot see the room through is a bar, and this layout exists to stop having those. But dark -
+# it was 0.34, and at that the plate came out at the same luminance as the bars bolted across it
+# (87 against 88), so rail, gusset and plate fused into one grey mass and the corner under the
+# instruments read as a light wedge. A plate is the thing a bar stands *off*: near black, with
+# the room still moving in it, and the bar two or three to one against it.
+PLATE_STEEL = 0.10  # ...and the grey stirred into that wash. A plate is gunmetal seen through
 # the tube's glass rather than the glass alone, and a wash with no grey in it is a tint.
-PLATE_GRAIN = 0.07  # how much the brushing shows through the wash, either way
+PLATE_GRAIN = 0.11  # how much the brushing shows through the wash, either way. More than it was,
+# because on a plate this dark the grain is the one thing saying it is a sheet and not a shadow
 PLATE_SCRATCHES = 70  # hairlines across the whole sheet, of which the plates keep about a sixth
-PLATE_SCRATCH_ALPHA = 0.30  # ...and how pale the palest of them is
-PLATE_LIGHT = 0.11  # how far towards STEEL_LIT the sheet is lifted where the lamp is nearest it.
+PLATE_SCRATCH_ALPHA = 0.34  # ...and how deep the deepest of them cuts. Dark on the plate and
+# pale on the bars (RAIL_SCRATCH), which is not two minds about it: a groove in a sheet lying in
+# its own shadow is a dark line, and the same groove in stock standing up in the light shows the
+# bare metal in its wall. Ten levels or so either way - a scratch, not a stripe
+PLATE_PITS = 110  # pits across the whole sheet, of which the plates keep a couple of dozen...
+PLATE_PIT_DEPTH = 0.42  # ...and how much of the little light a plate has goes at each
+PLATE_LIGHT = 0.055  # how far towards STEEL_LIT the sheet is lifted where the lamp is nearest it.
 # A wash is the same everywhere; a surface is lit, and falls off away from the light
 PLATE_LAMP = (0.12, -0.30)  # where over the panel the lamp stands, in widths across and heights
 # down - the same up-and-left the terminal's glare and every bar's bright edge agree on
@@ -1978,8 +2024,13 @@ class Overlay:
         plate is cut out of it. It used to be laid over a strip and a tab row that between them
         covered 29% of the panel; two mounts and a pod cover 16% of it, and the picture runs edge
         to edge behind them - this is what the chrome is *made of* rather than something sitting
-        under an opaque bar. The plate is darker than it was, though, because a bracket is a
+        under an opaque bar. The plate is much darker than it was, though, because a bracket is a
         thing rather than a tint - see PLATE_WASH, which is as far towards SCREEN as it goes.
+
+        Dark, and a *surface*: brushed along the panel's own diagonal, grooved by the sheet's
+        hairlines, pitted where the finish has gone through, lifted where the lamp stands over it
+        and falling away towards the corners. A plate the same grey as the bars bolted across it
+        is not a plate, it is more of the same slab; a plate with nothing in its face is a shadow.
         """
         shape = (self.height, self.width)
         base: tuple[np.ndarray, np.ndarray] = (
@@ -1998,7 +2049,13 @@ class Overlay:
         grain = material.grain(across, along)
         base = _over(base, material.STEEL_LIT, np.clip(grain, 0.0, 1.0) * PLATE_GRAIN)
         base = _over(base, (0, 0, 0), np.clip(-grain, 0.0, 1.0) * PLATE_GRAIN)
-        base = _over(base, material.STEEL_SPEC, self._marks * PLATE_SCRATCH_ALPHA)
+        # A hairline in a sheet lying back in its own shadow is a groove full of shadow, so the
+        # sheet's marks go on dark here - the bars, standing up in the light, take the same marks
+        # pale (see :meth:`_draw_rail`). Then the pitting, which is dark wherever it lands.
+        base = _over(base, (0, 0, 0), self._marks * PLATE_SCRATCH_ALPHA)
+        base = _over(base, (0, 0, 0),
+                     material.pits(self.width, self.height, PLATE_PITS, seed=material.SEED + 9)
+                     * PLATE_PIT_DEPTH)
         # ...and lit, by the same lamp as the bars on it: brightest where it stands, falling off
         # towards the far corners, and rubbed unevenly along the grain. Still a modulation - the
         # lift is a tenth, and the room keeps coming through the brighter part as it does the
@@ -2262,6 +2319,18 @@ class Overlay:
         across = np.where(np.isinf(best), np.inf, across)
         return across, along, tx, ty, beyond
 
+    def _sunlight(self, x0: int, y0: int, width: int, height: int) -> np.ndarray:
+        """How much of the one lamp reaches a box of the panel, RAIL_SUN..1.
+
+        The same field :meth:`_build_filter` lights the sheet with, sampled over one part's box
+        instead of the whole panel, so a bar and the plate under it agree about where the lamp
+        is. Without it every bar on the panel is the same brightness whatever corner it is in,
+        which is the flattest a panel can look however carefully each bar is shaded: a lamp that
+        does not fall off is not a lamp, it is a fill.
+        """
+        lamp = (PLATE_LAMP[0] * self.width - x0, PLATE_LAMP[1] * self.height - y0)
+        return material.glare(width, height, lamp, PLATE_REACH * self.height, ambient=RAIL_SUN)
+
     def _draw_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]],
                    thick: int | None = None) -> None:
         """A bar of flat steel along the spine, under the panel's one lamp, and its shadows.
@@ -2270,11 +2339,18 @@ class Overlay:
         the ends are square - filled for coverage, and one frame off the same spine
         (:meth:`_bar_frame`) that says how far across the bar every pixel is and which edge it is
         nearest. The section is read straight off that: a chamfer's width in from either edge
-        and a flat between. The lamp lights the chamfer turned towards it into one crisp line,
-        the flat stays the steel's own grey brushed along its length, and the chamfer turned away
-        gives back a duller glint of the lit plate under it. Nothing here decides which edge is
-        which: the edge's own normal against :func:`material.lamp_2d` does, so a diagonal rail's
-        bright edge is its upper-left one and a horizontal rail's is its top.
+        and a face between, crowned so gently that it is a fall and not a curve. The lamp lights
+        the chamfer turned towards it into one crisp line; the face grades away from that line;
+        and the chamfer turned away is dark - the one dark line, and the only thing on the shadow
+        side. Nothing here decides which edge is which: the edge's own normal against
+        :func:`material.lamp_2d` does, so a diagonal rail's bright edge is its upper-left one and
+        a horizontal rail's is its top.
+
+        The face is brushed along its length, drifts a few levels from one span to the next, is
+        crossed by the sheet's hairlines and a few of its own, and pitted here and there. None of
+        that is decoration: a face with nothing in it measures flat to within a level and is read
+        as a fill at a glance. Over all of it, the lamp's own falloff across the panel
+        (:meth:`_sunlight`), so a bar in the far corner is dimmer than one under the lamp.
 
         The shadows are still most of the work. A bar with a bright edge and no shadow reads as
         a drawing of a bar; the same bar with a hard line of contact shadow hugging it and a soft
@@ -2323,34 +2399,44 @@ class Overlay:
         under = 1.0 - (1.0 - shadow) * (1.0 - hug)
         layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), under),
                               (x0, y0))
-        # The section. Only the lit chamfer is shaded as a tilt, because that is the one the lamp
-        # can see; the far one is coloured below, from the flat, and the flat itself is all but
-        # level.
+        # The section, all of it a tilt under the one lamp: the lit chamfer steep and turned
+        # towards it, the far chamfer shallower and turned away, and the face between crowned
+        # towards whichever edge it is nearer - which is towards the lamp on the lit half and
+        # away from it on the other, so it falls from its bright edge to its dark one without a
+        # second light anywhere on it.
         edge = min(RAIL_EDGE * self.scale, half * 0.2)
-        chamfer = min(RAIL_CHAMFER * self.scale, half * 0.35)
+        chamfer = min(RAIL_CHAMFER * self.scale, half * 0.3)
         crown = RAIL_CROWN * np.clip(np.abs(across) / max(half - chamfer, 1e-3), 0.0, 1.0)
-        tilt = np.where((depth < edge) & lit, RAIL_CHAMFER_TILT, crown)
+        arris = depth < np.where(lit, edge, chamfer)
+        tilt = np.where(arris, np.where(lit, RAIL_CHAMFER_TILT, RAIL_FAR_TILT), crown)
         diffuse, spec = material.shade(ex * tilt, ey * tilt, np.sqrt(1.0 - tilt * tilt))
         rub = material.wear(along)
-        spec = spec * (1.0 + RAIL_WEAR * rub)
-        rgb = material.steel(diffuse, spec, material.grain(across, along) * RAIL_GRAIN)
-        # The far chamfer's return: the lit plate under the bar, seen in a face tilted towards
-        # it. Brightest at the arris and gone by the flat, and always short of the lit edge.
-        arris = np.clip(1.0 - depth / max(chamfer, 1e-3), 0.0, 1.0) * ((depth < chamfer) & ~lit)
-        glint = (RAIL_RETURN * arris * arris * (1.0 + 0.5 * RAIL_WEAR * rub))[..., None]
-        rgb = rgb + (np.asarray(material.STEEL_LIT, np.float32) - rgb) * glint
+        spec = spec * (1.0 + RAIL_WEAR * rub) * np.where(arris, 1.0, RAIL_FACE_GLOSS)
+        face = mix(material.STEEL, material.STEEL_LIT, RAIL_STEEL)
+        rgb = material.steel(diffuse, spec, material.grain(across, along) * RAIL_GRAIN, face)
+        # No span of a bar is the shade of the next: polished where hands have been, dull
+        # between. The same slow field the highlight breathes with, so the two agree.
+        rgb = rgb * (1.0 + RAIL_DRIFT * rub)[..., None]
         # Hairlines: the sheet's, where they happen to cross, and a few of the bar's own, dragged
         # along its length. Seeded off where the bar is, so every bar is scratched differently
         # and the same way on every boot. Drawn twice over and boxed down, because a hairline
         # nearly parallel to a diagonal bar is a staircase at one pixel and a line at half.
         longest = max(zip(points, points[1:], strict=False),
                       key=lambda ab: math.hypot(ab[1][0] - ab[0][0], ab[1][1] - ab[0][1]))
+        seed = material.SEED + x0 * 13 + y0 * 7
         own = material.scratches(w * 2, h * 2, RAIL_SCRATCHES, unit(*longest[0], *longest[1]),
-                                 seed=material.SEED + x0 * 13 + y0 * 7, spread=RAIL_SCRATCH_SPREAD,
+                                 seed=seed, spread=RAIL_SCRATCH_SPREAD,
                                  length=tuple(2 * n * self.scale for n in RAIL_SCRATCH_LEN))
         own = own.reshape(h, 2, w, 2).mean(axis=(1, 3)) * 2.0
         marks = (np.maximum(own, self._marks[y0:y1, x0:x1]) * RAIL_SCRATCH)[..., None]
         rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+        # ...and the odd pit where the finish has gone through. Kept off the lit chamfer: a hole
+        # in the one bright line reads as a break in the bar rather than as a mark on it.
+        pitted = material.pits(w, h, RAIL_PITS, seed=seed) * ((depth >= edge) | ~lit)
+        rgb = rgb * (1.0 - RAIL_PIT_DEPTH * pitted)[..., None]
+        # The lamp is one lamp and it stands over the top left of the panel: a bar in the bottom
+        # right of it gets about half of what a bar under it does, highlight and all.
+        rgb = rgb * self._sunlight(x0, y0, w, h)[..., None]
         # A cut end is where a bar rusts first.
         total = sum(math.hypot(b[0] - a[0], b[1] - a[1])
                     for a, b in zip(points, points[1:], strict=False))
@@ -2425,6 +2511,12 @@ class Overlay:
         edge that does not. All of it on a private layer and composited, because a rib written
         translucent used to be three stripes of camera showing through the plate rather than
         three pieces of metal standing on it.
+
+        Webbing lives in the deepest corner of the panel, which is the furthest thing on it from
+        the lamp, so its steel is taken down by the same falloff every bar is (:meth:`_sunlight`).
+        Left at full it was three bright diagonals across a plate that had just gone near black -
+        a rib reads as a rib because it is a shade up from what it stiffens, not because it is
+        the brightest thing in the corner.
         """
         w = max(1, round(RIB_W * self.scale))
         lx, ly = material.lamp_2d()
@@ -2436,16 +2528,18 @@ class Overlay:
         shade = Image.new("RGBA", layer.size, (0, 0, 0, 0))
         ribs = Image.new("RGBA", layer.size, (0, 0, 0, 0))
         sd, rd = ImageDraw.Draw(shade), ImageDraw.Draw(ribs)
-        body = (*material.STEEL, round(255 * RIB_ALPHA))
+        sun = float(self._sunlight(round(corner[0]), round(corner[1]), 1, 1)[0, 0])
+        body = (*(round(c * sun) for c in material.STEEL), round(255 * RIB_ALPHA))
+        crest = (*(round(c * sun) for c in material.STEEL_LIT), RIB_CREST)
         for i in range(RIB_N):
             t = 0.15 + 0.075 * i
             p = (corner[0] + (a[0] - corner[0]) * t, corner[1] + (a[1] - corner[1]) * t)
             q = (corner[0] + (b[0] - corner[0]) * t, corner[1] + (b[1] - corner[1]) * t)
             sd.line([(p[0] - lx * drop, p[1] - ly * drop), (q[0] - lx * drop, q[1] - ly * drop)],
-                    fill=(0, 0, 0, RAIL_SHADOW), width=w + 1)
+                    fill=(0, 0, 0, RIB_SHADOW), width=w + 1)
             rd.line([p, q], fill=body, width=w)
             rd.line([(p[0] + nx * edge, p[1] + ny * edge), (q[0] + nx * edge, q[1] + ny * edge)],
-                    fill=(*material.STEEL_LIT, 150), width=1)
+                    fill=crest, width=1)
             rd.line([(p[0] - nx * edge, p[1] - ny * edge), (q[0] - nx * edge, q[1] - ny * edge)],
                     fill=(*material.STEEL_DARK, 180), width=1)
         soft = max(0.5, RAIL_LIFT * self.scale * material.SHADOW_SOFT)

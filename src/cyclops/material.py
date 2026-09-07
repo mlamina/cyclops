@@ -37,8 +37,13 @@ Colour = tuple[int, int, int]
 # away goes dark. The terminal's own lamp sits just off its top-left corner, which from anywhere
 # on its face is this same direction; everything else on the panel now agrees with it.
 LAMP = (-0.28, -0.72, 0.63)  # towards the lamp: x right, y down, z out of the panel
-AMBIENT = 0.30  # what a face turned right away from the lamp still gets from the room. Not
-# zero: an unlit edge reads as a hole cut in the panel rather than as the dark side of a bar.
+AMBIENT = 0.22  # what a face turned right away from the lamp still gets from the room. Not
+# zero: an unlit edge reads as a hole cut in the panel rather than as the dark side of a bar. It
+# was 0.30, and at that the chamfer turned away came out a mid grey barely under the face -
+# which, beside the lit chamfer on the other edge, is an *emboss*: a bar lit from both sides,
+# the one thing a panel under a single lamp can never look like. Every critic in the last round
+# measured a lit hairline on both edges of something. The far edge of anything under one lamp is
+# dark; this is the number that makes it so, and it makes it so for every part on the panel.
 SHINE = 32.0  # how tight the highlight is - a machined finish, not a mirror and not matte
 SPEC = 0.9  # ...and how much of STEEL_SPEC it lays down where it lands hardest
 RIM = 0.8  # how brightly an edge seen end-on lights up where it faces the lamp. The terminal's
@@ -57,6 +62,11 @@ STEEL_DARK = (16, 20, 18)  # the floor of a socket, the inside of a shadow
 STEEL_SPEC = (206, 216, 210)  # the brightest a highlight may get. Short of the tube's white on
 # purpose: a piece of steel outshining the phosphor would be a second light on the panel.
 GRAIN = 0.13  # how far the brushing moves brightness either way
+SPECKLE = 0.40  # of the brushing: the fine tooth under it, which is what varies *along* a fibre.
+# Brushing on its own is a set of streaks, each the same brightness from one end of a bar to the
+# other, and a face read along its own length measured flat to within a level - a rendering, not
+# a piece of metal. Stock has a tooth the brush never quite takes out, and one level of it is the
+# difference between a surface and a fill.
 DOME = 0.14  # sin of the tilt a "flat" machined face has reached by its edge, from none at its
 # middle - nothing true is dead flat, and the gentle fall across a bar is what says it is round
 SEED = 7  # every field here comes out the same on every boot
@@ -147,11 +157,22 @@ def _noise1d(coord: Field, period: float, rng: np.random.Generator) -> Field:
     return table[i0 % _TABLE] * (1.0 - frac) + table[(i0 + 1) % _TABLE] * frac
 
 
+def _noise2d(x: Field, y: Field, rng: np.random.Generator) -> Field:
+    """White noise in -1..1, one value per whole pixel of (*x*, *y*), the same on every boot."""
+    table = rng.uniform(-1.0, 1.0, _TABLE).astype(np.float32)
+    ix = np.floor(x).astype(np.int64)
+    iy = np.floor(y).astype(np.int64)
+    return table[(ix * 7919 + iy * 104729) % _TABLE]
+
+
 def grain(across: Field, along: Field, seed: int = SEED) -> Field:
     """Brushed metal, -1..1: fibres that run with *along* and vary with *across*, both in pixels.
 
     Three pitches of fibre, because one reads as stripes, and a slow term along the stroke so no
-    streak runs the whole length of anything - a brush is dragged by a hand, not a ruler.
+    streak runs the whole length of anything - a brush is dragged by a hand, not a ruler. Under
+    the fibres, a fine tooth (SPECKLE) that changes from pixel to pixel *along* them, because a
+    fibre of constant brightness measures dead flat down its own length however many pitches of
+    fibre sit beside it.
     """
     rng = np.random.default_rng(seed)
     fibres = (
@@ -160,7 +181,7 @@ def grain(across: Field, along: Field, seed: int = SEED) -> Field:
         + 0.2 * _noise1d(across, 7.3, rng)
     )
     stroke = _noise1d(along + 0.35 * across, 29.0, rng)
-    return fibres * (0.6 + 0.4 * stroke)
+    return fibres * (0.6 + 0.4 * stroke) + SPECKLE * _noise2d(across, along, rng)
 
 
 def wear(along: Field, seed: int = SEED) -> Field:
@@ -188,6 +209,25 @@ def scratches(
         d.line([(x, y), (x + n * math.cos(a), y + n * math.sin(a))],
                fill=int(rng.uniform(90, 255)), width=1)
     return np.asarray(sheet, np.float32) / 255.0
+
+
+def pits(width: int, height: int, count: int, seed: int = SEED,
+         size: tuple[float, float] = (0.6, 1.4)) -> Field:
+    """Sparse pitting, 0..1: where the finish has gone through and the sheet has corroded.
+
+    A pit is a speck a pixel or two across and always *darker* than the face around it - a hole
+    catches no light - which is what separates it from a scratch. Drawn twice over and boxed
+    down, so the small ones come out a soft speck rather than a square pixel. *size* is the
+    radius, smallest to largest, in pixels.
+    """
+    rng = np.random.default_rng(seed + 3)
+    sheet = Image.new("L", (width * 2, height * 2), 0)
+    d = ImageDraw.Draw(sheet)
+    for _ in range(count):
+        x, y = rng.uniform(0.0, width) * 2, rng.uniform(0.0, height) * 2
+        r = rng.uniform(*size) * 2
+        d.ellipse([x - r, y - r, x + r, y + r], fill=int(rng.uniform(110, 255)))
+    return np.asarray(sheet.reduce(2), np.float32) / 255.0
 
 
 def cast(coverage: Field, lift: float) -> Field:
