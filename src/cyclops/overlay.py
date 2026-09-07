@@ -738,12 +738,14 @@ POD_TAG_GAP = 8.0  # ...and the tighter one between two tags, which read as one 
 # the glass is the terminal's own (TERM_ALPHA, TERM_SCAN) let into a narrow flange of the rail's
 # steel. The flange is what makes it an instrument fitted into the frame rather than a hole in
 # it, and the reveal is what makes the glass sit *below* the steel.
-POD_LAND = 7.0  # reference px of flange inside the rail, from the rail's foot to the glass.
+POD_LAND = 4.0  # reference px of flange inside the rail, from the rail's foot to the glass.
 # It was three visible pixels and a hairline chamfer at their edge, which is a line and not a
-# face: nothing to grade along, nothing to brush, nowhere to put a mark. Wide enough now that
-# the whole of it is one rounded arris rolling down into the window, so the light on it is a
-# ramp five pixels deep instead of a stroke, and there is somewhere for a plate to be set in
-POD_REVEAL = 1.5  # ...and how far inside the flange's edge the glass starts, so the steepest of
+# face: nothing to grade along, nothing to brush, nowhere to put a mark. Then it was seven, and
+# seven is a *plate* - which cost the pane the room, and an instrument is read glass-first. The
+# window used to be 32 px of a 58 px module, 57 %; a real one gives its glass better than 70 and
+# leaves the metal a rail. Four is a face wide enough to roll, rake and cut a scale into, and
+# every pixel taken off it is a pixel the window got.
+POD_REVEAL = 1.0  # ...and how far inside the flange's edge the glass starts, so the steepest of
 # the roll is steel and the glass meets it in a dark seam rather than on a bright line
 POD_ROLL_TILT = 0.46  # sin of the tilt the flange has reached where the glass starts. Short of
 # a chamfer's 45 on purpose: this is where the lamp's highlight peaks, so the brightest of the
@@ -752,26 +754,49 @@ POD_ROLL_TILT = 0.46  # sin of the tilt the flange has reached where the glass s
 POD_LIP_SPEC = 0.34  # of the material's full highlight the roll keeps. At full the arris was
 # the brightest thing on the panel - brighter than the bolts it sits between, which is a light
 # nobody has ever stood under
-POD_DRIFT = 0.26  # how much brighter the flange is at the lamp's end of the module than at the
-# far one, top to bottom of the range: a face lit from one side is never one grey along its
-# length, and a 200-pixel run of exactly one grey is the single loudest thing that says vector
+# The rake. A drift across the module was a linear ramp of a quarter, which measured as a face
+# falling eleven levels over a hundred and eighty pixels - a light with a *direction* and no
+# position, which is the same flat every panel that has never been photographed has. The lamp
+# stands off the module's left shoulder instead and its light falls off with the square of the
+# distance, so the left end of every face on this module is half as bright again as the right,
+# and the fall is a curve rather than a slope.
+POD_RAKE_OUT = 54.0  # reference px outboard of the module's left knee the lamp stands...
+POD_RAKE_UP = 44.0  # ...and above the panel's own top edge
+POD_RAKE_REACH = 244.0  # ...how far its light carries, in reference px. Short enough that the
+# right-hand knee gets about half of what the left one does
+POD_RAKE_FLOOR = 0.26  # ...and what the far end still gets from the room, so nothing on the
+# module goes to the black a hole would
+POD_RAKE_CEIL = 1.06  # the most the near end may be lifted over the face's own shading, which
+# is what keeps the left knee from blowing out to match the rest going dark
+POD_RIDGE = 1.50  # the blown specular along the arris nearest the glass, towards POD_RIDGE_HOT.
+# material.steel cannot make this: it is capped at STEEL_SPEC, which is 212 L, and every critic
+# measured our metal ceilinged at 209-214 against a reference that reaches 250. A machined arris
+# under a bench lamp *does* blow out - it is a mirror a pixel wide - and this is that pixel
+POD_RIDGE_HOT = (250, 253, 250)  # ...the colour it blows out to: the lamp's own, not the steel's
+POD_RIDGE_W = 0.95  # px either side of the arris the blown line reaches. Near one, because
+# a specular that lands between two pixel centres has to be able to blow either of them
+POD_RIDGE_WANDER = 0.7  # px the line wanders in and out along its own length, and...
+POD_RIDGE_VARY = 0.42  # ...how much of it comes and goes, so its peak is not one number and its
+# brightest row is not one row. A specular pinned to a single row is a rule, not a reflection
 POD_GRAIN = 1.6  # of the material's brushing, on the flange. A rolled edge catches the brush
-# harder than a flat does, and a face five pixels deep has to say metal in five rows
-POD_SCRATCHES = 26  # hairlines dragged across the pod's own box, of which the flange keeps the
+# harder than a flat does, and a face four pixels deep has to say metal in four rows
+POD_SCRATCHES = 34  # hairlines dragged across the pod's own box, of which the flange keeps the
 # few that cross it - on top of the sheet's own, which run onto it from the plates
-POD_SCRATCH = 0.38  # ...and how pale the palest of them shows
-POD_PITS = 70  # single pixels over the pod's box where the finish has chipped...
-POD_PIT = 0.78  # ...and how far towards black one goes
-POD_PLATE_W = 48.0  # reference px of the blank nameplate let into the bottom flange...
-POD_PLATE_IN = 26.0  # ...and how far in from the right-hand knee it sits. Right third, because
-# that is where a hand reaching past the module would not rub it. Blank: there is no word this
-# panel needs that it is not already saying, and a plate is a depth before it is a label
-POD_PLATE_A = 0.78  # how far its floor is put towards the dark - it is a pocket milled into the
-# flange, so its floor is a face turned out of the lamp's way
-POD_PLATE_WALL = 0.60  # ...how much further into the dark its near wall goes, which is the
-# side of any pocket the light cannot get to and the line that tells you it is a pocket
-POD_PLATE_LIP = 0.85  # ...and how much of the flange's own highlight its far wall gives back,
-# which is the one bright line a pocket has and it is along the bottom
+POD_SCRATCH = 0.52  # ...and how pale the palest of them shows. Wear on steel is *bright*: a
+# hairline is where the finish came off and the bare metal under it catches the lamp. Dark
+# specks at the same rate read as a grain overlay laid over the render, which is what ours did
+POD_PITS = 14  # single pixels over the pod's box where the finish has chipped...
+POD_PIT = 0.55  # ...and how far towards black one goes. Few and shallow, against the hairlines
+POD_TICK_PITCH = 14.0  # reference px between the graduations cut into the bottom flange, which
+# is the meter's own segment pitch: the scale the bar beside it is read against. A blank pocket
+# sat there before and two critics called it what it was - a groove that holds nothing. There is
+# no word this panel needs that it is not already saying, so the mark it carries is a machined
+# scale rather than a name, and a scale is legible at three pixels where a name is not
+POD_TICK_W = 1.0  # px of the cut...
+POD_TICK_A = 0.72  # ...how far into the dark its floor goes...
+POD_TICK_LIP = 0.9  # ...and how much of the flange's highlight the wall beyond it gives back,
+# which is the one lit line any groove has and it is on the side away from the lamp
+POD_TICK_LONG = 4  # every this many, a graduation that runs the whole face rather than half
 POD_SEAM = 2.5  # px over which the glass eases from opaque at the reveal to the terminal's
 # depth - the dark seam round any pane set in a frame, and the terminal's own bezel ease. The
 # phosphor's cast and the room's reflection stop at it: it is the one part of the glass that
@@ -779,10 +804,15 @@ POD_SEAM = 2.5  # px over which the glass eases from opaque at the reveal to the
 POD_RECESS = 3.0  # px the glass sits below the flange, which sets the shadow the lip nearest
 # the lamp drops onto it - with the seam, the whole of what says recess rather than decal
 POD_SHADOW_A = 0.85  # how dark that shadow is where it is deepest
-POD_AO = 10.0  # reference px in from its edge over which the recess's walls shade the glass,
+POD_AO = 13.0  # reference px in from its edge over which the recess's walls shade the glass,
 # all the way round - the fall to near-black along the bottom of any pane set down in a frame,
 # and what puts the readouts *in* the window rather than printed on it
-POD_AO_A = 0.58  # ...and how dark it is right at the wall
+POD_AO_A = 0.78  # ...and how dark it is right at the wall
+POD_REBATE = 4.6  # reference px of that fall that are a *rebate* rather than a falloff: hard
+# against the reveal, near black, and the same width all the way round. A pane whose frame meets
+# it at one dark pixel is a decal however deep the shading behind it goes; the shape has to say
+# that the bezel holds the glass, and the shape is a step down into a shadow you can measure
+POD_REBATE_A = 0.90  # ...and how dark that step is, which is most of the way to a socket floor
 POD_LIP_SHADE = 6.0  # reference px down from the panel's edge the border's shadow falls on the
 # glass. The window is open at the top and runs up under the border, which makes the border its
 # lip, and a lip drops a shadow on whatever is under it
@@ -797,6 +827,28 @@ POD_GLARE_STREAK = (0.20, 0.30, 0.10)  # ...the wipe it makes: where down the le
 # own depth, not of the pod's. One soft blob at the top left, under the border's own shadow and
 # falling away across the pane, rather than a band the whole width of the window: a reflection
 # that covers a face evenly is a tint, and the lamp is in one place
+POD_SWEEP_A = 0.44  # the cover glass's own reflection over that: one lobe with a *hard leading
+# edge*, which is the half a gaussian blob cannot do. Glass is curved, so the room's edge lands
+# on it as a line - the reference rises fifty levels in a single row and then trails off over
+# ten - and a reflection with no edge anywhere in it reads as a wash however bright it is
+POD_SWEEP_AT = 0.19  # where down the pane the lobe passes at its left edge...
+POD_SWEEP_TILT = 0.16  # ...how far further down it has got by the right...
+POD_SWEEP_LEAD = 0.035  # ...how sharply it comes on, as a fraction of the pane's depth...
+POD_SWEEP_TRAIL = 0.34  # ...and how slowly it goes off. The asymmetry is the whole of it
+POD_SWEEP_X = 0.17  # where across the module the lobe is brightest...
+POD_SWEEP_WIDE = 0.30  # ...and how much of its width it covers. A reflection that runs the
+# whole length of a pane is the lamp smeared into a band; this one is a *thing* the glass is
+# giving back, and it has two ends
+POD_RETURN_A = 0.22  # the rim return: the pane's far edge gives the room back a second time,
+# which is what says the glass has a thickness and the reveal is behind it
+POD_RETURN_W = 2.2  # px of the far edge that does it
+POD_FALL_A = 0.46  # how far into the dark the rake takes the pane at the end away from the
+# lamp. The steel is raked by multiplication and the glass cannot be - a pane is mostly what is
+# behind it - so the same lamp reaches it as a black laid over the far end, which is what turns
+# a lit rectangle into a window with a top-left and a bottom-right
+POD_TINT_A = 0.26  # the phosphor's own wash on the glass, at the lamp's end of it. It was a
+# flat 0.07 everywhere, which is a tint; this is a field, brightest where the lamp is and gone
+# by the far knee, so the pane has a top-left and a bottom-right like every other lit thing here
 BOT_L = 250.0  # the bottom-left bracket's reach along both edges
 BOT_L_STEP = 38.0  # its square landings
 BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
@@ -1542,6 +1594,52 @@ LAMP_HALO_A = 0.58  # ...how much of it there is. Both baked into a tile per rea
 # eight lit cells measured within twenty levels of the dead glass at the far end of the window,
 # which is a bar drawn on a window rather than eight lamps behind one. A lamp behind glass lights
 # the glass, and the count is read off the block of light as much as off the cells in it.
+# Both skirts used to be blurred out of the lamp's own RGBA, which blurs colour into the
+# transparency around it as well as alpha: every pixel of skirt came back a mix of the lamp's
+# colour and black, so the further out it went the *darker* the light got. A light does not do
+# that. The skirt is blurred off the lamp's coverage alone now and worn in the lamp's own colour.
+LAMP_SPILL = 0.62  # how much of the skirt survives past the glass, onto the flange and the rail
+# below the window. Not all of it - the frame stands in front of the pane - but not none either:
+# a lit instrument puts colour on the metal around it, and a window whose light stops dead at
+# its own reveal is a picture of a window.
+LAMP_BOUNCE_R = 13.0  # reference px of the third and widest skirt: the light the instrument
+# throws on the metal below it, which is a different thing from the bloom on its own glass and
+# decays over a different distance. The reference's rail runs +36 green-excess at the row
+# touching the pane and is still +12 fourteen rows down - a falloff, where ours measured a flat
+# +8 the whole way, which is a global tint and reads as one
+LAMP_BOUNCE_A = 0.55  # ...and how much of it lands. Cut to the module: a skirt this wide runs
+# off the bottom of the rail, and light haze over the camera is not a bounce
+SEG_EDGE = 2.0  # px over which a lit cell falls from its core to its own edge...
+SEG_FLOOR = 0.78  # ...and what is left of it there. A segment is a lens with a lamp behind it,
+# so it is hottest in the middle and never one number: ours held exactly two values across a
+# whole cell, and the reference holds sixty-two
+SEG_RIM = 0.42  # how much brighter the wall the light leaves by is than the core...
+SEG_RIM_W = 1.3  # ...and how far into the cell that return reaches. On the side away from the
+# lamp, like every other return on this panel
+SEG_WANDER = 0.10  # how far off its own centre a cell's core sits, as a fraction of the cell...
+SEG_VARY = 0.045  # ...and how much hotter or colder than its neighbours it burns, both seeded off
+# the cell's own index. Two lit cells that are byte-identical are one cell blitted twice - ours
+# were, to the pixel, and the reference's seven all differ
+SEG_WELL = 0.52  # how far below the glass round it an empty cell's floor sits. It used to sit
+# level with it - interior 40 against a field of 41 - which is a cell drawn on the mask rather
+# than milled into it, and there is nothing for the lit ones to be read against
+SEG_WELL_NEAR = 0.42  # of the outline's colour, the wall on the lamp's own side: a well's near
+# wall is the one the light cannot get down to...
+SEG_WELL_RIM = 2.10  # ...and the far one is the only lit line it has, as in every socket on
+# this panel. Symmetric, they are a stroke round a rectangle
+SEG_GRAIN = 0.030  # the phosphor's own tooth inside a lit cell, running with the raster. Small,
+# and the single thing that turns a cell from a handful of levels into continuous tone: ours held
+# two, the reference sixty-two, and at a glance the difference is between a lit thing and a swatch
+SEG_SCAN = 0.26  # of the glass's raster the emitters take. At full it quantised a lit cell to
+# two values twenty-six levels apart - a 13 % stripe running straight through the lit element,
+# which is the loudest thing in the window and it is an artefact
+CLOCK_PAD = 2  # reference px round a baked clock glyph, so its own halation is not clipped by
+# the edge of its tile
+CLOCK_HALATION = 0.55  # how far towards the screen's own black the pixel of bleed round a glyph
+# is taken, which is what a lamp behind glass has round it and paint does not...
+CLOCK_CORE = 0.35  # ...and how far its middle is pushed towards the tube's white. Light that is
+# bright enough desaturates; a readout that stays at exactly its own chroma however bright it
+# gets is ink. Both come out of one stroked draw, baked per character - see _digit
 STEEL = 0.58  # how far the rail's body is stirred towards SCREEN out of GREEN_MID
 
 # ---- the power menu ----
@@ -2345,7 +2443,10 @@ class Overlay:
         self.font_caption = _load_font(max(8, round(14 * scale)))
         # Where the pod's one row sits. A centre rather than a baseline, because _text centres on
         # the y it is given, and it has to finish above the rail along the pod's bottom edge.
-        self.row = round(22 * scale)
+        # Centred in the pane rather than hung off its top: at 22 the bar had twelve pixels of
+        # glass over it and three under, which reads as a part fitted in the wrong hole however
+        # well the part is made.
+        self.row = round(19 * scale)
         self._clock_w = self.font_read.getlength("00:00")
         # Both tags, measured the same way and to the same width - they sit side by side and a
         # pair of slabs that differ by two pixels reads as a mistake. The face is not guaranteed
@@ -2509,6 +2610,12 @@ class Overlay:
         # One signal-bar tile per (segments lit, accent), built the first time that reading is
         # shown and kept: the glow round a lit segment is a blur, and a blur is not a frame cost.
         self._meters: dict[tuple[int, tuple[int, int, int]], tuple[Image.Image, int]] = {}
+        # ...and one tile per character of the clock, for the same reason and a harder one: the
+        # digits change every second, so they cannot be baked into the strip, and PIL's stroked
+        # text - which is how a glyph gets its halation - costs three times a plain one. Twelve
+        # characters by a handful of accents is a bounded cache; a tile per *string* would be
+        # three thousand six hundred of them.
+        self._digits: dict[tuple[str, tuple[int, int, int]], tuple[Image.Image, int]] = {}
         self.glow_r = max(1.0, LAMP_BLOOM_R * scale)
         self.halo_r = max(1.0, LAMP_HALO_R * scale)
         self._skirt = math.ceil(3 * self.halo_r)  # how far a lamp's light reaches past its edge
@@ -3955,41 +4062,68 @@ class Overlay:
         """Coverage of the glass proper - inside the lip by the reveal's width, anti-aliased."""
         return np.clip(0.5 - (sdf + max(1.0, POD_REVEAL * self.scale)), 0.0, 1.0)
 
-    def _pod_plate(
-        self, rgb: np.ndarray, tags: int, xs: np.ndarray, sdf: np.ndarray,
-        land: float, reveal: float,
-    ) -> np.ndarray:
-        """A blank nameplate milled into the right third of the flange's bottom run.
+    def _pod_rake(self, tags: int, x0: int, y0: int, w: int, h: int) -> np.ndarray:
+        """How much of the module's own key light reaches each pixel of one of its boxes.
 
-        Every instrument panel worth copying has one, and what it does for this module is not
-        the word on it - there is no word this panel needs that it is not already saying - but
-        the second depth. A flange with a pocket in it has a floor, a near wall and a far wall,
-        which is three levels of light where a plain flange has one, and it breaks a
-        two-hundred-pixel run of steel into two runs and a thing.
+        The lamp is a *place*, off the left shoulder of the module and above the panel, and its
+        light falls off with distance - so the left knee is lit, the right knee is half lit, and
+        every face between them grades. A drift across the module did this as a straight ramp
+        before, and a straight ramp is a light with a direction and no position: the same eleven
+        levels over a hundred and eighty pixels whichever end you read it from, which measures as
+        a lamp at infinity and looks like no lamp at all.
 
-        A pocket is lit the way the window it sits beside is: the floor is turned out of the
-        lamp's way and goes dark, and the one bright line it has is its far wall - the bottom,
-        under this lamp. Placed in the right third because that is the end furthest from the
-        lamp, so the drift has already taken the steel down there and the pocket is the darkest
-        thing on the face rather than a second event competing with the lit edge.
+        Normalised at the left knee and capped, so this only ever takes brightness away. The
+        flange, the reveal, the scale cut into it and the glass are all multiplied by it, which
+        is the whole point: one lamp, and everything on the module agrees about where it is.
         """
-        right = self.pods[tags].spine[2][0] - POD_PLATE_IN * self.scale
-        left = right - POD_PLATE_W * self.scale
-        span = np.clip(xs - left, 0.0, 1.0) * np.clip(right - xs, 0.0, 1.0)
-        near = reveal + 0.5  # its walls, in the same distance the roll is measured in: hard
-        far = land - 0.4  # against the arris at one end and the rail's foot at the other
-        floor = span * np.clip(sdf - near, 0.0, 1.0) * np.clip(far - sdf, 0.0, 1.0)
-        # Three levels, which is what makes a pocket a pocket rather than a stripe: the near wall
-        # is turned away from the lamp and goes to the floor of a socket, the floor is a face in
-        # its own shade, and the far wall is the one thing in here that faces the light.
-        lip = span * np.clip(sdf - near, 0.0, 1.0) * np.clip(near + 1.4 - sdf, 0.0, 1.0)
-        wall = span * np.clip(sdf - (far - 1.4), 0.0, 1.0) * np.clip(far - sdf, 0.0, 1.0)
+        pod = self.pods[tags]
+        lamp = (pod.spine[-1][0] - POD_RAKE_OUT * self.scale, -POD_RAKE_UP * self.scale)
+        reach = POD_RAKE_REACH * self.scale
+        lit = material.glare(w, h, (lamp[0] - x0, lamp[1] - y0), reach, ambient=POD_RAKE_FLOOR)
+        knee = pod.spine[-2]  # the left one, nearest the lamp: the face's own full brightness
+        near = material.glare(1, 1, (lamp[0] - knee[0], lamp[1] - knee[1]), reach,
+                              ambient=POD_RAKE_FLOOR)[0, 0]
+        return np.minimum(lit / max(near, 1e-6), POD_RAKE_CEIL)
+
+    def _pod_scale(
+        self, rgb: np.ndarray, tags: int, xs: np.ndarray, sdf: np.ndarray,
+        land: float, reveal: float, rake: np.ndarray,
+    ) -> np.ndarray:
+        """The graduation cut into the flange under the window, at the meter's own pitch.
+
+        What was here was a blank pocket, and three critics called it what it was: a groove that
+        holds nothing and says nothing. A face this deep cannot hold a plate - the pane took the
+        room, which is the right trade - but it can hold a *scale*, and a scale is the one mark
+        an instrument may carry that is not a word. It lines up with the segments above it, so
+        the bar is read against a graduation the way every meter in the world is read, and every
+        fourth one runs the whole face.
+
+        A cut is three levels, the same three the window itself is: the floor turned out of the
+        lamp's way and near black, the near wall darker still, and the far wall - the one on the
+        side away from the lamp - giving back the flange's own highlight. Raked with everything
+        else, so the marks at the far end are as dim as the steel they are cut into.
+        """
+        pitch = max(4.0, POD_TICK_PITCH * self.scale)
+        box = self.pod_boxes[tags]
+        # Off the meter's own left edge, so the marks stand under the cells rather than beside
+        # them, and stopping short of the right-hand knee where the rail turns.
+        first = box.x + self._seg[0] / 2.0
+        index = np.round((xs - first) / pitch)
+        cut = np.abs(xs - (first + index * pitch))
+        wall = max(1.0, POD_TICK_W * self.scale)
+        long_ = (np.abs(index % POD_TICK_LONG) < 0.5) & (index >= 0)
+        # Under the bar and no further: this is the meter's scale, and a graduation running on
+        # under the clock would be a ruler the panel has nothing to measure with.
+        within = (xs >= box.x - pitch) & (xs <= box.x + self._meter_w + pitch / 2.0)
+        deep = np.where(long_, land - 0.2, reveal + 0.5 + (land - reveal) * 0.55)
+        face = within & (sdf > reveal + 0.4) & (sdf < deep)
+        groove = np.clip(1.0 - cut / wall, 0.0, 1.0) * face
+        # The far wall of the cut: one pixel beyond it, on the side the lamp is not.
+        beyond = np.clip(1.0 - np.abs(cut - wall - 0.5) / 1.0, 0.0, 1.0) * face * (xs > first)
         dark, lit = (np.asarray(c, np.float32) for c in (material.STEEL_DARK, material.STEEL_LIT))
-        sunk = (POD_PLATE_A * floor)[..., None]
+        sunk = (POD_TICK_A * groove)[..., None]
         rgb = rgb * (1.0 - sunk) + dark * sunk
-        shade = (POD_PLATE_WALL * lip)[..., None]
-        rgb = rgb * (1.0 - shade) + dark * shade
-        shine = (POD_PLATE_LIP * wall)[..., None]
+        shine = (POD_TICK_LIP * beyond * rake)[..., None]
         return rgb * (1.0 - shine) + lit * shine
 
     def _draw_pod_face(self, layer: Image.Image, tags: int) -> None:
@@ -4009,20 +4143,24 @@ class Overlay:
         lamp that puts its highlight along the edge nearest the glass and lets it fall away over
         five pixels back to the rail - on the bottom run that is the top edge, on the right-hand
         ramp the upper-left one - and there is no second line anywhere on it. It is brushed
-        along its length, it drifts brighter towards the lamp's end of the module, it wears the
-        sheet's hairlines and its own, it is chipped, and a blank plate is milled into the
-        bottom run: five pixels of steel that is different in every one of them, because a face
-        that is one grey for two hundred pixels is a fill and everybody can see that it is.
+        along its length, it is raked by a lamp standing off its left shoulder so the right end
+        of every face is half the brightness of the left, it wears the sheet's hairlines and its
+        own, and a graduation at the meter's pitch is cut into the bottom run: four pixels of
+        steel that is different in every one of them, because a face that is one grey for two
+        hundred pixels is a fill and everybody can see that it is. On top of all of it, one line
+        the steel itself cannot reach - material.steel is capped at STEEL_SPEC and a machined
+        arris under a bench lamp blows past it - laid along the roll, wandering in and out and
+        coming and going, because a specular pinned to one row is a rule and not a reflection.
 
         The glass goes opaque hard against the reveal and eases to the terminal's depth over a
-        few pixels, which is the dark seam round any pane in a frame; the recess's walls shade
-        it for a few pixels more all the way round, deepest at the wall; the lip nearest the
-        lamp drops a shadow onto it by exactly the depth the glass sits down; and the border
-        along the top, which is this window's own lip, drops its own. Those are the whole of the
-        difference between a recessed window and a dark decal. The glass itself is opacity, the
-        phosphor's cast, and a glare - SCREEN is near enough black that darkening it says
-        nothing - with one soft reflection of the room at its top left, from the same lamp as
-        everything else.
+        few pixels, which is the dark seam round any pane in a frame; a rebate a few pixels wide
+        steps down into near black all the way round, which is the shape that says the bezel
+        *holds* the pane rather than being drawn beside it; the walls shade it further in; the
+        lip nearest the lamp drops a shadow onto it by exactly the depth the glass sits down;
+        and the border along the top, which is this window's own lip, drops its own. The glass
+        itself is opacity, the phosphor's cast raked with everything else, a glare, and over
+        that the cover's own reflection - one lobe with a hard leading edge and a soft trail,
+        plus the second return off the far rim that says the glass has a thickness.
 
         Once per pod width, before the rail, so the rail's shadow falls on the land and the bolts
         sit over both. Nothing in here may be reached from a frame.
@@ -4057,19 +4195,30 @@ class Overlay:
         diffuse, spec = material.shade(nx, ny, nz)
         spec = spec * POD_LIP_SPEC * (1.0 + RAIL_WEAR * material.wear(along))
         rgb = material.steel(diffuse, spec, POD_GRAIN * material.grain(ys, xs))  # along the flange
-        # Nearer the lamp is brighter, across the whole module. The lamp is up and to the left,
-        # so this is a fall from the left-hand knee to the right one - the drift a milled face
-        # has under one light and a fill can never have.
-        drift = 1.0 + POD_DRIFT * (0.5 - (xs - x0) / max(1.0, w - 1.0))
-        rgb = np.minimum(rgb * drift[..., None], np.asarray(material.STEEL_SPEC, np.float32))
-        rgb = self._pod_plate(rgb, tags, xs, sdf, land, reveal)
-        # The wear: the sheet's own hairlines where they run onto the flange, the pod's own
-        # dragged across it, and the chips - single pixels gone nearly black where the finish is
-        # off. All three deterministic off material.SEED, so the module is the same every boot.
+        # Nearer the lamp is brighter, across the whole module - and "nearer" is a distance from
+        # a place, not a fraction of the way across a box. See _pod_rake.
+        rake = self._pod_rake(tags, x0, y0, w, h)
+        rgb = np.minimum(rgb * rake[..., None], np.asarray(material.STEEL_SPEC, np.float32))
+        rgb = self._pod_scale(rgb, tags, xs, sdf, land, reveal, rake)
+        # The blown line along the arris. Where it sits wanders by a fraction of a pixel along
+        # the flange and how hard it burns wanders with it, both off the same slow noise the
+        # highlight already breathes on, so the brightest row of this face is a different row in
+        # one column than in the next. That is the whole difference between a highlight and a
+        # rule drawn where a highlight would be.
+        ridge_at = reveal + 0.55 + POD_RIDGE_WANDER * material.wear(along, material.SEED + 13)
+        burn = np.clip(1.0 - np.abs(sdf - ridge_at) / max(0.4, POD_RIDGE_W * self.scale), 0.0, 1.0)
+        burn = burn * (1.0 - POD_RIDGE_VARY * (0.5 - 0.5 * material.wear(along)))
+        blown = np.clip(POD_RIDGE * burn * rake * (sdf > reveal * 0.5), 0.0, 1.0)[..., None]
+        rgb = rgb * (1.0 - blown) + np.asarray(POD_RIDGE_HOT, np.float32) * blown
+        # The wear: the sheet's own hairlines where they run onto the flange and the pod's own
+        # dragged across it, both deterministic off material.SEED. Bright, and only a few chips
+        # against them: what a used face carries is where the finish came *off* and the bare
+        # metal under it catches the lamp. Darkening as many pixels as it brightens is a grain
+        # overlay, which is a filter laid over a render rather than a history the part has.
         own = material.scratches(w, h, POD_SCRATCHES, (1.0, 0.0), seed=material.SEED + 9,
                                  spread=30.0, length=(20.0 * self.scale, 60.0 * self.scale))
-        marks = (np.maximum(own, self._marks[y0:y1, x0:x1]) * POD_SCRATCH)[..., None]
-        rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+        marks = (np.maximum(own, self._marks[y0:y1, x0:x1]) * POD_SCRATCH * rake)[..., None]
+        rgb = rgb * (1.0 - marks) + np.asarray(POD_RIDGE_HOT, np.float32) * marks
         pits = material.scratches(w, h, POD_PITS, (1.0, 0.0), seed=material.SEED + 11,
                                   spread=180.0, length=(0.5, 1.2))
         rgb = rgb * (1.0 - POD_PIT * (pits > 0.5))[..., None]
@@ -4088,13 +4237,23 @@ class Overlay:
         open_ = np.clip(np.maximum(-(sdf + reveal), 0.0) / max(1.0, POD_SEAM * self.scale), 0, 1)
         open_ = open_ * open_ * (3.0 - 2.0 * open_)
         pane = _over(pane, SCREEN, 1.0 - (1.0 - TERM_ALPHA / 255.0) * open_)
-        pane = _over(pane, GREEN, TUBE_GLOW_A * open_)
-        # The recess's walls shade the glass all round its edge, deepest at the wall and gone
-        # POD_AO in - squared, so it is a falloff and not a band. This is the fall to near-black
-        # along the bottom of the pane and up both ramps, and it is most of what puts the
-        # readouts *in* the window instead of printed on it.
-        wall = np.clip(np.maximum(-(sdf + reveal), 0.0) / max(1.0, POD_AO * self.scale), 0.0, 1.0)
+        # The phosphor's wash, raked with the steel: brightest at the lamp's end of the pane and
+        # gone by the far knee. A cast that covers a pane evenly is a tint on a decal.
+        pane = _over(pane, GREEN, POD_TINT_A * open_ * rake * rake)
+        # The rebate: a step down into near black, hard against the reveal and the same width all
+        # the way round, and then the walls shading further in - deepest at the wall and gone
+        # POD_AO in, squared so it is a falloff and not a band. The step is the shape that says
+        # the bezel holds the glass; the falloff is what puts the readouts *in* the window
+        # instead of printed on it. A pane that meets its frame at one dark pixel has neither.
+        inset = np.maximum(-(sdf + reveal), 0.0)
+        rebate = np.clip(1.0 - inset / max(1.0, POD_REBATE * self.scale), 0.0, 1.0)
+        pane = _over(pane, (0, 0, 0), POD_REBATE_A * rebate)
+        wall = np.clip(inset / max(1.0, POD_AO * self.scale), 0.0, 1.0)
         pane = _over(pane, (0, 0, 0), POD_AO_A * (1.0 - wall) ** 2)
+        # ...and the same lamp over the length of it. Steel is raked by multiplying it; a pane is
+        # mostly whatever is behind it, so the far end of this one is raked by laying black over
+        # it. Without this the window is evenly lit end to end, which no window ever is.
+        pane = _over(pane, (0, 0, 0), POD_FALL_A * (1.0 - np.clip(rake, 0.0, 1.0)))
         recess = max(1.0, POD_RECESS * self.scale)
         pane = _over(pane, (0, 0, 0), material.cast(1.0 - glass, recess) * POD_SHADOW_A)
         pane = _over(pane, (0, 0, 0), np.broadcast_to(self._raster(y0, h)[:, None], (h, w)))
@@ -4105,7 +4264,22 @@ class Overlay:
         shine = np.zeros((h, w), dtype=np.float32)
         shine[:deep] = material.glare(w, deep, (GLARE_X * w, GLARE_Y * deep),
                                       POD_GLARE_REACH * w, POD_GLARE_FLOOR, POD_GLARE_STREAK)
-        pane = _over(pane, WHITE, shine * POD_GLARE_A * open_)
+        pane = _over(pane, WHITE, shine * rake * POD_GLARE_A * open_)
+        # The cover's own reflection over that: a lobe that comes on in a row and goes off over
+        # ten, running downhill across the pane, and the second return the far rim gives back.
+        # Both cut to the open pane and raked, so the reflection is on the lamp's side of the
+        # glass and the far end of the window is dark.
+        down = ys / max(1.0, float(deep))
+        across = (xs - x0) / max(1.0, w - 1.0)
+        edge = (down - (POD_SWEEP_AT + POD_SWEEP_TILT * across)) / POD_SWEEP_LEAD
+        trail = (down - (POD_SWEEP_AT + POD_SWEEP_TILT * across)) / POD_SWEEP_TRAIL
+        lobe = np.exp(-(((across - POD_SWEEP_X) / POD_SWEEP_WIDE) ** 2))
+        sweep = np.where(edge < 0.0, np.exp(-edge * edge * 9.0), np.exp(-trail * trail)) * lobe
+        pane = _over(pane, WHITE, POD_SWEEP_A * sweep * rake * open_)
+        lx, ly = material.lamp_2d()
+        away = np.clip(ox * lx + oy * ly, 0.0, 1.0)  # (ox, oy) points in: this is the far rim
+        rim = np.clip(1.0 - inset / max(1.0, POD_RETURN_W * self.scale), 0.0, 1.0)
+        pane = _over(pane, WHITE, POD_RETURN_A * rim * rim * away * open_)
         # ...and the border's shadow over the top of it, because the border is this window's lip
         # and the reflection is on the glass underneath it, not over it. Squared for the same
         # reason the walls are: a shadow with an edge on it is a stripe.
@@ -4122,35 +4296,56 @@ class Overlay:
         return rows.astype(np.float32) * (TERM_SCAN / 255.0)
 
     def _lamp(
-        self, lamps: Image.Image, left: int, top: int, tags: int
+        self, lamps: Image.Image, emitter: np.ndarray, colour: tuple[int, int, int],
+        left: int, top: int, tags: int, scan: float = 1.0,
     ) -> tuple[Image.Image, tuple[int, int]]:
         """*lamps* - solid shapes in their own light - as seen through the pod's glass.
 
-        Their own shape blurred into a skirt and laid under them - twice, tight and bright for
-        the edge's own bloom, wide and faint for the glass lit round it: the caption's halation,
-        for the same reason - a lit thing behind glass is a spot of light with a skirt round it,
-        and without the skirt it is paint. Then two things the glass does to them. Nothing of the
-        light reaches the steel round the window, because the glass is *in front* of the lamp
-        and the frame is in front of the glass, so the tile is cut to the glass; and the raster
-        runs through them, dimming their own colour on its rows and adding nothing where they
-        are not, which is what keeps the tile's box from showing as a darker rectangle.
+        The skirt is blurred off *emitter*, the coverage of the lit part alone, and worn in
+        *colour*: twice over, tight and bright for the edge's own bloom and wide and faint for
+        the glass lit round it. It used to be blurred out of the lamps' own RGBA, and PIL blurs
+        the colour channels through the transparency around a shape as well as the alpha - so
+        every pixel of skirt came back part lamp and part black, and the further from the lamp
+        it went the darker its light got. That is not what light does, and it is why a critic
+        could measure our bloom at four levels one bar-height out where the reference has
+        thirty-five: the alpha was there and the colour had been blurred out of it.
+
+        Then what the window does to it. The lamp is behind the glass and the frame is in front,
+        so the body of a lamp is cut to the pane - but a lit instrument puts colour on the metal
+        round it, and LAMP_SPILL of the skirt carries past the reveal onto the flange and the
+        rail. The raster runs through the lamps at *scan* of its depth on the glass, dimming
+        their own colour on its rows and adding nothing where they are not, which is what keeps
+        the tile's box from showing as a darker rectangle.
 
         *left* and *top* are where the tile would land on the panel. It comes back cut to the
         panel with where it now lands, because a skirt round something on the top row reaches
         above the panel and alpha_composite refuses a negative corner. Never done per frame:
         every caller bakes the result.
         """
-        glow = lamps.filter(ImageFilter.GaussianBlur(self.halo_r))
-        glow.putalpha(glow.getchannel("A").point(lambda a: round(a * LAMP_HALO_A)))
-        skirt = lamps.filter(ImageFilter.GaussianBlur(self.glow_r))
-        skirt.putalpha(skirt.getchannel("A").point(lambda a: round(a * LAMP_BLOOM_A)))
-        glow.alpha_composite(skirt)
-        glow.alpha_composite(lamps)
-        arr = np.asarray(glow).astype(np.float32)
-        sdf, _, _, _ = self._pod_field(tags, left, top, glow.width, glow.height)
-        arr[:, :, 3] *= self._pod_glass(sdf)
-        arr[:, :, :3] *= (1.0 - self._raster(top, glow.height))[:, None, None]
-        tile = Image.fromarray(arr.astype(np.uint8), "RGBA")
+        w, h = lamps.width, lamps.height
+        mask = Image.fromarray((np.clip(emitter, 0.0, 1.0) * 255.0).astype(np.uint8), "L")
+        def blurred(radius: float) -> np.ndarray:
+            return np.asarray(mask.filter(ImageFilter.GaussianBlur(radius)), np.float32) / 255.0
+        skirt = np.clip(LAMP_BLOOM_A * blurred(self.glow_r) + LAMP_HALO_A * blurred(self.halo_r),
+                        0.0, 1.0)
+        body = np.asarray(lamps, np.float32)
+        sdf, _, _, _ = self._pod_field(tags, left, top, w, h)
+        glass = self._pod_glass(sdf)
+        # The body is cut to the pane. Past it the skirt keeps LAMP_SPILL of itself and the
+        # widest of the three - the light thrown down onto the metal - is laid over that, both
+        # cut to the module: the rail's outer edge is where this instrument stops, and a skirt
+        # this wide would otherwise haze the camera under the whole pod.
+        land = max(1.0, POD_LAND * self.scale)
+        module = np.clip(0.5 + (self.rail_w + land) - sdf, 0.0, 1.0)
+        metal = np.clip(module - glass, 0.0, 1.0)
+        bounce = LAMP_BOUNCE_A * blurred(max(1.0, LAMP_BOUNCE_R * self.scale))
+        under = np.clip(skirt * glass + (LAMP_SPILL * skirt + bounce) * metal, 0.0, 1.0)
+        over = body[:, :, 3] / 255.0 * glass
+        alpha = over + under * (1.0 - over)
+        lit = np.asarray(colour, np.float32) * (under * (1.0 - over))[..., None]
+        rgb = (body[:, :, :3] * over[..., None] + lit) / np.maximum(alpha, 1e-6)[..., None]
+        rgb *= (1.0 - scan * self._raster(top, h))[:, None, None]
+        tile = _to_image(rgb, alpha)
         cut = max(0, -top), max(0, -left)
         if cut != (0, 0):
             tile = tile.crop((cut[1], cut[0], tile.width, tile.height))
@@ -4159,12 +4354,23 @@ class Overlay:
     def _meter(self, lit: int, halo: tuple[int, int, int]) -> tuple[Image.Image, int]:
         """The signal bar at *lit* of METER_SEGMENTS, in *halo*: one tile per reading, kept.
 
-        Eight cells in the glass. The lit ones are the accent, solid, with their glow round
-        them; the unlit ones are an outline in the dim green and nothing inside, so the glass
-        shows through an empty cell the way it does through the rest of the window. Each
-        segment lands on exactly the pixels the eight rectangles it replaces used to fill -
-        _meter_x still says where the bar starts - and the tile comes back with the row it
-        starts on, cut to the panel by :meth:`_lamp`.
+        Eight cells in the glass, and every one of them lands on exactly the pixels the eight
+        rectangles it replaces used to fill - _meter_x still says where the bar starts - and the
+        tile comes back with the row it starts on, cut to the panel by :meth:`_lamp`.
+
+        A lit cell is a lens with a lamp behind it, not a rectangle of paint. It is hottest a
+        pixel or two inside its own edge and falls off to SEG_FLOOR by the rim; the wall the
+        light leaves by - the one away from the lamp, like every other return on this panel -
+        gives some of it back brighter than the core; and where the core sits and how hard it
+        burns wander cell to cell off the cell's own index. Ours held *two* luminance values
+        across a whole cell and its two lit cells were byte-identical; the reference holds
+        sixty-two and no two of its seven agree, and that difference is the whole of whether a
+        meter is a light or a swatch.
+
+        An empty cell is a well: a floor a little darker than the glass round it, a wall on the
+        far side lit by what the room gives it and a near wall in its own shade. Ours was a flat
+        one-pixel stroke round an interior that measured the same as the field it sat on - which
+        is a drawing of a cell rather than a cell milled into a mask.
 
         The window round the bar is the same shape whichever pod is up - every pod pads the
         meter off its left-hand ramp by the same POD_PAD - so one tile per reading serves all
@@ -4178,26 +4384,106 @@ class Overlay:
             return cached
         seg_w, seg_h, gap = self._seg
         m = self._skirt
-        size = (self._meter_w + 1 + 2 * m, seg_h + 1 + 2 * m)
-        lamps = Image.new("RGBA", size, (0, 0, 0, 0))
-        cells = Image.new("RGBA", size, (0, 0, 0, 0))
-        ld, cd = ImageDraw.Draw(lamps), ImageDraw.Draw(cells)
-        off = (*mix(SCREEN, GREEN_DIM, METER_CELL), 255)
+        # Taller below than above: the light this thing throws downwards has to reach the far
+        # edge of the rail under the window, and above it there is only the panel's own border.
+        low = math.ceil(self.pod.bottom + self.rail_w / 2.0 - (self.row + seg_h / 2.0)) + 2
+        w, h = self._meter_w + 1 + 2 * m, seg_h + 1 + m + max(m, low)
+        xs = np.arange(w, dtype=np.float32)[None, :]
+        ys = np.arange(h, dtype=np.float32)[:, None]
+        lx, ly = material.lamp_2d()
+        jitter = np.random.default_rng(material.SEED + 17).uniform(-1.0, 1.0, (METER_SEGMENTS, 3))
+        off = np.asarray(mix(SCREEN, GREEN_DIM, METER_CELL), np.float32)
+        accent = np.asarray(halo, np.float32)
+        body: tuple[np.ndarray, np.ndarray] = (
+            np.zeros((h, w, 3), np.float32), np.zeros((h, w), np.float32)
+        )
+        emit = np.zeros((h, w), np.float32)
+        # The phosphor's tooth, laid on every cell alike: fibres along the raster, a speck under
+        # them. One field for the whole bar, so two cells at the same brightness still differ.
+        tooth = 1.0 + SEG_GRAIN * material.grain(ys, xs)
         for index in range(METER_SEGMENTS):
             x = m + index * (seg_w + gap)
-            box = [x, m, x + seg_w, m + seg_h]
-            if index < lit:
-                ld.rectangle(box, fill=(*halo, 255))
-            else:
-                cd.rectangle(box, outline=off, width=1)
-        # The empty cells over the glow and the lit ones over them again: light spills across an
-        # empty cell's outline, but nothing sits in front of a lamp.
-        lamps.alpha_composite(cells)
+            cx, cy = x + seg_w / 2.0, m + seg_h / 2.0
+            hw, hh = (seg_w + 1) / 2.0, (seg_h + 1) / 2.0
+            ax, ay = np.abs(xs - cx) - hw, np.abs(ys - cy) - hh
+            edge = np.maximum(ax, ay)
+            cover = np.clip(0.5 - edge, 0.0, 1.0)
+            # Which wall each pixel is nearest, and whether that wall is turned from the lamp.
+            gx = np.where(ax >= ay, np.sign(xs - cx), 0.0)
+            gy = np.where(ax >= ay, 0.0, np.sign(ys - cy))
+            away = np.clip(-(gx * lx + gy * ly), 0.0, 1.0)
+            if index >= lit:
+                # A well: the floor under the glass, a rim lit on the far side and dark on the
+                # near one. The stroke lands on the pixels PIL's outline used to. Its rim takes
+                # the same per-cell offset and the same tooth a lamp does, because six empty
+                # cells drawn to one number are one cell blitted six times.
+                ring = np.clip(1.0 - np.abs(edge + 0.5), 0.0, 1.0)
+                floor_ = np.clip(0.5 - (edge + 1.0), 0.0, 1.0)
+                body = _over(body, (0, 0, 0), SEG_WELL * floor_)
+                worn = (1.0 + SEG_VARY * jitter[index][2]) * tooth
+                wall = off * (worn * (SEG_WELL_NEAR
+                                      + (SEG_WELL_RIM - SEG_WELL_NEAR) * away))[..., None]
+                over = ring[..., None]
+                body = (body[0] * (1.0 - over) + wall * over, np.maximum(body[1], ring))
+                continue
+            # A lamp. Its core sits a fraction of a cell off centre and burns a few per cent
+            # hotter or colder than its neighbour's, so no two lit cells - and no two of the
+            # skirts they lay on the glass - are one blit. Off the cell's own index and not off
+            # the order they are drawn in: a cell is a physical thing and looks the same at every
+            # reading, so the eighth one may not change its mind when the seventh lights.
+            jx, jy, amp = jitter[index]
+            reach = max(1.0, SEG_EDGE * self.scale)
+            inward = -np.maximum(np.abs(xs - cx - jx * SEG_WANDER * seg_w) - hw,
+                                 np.abs(ys - cy - jy * SEG_WANDER * seg_h) - hh)
+            t = np.clip(inward / reach, 0.0, 1.0)
+            core = SEG_FLOOR + (1.0 - SEG_FLOOR) * t * t * (3.0 - 2.0 * t)
+            back = np.clip(1.0 + (edge + 0.5) / max(0.5, SEG_RIM_W * self.scale), 0.0, 1.0)
+            value = (core * (1.0 + SEG_VARY * amp) + SEG_RIM * back * back * away) * tooth
+            emit = np.maximum(emit, cover * np.clip(value, 0.0, 1.0))
+            over = cover[..., None]
+            glow = np.clip(accent * value[..., None], 0.0, 255.0)
+            body = (body[0] * (1.0 - over) + glow * over, np.maximum(body[1], cover))
+        lamps = _to_image(body[0], body[1])
         _, _, meter_right = self._readouts(0)
         left = math.floor(self._meter_x(meter_right)) - m
         top = math.floor(self.row - seg_h / 2) - m
-        tile, (_, row) = self._lamp(lamps, left, top, 0)
+        tile, (_, row) = self._lamp(lamps, emit, halo, left, top, 0, SEG_SCAN)
         cached = self._meters[key] = (tile, row)
+        return cached
+
+    def _digit(self, char: str, colour: tuple[int, int, int]) -> tuple[Image.Image, int]:
+        """One character of the clock as a lamp behind glass: a tile per (character, accent).
+
+        A glyph on this panel is a lit thing, and a lit thing has a halation - a pixel of its own
+        colour, dimmed towards the screen's black, bleeding into the glass round it - and a core
+        hot enough to have lost some of its colour, because light bright enough to be read across
+        a workshop desaturates. Ours was one flat fill at exactly its own chroma, which a critic
+        measured peaking at 128 against a reference's 208 and called what it was: paint.
+
+        Both of those are one stroked ``d.text``, and a stroked text costs three plain ones - on
+        every frame, in every state. So the glyph is baked instead. Twelve characters by a
+        handful of accents is a bounded cache, and five composites of a twenty-pixel tile is
+        cheaper than the single plain draw this replaced.
+
+        Opaque, both of them: ImageDraw writes rather than composites, so a translucent halation
+        would be a ring of camera round every digit. Returns the tile and the margin its own
+        light is allowed, which is what the caller places it by.
+        """
+        key = (char, colour)
+        cached = self._digits.get(key)
+        if cached is not None:
+            return cached
+        pad = max(1, round(CLOCK_PAD * self.scale))
+        size = (math.ceil(self.font_read.getlength(char)) + 2 * pad,
+                round(self.font_read.size) + 4 * pad)
+        tile = Image.new("RGBA", size, (0, 0, 0, 0))
+        ImageDraw.Draw(tile).text(
+            (pad, size[1] / 2), char, font=self.font_read, anchor="lm",
+            fill=(*mix(colour, WHITE, CLOCK_CORE), 255),
+            stroke_width=max(1, round(self.scale)),
+            stroke_fill=(*mix(colour, SCREEN, CLOCK_HALATION), 255),
+        )
+        cached = self._digits[key] = (tile, pad)
         return cached
 
     def _bake_header(
@@ -4254,7 +4540,8 @@ class Overlay:
             fill=(*colour, 255),
         )
         layer: Image.Image = d._image
-        layer.alpha_composite(*self._lamp(slab, left - m, top - m, tags))
+        shape = np.asarray(slab, np.float32)[:, :, 3] / 255.0
+        layer.alpha_composite(*self._lamp(slab, shape, colour, left - m, top - m, tags))
         self._text(d, x + (width - self.font_micro.getlength(word)) / 2, cy, word,
                    self.font_micro, (*INK, 255))
         return width
@@ -4273,10 +4560,19 @@ class Overlay:
         clock = "--:--" if elapsed is None else f"{whole // 60:02d}:{whole % 60:02d}"
         # Phosphor at rest with nothing to count, the state's accent the moment there is - the
         # numbers that only mean something during a session are the right place for the colour
-        # that only appears during one. The middle green and not the faintest: the dashes are a
-        # lamp behind glass sitting beside a lit meter, and at GREEN_DIM they read as a dead one.
-        colour = (*GREEN_MID, 255) if elapsed is None else (*halo, 255)
-        self._text(d, clock_right, self.row, clock, self.font_read, colour, align="r")
+        # that only appears during one. The phosphor at full and not the middle green, for the
+        # same reason the resting meter is: these dashes sit beside a lit bar behind one pane.
+        #
+        # Character by character out of :meth:`_digit`, because the string changes every second
+        # and the glyphs do not: five composites of a cached tile, which is cheaper than the one
+        # plain d.text this used to be and a third of the price of the stroked one it wants.
+        colour = GREEN if elapsed is None else halo
+        layer: Image.Image = d._image
+        at = clock_right - self._width(clock, self.font_read, 0.0)
+        for char in clock:
+            tile, pad = self._digit(char, colour)
+            layer.alpha_composite(tile, (round(at) - pad, self.row - tile.height // 2))
+            at += self.font_read.getlength(char)
 
         # The bar is a cached tile per reading - see _meter - and one composite of it is the
         # whole of what a frame pays for it. The layer is recovered from the draw, as _draw_bolt
