@@ -2009,11 +2009,16 @@ DIAL_SEED_STEP = 31  # so the two instruments are two parts and not one sprite s
 DIAL_BEZEL_TURNED = 0.38  # of the way from the bars' STEEL to STEEL_LIT. A bezel is turned and
 # then polished, and a polished face gives back more of the room than a sawn and brushed one -
 # which is what makes the ring read as the brightest metal on the panel rather than the dullest
-DIAL_BEZEL_FILL = 0.16  # what the slope turned away from the lamp still gets from the room...
-DIAL_BEZEL_SHUT = 0.70  # ...and how much of even that reaches the slope facing the other way.
+DIAL_BEZEL_FILL = 0.16  # how far the lamp's own term wraps past the terminator, so a slope that
+# has just turned out of the light does not go straight to the ambient floor...
+DIAL_BEZEL_SHUT = 0.50  # ...and how much of the room the slope facing the other way still sees.
 # The panel's ambient is what a face square to the viewer sees of the room; a slope on a ring
 # bolted to a bracket sees the bracket instead, so it goes below that floor. Without this the
-# ring has no black in it anywhere and reads as a moulding rather than as turned metal
+# ring has no black in it anywhere and reads as a moulding rather than as turned metal.
+# It was 0.70, back when it scaled the whole colour and so carried the section's contrast on the
+# shadow side as well as its own. Now that it moves the ambient alone this is the only thing on
+# the dark half that still knows which way each band of the section is leaning, so it needs the
+# range: the difference between a rim with a crown, a land and a chamfer in it and a dark arc
 #
 # ...and none of that varies round the ring, which is what three critics measured and called a
 # stroke. The lamp is a long way above and to the left of a ring five pixels wide and three
@@ -2026,6 +2031,16 @@ DIAL_BEZEL_SHUT = 0.70  # ...and how much of even that reaches the slope facing 
 DIAL_BEZEL_CAST = 0.18  # what of the lamp still finds the far side of the ring...
 DIAL_BEZEL_WRAP = 1.25  # ...and how quickly the crown's own shadow takes it round there
 DIAL_BEZEL_WELL = 0.74  # ...and what the room gives a ring bedded in a plate, on that side
+DIAL_BEZEL_BOUNCE = 0.36  # ...and what comes back UP off that plate onto the skirt of the roll,
+# added to the ambient there. The plate is lit all the way round the ring, so the metal standing
+# over it is not black anywhere either: a critic sampled our crown every ten degrees and read 19
+# to 30 for twelve consecutive samples - over half the circumference unlit - against a reference
+# whose ring never leaves metal at any azimuth. Diffuse, and the same at every bearing, which is
+# what makes it a floor under the shadow side rather than a second highlight on it
+DIAL_BEZEL_BOUNCE_AT = 0.42  # of the roll, from its outer edge in: how much of it has turned
+# far enough down to see the plate at all. A pixel, near enough. Spread over the whole roll it
+# is a wash that lifts the ring's mean and takes the azimuthal gradient with it; kept to the
+# skirt it is the one lighter line along the outer edge every photographed bezel has
 DIAL_BEZEL_POLISH = 2.8  # how much brighter the roll's highlight is than the land's: a ring is
 # polished where a cloth reaches, and the flat in the middle keeps the bars' own dull shine
 DIAL_BEZEL_SHINE = 1.8  # how tight the ring's highlight is. Tighter than a bar's, because a
@@ -2059,6 +2074,14 @@ DIAL_SEAM_OPEN = 0.58  # ...against where it rakes straight down the wall
 DIAL_BEZEL_RAKE_WRAP = 2.2  # how tightly that raking light stays on the arc of the ring
 # actually turned to receive it. A bounce that spreads out over half the circumference is a
 # second lamp, and this part has already been rebuilt once for having one
+DIAL_LEAK = 0.55  # of the seat's width, from its inner edge out: how far the light out of the
+# crystal's cut edge carries down the undercut before the seat's own black takes over. Of the
+# seat and not a count of pixels, so wherever the seam has wandered the green stops at the metal
+DIAL_LEAK_A = 0.46  # ...and how much of the phosphor comes back out of it there. A pane over a
+# lit dial is a light pipe: it carries the face's light sideways and lets it go where the glass
+# is cut, which is why every photograph of an instrument has a green line round the inside of
+# the bezel and none of it on the bezel. Kept inside the seat, so the ring's own metal never
+# sees it - see DIAL_GREENBIAS, which this is laid down after and deliberately outside of
 DIAL_GREENBIAS = 6.0  # levels of green over the mean of red and blue any metal on an instrument
 # may hold. Green on this panel belongs to the phosphor and to the glass over it; a bezel that
 # shares it reads from a pace away as a green painted ring rather than as steel, and the two
@@ -6715,10 +6738,27 @@ class Overlay:
         A shadow of one depth drawn all the way round a ring is a stroke, and a stroke is what
         this was.
 
+        Occlusion moves the AMBIENT and nothing else. What a face can see of the room sets the
+        floor it sits on; it does not dim the lamp that reaches it or the highlight it mirrors,
+        and material.steel takes a field for exactly that. Scaling the finished colour by it -
+        which is what this did - flattens the shadow side's section along with its brightness,
+        and a ring whose far half has no crown, land or chamfer left in it is a painted donut at
+        any value. What keeps that half out of black is the plate it stands on: the plate is lit
+        all the way round, so the skirt of the roll turned down towards it takes a little back.
+
+        And the one thing on the ring that is green: the cut edge of the crystal, showing at the
+        top of the undercut and lit by the face inside it. That is what makes the junction a
+        REVEAL rather than a drawn black stroke - a critic measured forty to fifty levels of
+        green excess over three pixels there on the reference and exactly none on ours. It is
+        laid down last, past the clamp that keeps green off steel, and it stops inside the seat.
+
         A lathe-turned part, so the brushing runs round the ring rather than along a bar. The
         wear on it is BRIGHT ONLY: a scratch takes the finish off and what is underneath catches
         more light than the finish did, never less, and symmetric noise either side of the mean
-        is a grain overlay rather than a used part.
+        is a grain overlay rather than a used part. What it catches is all the light there is
+        and not only the lamp's, at the root of it, because bare metal at the bottom of a
+        hairline is near enough a mirror: gated on the lamp alone, no mark on this ring survived
+        the half of it the lamp does not reach.
 
         *seed* and *polish* are what stop the two instruments being one sprite stamped twice -
         same lamp, same section, different history and a different amount of finish left on the
@@ -6778,22 +6818,44 @@ class Overlay:
         # and the ring reads as a part lit from both sides at once.
         spec = spec * lamp_on
         brushing = DIAL_BEZEL_GRAIN * material.grain(dist, along, seed)
-        rgb = material.steel(diffuse, spec, brushing,
-                             colour=mix(material.STEEL, material.STEEL_LIT, polish))
         # What a slope on a ring sees instead of the room is the bracket it is bolted to, so the
         # far one goes below the panel's own ambient - and so does the whole far side of the
         # ring, which is bedded in a plate and sees it rather than the room. Without these the
         # ring has no black in it anywhere.
+        #
+        # It is the AMBIENT and only the ambient: what a surface can SEE moves the floor it sits
+        # on, and never the lamp's own share or the highlight (see material.steel). Scaling the
+        # whole colour instead - which is what this did - takes the shadow side's section away
+        # with its brightness, and a ring whose far half holds no crown, no land and no chamfer
+        # is a painted donut whatever value it is drawn at.
         seen = np.clip(nx * lx + ny * ly + 1.0, 0.0, 1.0)
-        rgb = rgb * ((DIAL_BEZEL_SHUT + (1.0 - DIAL_BEZEL_SHUT) * seen)
-                     * (DIAL_BEZEL_WELL + (1.0 - DIAL_BEZEL_WELL) * cast))[..., None]
+        edge = np.clip(1.0 - (r - dist) / max(DIAL_BEZEL_EDGE * self.scale, 0.5), 0.0, 1.0)
+        room = (material.AMBIENT
+                * (DIAL_BEZEL_SHUT + (1.0 - DIAL_BEZEL_SHUT) * seen)
+                * (DIAL_BEZEL_WELL + (1.0 - DIAL_BEZEL_WELL) * cast)
+                # ...plus what comes back up off the plate onto the skirt of the roll, which is
+                # the only part of the ring turned down far enough to see it. A bounce and not a
+                # lamp, and deliberately the SAME all the way round: the plate is an annulus of
+                # dull steel round the whole ring, so what it hands back has no direction in it
+                # at all. On the lit side the crown's own highlight swamps it; on the dark side
+                # it is the floor that keeps the metal metal. Anything with a bearing here is a
+                # second light, and this part has been rebuilt once already for having one.
+                #
+                # Not on the last pixel of it: that one is the contact line, shut against the
+                # plate it is standing on, and it sees less of the room than anything else on
+                # the part rather than more. Which is what makes the bounce read - it comes up
+                # to a defined lighter line and then stops, instead of washing out over the
+                # silhouette into the shadow the instrument drops.
+                + DIAL_BEZEL_BOUNCE * (1.0 - edge)
+                * np.clip((out - DIAL_BEZEL_BOUNCE_AT) / (1.0 - DIAL_BEZEL_BOUNCE_AT), 0.0, 1.0))
+        rgb = material.steel(diffuse, spec, brushing, ambient=room,
+                             colour=mix(material.STEEL, material.STEEL_LIT, polish))
         # ...and the one line where the crown has actually blown out. material.steel stops at
         # STEEL_SPEC, which is as bright as the metal itself can be; the lamp in it is brighter
         # than that, and a highlight that never reaches the top of the range is a matte part.
         blown = np.clip(spec, 0.0, 1.0) ** DIAL_BEZEL_RIDGE
         spark = np.minimum(np.asarray(material.STEEL_SPEC, np.float32) * DIAL_SPARK, 255.0)
         rgb = rgb + (spark - rgb) * np.clip(DIAL_BEZEL_BLOWN * blown, 0.0, 1.0)[..., None]
-        edge = np.clip(1.0 - (r - dist) / max(DIAL_BEZEL_EDGE * self.scale, 0.5), 0.0, 1.0)
         lip = np.clip(1.0 - (dist - r_in) / max(DIAL_BEZEL_LIP * self.scale, 0.5), 0.0, 1.0)
         rolled = DIAL_BEZEL_EDGE_DARK - (DIAL_BEZEL_EDGE_DARK - DIAL_BEZEL_EDGE_LIT) * key
         # The arc of the ring actually turned to take the light that comes over the crystal -
@@ -6818,13 +6880,42 @@ class Overlay:
         # off and what is underneath catches more light than the finish did - more of the light
         # that is THERE. Added flat, they came out as bright specks lying in the ring's own
         # shadow, which is a decal of a scratch rather than a scratch.
-        drag = (self._dial_scratches(dist.shape[0], seed)
-                * (1.0 - groove) * (1.0 - edge) * lamp_on)
+        #
+        # ALL the light that is there, which is what this had wrong: gated on the lamp alone, no
+        # mark on the ring survived the half of it the lamp does not reach, and a critic measured
+        # our high-frequency residual at half the reference's and called the shadow side smeared.
+        # A scratch in a part standing in a room is lit by the room, and it is fresh metal at the
+        # bottom of it - near enough a mirror beside the brushing round it, so it hands back a
+        # far larger share of what little light there is than the finish does. The root is that:
+        # it barely moves a hairline lying in the crown's own highlight and doubles the one lying
+        # in the shadow, which is where a used part shows its history and ours showed none.
+        drag = (self._dial_scratches(dist.shape[0], seed) * (1.0 - groove) * (1.0 - edge)
+                * np.sqrt(room + (1.0 - material.AMBIENT) * diffuse))
         rgb = rgb + drag[..., None]
         # Green is the phosphor's and the glass's. Whatever the panel's steel is tuned to, no
         # pixel of an instrument's ring leaves here carrying more of it than a metal may.
         rgb[..., 1] = np.minimum(rgb[..., 1],
                                  0.5 * (rgb[..., 0] + rgb[..., 2]) + DIAL_GREENBIAS)
+        # ...and then the one green thing on the ring, which is not the ring's colour at all: the
+        # rim of the crystal, edge-lit by the face under it. A crystal is a light pipe - the dial
+        # emits, the pane carries it sideways, and it comes out where the glass is cut, which is
+        # the sliver of it still showing at the bottom of the undercut. So it is the LAST thing
+        # laid down, past the clamp that keeps green off the steel, and it is the same all the
+        # way round because a phosphor has no bearing: the shadow side gets it too.
+        #
+        # This is the reveal. A dark stroke round a lit face is a drawn line; a groove with the
+        # face's own light in the bottom of it is a groove, and it is the one cue a critic found
+        # missing outright - forty to fifty levels of green excess over three pixels on the
+        # reference, exactly none on ours past r=28.5.
+        #
+        # A LINE and not a fill, and that is the whole of the tuning: light comes out of the
+        # crystal where the crystal is CUT, which is one edge at the top of the undercut, and
+        # filling the seat with it puts the brightest thing on the shadow side of the ring in
+        # the groove - so the section runs face, groove, crown all downhill and the reveal
+        # disappears again from the other direction. Measured from the seat's inner edge and
+        # sized off the seat, so it cannot reach the metal wherever the seam has wandered to.
+        leak = np.clip(1.0 - (dist - (r_in - seam)) / np.maximum(DIAL_LEAK * seam, 0.5), 0.0, 1.0)
+        rgb = rgb + np.asarray(GREEN, np.float32) * (DIAL_LEAK_A * leak * leak)[..., None]
         return rgb, cover
 
     def _dial_scratches(self, size: int, seed: int) -> np.ndarray:
