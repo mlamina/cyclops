@@ -38,6 +38,7 @@ import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 
 from . import (  # noqa: E402
     barge,
+    companion,
     filming,
     imagine,
     mixer,
@@ -456,6 +457,8 @@ class Kiosk:
         self._notice_until = 0.0
         self._volume: int | None = None  # the level we last put on the sink
         self._volume_at = 0.0  # when we last looked for a new one
+        self._handover_at = 0.0  # when we last looked at whether a phone has taken his voice
+        self._handed_over = False  # ...and whether one has, so the change is said once
         self._turning = False  # a finger is on the knob: the column is up, and follows it
         self._sliding = False  # ...and has reached the track, so the speaker follows it too
         self._slide_from = 0.0  # where that finger landed, which is what the floor is measured on
@@ -1562,6 +1565,35 @@ class Kiosk:
             self._pressed, self._press_until = None, 0.0
         self._turning = False  # last, and _walk reads it first: see the note there
 
+    def _sync_handover(self) -> None:
+        """Send his voice to whoever is listening on the LAN, or back to the panel's own amp.
+
+        The switch on the companion's live screen posts nothing - it opens the voice stream, and
+        *that* is the request. So this asks the only question that matters and can ask it for
+        free: is anybody on the other end of it. A phone that walks out of wifi range, a locked
+        screen and a closed tab all end the connection, so the sound comes back on its own
+        without anybody having to remember to send a "stop".
+
+        **Not the sink.** Turning the volume down was the first attempt and it was wrong: it took
+        the sound cues with it, and the cues are deliberately not on the voice stream (see
+        :mod:`cyclops.sfx`), so the shutter and the wake chime were audible on neither the panel
+        nor the phone. This reaches exactly one thing - whether his voice leaves this box's amp -
+        and leaves the volume, the note behind it and everything else that plays alone.
+
+        Applied every poll rather than on the transition, because a session that opens during a
+        handover brings a new Speaker with it, and said out loud only when the answer changes.
+        """
+        now = time.monotonic()
+        if now - self._handover_at < VOLUME_POLL_S:
+            return
+        self._handover_at = now
+        taken = companion.listening()
+        self.controller.set_on_air(not taken)
+        if taken != self._handed_over:
+            self._handed_over = taken
+            where = "a companion has his voice" if taken else "his voice is back on the panel"
+            print(f"· {where}", flush=True)
+
     def _sync_volume(self) -> None:
         """Follow the level the page left for us. A few bytes, a couple of times a second.
 
@@ -1649,7 +1681,10 @@ class Kiosk:
         """
         now = time.monotonic()
         after = self.controller.settings.sleep_after_s
-        if session_up(state) or self._page_busy.is_set() or self._menu:
+        # ...and so does somebody watching from the next room. Sleeping releases the camera,
+        # which is the one thing a companion is here for; a panel that went dark under a phone
+        # would take the picture with it and there is nobody at the glass to tap it back.
+        if session_up(state) or self._page_busy.is_set() or self._menu or companion.watching():
             self._touched_at = now
         elif after and not self._asleep and now - self._touched_at > after:
             self._sleep()
@@ -1730,6 +1765,7 @@ class Kiosk:
                 self._hidden = False
                 self._page_still = None  # the panel is ours again; it speaks for itself
                 self._touched_at = time.monotonic()  # closing the page is a touch like any other
+            self._sync_handover()  # ...unless a phone has taken his voice, which reads first
             self._sync_volume()  # the page sets the volume, so keep reading it while it is up
             self._sync_barge_in()  # ...and whether it may be interrupted, on the same beat
             self._sync_voice()  # ...and plays a voice the settings screen asks to hear
@@ -1952,6 +1988,9 @@ def main() -> None:
     # way: left armed by a killed kiosk it would let the LAN close a page this one put up.
     PICTURE_UP_FLAG.unlink(missing_ok=True)
     kiosk.adopt_volume()
+    # The second port: the picture and the voice, for a phone on the LAN. Nothing is produced
+    # until something connects, and a port that will not bind costs a stream and not a panel.
+    companion.serve(camera)
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

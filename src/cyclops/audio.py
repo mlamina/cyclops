@@ -351,6 +351,18 @@ class Speaker:
         # Optional tap, called on the audio thread with each block handed to PortAudio - already
         # zero-filled, so it is a continuous record of the output. Must not do I/O.
         self.on_block: Callable[[bytes], None] | None = None
+        # And the second one, which is not the recorder's. A recording is one consumer of the
+        # output and a phone being used as the speaker is another, and they must not be able to
+        # clobber each other: `SessionLog._start_recorder` assigns on_block unconditionally, so
+        # anything else reaching for that name would silently take the agent track out of every
+        # session video. Two names, two owners. Same rule: must not do I/O.
+        self.on_monitor: Callable[[bytes], None] | None = None
+        # Whether his voice reaches this box's own amplifier. False while a companion is being
+        # used as the speaker, and it silences *his voice only* - the sound cues play on their
+        # own stream (see cyclops.sfx) and go on sounding here, because the button they answer
+        # for is here. Turning the sink down instead took the cues with it, which left the
+        # shutter and the wake chime audible on neither the panel nor the phone.
+        self.on_air = True
         self._status = ""
         self._warned = False
         self._stream = sd.RawOutputStream(
@@ -377,9 +389,14 @@ class Speaker:
                 self._output_levels.append((now, _rms(chunk)))
         if len(chunk) < needed:
             chunk += b"\x00" * (needed - len(chunk))
-        outdata[:] = chunk
+        # The taps are handed the real block whatever the amp is doing with it: a session's video
+        # is a record of what he said, not of which speaker happened to play it, and the companion
+        # holding his voice is the whole reason this box might not be playing it.
+        outdata[:] = chunk if self.on_air else bytes(needed)
         if self.on_block is not None:
-            self.on_block(chunk)
+            self.on_block(chunk)  # the recording first: it is the durable one
+        if self.on_monitor is not None:
+            self.on_monitor(chunk)
 
     def begin_item(self) -> None:
         """Mark the start of a new assistant audio item: it begins after everything buffered."""

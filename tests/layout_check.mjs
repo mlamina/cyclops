@@ -185,6 +185,16 @@ async function stub(ctx) {
   for (const pattern of ['**/media/**', '**/project-media/**'])
     await ctx.route(pattern, (route) =>
       route.fulfill({ status: 200, contentType: 'image/svg+xml', body: STILL }));
+  // The companion's two streams, which come from the kiosk's own port and so from nothing at all
+  // on a laptop. Same argument as the stills, one step further: a refused connection is a console
+  // *error*, which this file counts as a failure, and it would have failed at all five sizes for
+  // a service that was never meant to be running. 16:9, so the frame is measured the shape the
+  // real one will be. The voice is aborted - ERR_ABORTED is already filtered above.
+  const FRAME = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9">' +
+                '<rect width="16" height="9" fill="#0d2418"/></svg>';
+  await ctx.route('**/camera.mjpg*', (route) =>
+    route.fulfill({ status: 200, contentType: 'image/svg+xml', body: FRAME }));
+  await ctx.route('**/voice.pcm*', (route) => route.abort());
 }
 
 // ---------------------------------------------------------------- what gets measured

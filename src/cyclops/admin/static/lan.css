@@ -297,6 +297,28 @@ body:not(.kiosk) ::-webkit-scrollbar-thumb { background: var(--dim); }
     color: var(--dim); font-size: calc(13 * var(--u)); line-height: 1.4;
     margin-top: calc(7 * var(--u));
   }
+  /* ...and companion mode's screen, which is the only rule of it that belongs to a width.
+     Picture left, conversation right - the same order .watch puts them in above, because it is
+     the same pair of things. Everything else about #v-live stays outside this query on purpose
+     (see "companion mode" below): unlike the session view, a narrow client here is not told to
+     do without the transcript, it is told to put it underneath.
+
+     The head spans both columns. It names the session, which is neither column's business, and
+     it is the one thing on this screen that must not scroll away.
+
+     `main#v-live` and not `#v-live`, which is the one thing here that is not obvious: the
+     companion section below is *later in this file* and names the same element at the same
+     specificity, so with the id alone the stacked rule would win at every width and this block
+     would silently do nothing. Moving one of the two would be the other cure, and it would put
+     the rules that belong to a width in among the rules that deliberately do not. One element
+     name is the cheaper answer, and the query stays defined exactly once. */
+  body:not(.kiosk) main#v-live {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: min-content minmax(0, 1fr);
+    grid-template-areas: "head head" "cam talk";
+    column-gap: calc(18 * var(--u));
+    --camh: 62;   /* beside the transcript rather than above it, so height stops being scarce */
+  }
 }
 
 /* ---- companion mode ---- */
@@ -320,11 +342,78 @@ body:not(.kiosk) ::-webkit-scrollbar-thumb { background: var(--dim); }
    the phone and everything on it hangs off the edge. tests/layout_check.mjs caught this at four
    of the five sizes. */
 body:not(.kiosk) #v-live {
-  grid-template-rows: min-content minmax(0, 1fr);
+  grid-template-rows: min-content min-content minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "head" "cam" "talk";
   align-content: start;
+  /* How tall the picture may be, as a bare number: the unit is added where it is used, so that
+     the vh/dvh pair can be written there. Stacked, the picture is a third of the screen and the
+     conversation gets the rest - see .cam. */
+  --camh: 34;
 }
-body:not(.kiosk) .livetalk { display: block; overflow-y: auto; min-height: 0; }
+body:not(.kiosk) .livehead { grid-area: head; }
+body:not(.kiosk) .livetalk { grid-area: talk; display: block; overflow-y: auto; min-height: 0; }
+/* The same cell as the transcript, because they are the same half of the screen and exactly one
+   of them is ever shown. This is what lets [data-idle] be two display rules and nothing else:
+   the mark lands where the conversation was rather than on top of the picture. */
+body:not(.kiosk) #v-live .idle { grid-area: talk; }
+
+/* ---- the camera, as it is ----
+   The block carries the width, not the picture inside it, so the switch beneath is exactly as
+   wide as the frame and its label and its word sit at the two ends of the picture - the shape
+   every control on the panel already has.
+
+   The middle term of that min() is the whole of "the transcript keeps its share". 16:9 across
+   the full width of a phone held sideways - 844x390 - is 463 px of picture in about 310 px of
+   page, and there is no width at which a stacked layout can afford that. So the height is capped
+   first and the width follows it, which shrinks the frame rather than letterboxing it.
+
+   The vh/dvh pair for base.css's reason: an older engine drops the second and keeps the first,
+   and on iOS the difference is a toolbar's worth of transcript. */
+body:not(.kiosk) .cam {
+  grid-area: cam;
+  display: grid; grid-template-rows: min-content min-content;
+  gap: calc(8 * var(--u));
+  align-self: start;            /* a 1fr column must not stretch the frame to fill it */
+  margin: 0 auto calc(10 * var(--u));
+  width: min(100%, calc(var(--camh) * 1vh * 16 / 9));
+  width: min(100%, calc(var(--camh) * 1dvh * 16 / 9));
+  min-width: 0;
+}
+/* A hard 16:9, and not `auto 16 / 9` like .video above: there the element *is* the recording and
+   the file's own shape wins the moment it is known, here the height is a promise made to the
+   conversation underneath. A source that is not 16:9 letterboxes inside the promise rather than
+   eating into it. The box is the right shape before the first frame lands, so nothing on the
+   screen moves when one does. */
+body:not(.kiosk) .camshot {
+  grid-area: 1 / 1;
+  display: block; width: 100%;
+  aspect-ratio: 16 / 9; object-fit: contain;
+  background: #000; border: calc(1 * var(--u)) solid var(--dim);
+}
+/* In the picture's own cell rather than over it: a black rectangle that never fills is
+   indistinguishable from a dark room, and this screen is often looked at from across one. */
+body:not(.kiosk) .camoff {
+  grid-area: 1 / 1; place-self: center;
+  color: var(--dim); letter-spacing: .2em; text-transform: uppercase;
+  font-size: calc(13 * var(--u));
+}
+body:not(.kiosk) #v-live:not([data-cam="off"]) .camoff { display: none; }
+/* Two marks saying the screen is awake is one too many, and the live picture is the better. */
+body:not(.kiosk) #v-live[data-cam="on"] .idle-eye { display: none; }
+/* A phone on its side is 390 px tall and the header has already taken a third of it. A share of
+   the screen is the wrong cap there, because the switch and its hint under the frame are a fixed
+   seventy pixels however small the picture gets - so at 34dvh the conversation was left with
+   about fifty pixels to scroll in, which is not a transcript, it is a rumour of one.
+   tests/layout_check.mjs measures exactly this shape, which is why it is a size in the list.
+
+   A height question and not the width one above, so it does not touch --wide-q's single
+   definition: this asks how much room there is at all, not whether somebody is sitting down. The
+   hint goes first because the switch's own word already says which way it is set. */
+@media (max-height: 30rem) {
+  body:not(.kiosk) #v-live { --camh: 26; }
+  body:not(.kiosk) .cam .shint { display: none; }
+}
 
 /* ---- and what it is when nothing is running ---- */
 /* Which on a companion is most of the day, so it is a screen rather than a leftover. It was one
@@ -336,8 +425,11 @@ body:not(.kiosk) .livetalk { display: block; overflow-y: auto; min-height: 0; }
    so the screen you are holding is visibly the same machine, idle rather than broken.
 
    [data-idle] is set by app.js on the view, and it takes the head and the transcript out
-   together: with nothing said there is no session to name and nothing to scroll. */
-body:not(.kiosk) #v-live[data-idle] { grid-template-rows: minmax(0, 1fr); }
+   together: with nothing said there is no session to name and nothing to scroll. It does not
+   take the picture, and since 2026-09-06 that is most of the point of this screen - the camera
+   is running whether or not anybody has pressed the button, and a window onto the bench is
+   worth more than a page of black. The mark drops out instead whenever a picture is arriving;
+   two things saying "awake" is one too many. */
 body:not(.kiosk) #v-live[data-idle] .livehead,
 body:not(.kiosk) #v-live[data-idle] .livetalk { display: none; }
 body:not(.kiosk) #v-live:not([data-idle]) .idle { display: none; }

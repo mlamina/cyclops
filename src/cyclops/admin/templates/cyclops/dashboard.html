@@ -240,6 +240,35 @@ room for. That is the one question here answered by the stylesheet rather than b
       <span class="livetitle" id="livetitle"></span>
     </div>
     {% comment %}
+    The room, as the camera sees it, off a port of the kiosk's own ({{ companion_port }}) rather
+    than through this service: an MJPEG stream is one connection held open for as long as
+    somebody is watching, and gunicorn here is four slots. The port is the server's to say and
+    the *host* is not - a phone reached this page by cyclops.local or by an address, and only the
+    page knows which - so stream.js builds the URL from location.hostname and this number.
+
+    The switch is the one control on this page that is not the box's, which is why it is here and
+    not in the settings column the panel gets. It changes what this phone does with a stream it
+    is being sent; it POSTs nothing, and the four routes that do set the box still answer only to
+    loopback. The box going quiet is not this switch reaching across the network - it is the
+    kiosk noticing that something has taken his voice, and taking it back when nothing has.
+
+    Inside .cam rather than beside the title, because the head is hidden between sessions and
+    arming the speaker *before* he starts talking is the whole point of it. It is also the tap
+    iOS requires before a page may make any sound at all.
+    {% endcomment %}
+    <div class="cam" id="cam" data-port="{{ companion_port }}">
+      <img class="camshot" id="camshot" alt="" draggable="false">
+      <span class="camoff">no picture</span>
+      <section class="ctl">
+        <div class="chead">
+          <span class="vlabel">SPEAKER</span>
+          <button class="sw" id="spk" type="button" role="switch"
+                  aria-label="Use this device as speaker" aria-checked="false">OFF</button>
+        </div>
+        <span class="shint" id="spkhint">use this device as speaker</span>
+      </section>
+    </div>
+    {% comment %}
     What this screen is when there is nothing on it, which on a companion is most of the day. It
     is the boot mark - the same eye the panel comes up with, and the same one on the front of the
     box - saying the screen is awake and pointed at Cyclops, plus the one thing you would do next.
@@ -360,6 +389,13 @@ room for. That is the one question here answered by the stylesheet rather than b
 
 <script src="/static/status.js?v={{ v }}"></script>
 <script src="/static/app.js?v={{ v }}"></script>
+
+{% comment %}
+What a companion pulls off the kiosk's own port: the picture, and the voice. After app.js because
+it hangs one function off it (window.__cam), and harmless everywhere else - the whole file is
+inside a test for #cam, which only companion mode is sent.
+{% endcomment %}
+<script src="/static/stream.js?v={{ v }}"></script>
 
 {% comment %}
 What is on the panel: poll for it, paint it. Loaded everywhere as of 2026-09-05 - it was kiosk

@@ -1250,4 +1250,8 @@ if (!document.body.classList.contains('kiosk') && !location.hash) {
 window.__drawing = (on) => {
   document.body.classList.toggle('drawing', on);
   if (on) video.pause();
+  // A stream into a covered <img> is a stream still arriving, and the picture is the one thing
+  // on this screen that costs the Pi something to send. His voice is deliberately not cut: a
+  // drawing is what he is talking about. See stream.js.
+  if (window.__cam) window.__cam(!on);
 };

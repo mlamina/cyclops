@@ -19,6 +19,7 @@ kiosk opens it on **SESSIONS**, which is what its tab promises:
 
 | | |
 |---|---|
+| **LIVE** `#/live` | Companion mode — see below. Not on the panel. |
 | **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
 | **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
 | **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one for a plain file browser over its folder; open a file to read it. From anything that is not the panel, also **+ Folder** and **↑ Upload**. |
@@ -30,6 +31,56 @@ were taken; every line is stamped with its offset, and clicking one seeks the vi
 moment — the transcript's `t` *is* the recording's timeline. On the 7" panel and on a phone it is
 the video and what it is called, and nothing else: at a bench you are not there to read. The
 narrow layout does not hide the transcript, it never asks the server for it.
+
+## Companion mode
+
+**LIVE is the box on a second screen.** A phone or an iPad on the LAN, propped against the bench
+or carried into the next room: the camera as it sees the room, the conversation as it is spoken,
+and a switch that moves his voice onto the device in your hand. The panel is never sent this
+screen — the screen you would be reading it on is the one Cyclops is talking out of.
+
+**The picture is always there, session or no session.** The camera is running whenever the panel
+is awake, so this is a window onto the bench rather than a waiting room: the "nothing running"
+mark moves over beside the picture instead of taking the whole screen. Side by side on a laptop,
+stacked with the picture on top on a phone, and the transcript is never withheld from a narrow
+screen the way the session view withholds it — here it is put underneath instead.
+
+**The two streams come from the kiosk's own port, not from this service.** `cyclops-admin` is two
+gunicorn workers of two threads, and one viewer holding an endless response for the picture and
+another for the voice is half of it. So `cyclops.companion` opens **port 8081** inside the kiosk
+process, where the camera and the speaker already are — no second service, no file to publish
+through, and no note another process could leave armed. Three routes: `/camera.mjpg`,
+`/camera.jpg` and `/voice.pcm`, plus `/` for what state they are in.
+
+**Nothing is produced until something connects, and the connection is the whole gate.** With the
+screen shut there is no encoder thread and the speaker's tap is a load and a test. With a viewer
+it is 640x360 at 12 fps, measured at **2.75% of one core** on the Pi — 790 CPU ticks to 812 over
+eight seconds — and about 1.3 Mbit/s. A camera that is unplugged or has stopped answering sends
+the panel's own words on a black card rather than freezing on the last frame it had.
+
+**The switch hands the voice over rather than copying it.** Turning it on plays what Cyclops says
+through the device, and the panel's own amp stops playing him — two copies of the same sentence a
+few hundred milliseconds apart is worse than one. The page POSTs nothing to do it: the kiosk
+notices that something has taken his voice and stops putting it on the wire to the amplifier,
+and puts it back the moment nothing is listening. So a phone that walks out of range, a locked
+screen and a closed tab all end the same way, within about half a second and without anybody
+having to remember to switch it back. The four routes that really do set the box still answer to
+loopback and nothing else.
+
+**It takes his voice and nothing else.** Turning the *volume* down was the first attempt at this
+and it was wrong: the sound cues — the shutter, the wake chime, the rungs of the volume knob —
+play on their own stream beside the speaker rather than through it, so a sink at zero took them
+with it and they were audible on neither the panel nor the phone. What the switch reaches now is
+one flag on the speaker, read on the audio thread: his voice does not leave the amplifier, and
+everything the box says about itself still does. The cues stay on the panel deliberately, because
+the button they are answering for is on the panel.
+
+What it carries is his voice alone — 24 kHz mono PCM, straight off the speaker's own output. The
+microphone is never on it, and neither are the sound cues, which
+[sit beside the speaker rather than in it](audio.md) and so are not in the session's video
+either. `AudioWorklet` is not available: it is secure-context only and this is plain HTTP on a
+LAN name, so the page uses a `ScriptProcessorNode` — deprecated, and the only thing that works
+here.
 
 **A project opens as its folder.** `#/p/<project>/<folder>` browses, `#/f/<project>/<file>`
 reads, and a bar across the top says where you are and is the way back out. `README.md` and

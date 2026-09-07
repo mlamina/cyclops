@@ -29,6 +29,7 @@ from django.views.decorators.http import require_POST
 from .. import barge, card, cut, filming, library, mixer, shelf, stats, tasks, voice
 from ..config import (
     BROWSER_CLOSE_FLAG,
+    COMPANION_PORT,
     PAGE_ALIVE_FLAG,
     PAGE_SCREEN_FILE,
     PAGE_SERVED_FLAG,
@@ -68,6 +69,9 @@ OURS = {
     "status.js": "text/javascript; charset=utf-8",
     "app.js": "text/javascript; charset=utf-8",
     "panel.js": "text/javascript; charset=utf-8",
+    # The companion's two streams - the picture and the voice - which are not this service's to
+    # serve and are only this service's to point at. See cyclops.companion.
+    "stream.js": "text/javascript; charset=utf-8",
     # The boot mark, for the one screen that has nothing else to show: a companion waiting for a
     # session to start. Derived from assets/eye.png, which is the same mark drawn white on black -
     # its luminance moved into the alpha channel, so CSS can use it as a mask and paint it in the
@@ -221,7 +225,15 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     page = render(
         request,
         "cyclops/dashboard.html",
-        _payload(request) | {"v": ASSET_VERSION, "voices": list(voice.VOICES)},
+        _payload(request)
+        | {
+            "v": ASSET_VERSION,
+            "voices": list(voice.VOICES),
+            # Where the live picture and the live voice come from. Beside `v` for the reason
+            # written above it: the payload is also /api/status, and the port of another
+            # process is not one of the four readings anybody curls that for.
+            "companion_port": COMPANION_PORT,
+        },
     )
     # The page is the one thing that must never be stale, because it is what names the versions
     # of everything else - a cached copy would go on asking for last week's stylesheet for ever.

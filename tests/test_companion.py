@@ -13,6 +13,10 @@ sentence that can be wrong quietly:
   move a window. That gate is the first half of this file.
 * **The conversation arrives as it is spoken.** Which session is running, and the lines of it we
   have not seen yet. The second half.
+* **So do the room and his voice.** The two streams off the kiosk's own port
+  (:mod:`cyclops.companion`), which must arrive as they happen and cost nothing when nobody is
+  looking. The pure half of that is the third; the socket, the camera and the phone are on the
+  box itself.
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ django.setup()
 
 from django.test import RequestFactory  # noqa: E402
 
-from cyclops import card, library, recall  # noqa: E402
+from cyclops import card, companion, library, recall  # noqa: E402
 from cyclops.admin import views  # noqa: E402
 from cyclops.config import Settings  # noqa: E402
 
@@ -257,3 +261,137 @@ def test_every_file_the_page_asks_for_is_one_the_server_will_hand_over() -> None
     asked = set(re.findall(r"/static/([A-Za-z0-9_-]+\.[A-Za-z0-9]+)", page + css))
     assert asked, "nothing matched - the reference shape changed and this test stopped looking"
     assert not (asked - set(views.OURS)), f"asked for but never served: {asked - set(views.OURS)}"
+
+
+# ---------------------------------------------------------------- the room, and the voice
+#
+# The two streams the same phone pulls off the kiosk's own port (:mod:`cyclops.companion`), which
+# is a fourth sentence that can be wrong quietly: *what he sees and what he says arrive as they
+# happen, and cost nothing when nobody is looking.*
+#
+# All of it is the pure half. There is no socket here and no Speaker: the tap takes bytes and
+# hands back bytes, the encoder takes a frame and hands back a decision. The half that needs a
+# camera, a port and a phone is in the plan's verification list and on the box itself.
+
+
+def test_a_stream_nobody_is_watching_costs_a_load_and_a_test() -> None:
+    """The gate, and the whole argument for the port living inside the kiosk.
+
+    There is no note to read and no flag to leave: the TCP connection *is* the subscription, so
+    with the live screen shut the audio thread's tap returns having done nothing at all and the
+    encoder thread does not exist to be woken.
+    """
+    tap = companion._Voice()
+    tap.on_block(b"\x01\x02\x03\x04")
+
+    assert tap.listeners == 0
+    assert companion._Preview()._thread is None, "an encoder for nobody"
+
+
+def test_a_listener_is_handed_exactly_what_the_speaker_played() -> None:
+    tap = companion._Voice()
+    sink = tap.join()
+
+    tap.on_block(b"ab")
+    tap.on_block(b"cd")
+
+    assert tap.drain(sink) == b"abcd"
+
+
+def test_and_silence_when_he_has_not_said_anything() -> None:
+    """A flat 48 KB/s whether or not a session is running, which is not a waste but the point:
+    the page builds its audio graph once instead of tearing it down every time he stops."""
+    tap = companion._Voice()
+    sink = tap.join()
+
+    assert tap.drain(sink) == companion.SILENCE
+    assert len(companion.SILENCE) == int(
+        companion.PACE_S * companion.SAMPLE_RATE
+    ) * companion.BYTES_PER_FRAME
+
+
+def test_a_listener_that_falls_behind_is_skipped_on_rather_than_grown() -> None:
+    """A phone on bad wifi must cost a second of audio, not a megabyte of it - and what it keeps
+    is the newest, because in a conversation happening in the room old audio is the wrong audio."""
+    tap = companion._Voice()
+    sink = tap.join()
+
+    for mark in range(400):  # eight seconds of 20 ms blocks into a one-second cap
+        tap.on_block(bytes([mark % 251, 0]) * 480)
+
+    assert len(sink) == companion.VOICE_LAG_MAX, "the buffer grew with the backlog"
+    assert bytes(sink[-2:]) == bytes([399 % 251, 0]), "it kept the stale end and dropped the live"
+
+
+def test_one_listener_leaving_does_not_take_the_others_stream() -> None:
+    tap = companion._Voice()
+    stays, goes = tap.join(), tap.join()
+
+    tap.leave(goes)
+    tap.on_block(b"ab")
+
+    assert tap.listeners == 1
+    assert tap.drain(stays) == b"ab"
+
+
+def test_a_camera_that_has_stopped_is_a_picture_that_says_so() -> None:
+    """An <img> holds the last part it was sent for ever, so a stream that simply stopped would
+    leave a picture of a room nobody is watching any more. The words and the rule are the panel's
+    own (kiosk.py) - a device that is enumerated but silent is a different fault from one that is
+    not there, and a phone deserves the distinction the person at the glass gets."""
+    assert companion._reason(None, 100.0, connected=False) == companion.NO_CAMERA
+    assert companion._reason(None, 100.0, connected=True) == companion.CAMERA_STALLED
+    stale = 100.0 - companion.STALE_AFTER_S - 0.1
+    assert companion._reason((object(), stale), 100.0, connected=True) == companion.CAMERA_STALLED
+    assert companion._reason((object(), 99.9), 100.0, connected=True) == ""
+
+
+def test_the_panel_and_the_companion_say_the_same_words() -> None:
+    """Two copies of two strings, deliberately, so that companion.py does not have to import the
+    module that owns OpenCV's window. This is the thread that ties them back together."""
+    said = pathlib.Path(views.__file__).parent.parent / "kiosk.py"
+    source = said.read_text()
+
+    assert f'NO_CAMERA = "{companion.NO_CAMERA}"' in source
+    assert f'CAMERA_STALLED = "{companion.CAMERA_STALLED}"' in source
+
+
+def test_a_frame_is_published_once_however_many_are_watching() -> None:
+    """One producer, one slot, a serial. The regression this guards is the obvious one: a viewer
+    list that gets encoded into, which would put the cost of the picture on the number of phones."""
+    preview = companion._Preview()
+    preview._publish(b"jpeg")
+
+    first = preview.latest(-1, 0.0)
+    second = preview.latest(-1, 0.0)
+
+    assert first == second == (b"jpeg", 1)
+    assert preview.latest(1, 0.0) is None, "a serial already seen came back as news"
+
+
+def test_somebody_watching_counts_as_company() -> None:
+    """The one line this adds to Kiosk._sleeping. Sleeping releases the camera, which is the one
+    thing a companion is here for, and there is nobody at the glass to tap it back."""
+    assert not companion.watching()
+
+    sink = companion.voice.join()
+    try:
+        assert companion.watching() and companion.listening()
+    finally:
+        companion.voice.leave(sink)
+
+    assert not companion.watching()
+
+
+def test_the_recorder_still_owns_the_first_tap() -> None:
+    """Vacuous-looking and not. The failure it catches is a future tidy-up that folds the two taps
+    into one name: the recorder assigns on_block unconditionally, so a companion reaching for it
+    would silently take the agent's track out of every session video ever recorded after."""
+    here = pathlib.Path(views.__file__).parent.parent
+    log = (here / "session.py").read_text()
+    session = (here / "ui.py").read_text()
+
+    assert "_speaker.on_block = recorder.on_speaker_block" in log
+    assert "on_monitor" not in log, "the recorder reached for the companion's tap"
+    assert "speaker.on_monitor = companion.voice.on_block" in session
+    assert "speaker.on_block" not in session, "the companion reached for the recorder's tap"

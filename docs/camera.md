@@ -21,6 +21,13 @@ temperature unchanged. The frames buy two things — a preview that fills most o
 redraws, and half again as many candidates for `CameraSource.snapshot()`, which hands out the
 sharpest frame of the last 0.7 s rather than the newest.
 
+Those frames now have a third consumer: `cyclops.companion` takes the same
+`CameraSource.latest()` the preview draws, shrinks it to 640x360 and encodes it at 12 fps for a
+phone on the LAN (see the [admin page](admin-page.md)). It is measured at 2.75% of one core and
+only runs while somebody has the LIVE screen open — and it takes the *camera* rather than the
+composited panel deliberately, because the composite stops entirely while a page or a picture
+owns the glass and the sensor does not.
+
 That last point ties `FRAME_RATE` in `webcam.py` to `HISTORY` in `camera.py`: the history is a
 frame *count* and the window it feeds is a *duration*. Twelve frames is 0.8 s at 15 fps, which
 just covers the 0.7 s window. Raise the rate to 30 without raising `HISTORY` and the picker only

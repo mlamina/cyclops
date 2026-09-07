@@ -123,6 +123,14 @@ CUT_LOCK = Path.home() / ".cache" / "cyclops" / "cut.lock"
 # reveal is being set up: the kiosk writes it, the page routes on it, the kiosk deletes it.
 PAGE_SCREEN_FILE = Path.home() / ".cache" / "cyclops" / "page-screen"
 
+# The one thing the two processes share that is not a file: the port the kiosk hands the live
+# picture and the live voice out on (:mod:`cyclops.companion`). It is here rather than in that
+# module because the *admin* service is what tells the page the number, and reaching for it
+# there would mean importing OpenCV and the overlay's fonts into a web worker to read one int.
+# The host is deliberately not here: a phone arrived at the page by cyclops.local or by an
+# address and only the page knows which, so the script builds the URL from location.hostname.
+COMPANION_PORT = 8081  # unprivileged, so nothing has to grant a capability to bind it
+
 
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""

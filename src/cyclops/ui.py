@@ -17,7 +17,7 @@ import threading
 import time
 from dataclasses import replace
 
-from . import barge, sfx, voice
+from . import barge, companion, sfx, voice
 from .agent import VoiceAgent
 from .audio import (
     SAMPLE_RATE,
@@ -137,6 +137,19 @@ class SessionController:
             guard = self._guard
         if guard is not None:
             guard.set_barge_in(margin_db)
+
+    def set_on_air(self, on: bool) -> None:
+        """Whether his voice comes out of this box, or only out of whoever is listening on the LAN.
+
+        Same shape and the same reasoning as :meth:`set_barge_in`: one store, read on the audio
+        thread, so it lands on the next 20 ms block rather than at the end of the turn - somebody
+        flipping the switch mid-sentence should not have to hear the rest of it twice. It reaches
+        the *voice* and nothing else; the sound cues are on their own stream and stay here.
+        """
+        with self._lock:
+            speaker = self._speaker
+        if speaker is not None:
+            speaker.on_air = on
 
     def set_record_source(self, frames: FrameSource | None) -> None:
         """Say what the *next* session's video should be of - see :mod:`cyclops.filming`.
@@ -314,6 +327,16 @@ class SessionController:
             half = output_is_speaker(default_output_name(out_dev))
         speaker = Speaker(device=out_dev)
         speaker.volume = s.volume
+        # The companion's earpiece, wired here rather than where the recorder wires its own tap:
+        # `SessionLog._start_recorder` returns early when CYCLOPS_RECORD is off, and a phone
+        # being used as the speaker has nothing to do with whether this session is being filmed.
+        # The publisher outlives the Speaker, so it is the tap that is handed over and never a
+        # Speaker that is handed out - the same shape as webcam.set_live_source and
+        # panel.set_kiosk. With nobody listening it costs a load and a test per 20 ms block.
+        speaker.on_monitor = companion.voice.on_block
+        # ...and if one is already listening when this session opens, his voice starts where it
+        # is being listened to. A Speaker is per-session and the switch is not.
+        speaker.on_air = not companion.listening()
         # A guard for every session, headphones included: with barge-in switched off it is the
         # thing that holds the mic shut until Cyclops has finished, and that switch is on the
         # settings screen, which can be reached in the middle of a session. See cyclops.barge.
