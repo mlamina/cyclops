@@ -662,6 +662,23 @@ SPINE_W = 10.0  # ...and its section, which is a little over half a mount's. Ten
 # a row said the hardware has no spine and every bracket dead-ends in air, and one slim bar at
 # the very edge is the cheapest sentence that answers them. It is drawn before anything else, so
 # the monitor stands in front of it and the mounts land on it
+HEAD_DROP = 11.5  # reference px down from the top edge to the head rail's centreline. The border
+# owns the outer six pixels of the panel - its stroke and the steel behind it - so at half of
+# SPINE_W this puts the bar's lit edge at 6.5, hard against what the border needs and not inside
+# it. The half is not a rounding: a bar whose edge lands on a whole row samples its roll at
+# depths 0, 1, 2 and the angle that mirrors the lamp - a sine of 0.40 - falls between the first
+# two, so the ridge came out seven levels under what the same section reaches on every 17 px bar
+# on this panel, all of which have their edges on halves.
+#   What the member buys: the module across the top used to be bolted to nothing at all, and
+# three quarters of the top edge was bare picture with the module's corner fixings hanging in
+# it. The whole bar and its shadow live in the top twenty rows - about two and a half per cent
+# of the panel, all of it hugging an edge that was carrying no information
+HEAD_TURN = 34.0  # ...and how far down each side it turns before it stops. A bar that runs off
+# the edge of the frame dies in the border's glow; one that turns the corner and ends is a
+# gusset, and the two together are what say the top of this panel is a frame rather than a lid
+HEAD_STEP = 15.0  # degrees of the corner's arc per straight segment of the centreline. The bend
+# is a handful of pixels across, so this is already finer than a pixel; any smaller and the
+# mitre solver is doing arithmetic nobody can see
 SPINE_SADDLE = 1.6  # how much thicker the collar that grips it is than the bar itself...
 SPINE_GRIP = 9.0  # ...and how far along it that collar reaches either side of the member. A
 # clamp said in silhouette: the section swells where it grips and nowhere else, which needs no
@@ -676,6 +693,11 @@ RIB_N = 3  # stiffeners across the deep corner of a bracket
 RIB_W = 4.0  # ...their section, in reference px
 RIB_ALPHA = 0.36  # how much steel a rib lays over the plate. Translucent like the plate it
 # stiffens, so the room keeps running behind it.
+RIB_FACET = 0.45  # how far the two halves of a web's face are set either side of STEEL, towards
+# the lit and the dark. A machined chamfer breaks into facets with a hard step at each break;
+# it does not airbrush, and a four-pixel web with one flat band between two hairlines was a
+# stroke with a highlight on it. Two facets is all the width there is room for, and they put a
+# monotonic step down from the lit arris to the dark one - which is the section, in miniature
 RIB_CREST = 105  # alpha of the one lit hairline along a rib's near edge. It was 150, against a
 # plate half as dark as this one; on the plate as it is now that was a bright line in the corner
 # of the panel furthest from the lamp
@@ -3049,8 +3071,10 @@ class Overlay:
         the chrome has a thickness.
         """
         layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        # The foot rail before all of it, because everything else on the panel stands on it.
+        # The two frame rails before all of it, because everything else on the panel hangs off
+        # them: the mounts stand on the foot rail and the module hangs from the head rail.
         self._draw_spine(layer)
+        self._draw_head(layer)
         # The terminal before either mount and before both instruments, because every one of them
         # is what buries an end of it. Order is the whole illusion: drawn last this is a box lying
         # on the panel, and drawn first it is a box behind it.
@@ -3369,9 +3393,52 @@ class Overlay:
         Once per window size, on a private layer so the corner cut is a mask and not a write.
         """
         y = float(self._spine_y())
+        self._edge_rail(layer, [(0.0, y), (float(self.width), y)])
+
+    def _draw_head(self, layer: Image.Image) -> None:
+        """...and one across the top edge, turning down into a gusset at each corner.
+
+        The other half of the load path, and the answer to the one thing every design critic has
+        written down about this panel: the module across the top is bolted to nothing. Its two
+        legs came down to row zero and stopped, its corner fixings sat over open picture, and
+        the whole top edge - three quarters of it bare photo - explained nothing about what holds
+        the thing up. A bar there and the legs land on it, which is what the fixings already
+        through their knees have been claiming all along.
+
+        The same section and the same width as the foot rail, because two sizes of member on a
+        panel is a language and three is a pile of parts, and it lives just as close to the edge:
+        HEAD_DROP puts its lit arris at 6.5, immediately inboard of what the border needs.
+        Where the foot rail runs off both ends into the frame's rounded corners, this one turns
+        into them and stops: a bend concentric with the frame's own radius, then HEAD_TURN of leg
+        down the side. Concentric is the whole of why it is an arc and not a mitred forty-five -
+        the gap between the bar's outer edge and the panel's edge stays the same all the way
+        round the corner, where a chamfer left a widening wedge of picture in it. That is a
+        formed corner plate, and a member that ends *somewhere* is the difference between a
+        frame and a stripe.
+
+        Drawn with the foot rail, before everything: the module, the mounts and the companion's
+        own housing all pass in front of it.
+        """
+        inset = HEAD_DROP * self.scale
+        turn = inset + HEAD_TURN * self.scale
+        bend = max(1.0, self.radius - inset)  # the frame's corner, offset in to the centreline
+        near, far = inset + bend, self.width - inset - bend
+        self._edge_rail(layer, [
+            (inset, turn),
+            *arc_points(near, near, bend, 180.0, 270.0, HEAD_STEP),
+            *arc_points(far, near, bend, 270.0, 360.0, HEAD_STEP),
+            (self.width - inset, turn),
+        ])
+
+    def _edge_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]]) -> None:
+        """One of the two frame rails, cut to the panel's own rounded corners.
+
+        Both hug an edge, so both would otherwise poke out past the radius into the four scraps
+        of picture outside the border. The cut is a mask over a private layer rather than a write,
+        because a write of anything translucent is a hole onto the camera.
+        """
         bar = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        self._draw_rail(bar, [(0.0, y), (float(self.width), y)],
-                        max(4, round(SPINE_W * self.scale)))
+        self._draw_rail(bar, points, max(4, round(SPINE_W * self.scale)))
         corner = Image.new("L", (self.width, self.height), 0)
         ImageDraw.Draw(corner).rounded_rectangle(
             [0, 0, self.width - 1, self.height - 1], radius=self.radius, fill=255
@@ -3494,15 +3561,28 @@ class Overlay:
         ribs = Image.new("RGBA", layer.size, (0, 0, 0, 0))
         sd, rd = ImageDraw.Draw(shade), ImageDraw.Draw(ribs)
         sun = float(self._sunlight(round(corner[0]), round(corner[1]), 1, 1)[0, 0])
-        body = (*(round(c * sun) for c in material.STEEL), round(255 * RIB_ALPHA))
         crest = (*(round(c * sun) for c in material.STEEL_LIT), RIB_CREST)
+        # The face between the two arrises, in two facets rather than one flat band. A web this
+        # narrow has no room for a ramp, and a ramp is not what a milled chamfer does anyway: it
+        # breaks into facets and each one holds its own angle, so the section steps down from the
+        # lit arris instead of sliding. Both go on at the same alpha, so a facet is a change of
+        # angle and not a change of how much room shows through the plate.
+        alpha = round(255 * RIB_ALPHA)
+        facets = (
+            (mix(material.STEEL, material.STEEL_LIT, RIB_FACET), 1.0),
+            (mix(material.STEEL, material.STEEL_DARK, RIB_FACET), -1.0),
+        )
+        step = max(1, w // 2)
         for i in range(RIB_N):
             t = 0.15 + 0.075 * i
             p = (corner[0] + (a[0] - corner[0]) * t, corner[1] + (a[1] - corner[1]) * t)
             q = (corner[0] + (b[0] - corner[0]) * t, corner[1] + (b[1] - corner[1]) * t)
             sd.line([(p[0] - lx * drop, p[1] - ly * drop), (q[0] - lx * drop, q[1] - ly * drop)],
                     fill=(0, 0, 0, RIB_SHADOW), width=w + 1)
-            rd.line([p, q], fill=body, width=w)
+            for tone, side in facets:
+                off = side * step / 2.0
+                rd.line([(p[0] + nx * off, p[1] + ny * off), (q[0] + nx * off, q[1] + ny * off)],
+                        fill=(*(round(c * sun) for c in tone), alpha), width=step)
             rd.line([(p[0] + nx * edge, p[1] + ny * edge), (q[0] + nx * edge, q[1] + ny * edge)],
                     fill=crest, width=1)
             rd.line([(p[0] - nx * edge, p[1] - ny * edge), (q[0] - nx * edge, q[1] - ny * edge)],
