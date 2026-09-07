@@ -109,11 +109,16 @@ LUG_THICK = 0.03
 SEAM_AT = 43  # a seam at an angle that agrees with none of the rings
 SEAM_IN = 0.70  # running from here out to the castellated ring
 
-KNURL_IN, KNURL_OUT = 0.685, 0.735  # a grip band, and only part of the way round
+KNURL_IN, KNURL_OUT = 0.617, 0.658  # a grip band, and only part of the way round. It rides the
+# inner half of the index ring the panel builds into the well behind him (`INDEX_IN` in
+# :mod:`cyclops.overlay`), which is the whole reason it is dark: it is the serrated edge of a
+# drum turning under a fixed scale, and a scale you cannot read the drum against is a decoration.
 KNURL_N = 22
 KNURL_FROM, KNURL_SPAN = 196, 214
 
-DOTS = 0.72
+DOTS = 0.760  # ...and the dotted ring out where the stator can pass in front of it. It used to
+# sit at 0.72, which is now brass; a row of marks appearing and going again behind eighteen vanes
+# says "turning" harder than the same row in the open ever did.
 DOT_N = 16
 
 IRIS = 0.60  # the diaphragm's outer edge, and everything inside it moves with his gaze
@@ -146,7 +151,10 @@ BROW_W = 1.2
 # reference's rather than a HUD's: the machine is cold and the core is hot. That is a real trade
 # and not a preference - the rim is the outermost thing on him and used to be the brightest, and
 # turning it down is what makes the core read as the only lit part of a dark instrument.
-RIM_LIT = 0.60
+RIM_LIT = 0.30  # the seam between his glass and the bezel's steel, and no more than that. It
+# was 0.60 and read as a drawn green stroke bounding the whole instrument - the brightest ring on
+# him and the first thing the eye landed on. What holds the glass now is the collar's machined
+# bevel, outside his rim and in metal; this is the dark line under its edge.
 CASTLE_LIT = 0.45
 VANE_LIT = 0.26
 DATUM_LIT = 0.26
@@ -156,9 +164,17 @@ GREEBLE_BAR_LIT = 0.40
 LUG_LIT = 0.55
 SEAM_LIT = 0.30
 DOT_LIT = 0.30
-KNURL_LIT = 0.30
-LEAF_LIT = 0.08  # the flat of a blade...
-HATCH_LIT = 0.26  # ...and the hatch across it, which is the only thing telling two blades apart
+KNURL_LIT = 0.05  # dark: it is a serration cut into brass, not a lit mark on glass
+LEAF_LIT = 0.13  # the flat of a blade at its hinge, out at the iris...
+LEAF_FACE = 0.36  # ...and at the aperture edge, where it has turned into the lamp. Stepped
+# rather than graded - `LEAF_BANDS` chords across the same segment, each one flat, because a real
+# gradient inside this tile is a numpy pass over half a million pixels every frame. Three steps
+# and the hatch across them is four values on a plate that had one.
+LEAF_BANDS = 3
+HATCH_LIT = 0.08  # ...and the hatch across it, which is the only thing telling two blades apart.
+# Cut into the plate rather than laid on it, now the plate itself is graded: a bright hatch over
+# a flat fill was the only thing separating two blades, and over three shaded bands it was a set
+# of drawn lines competing with the shading for what the blade's surface is.
 EDGE_LIT = 0.92  # the bright chord where one blade lies over the next
 EDGE_SHADE = 0.02  # ...and the dark line beside it on the blade's own face: the blade's
 # thickness, seen edge-on. A lit line on its own is a drawn edge; a lit line with a dark one
@@ -843,25 +859,39 @@ class Pen:
         the blade's edge for the cost of a square root.
 
         The hatch is not decoration. Filled flat, the eight blades merge into one dark ring and
-        the diaphragm stops being readable at all; the hatch is the only thing that says these
+        the diaphragm stops being readable at all; it and the banding below are what say these
         are separate plates lying over each other.
+
+        Nor is a blade one value. It is a plate tilted out of the plane on its way to the hole,
+        so it takes more of the lamp the nearer the aperture it gets. The segments successive
+        chords cut off the iris nest inside one another, so the whole grade costs `LEAF_BANDS`
+        polygons and no gradient at all: lay the widest down at the aperture's value and step
+        outwards, each one smaller and a shade darker, until the last is the sliver at the hinge.
         """
-        half = math.degrees(math.acos(max(-1.0, min(1.0, hole / iris))))
         facet, off = self.shade(EDGE_SHADE), self.thin * EDGE_BEVEL
+        # Every colour and width this loop uses, worked out once: eight blades and ten hatch
+        # lines each is a hundred trips through `shade` a frame for three answers.
+        hatch, lit, hair = self.shade(HATCH_LIT), self.shade(EDGE_LIT), max(1, round(self.hair))
+        steps = [(math.degrees(math.acos(max(-1.0, min(1.0, (hole + (iris - hole) * k
+                                                            / LEAF_BANDS) / iris)))),
+                  self.shade(LEAF_FACE + (LEAF_LIT - LEAF_FACE) * k / max(1, LEAF_BANDS - 1)))
+                 for k in range(LEAF_BANDS)]
+        half = steps[0][0]
         for i in range(n):
             a = twist + i * 360.0 / n
             seg = self.arc_pts(iris, a - half, a + half, 20)
-            self.d.polygon(seg, fill=self.shade(LEAF_LIT))
+            self.d.polygon(seg, fill=steps[0][1])
+            for wide, tone in steps[1:]:
+                self.d.polygon(self.arc_pts(iris, a - wide, a + wide, 6), fill=tone)
             ca, sa = math.cos(math.radians(a)), math.sin(math.radians(a))
             t = hole + pitch * 0.5
             while t < iris - pitch * 0.2:
                 ln = math.sqrt(max(0.0, iris * iris - t * t))
                 mx, my = self.cx + t * ca, self.cy + t * sa
                 self.d.line([mx - ln * sa, my + ln * ca, mx + ln * sa, my - ln * ca],
-                            fill=self.shade(HATCH_LIT), width=max(1, round(self.hair)))
+                            fill=hatch, width=hair)
                 t += pitch
-            self.d.line([seg[0], seg[-1]], fill=self.shade(EDGE_LIT),
-                        width=max(1, round(self.thin)))
+            self.d.line([seg[0], seg[-1]], fill=lit, width=max(1, round(self.thin)))
             # The facet, a hairline onto the blade from its lit edge. Under the iris loop at
             # both ends, so it has no ends of its own to read.
             self.d.line([(seg[0][0] + ca * off, seg[0][1] + sa * off),
@@ -882,10 +912,11 @@ class Pen:
         """
         n = max(12, min(CORE_N, round(TAU * rad / (1.2 * SUPERSAMPLE))))
         self.disc(rad, CORE_FLOOR)
+        thread, hair = self.shade(THREAD_LIT), max(1, round(self.hair))
         for i in range(n):
             a = i * 360.0 / n
             self.d.line([self.point(rad * CORE_HUB, a), self.point(rad * CORE_EDGE, a)],
-                        fill=self.shade(THREAD_LIT), width=max(1, round(self.hair)))
+                        fill=thread, width=hair)
         for k in CORE_RINGS:
             self.loop(rad * k, CORE_RING_LIT, self.hair, 40)
         self.loop(rad, CORE_EDGE_LIT, self.thin)
@@ -1046,10 +1077,14 @@ class EyeEngine:
 
         # The order below is load-bearing and is NOT the radial order. ImageDraw writes rather
         # than composites, so the last part drawn over a shared band is the one you see: the
-        # vanes go on last and lie over the datum ring, the greeblies and the knurl, which is
-        # what makes them read as a shroud in front rather than as another ring among them.
+        # vanes go on last and lie over the datum ring, the greeblies and the dotted ring, which
+        # is what makes them read as a shroud in front rather than as another ring among them.
         # Sorting these lines outside-in looks tidier and quietly redraws the eye - it was tried,
         # and it moved 0.4% of his pixels.
+        #
+        # Nothing is drawn on the index ring's band but the knurl, and the ring itself is not
+        # here at all: it is built into the well behind him, and what the tile leaves alone in
+        # that band is what shows of it.
         pen.castle(r * CASTLE, CASTLE_N, r * CASTLE_JOG, CASTLE_ARC, CASTLE_AT + mid, CASTLE_LIT,
                    self._thin * CASTLE_W)
         pen.ring(r * DATUM, DATUM_LIT, pen.hair)

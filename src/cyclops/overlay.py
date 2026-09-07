@@ -898,9 +898,18 @@ EYE_PLATE_ALPHA = 255  # the body behind him, and the one thing on this panel th
 # two dials: an instrument's bezel is the one part of a machine like this that was ever a
 # different metal, and it is what says "instrument" about a disc of rings before any of them turn.
 COLLAR_IN = 0.86  # the collar's inner flank, as a fraction of the swell
-COLLAR_LIP = 2.5  # reference px of the steel lip on the bezel's inner edge, a half-round wire
+COLLAR_LIP = 6.0  # reference px of the steel bevel on the bezel's inner edge. Wide enough to be
+# a machined face rather than a wire: at two and a half it read as a drawn white stroke round the
+# glass, which is what a bezel does *not* look like from a pace away.
+COLLAR_BEVEL = 0.35  # sin of the tilt that face keeps right across itself, so the whole of it is
+# lit on the lamp's side and dark on the other: the brightness has to go round the ring, or the
+# bevel is a white stroke again with a shadow on the far side of it.
+COLLAR_BEVEL_SHINE = 0.55  # ...and how much of the lamp it gives back. A machined face, not a
+# mirror: at full it saturates flat across the whole lit half and the gradient disappears.
+COLLAR_SEAM = (30, 30, 25)  # the reveal where the brass meets the bevel - the dark line every
+# two-part bezel has, and without it the two metals read as one band that changed colour.
 COLLAR_ROLL = 3.0  # reference px of the brass's outer edge that roll down to the plate
-COLLAR_STEP = 1.5  # ...and of its inner edge that turn down onto the lip
+COLLAR_STEP = 2.0  # ...and of its inner edge that go dark into the reveal beside the bevel
 COLLAR_GROOVE = 0.45  # how dark the turned line just inside the roll is - the one mark a lathe
 # leaves on every bezel, and what separates the face from the roll at a glance
 COLLAR_LIFT = 3.0  # how proud the bezel stands of the plate, which is what sets its shadow
@@ -910,6 +919,15 @@ COLLAR_WEAR = 0.6  # how much the brass's highlight comes and goes round the rin
 COLLAR_TARNISH = 0.6  # how much the same slow drift shows in the brass itself, as multiples of
 # the brushing - old brass is not one colour, it is polished in patches
 COLLAR_SCRATCH = 0.25  # how pale the sheet's hairlines show where they cross the brass
+COLLAR_TICKS = 120  # the graduation cut round the bezel's face, one every three degrees...
+COLLAR_LONG = 5  # ...one in five of them run deeper, so it reads in fifteens
+COLLAR_TICK = 0.34  # how far a short one reaches down the face, as a fraction of its width
+COLLAR_TICK_LONG = 0.72
+TICK_W = 0.6  # half the width of any graduation on his housing, in px. Not per-ring: a scale at
+# this size is one pixel wide or it is a stripe, and both his rings were cut with the same tool.
+TICK_DARK = 0.55  # how far into the metal the cut goes...
+TICK_GLINT = 0.30  # ...and how much the wall on its far side comes back up. A dark line on a
+# flat band is a printed scale; a dark line with a lit wall beside it is a cut one.
 COLLAR_CROWN = 0.40  # sin of the tilt the brass face has reached where its roll begins. Far
 # more than a bar's DOME, because a bezel is not a bar: it is turned with a rounded section, and
 # the fall from its lit side to its dark side across a dozen pixels is most of what says so.
@@ -918,14 +936,60 @@ BRASS = (96, 86, 58)  # a flat face of it square to the viewer. Well short of th
 # Never orange, and never brighter than STEEL_SPEC in any channel.
 BRASS_SPEC = (196, 176, 128)  # where the lamp lands hardest on it. Warm where steel's is cool,
 # because a highlight carries the metal's own colour, and no brighter than the steel's ceiling.
-WELL_FLOOR = (24, 32, 27)  # the machined floor he is drawn on, at its middle...
-WELL_WALL = (9, 15, 12)  # ...and where it meets the wall. Dark enough that no test counting
+WELL_FLOOR = (28, 58, 42)  # the disc he is drawn on, at its middle...
+WELL_WALL = (10, 19, 15)  # ...and where it meets the wall. Dark enough that no test counting
 # phosphor ever sees it, light enough that a shadow falling on it has something to fall on -
 # SCREEN is so near black that a shadow on SCREEN is nothing at all.
-WELL_DEPTH = 5.0  # reference px the floor sits below the bezel's lip, which is how far the near
+WELL_FALL = 1.38  # how sharply the one goes to the other with radius. Above one, so the middle
+# stays level and the drop gathers at the wall: a plain square is a bowl, and a bowl reads as a
+# painted vignette rather than as a floor with a wall round it.
+WELL_LAMP = (10, 20, 14)  # what the half of the disc facing the lamp gains over the half away
+# from it. The one thing that stops a dark disc reading as a hole cut in the panel.
+# All three are grey-green rather than phosphor-green, and that is the difference between glass
+# with light on it and a lit screen: the pane is not a source, it is a thing being shone at.
+WELL_HATCH = 0.10  # the pane's own brushing, either way, running on the lamp's diagonal
+_HALF_ROOT = math.sqrt(0.5)  # a panel pixel measured along that diagonal, and across it
+WELL_SPOT = 0.075  # the pane's reflection of the lamp, as a fraction of the way to WHITE...
+WELL_SPOT_AT = 0.42  # ...how far up it towards the lamp that sits, of the flank radius...
+WELL_SPOT_LONG = 0.62  # ...and how far it spreads along the lamp's line and across it. Drawn
+WELL_SPOT_WIDE = 0.40  # out rather than round, the way a reflection on anything curved is.
+WELL_SCRATCH = 0.12  # how far towards WHITE the sheet's hairlines lift the pane where they cross
+WELL_DEPTH = 1.5  # reference px the floor sits below the bezel's lip, which is how far the near
 # wall's shadow reaches across it
-WELL_SHADOW = 0.75  # how dark that shadow is under the wall
+WELL_SHADOW = 1.6  # how dark that shadow is under the wall - over one, and clipped, so it is
+# black where the wall meets the floor rather than merely dim. A well you can see the bottom of
+# all the way to its edge is a disc with a ring painted round it.
 WELL_GRAIN = 0.5  # how much the floor's turning marks show, as a fraction of material.GRAIN
+WELL_CEILING = 195  # no pixel of the well may reach the 200 the face's colour is measured over
+# (`test_he_changes_colour_with_what_he_is_doing`), or the disc behind him starts voting on his
+# mood. Enforced rather than argued: the last thing built here is a hard scale onto this sum.
+# The index ring under his glass, at the radius an instrument of this shape has always had one:
+# a band of brass with a scale cut into it, standing between the diaphragm and the stator. It is
+# built into the well rather than drawn in his tile, because the tile is transparent wherever
+# nothing is written on it and this ring is the same pixels in every frame of every mood - the
+# knurl and the dotted ring still turn across it, which is what it is there to be read against.
+INDEX_IN = 0.614  # of his rim: the ring's inner edge...
+INDEX_OUT = 0.727  # ...and its outer, which is ten px of brass at 800x480
+INDEX_DARK = (34, 30, 21)  # its face on the side away from the lamp...
+INDEX_LIT = (78, 70, 48)  # ...and on the side towards it. Dark for brass, and deliberately so:
+# the sum of these three channels is what his mood is measured over, and a ring bright enough to
+# cross that threshold would be voting on which mood he is in.
+INDEX_LIP = (74, 69, 52)  # the turned edge on its outer rim - the lightest line on the ring, and
+# still under the ceiling. Nothing bright may live inside his rim that is not phosphor: a chrome
+# lip in here would be a neutral mark voting in a measurement about colour, and the bright metal
+# on this instrument is the bezel's bevel, which is outside the rim where it cannot.
+INDEX_LIP_DIM = 0.22  # ...and what is left of it right round, away from the lamp
+INDEX_TICKS = 60  # one every six degrees...
+INDEX_LONG = 5  # ...and one in five cut deeper, so the scale reads in thirties
+INDEX_TICK = 0.36  # how far a short tick reaches down the face, as a fraction of its width
+INDEX_TICK_LONG = 0.62
+INDEX_INSET = 1.8  # px of face left between the lip and the top of a tick
+INDEX_GRAIN = 1.6  # its turning marks, as a fraction of material.GRAIN
+INDEX_SCRATCH = 0.35  # ...and how far the sheet's hairlines lift it where they cross. The same
+# hairlines that cross the bezel and the plates: one sheet, scratched once, before it was cut.
+INDEX_LIFT = 1.8  # how proud it stands of the pane, which is what sets the shadow it drops...
+INDEX_SHADOW = 0.6  # ...and how dark that is. Lighter than the wall's: it stands two px proud of
+# the pane, not eight, and a shadow as black as the bezel's would say it stands as far.
 # The glass over him. A dome held down by the lip, and the one part of him that is not drawn
 # every frame: the lamp's reflection on it and the light it gathers along its edge are a tile
 # built once and laid over the eye after it is painted. It has to stay off everything that moves.
@@ -939,7 +1003,9 @@ GLASS_OUT = 0.955  # ...and where it must have ended, short of the rim
 GLASS_EASE = 0.05  # how far past each of those it fades in and out
 GLASS_AT = 0.86  # how far up the dome towards the lamp its reflection sits, as a fraction of him
 GLASS_REACH = 0.55  # ...and how far that reflection spreads, in the same units
-GLASS_GLARE = 0.24  # its alpha where it is brightest, in the tube's own white
+GLASS_GLARE = 0.14  # its alpha where it is brightest, in the tube's own white. It was 0.24
+# over a well that was near black; over a well with light in it that much white is a smear, and
+# it lifted the glass band far enough to be counted as part of his colour - which it is not.
 GLASS_RIM = 0.14  # the light the dome gathers along its edge on the side facing the lamp
 GLASS_SHADE = 0.14  # ...and how much the far side of it darkens what is under it
 # The loom: three runs of flexible steel conduit leaving the back of his housing through a gland,
@@ -2091,14 +2157,16 @@ class Overlay:
         plate left over between his rim and the collar's inner flank, which reads as a gap round
         the lens rather than as the barrel it is standing in.
 
-        A machined well rather than a flat disc: a turned floor, a shade lighter at its middle
-        than at the wall, and the shadow the bezel's near wall drops across it - deepest on the
-        side towards the lamp, because that is the wall standing between the lamp and the floor.
-        All of it shows only through the gaps between his rings, and that is where the depth of
-        him comes from: a flat disc behind a set of rings is a badge, and a floor with a shadow
-        falling across it is a socket. The disc's outline is the same ImageDraw ellipse
-        :meth:`_bracket_mask` cuts the hole with, so the two agree to the pixel and no tide line
-        of wash appears round him.
+        A disc of dark glass rather than a flat fill: a radial vignette from a dim green middle
+        to near black at the wall, the half of it facing the lamp a shade lifted, a fine brushing
+        on the lamp's own diagonal, one drawn-out reflection of the lamp up towards it, the
+        sheet's hairlines where they cross, and the shadow the bezel's near wall drops - deepest
+        on the side towards the lamp, because that is the wall standing between the lamp and the
+        floor. All of it shows only through the gaps between his rings, and that is where the
+        depth of him comes from: a flat disc behind a set of rings is a badge, and a lit floor
+        with a shadow falling across it is a socket. The disc's outline is the same ImageDraw
+        ellipse :meth:`_bracket_mask` cuts the hole with, so the two agree to the pixel and no
+        tide line of wash appears round him.
 
         A separate layer rather than part of :meth:`_build_chrome`, because the collar's rings and
         the left mount's rail are drawn over the plate and must stay over it.
@@ -2108,18 +2176,40 @@ class Overlay:
         inn = out * COLLAR_IN
         x0, y0, x1, y1, xs, ys = self._around(out + 1)
         dist = np.hypot(xs, ys)
-        # The floor falls off to the wall on a square, so the middle stays level and the drop
-        # gathers where the wall is - a bowl would put the whole thing on a gradient.
-        depth = (np.clip(dist / inn, 0.0, 1.0) ** 2)[..., None]
+        # The floor falls off to the wall faster than it started, so the middle stays level and
+        # the drop gathers where the wall is - a plain square would put the whole thing on a
+        # gradient and read as a painted vignette.
+        depth = (np.clip(dist / inn, 0.0, 1.0) ** WELL_FALL)[..., None]
         floor = np.asarray(WELL_FLOOR, np.float32)
         rgb = floor + (np.asarray(WELL_WALL, np.float32) - floor) * depth
-        rgb = rgb * (1.0 + material.GRAIN * WELL_GRAIN * material.grain(dist, self._round(xs, ys)))[
+        lx, ly = material.lamp_2d()
+        facing = np.clip((xs * lx + ys * ly) / np.maximum(dist, 1e-6), 0.0, 1.0)
+        rgb = rgb + np.asarray(WELL_LAMP, np.float32) * (facing * (1.0 - 0.5 * depth[..., 0]))[
             ..., None]
+        # Two textures, and they belong to two different surfaces: the floor was turned on a
+        # lathe, so its marks run round; the pane over it was brushed off the sheet, so its marks
+        # run on the one diagonal every brushed thing on this panel runs on.
+        turned = material.grain(dist, self._round(xs, ys))
+        brushed = material.grain((xs + ys) * _HALF_ROOT, (xs - ys) * _HALF_ROOT,
+                                 seed=material.SEED + 9)
+        rgb = rgb * (1.0 + material.GRAIN * WELL_GRAIN * turned + WELL_HATCH * brushed)[..., None]
+        # One reflection of the lamp, up the pane towards it and drawn out along its line. The
+        # only pale mark inside his rim that is not phosphor, and it is a twelfth of the way to
+        # white: glass at this size is a suggestion or it is a smear over the face.
+        sx, sy = xs - lx * inn * WELL_SPOT_AT, ys - ly * inn * WELL_SPOT_AT
+        u = (sx * lx + sy * ly) / (inn * WELL_SPOT_LONG)
+        v = (sx * -ly + sy * lx) / (inn * WELL_SPOT_WIDE)
+        pale = WELL_SPOT * np.exp(-(u * u + v * v))
+        pale = pale + self._marks[y0:y1, x0:x1] * WELL_SCRATCH
+        rgb = rgb + (np.asarray(WHITE, np.float32) - rgb) * pale[..., None]
         # Everything from the flank outwards stands above the floor; its shadow falls the other
         # way from the lamp, and only what lands inside the flank is floor.
         lift = max(1.0, (COLLAR_LIFT + WELL_DEPTH) * self.scale)
-        shadow = material.cast((dist >= inn).astype(np.float32), lift) * WELL_SHADOW
+        shadow = np.clip(material.cast((dist >= inn).astype(np.float32), lift) * WELL_SHADOW,
+                         0.0, 1.0)
         rgb = rgb * (1.0 - shadow * (dist < inn))[..., None]
+        rgb = self._index_ring(rgb, dist, xs, ys, facing, self._marks[y0:y1, x0:x1])
+        rgb = rgb * np.minimum(1.0, WELL_CEILING / np.maximum(rgb.sum(-1, keepdims=True), 1e-3))
         disc = Image.new("L", (x1 - x0, y1 - y0), 0)
         ImageDraw.Draw(disc).ellipse(
             [cx - out - x0, cy - out - y0, cx + out - x0, cy + out - y0], fill=EYE_PLATE_ALPHA
@@ -2127,6 +2217,63 @@ class Overlay:
         layer.alpha_composite(material.to_image(rgb, np.asarray(disc, np.float32) / 255.0),
                               (x0, y0))
         return layer
+
+    def _index_ring(self, rgb: np.ndarray, dist: np.ndarray, xs: np.ndarray, ys: np.ndarray,
+                    facing: np.ndarray, marks: np.ndarray) -> np.ndarray:
+        """The index ring on the well: the band the diaphragm is read against.
+
+        Brass, turned, graded round the ring by the one lamp, with a scale cut into it - a tick
+        every six degrees and a deeper one every thirty - a lighter lip on its outer edge, and a
+        shadow dropped onto the pane below.
+
+        Its scale is cut by the same :meth:`_graduation` as the bezel's, at half as many marks
+        round a ring two thirds the size - one tool, two rings, and the reason the pair of them
+        read as one instrument rather than as two bands that happen to be concentric.
+        """
+        inn, out = self.eye_r * INDEX_IN, self.eye_r * INDEX_OUT
+        band = np.clip(0.5 + (out - dist), 0.0, 1.0) * np.clip(0.5 + (dist - inn), 0.0, 1.0)
+        # The shadow first and underneath, so the ring covers its own the way every other part
+        # standing proud of this panel does.
+        drop = material.cast(band, max(1.0, INDEX_LIFT * self.scale)) * INDEX_SHADOW
+        rgb = rgb * (1.0 - drop * (band < 1.0))[..., None]
+        lx, ly = material.lamp_2d()
+        turned = (0.5 + 0.5 * (xs * lx + ys * ly) / np.maximum(dist, 1e-6))[..., None]
+        dark = np.asarray(INDEX_DARK, np.float32)
+        face = dark + (np.asarray(INDEX_LIT, np.float32) - dark) * turned
+        face = face * (1.0 + material.GRAIN * INDEX_GRAIN
+                       * material.grain(dist, self._round(xs, ys), seed=material.SEED + 3))[
+            ..., None]
+        top = out - max(1.0, INDEX_INSET * self.scale)
+        cut = self._graduation(dist, np.arctan2(ys, xs), top, out - inn, INDEX_TICKS,
+                               INDEX_LONG, INDEX_TICK, INDEX_TICK_LONG)
+        face = face * cut[..., None]
+        lip = (np.clip(1.0 - np.abs(dist - (out - 0.5)), 0.0, 1.0)
+               * (INDEX_LIP_DIM + (1.0 - INDEX_LIP_DIM) * facing)
+               + marks * INDEX_SCRATCH)[..., None]
+        face = face + (np.asarray(INDEX_LIP, np.float32) - face) * np.clip(lip, 0.0, 1.0)
+        return rgb + (face - rgb) * band[..., None]
+
+    def _graduation(self, dist: np.ndarray, turn: np.ndarray, top: float, face: float,
+                    ticks: int, longer: int, short: float, deep: float) -> np.ndarray:
+        """A scale cut into a ring: what to multiply its colour by, and 1 where the metal is uncut.
+
+        *turn* is where round the ring a pixel is in radians and *dist* how far out. The ticks
+        hang inwards from *top* and reach *short* of the *face*'s width down it, except one in
+        *longer* of them, which reaches *deep*. All an engraving needs to know is how far across
+        the nearest tick a pixel is, and that is one round and one multiply off the angle.
+
+        The width is not an argument and neither is the depth - see :data:`TICK_W`. Both rings on
+        his housing were cut with the same tool, and a scale that varies pitch, width and depth
+        from ring to ring reads as decoration rather than as a machine that was indexed.
+        """
+        pitch = math.tau / ticks
+        index = np.round(turn / pitch)
+        off = (turn - index * pitch) * np.maximum(dist, 1e-6)
+        reach = np.where(index % longer == 0, deep, short) * face
+        down = np.clip(top - dist + 1.0, 0.0, 1.0) * np.clip(dist - (top - reach), 0.0, 1.0)
+        wall = np.clip(TICK_W + 1.5 - off, 0.0, 1.0) * np.clip(off - TICK_W, 0.0, 1.0)
+        return (1.0 - TICK_DARK * np.clip(TICK_W + 0.5 - np.abs(off), 0.0, 1.0) * down
+                + TICK_GLINT * wall * down)
 
     def _around(self, reach: float) -> tuple[int, int, int, int, np.ndarray, np.ndarray]:
         """A box of the panel *reach* px round him, clipped to it, and where each pixel is from him.
@@ -2556,13 +2703,14 @@ class Overlay:
         mount that straps over it are lit by the same lamp, which is what keeps the join reading
         as one assembly even though they are two metals.
 
-        Three passes, in the order a real one is looked at. The shadow the ring drops onto the
+        Four passes, in the order a real one is looked at. The shadow the ring drops onto the
         plate, first and underneath. Then the brass: a rolled outer edge that catches the lamp
         up-left and goes dark down-right, a face crowned just enough to be lighter on the lamp's
         side, brushed round the way a turned part is, its highlight and its colour drifting round
         the ring where it has been handled, and the sheet's own scratches running across it. Then
-        the lip: a half-round of polished steel on the inner edge, which is the one bright line
-        that says there is glass under it. The well inside the lip is :meth:`_build_plate`'s.
+        the bevel: a machined face of steel tilted out towards the glass all the way across, lit
+        at ten o'clock and dark at four, with one bright line where it rolls over into the well.
+        Then the reveal between the two, a pixel of black. The well inside is the plate's.
 
         Nothing here is written with an alpha below full - the shadow and every soft edge are
         composited from fields, or they would be windows onto the camera.
@@ -2585,19 +2733,21 @@ class Overlay:
         shadow = material.cast(cover, lift) * COLLAR_SHADOW
         layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), shadow),
                               (x0, y0))
-        # The brass, from the lip's outer edge to the swell. Its face tilts outwards, from level
-        # at the lip to DOME at the roll, so the ring reads as crowned rather than as a washer;
-        # its inner edge turns the other way, a narrow roll down onto the lip.
+        # The brass, from the bevel's outer edge to the swell. Its face tilts outwards, from
+        # level at the reveal to DOME at the roll, so the ring reads as crowned rather than as a
+        # washer. Its inner edge does NOT roll: it stops at the reveal and goes dark there.
+        # A roll turned inwards faces up and to the left on the FAR side of a ring, catches the
+        # lamp there and puts a second bright arc opposite the first - which is an emboss, not a
+        # lit part, and it is the one thing every critic of this panel measured. One lamp, one
+        # highlight, and this edge is not it: what a reveal a pixel wide does is go dark.
         brass_in = inn + lip
         brass = np.clip(0.5 - np.maximum(brass_in - dist, dist - out), 0.0, 1.0)
         crown = COLLAR_CROWN * np.clip((dist - brass_in) / max(out - roll - brass_in, 1e-3),
                                        0.0, 1.0)
         nx, ny, nz = material.roll_normals(np.maximum(out - dist, 0.0), ux, uy, roll, dome=crown)
-        sx, sy, sz = material.roll_normals(np.maximum(dist - brass_in, 0.0), -ux, -uy, step,
-                                           dome=0.0)
-        inner = dist - brass_in < step
-        nx, ny, nz = np.where(inner, sx, nx), np.where(inner, sy, ny), np.where(inner, sz, nz)
         diffuse, spec = material.shade(nx, ny, nz)
+        shut = np.clip(1.0 - (dist - brass_in) / step, 0.0, 1.0)
+        diffuse, spec = diffuse * (1.0 - shut), spec * (1.0 - shut)
         rubbed = material.wear(along)
         spec = spec * (1.0 + COLLAR_WEAR * rubbed)
         brushed = material.grain(dist, along) + COLLAR_TARNISH * rubbed
@@ -2607,17 +2757,29 @@ class Overlay:
         rgb = rgb + np.asarray(BRASS_SPEC, np.float32) * (material.SPEC * spec)[..., None]
         groove = np.exp(-(((dist - (out - roll - 1.0)) / 0.6) ** 2))
         rgb = rgb * (1.0 - COLLAR_GROOVE * groove)[..., None]
+        rgb = rgb * self._graduation(dist, along / out, out - roll, out - roll - brass_in,
+                                     COLLAR_TICKS, COLLAR_LONG, COLLAR_TICK,
+                                     COLLAR_TICK_LONG)[..., None]
         marks = (self._marks[y0:y1, x0:x1] * COLLAR_SCRATCH)[..., None]
         rgb = rgb * (1.0 - marks) + np.asarray(BRASS_SPEC, np.float32) * marks
         rgb = np.minimum(rgb, np.asarray(material.STEEL_SPEC, np.float32))
         layer.alpha_composite(material.to_image(rgb, brass), (x0, y0))
-        # The lip: a bevel of steel turned to face outwards all the way across, so the whole of
-        # it is lit on the lamp's side and dark on the other, one bright line round the glass.
+        # The bevel: a face of steel turned outwards all the way across, rolling to edge-on at
+        # the glass. `COLLAR_BEVEL` is what makes it a ring of metal rather than a stroke - the
+        # whole width of it is lit at ten o'clock and dark at four, so the brightness goes round
+        # the ring instead of sitting on one pixel of it, and the roll at the inner edge puts the
+        # single bright line where the glass starts.
         wire = np.clip(0.5 - np.maximum(inn - dist, dist - brass_in), 0.0, 1.0)
         diffuse, spec = material.shade(
-            *material.roll_normals(np.maximum(dist - inn, 0.0), ux, uy, lip, dome=0.0))
-        rgb = material.steel(diffuse, spec, material.grain(dist, along) * 0.5)
+            *material.roll_normals(np.maximum(dist - inn, 0.0), ux, uy, lip, dome=COLLAR_BEVEL))
+        rgb = material.steel(diffuse, spec * COLLAR_BEVEL_SHINE,
+                             material.grain(dist, along) * 0.5 + COLLAR_WEAR * rubbed)
         layer.alpha_composite(material.to_image(rgb, wire), (x0, y0))
+        # ...and the reveal between the two metals. A pixel of black is what says they are two
+        # parts bolted together rather than one ring that changed colour half way across.
+        seam = np.clip(0.5 - np.abs(dist - brass_in), 0.0, 1.0)
+        layer.alpha_composite(material.to_image(
+            np.broadcast_to(np.asarray(COLLAR_SEAM, np.float32), (*seam.shape, 3)), seam), (x0, y0))
         # ...and the mount points, in the arc the rail never reaches. The bracket bolts its own
         # two where the rail leaves the straight; without these the far side of the collar is a
         # ring resting against him rather than a housing fastened down all the way round.
