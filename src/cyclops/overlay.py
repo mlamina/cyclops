@@ -955,6 +955,14 @@ POD_BOUNCE = 0.15  # how much the pane gives back into the cove, hard against th
 POD_BOUNCE_W = 2.2  # ...and the px it reaches back over. A face turned from the lamp is allowed
 # exactly this much and no highlight: it is a sixth of the lift the rail's crest carries, it is
 # raked along the run with everything else on the module, and it never makes a second peak
+POD_BOUNCE_LIT = (5, 13, 8)  # ...and what colour that light is. The bounce above says how much
+# of the pane the cove gets back; this says that a green window lights the steel beside it green,
+# which every critic of this module has measured us not doing: ours came back +1.1 green-excess
+# hard against the glass and +0.9 ten rows down - dead neutral, which is a window painted on a
+# plate rather than one lit behind it. Held to a measured peak of +6 and gone in five pixels,
+# because metal that reads green is a worse fault than metal with no bounce at all
+POD_BOUNCE_REACH = 5.0  # px of cove the colour carries over: the whole run from the glass to the
+# rail's crest, which is where this face ends and the bar's own begins
 # The rake. A drift across the module was a linear ramp of a quarter, which measured as a face
 # falling eleven levels over a hundred and eighty pixels - a light with a *direction* and no
 # position, which is the same flat every panel that has never been photographed has. The lamp
@@ -1035,6 +1043,11 @@ POD_SWEEP_X = 0.17  # where across the module the lobe is brightest...
 POD_SWEEP_WIDE = 0.30  # ...and how much of its width it covers. A reflection that runs the
 # whole length of a pane is the lamp smeared into a band; this one is a *thing* the glass is
 # giving back, and it has two ends
+POD_SWEEP_LAMP = (255, 240, 205)  # ...and what colour it gives back. This lobe sits at the
+# lamp's own end of the pane and is raked by it, so it is the *lamp* the glass is reflecting, and
+# a workshop lamp is warm. Everything else on this pane returns the room, which is not: a critic
+# measured our glass at B-R +1 to +15 and the reference at -9 to +31, and read the difference as
+# a window reflecting one flat white instead of a room with two lights in it
 POD_RETURN_A = 0.22  # the rim return: the pane's far edge gives the room back a second time,
 # which is what says the glass has a thickness and the reveal is behind it
 POD_RETURN_W = 2.2  # px of the far edge that does it
@@ -1073,27 +1086,50 @@ POCKET_LIP = 0.72  # ...and how much of the steel's own highlight the two it can
 POCKET_CAST = 0.35  # the shadow the near wall throws across the floor
 POCKET_TOOTH = 0.11  # the mill's marks on the floor, running across the pocket where the rail's
 # brushing runs along it: a cut face does not keep the finish of the face it was cut into
-MARK_INSET = 5.5  # reference px in from each end of the pocket the mark cut into it starts. The
+MARK_INSET = 5.5  # reference px in from each end of the pocket the engraved label starts. The
 # pocket was milled and left empty, and an empty slot the exact shape of a nameplate reads as a
-# missing part - a critic called it the loudest missing small thing on the module. What fills it
-# is not a *word*: this panel gave its words up on purpose and got quieter for it. What a blank
-# plate on a real instrument carries is evidence of the machine that made it, so this is a datum
-# cross and a drilled index row, which is read at a glance and never has to be read twice
-MARK_CROSS = 2.9  # px each arm of the datum cross reaches from its centre...
-MARK_SCORE = 1.1  # ...and how wide the scored line that makes it is
-MARK_R = 1.55  # px radius of one drilled pilot dimple...
-MARK_PITCH = 5.6  # ...and roughly how far apart they sit. Roughly: the row is stretched to land
-# its last dimple on the mark's far end, because a drilled row that stops short of the plate is
-# a row somebody gave up on
-MARK_GAP = 5.0  # px between the cross and the first dimple, which is what makes them two marks
-MARK_CUT = 0.58  # how far towards black the cut goes - another forty-five counts under the
-# pocket's own floor, the same step again. Multiplicative like the pocket, so the mill's tooth
-# and the shadow the near wall throws run on through it
-MARK_WALL = 0.9  # px of wall round the cut...
-MARK_SHADE = 0.62  # ...how dark the walls the lamp cannot get down to are...
-MARK_LIP = 0.80  # ...and how much of the steel's highlight the ones it can give back. Dark above
-# and light below, the pocket's own section one step smaller, because a mark cut into a floor is
-# lit by the same lamp as the floor
+# missing part - a critic called it the loudest missing small thing on the module. What went in
+# it first was a datum cross and a drilled index row, on the argument that this panel gave its
+# words up on purpose; three critics measured that row as one glyph stamped nine times - adjacent
+# cells correlating at r=0.47 - and read it as a font that had failed to render. A nameplate is
+# not a word the panel is saying, it is the name of the thing the panel is part of, which is what
+# every instrument in a workshop carries and the one legend nobody has to read twice
+MARK_WORD = "CYCLOPS"  # what is cut into it. One word, and the machine's own
+MARK_CAP = 6.2  # px of cap height, which is the pocket's floor less a row of wall at each end
+MARK_WIDE = 0.68  # a capital's width as a fraction of that, before the row is stretched to the
+# plate: caps this narrow are what a pantograph cuts, and they leave the counters of C, O and P
+# open at a size where a filled typeface closes them up
+MARK_STROKE = 1.35  # px the engraving cutter is wide. Single-line letterforms - the cutter walks
+# the centre of each stroke and the width of the stroke *is* the width of the tool
+MARK_ENAMEL = (236, 233, 224)  # what the cut is filled with. A cut left bare reads as printed:
+# the winner's strokes stand ninety counts *over* their plate, not fifty under it, and the way a
+# nameplate gets that is enamel rubbed into the engraving. Warm rather than white, and neutral
+# enough that the plate is still steel: this is the only pale thing on the module that is paint
+MARK_FILL = 0.54  # how much of it a fully cut pixel carries...
+MARK_HARD = 0.60  # ...and the gamma on the coverage, which is the cutter's own wall: a milled
+# channel has vertical sides, so a pixel half inside one is most of the way to full rather than
+# half of it. Without this a stroke that straddles two columns loses half its contrast and
+# the word goes grey
+MARK_SHOULDER = 0.62  # how dark the lip of the cut on the lamp's own side goes...
+MARK_SHOULDER_W = 0.95  # ...and the px of it that does. One line above every stroke, and none
+# below: the shoulder the lamp cannot get down to is the only shadow a filled cut has left
+
+# The alphabet the cutter walks, one polyline per stroke, in a box that runs 0..1 left to right
+# and 0..1 from the cap line down to the baseline. Single-line letterforms, because that is what
+# a pantograph makes and because at a cap height of six pixels a typeface's bowls fill in: what
+# distinguishes C from O here is a counter three pixels tall, and a filled face has none.
+MARK_ALPHABET = {
+    "C": (((.95, .26), (.68, .0), (.30, .0), (.0, .30), (.0, .70), (.30, 1.), (.68, 1.),
+           (.95, .74)),),
+    "L": (((.0, .0), (.0, 1.), (.95, 1.)),),
+    "O": (((.30, .0), (.65, .0), (.95, .30), (.95, .70), (.65, 1.), (.30, 1.), (.0, .70),
+           (.0, .30), (.30, .0)),),
+    "P": (((.0, 1.), (.0, .0), (.62, .0), (.95, .25), (.62, .50), (.0, .50)),),
+    "S": (((.95, .24), (.66, .0), (.28, .0), (.0, .22), (.14, .45), (.81, .57), (.95, .78),
+           (.66, 1.), (.28, 1.), (.0, .78)),),
+    "Y": (((.0, .0), (.48, .46)), ((.95, .0), (.48, .46)), ((.48, .46), (.48, 1.))),
+}
+
 BOT_L = 250.0  # the bottom-left bracket's reach along both edges
 BOT_L_STEP = 38.0  # its square landings
 BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
@@ -2221,9 +2257,14 @@ LAMP_BOUNCE_R = 13.0  # reference px of the third and widest skirt: the light th
 LAMP_BOUNCE_A = 0.55  # ...and how much of it lands. Cut to the module: a skirt this wide runs
 # off the bottom of the rail, and light haze over the camera is not a bounce
 SEG_EDGE = 2.0  # px over which a lit cell falls from its core to its own edge...
-SEG_FLOOR = 0.78  # ...and what is left of it there. A segment is a lens with a lamp behind it,
+SEG_FLOOR = 0.90  # ...and what is left of it there. A segment is a lens with a lamp behind it,
 # so it is hottest in the middle and never one number: ours held exactly two values across a
-# whole cell, and the reference holds sixty-two
+# whole cell, and the reference holds sixty-two. It was 0.78, and 0.78 against a far wall that
+# gives SEG_RIM *back* is a lens that is dim along its top edge and hot along its bottom one -
+# which a critic measured as a dim band cut across the top of every lit segment and read,
+# correctly, as a highlight being composited so that it subtracts. A lamp does not get darker
+# where something crosses it; the falloff stays, because the cell is a lens, but it is a tenth
+# now rather than a fifth and it is under the halation the cell lays outside its own rim
 SEG_RIM = 0.42  # how much brighter the wall the light leaves by is than the core...
 SEG_RIM_W = 1.3  # ...and how far into the cell that return reaches. On the side away from the
 # lamp, like every other return on this panel
@@ -2242,6 +2283,9 @@ SEG_WELL_NEAR = 1.28  # of the outline's colour, the walls on the lamp's own sid
 SEG_WELL_RIM = 2.35  # ...and the far ones still carry more than the near ones, because the lamp
 # is a place. The reference's empty cell is a hairline at L148 round an interior at L58; ours
 # measured L80 on L33, half as bright as the thing it has to be read against
+SEG_WELL_RAKE = 0.72  # how much of the module's own fall an empty cell's rim takes. All of it
+# and the far end of the scale dissolves; none of it and eight apertures ignore the window they
+# are cut in, which is what two critics measured last round
 SEG_GRAIN = 0.030  # the phosphor's own tooth inside a lit cell, running with the raster. Small,
 # and the single thing that turns a cell from a handful of levels into continuous tone: ours held
 # two, the reference sixty-two, and at a glance the difference is between a lit thing and a swatch
@@ -3174,6 +3218,26 @@ def _over(
     carried = dst_rgb * dst_a[..., None] * (1.0 - a)
     out_rgb = (src * a + carried) / np.maximum(out_a[..., None], 1e-6)
     return out_rgb, out_a
+
+
+def _stroke_sdf(
+    xs: np.ndarray, ys: np.ndarray, runs: Sequence[Sequence[tuple[float, float]]]
+) -> np.ndarray:
+    """Distance from every pixel of an (xs, ys) grid to the nearest of *runs*.
+
+    The centrelines of an engraving. A single-line letterform has no outline to fill: the tool
+    walks the path and the stroke is as wide as the tool, so the whole glyph is this distance
+    thresholded at half the cutter's width - and the same field gives the walls of the cut their
+    direction, which is what lights them.
+    """
+    best = np.full(np.broadcast(xs, ys).shape, np.inf, np.float32)
+    for run in runs:
+        for (ax, ay), (bx, by) in zip(run, run[1:], strict=False):
+            dx, dy = bx - ax, by - ay
+            along = np.clip(((xs - ax) * dx + (ys - ay) * dy) / max(dx * dx + dy * dy, 1e-6),
+                            0.0, 1.0)
+            best = np.minimum(best, np.hypot(xs - (ax + along * dx), ys - (ay + along * dy)))
+    return best
 
 
 def _to_image(rgb: np.ndarray, alpha: np.ndarray) -> Image.Image:
@@ -5617,6 +5681,13 @@ class Overlay:
         rgb = material.steel(diffuse, spec, POD_GRAIN * material.grain(ys, xs),  # along the flange
                              colour=mix(material.STEEL, material.STEEL_LIT, POD_STOCK))
         rgb = np.minimum(rgb * rake[..., None], np.asarray(material.STEEL_SPEC, np.float32))
+        # ...and the colour of it. The lift above is how much light the pane returns; this is
+        # what colour a green window's light is on the steel it stands in, falling off over the
+        # whole cove and raked with the lamp that lit the pane in the first place. Additive and
+        # small: at its hottest row it is +5 of green-excess on metal that otherwise measures
+        # +1, which is a bounce - twice that and the flange has stopped being steel.
+        spill = np.clip(1.0 - (sdf + reveal) / max(1.0, POD_BOUNCE_REACH * self.scale), 0.0, 1.0)
+        rgb = rgb + np.asarray(POD_BOUNCE_LIT, np.float32) * (spill * rake)[..., None]
         rgb = self._pod_scale(rgb, tags, xs, sdf, land, reveal, rake)
         # The wear: the sheet's own hairlines where they run onto the flange and the pod's own
         # dragged across it, both deterministic off material.SEED. Bright, and only a few chips
@@ -5687,7 +5758,7 @@ class Overlay:
         trail = (down - (POD_SWEEP_AT + POD_SWEEP_TILT * across)) / POD_SWEEP_TRAIL
         lobe = np.exp(-(((across - POD_SWEEP_X) / POD_SWEEP_WIDE) ** 2))
         sweep = np.where(edge < 0.0, np.exp(-edge * edge * 9.0), np.exp(-trail * trail)) * lobe
-        pane = _over(pane, WHITE, POD_SWEEP_A * sweep * rake * open_)
+        pane = _over(pane, POD_SWEEP_LAMP, POD_SWEEP_A * sweep * rake * open_)
         lx, ly = material.lamp_2d()
         away = np.clip(ox * lx + oy * ly, 0.0, 1.0)  # (ox, oy) points in: this is the far rim
         rim = np.clip(1.0 - inset / max(1.0, POD_RETURN_W * self.scale), 0.0, 1.0)
@@ -5828,7 +5899,14 @@ class Overlay:
         # its rim at 133, 131, 134, 129, 133, 129 left to right while the window it sits in fell
         # by four to one. Two critics measured that as emitters ignoring the surface they are
         # in, and the dead cells competing with the live ones at 0.70 of a lit fill.
-        cell_rake = self._pod_rake(0, left, top, w, h)
+        #
+        # SEG_WELL_RAKE of the module's fall and not all of it, because an aperture in a mask is
+        # lit by the whole window and not only by the lamp at one end of it: taking the fall
+        # whole put the last cell's edge a third under the first's, and a critic read the far end
+        # of the scale as dissolving. The drift stays - it is what says these cells are cut in a
+        # surface that is lit from one side - and no cell now steps more than a few counts off
+        # its neighbour, which is the other half of what a scale has to do.
+        cell_rake = 1.0 - SEG_WELL_RAKE * (1.0 - self._pod_rake(0, left, top, w, h))
         xs = np.arange(w, dtype=np.float32)[None, :]
         ys = np.arange(h, dtype=np.float32)[:, None]
         lx, ly = material.lamp_2d()
@@ -5999,21 +6077,33 @@ class Overlay:
         layer.alpha_composite(_to_image(*pocket), (left, top))
 
     def _mark(self, layer: Image.Image, tags: int) -> None:
-        """The maker's mark cut into the legend pocket: a datum cross and a row of pilot dimples.
+        """The name of the machine, engraved into the legend pocket and filled with enamel.
 
         The pocket was milled and left blank, and a slot the exact shape of a nameplate with
-        nothing in it reads as a missing part. What goes in it is deliberately not a word - see
-        MARK_INSET - but a plate with no mark at all is not a decision anybody can see.
+        nothing in it reads as a missing part. What went into it first was a datum cross and a
+        row of drilled dimples, on the argument that this panel had given its words up on
+        purpose. Three critics measured that row and all three read it the same way: one glyph
+        stamped nine times, adjacent cells correlating at r=0.47, a font that had failed to
+        render. A nameplate is not the panel saying something - it is the name of the thing the
+        panel is part of, which every instrument in a workshop carries and nobody reads twice.
 
-        The pocket's own section, one step smaller: cut MARK_CUT below its floor, the walls the
-        lamp cannot get down to dark and the ones it can giving back the steel's highlight, so
-        every dimple carries a shadow on its upper edge and a lit crescent on its lower. All
-        modulation over what the pocket left there, so the mill's tooth and the shadow its near
-        wall throws run on through the marks.
+        Single-line letterforms out of MARK_ALPHABET, walked by a cutter MARK_STROKE wide: at a
+        cap height of six pixels a typeface closes its own counters up and C, O and P come back
+        as one blob each, where a pantograph's stroke leaves them open. The row is stretched to
+        land its last letter on the plate's far inset, so the word fills the pocket rather than
+        however much of it the advance happened to come to.
 
-        Laid out off the pocket's own box rather than a box of its own, because it is cut into
-        the pocket: move POCKET_IN and the mark follows. Baked with the header, right after the
-        floor it is cut into and long before the bolts, so nothing here composites over hardware.
+        Then the polarity a cut mark actually has when it is meant to be read across a bench:
+        the channel is filled, the fill catches the one lamp at its own albedo and stands eighty
+        counts *over* the plate, and the only shadow left is the lip of the cut on the lamp's own
+        side - one line above every stroke and none below. Cut and left bare it measured fifty
+        counts *under* the plate, which is what printing looks like, not what milling does.
+
+        All modulation over what the pocket left there, so the mill's tooth and the shadow its
+        near wall throws run on through the letters. Laid out off the pocket's own box rather
+        than a box of its own, because it is cut into the pocket: move POCKET_IN and the mark
+        follows. Baked with the header, right after the floor it is cut into and long before the
+        bolts, so nothing here composites over hardware.
         """
         knee_x, spine_y = self.pods[tags].spine[2]  # the pocket's own knee - see :meth:`_pocket`
         w, h = POCKET_W * self.scale, POCKET_H * self.scale
@@ -6025,39 +6115,40 @@ class Overlay:
         th = math.ceil(cy + h / 2.0) + m - top
         xs = (np.arange(tw, dtype=np.float32) + left)[None, :]
         ys = (np.arange(th, dtype=np.float32) + top)[:, None]
-        arm = max(1.0, MARK_CROSS * self.scale)
-        score = max(0.5, MARK_SCORE * self.scale) / 2.0
-        radius = max(0.6, MARK_R * self.scale)
+        cap = max(3.0, MARK_CAP * self.scale)
+        wide = cap * MARK_WIDE
+        tool = max(1.0, MARK_STROKE * self.scale)
         inset = MARK_INSET * self.scale
-        start = cx - w / 2.0 + inset + arm  # the cross sits against the near end of the mark
-
-        def slot(half_w: float, half_h: float, at_x: float) -> np.ndarray:
-            dx, dy = np.abs(xs - at_x) - half_w, np.abs(ys - cy) - half_h
-            return (np.hypot(np.maximum(dx, 0.0), np.maximum(dy, 0.0))
-                    + np.minimum(np.maximum(dx, dy), 0.0))
-
-        sdf = np.minimum(slot(arm, score, start), slot(score, arm, start))
-        # The dimples: one pitch stretched to land the last of them on the mark's far end, so the
-        # row reads as drilled to a plan rather than as however many happened to fit.
-        first = start + MARK_GAP * self.scale + radius
-        last = cx + w / 2.0 - inset - radius
-        count = max(2, round((last - first) / max(1.0, MARK_PITCH * self.scale)) + 1)
-        for index in range(count):
-            at = first + (last - first) * index / (count - 1)
-            sdf = np.minimum(sdf, np.hypot(xs - at, ys - cy) - radius)
+        # Ink to ink between the two insets, so the tool's own width is inside the plate at both
+        # ends rather than the centreline being flush with it and half the stroke over the wall.
+        first = cx - w / 2.0 + inset + tool / 2.0
+        last = cx + w / 2.0 - inset - tool / 2.0 - wide
+        step = (last - first) / max(1, len(MARK_WORD) - 1)
+        cap_top = cy - cap / 2.0
+        runs: list[list[tuple[float, float]]] = []
+        for index, char in enumerate(MARK_WORD):
+            at = first + index * step
+            for path in MARK_ALPHABET[char]:
+                runs.append([(at + px * wide, cap_top + py * cap) for px, py in path])
+        sdf = _stroke_sdf(xs, ys, runs) - tool / 2.0
+        # A milled channel has vertical walls, so a pixel half inside one is most of the way to
+        # a full pixel of enamel rather than half of it - see MARK_HARD. Linear coverage on a
+        # stroke this narrow halves its contrast wherever one straddles two columns, and the word
+        # goes grey exactly where the letters are.
         cut = np.clip(0.5 - sdf, 0.0, 1.0)
         lx, ly = material.lamp_2d()
         rise_y, rise_x = np.gradient(sdf)
         facing = np.clip(-(rise_x * lx + rise_y * ly)
                          / np.maximum(np.hypot(rise_x, rise_y), 1e-6), 0.0, 1.0)
-        deepen = np.maximum(-sdf, 0.0) / max(0.6, MARK_WALL * self.scale)
-        wall = np.clip(1.5 - deepen, 0.0, 1.0) * cut
+        shoulder = max(0.6, MARK_SHOULDER_W * self.scale)
+        # The pixel just outside the stroke, on the side the lamp cannot get down: the lip the
+        # enamel does not reach. `facing` is 1 on the far wall, as it is in the pocket itself.
+        lip = np.clip(1.0 - np.abs(sdf - shoulder / 2.0) / shoulder, 0.0, 1.0) * (1.0 - cut)
         mark: tuple[np.ndarray, np.ndarray] = (
             np.zeros((th, tw, 3), np.float32), np.zeros((th, tw), np.float32)
         )
-        mark = _over(mark, (0, 0, 0), MARK_CUT * cut)
-        mark = _over(mark, (0, 0, 0), MARK_SHADE * wall * (1.0 - facing))
-        mark = _over(mark, material.STEEL_LIT, MARK_LIP * wall * facing)
+        mark = _over(mark, (0, 0, 0), MARK_SHOULDER * lip * (1.0 - facing))
+        mark = _over(mark, MARK_ENAMEL, MARK_FILL * cut ** MARK_HARD)
         layer.alpha_composite(_to_image(*mark), (left, top))
 
     def _bake_header(
