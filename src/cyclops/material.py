@@ -486,28 +486,58 @@ def bolt(r: float, fx: float = 0.0, fy: float = 0.0) -> Image.Image:
 # What :func:`bolt` is not. That one is a crowned cap screw standing on the bar, and at panel size
 # a crowned head on a bar reads as a bead on a tube. This one is sunk into it: a flat collar of the
 # bar's own grey, a countersunk dish, a head at the bottom of the dish and a socket in the head.
-SCREW_DISH = 0.74  # of the radius: where the countersink starts, inside the flat collar
-SCREW_HEAD = 0.52  # of the radius: the head sitting at the bottom of the dish
-SCREW_SLOPE = 0.62  # sin of the dish's slope. Steep: a shallow countersink is a saucer
-SCREW_DISH_GLOSS = 0.35  # how much of the steel's highlight the dish keeps. It is cut, not
-# polished: its far wall is a step lighter than its near one and not the brightest thing on the
-# screw, which is the collar's rim, on the side the lamp is
-SCREW_RIM = 1.8  # px of the collar's edge that roll down to the bar - the ring that is read.
-# It was 1.4, which at a seven-pixel head left the angle that actually mirrors the lamp inside a
-# single supersampled pixel: the ring averaged out at 160 where the panel being matched blows its
-# rim to 203. A rolled edge two pixels of a seven-pixel radius wide is what bar stock does anyway
+#
+# Four bands, and the reason there are exactly four is that a critic counted them on the panel
+# this one is matched against and could not find them here: a drive recess that bottoms near
+# black, a bright ring round it, the flat collar, and the ring of dirt and shadow where the head
+# is seated. Measured on that panel at a seven-pixel head, by radius ring in luminance,
+# mean/sigma round the ring at r=0..6: 14/0, 33/14, 75/57, 101/60, 86/36, 85/32, 55/37. Ours ran
+# 20/0, 46/30, 62/24, 51/15, 97/44, 99/30, 51/- : a soft donut whose one bright ring was on the
+# OUTSIDE, at r=6, where a seated screw has nothing but its seat. Every band moves in by three
+# pixels, and the bright one is now the mouth of the counterbore at r=3.
+#
+# Which way that ring is lit is the whole of it. A countersink is a cone falling INWARDS, so the
+# wall the lamp reaches is the far one and the only bright thing on the head sits down-right of
+# it: measured, upper-left over lower-right round the annulus at r=2.5..4.5 came out 0.55 where
+# the reference measures 1.38 to 1.97. On a panel whose entire argument is one lamp at the top
+# left, a dozen fixings each lit from the bottom right is the loudest possible contradiction of
+# it. So the dish keeps its inverted wall - it is what says the head is BELOW the collar - and
+# the arris where the bore breaks out into the collar rolls over convex on top of it. That roll
+# mirrors the lamp on the NEAR side, and it is the ring the eye reads: 1.35 now, and the one
+# specular on the part.
+SCREW_DISH = 0.40  # of the radius: where the counterbore's mouth is, inside the flat collar
+SCREW_HEAD = 0.26  # of the radius: the head sitting at the bottom of the dish
+SCREW_SLOPE = 0.46  # sin of the dish's slope. It was 0.62 - well past the angle that mirrors
+# this lamp, about 0.43 - so the cone was dark all the way round and the drive read as a flat
+# grey donut. Near the mirror the far wall is a clear step up from the floor without becoming
+# the head's highlight, which belongs to the lip
+SCREW_DISH_GLOSS = 0.40  # how much of the steel's highlight the dish keeps. Under half: it is
+# cut, not polished, and its far wall has to stay a step lighter than the floor rather than
+# competing with the ring above it - two crescents pointing opposite ways is two lamps
+SCREW_RIM = 1.1  # px of the collar's outer edge that rolls down to the bar. It was 1.8, and a
+# two-pixel roll on a seven-pixel head put a 230 crescent at r=6: a second specular on one part,
+# outboard of the first, which is the two-lights fault at fixing scale
+SCREW_LIP = 1.3  # px of the counterbore's mouth that rolls over into the collar - the ring
+SCREW_LIP_TILT = 0.45  # ...and the sine of the tilt it reaches at the bore. On the mirror, so
+# the near side of the ring blows to about 200 and the far side is a step under the collar
+SCREW_RIM_GLOSS = 0.30  # ...and how much highlight is left on the outer edge, for the same
+# reason. The seat of a head pressed into bar is a sawn edge, not a polished arris: it needs a
+# tone step to say where the head stops, not a second crescent as bright as the lip's
 SCREW_CROWN = 0.18  # sin of the tilt the head has reached by its edge - barely domed
-SCREW_SOCKET = 0.34  # of the radius: the hex socket, corner to centre. It was 0.30, and at that
-# the hole in a seven-pixel head was two pixels of grey that measured 42 against a rim of 158 -
-# a soft concentric donut. A real cap screw's socket takes most of its head and goes black.
-SCREW_FLOOR = 0.45  # how much of the light that reaches the socket's far wall survives the trip
-# back out of it. The hole is deep and the mouth is narrow: what a camera sees down there is a
-# hint of a wall, not a lit surface
+SCREW_SOCKET = 0.29  # of the radius: the hex socket, corner to centre, so the recess bottoms
+# inside r=2 and the counterbore's mouth has somewhere to sit
+SCREW_FLOOR = 0.85  # how much of the light that reaches the socket's far wall survives the trip
+# back out of it. The hole is deep, but the one wall the lamp gets down to is the thing that
+# stops the recess being a flat black disc: at 0.45 the ring at r=2 varied 9 levels round the
+# circle where a real drive varies 57, which is a hole with no drive in it
 SCREW_LIFT = 0.11  # of the radius: how proud the collar stands. A seated head, not a bead, so
 # its shadow is a pixel down and right of it and no more
 SCREW_SEAT = 0.40  # that shadow's alpha where it is deepest
-SCREW_WEAR = 0.13  # how much darker the bar is in the ring round the head a spanner has been in
-SCREW_WEAR_W = 2.0  # ...and how wide that ring is, in px
+SCREW_WEAR = 0.50  # how much darker the bar is in the ring round the head a spanner has been in.
+# It was 0.13, which is a tint: the panel this is matched against sits its seat ring 40 to 50
+# levels under the plate round it, and that dark ring is half of what makes a head read as sunk
+# into the bar rather than as a disc lying on it
+SCREW_WEAR_W = 3.2  # ...and how wide that ring is, in px
 SCREW_GRIME = 5  # specks of dirt round one head's rim, unevenly placed...
 SCREW_GRIME_A = 0.45  # ...and how much of the collar's light one of them takes
 SCREW_GRIME_W = 0.34  # of the radius: how far in from the rim they sit
@@ -516,7 +546,9 @@ SCREW_SPREAD = 0.07  # how far the head, the socket and the dish's slope vary fr
 # only their light and their dirt differing, and a box of screws is not a box of one screw
 SCREW_SKEW = 0.05  # ...and how far off square the driver left one, as a sine. A fixing driven
 # dead perpendicular in every hole is the other half of the same tell
-SCREW_DUST = (0.55, 1.5)  # how much light the bottom of one socket gives back, against the rest
+SCREW_DUST = (0.30, 0.95)  # how much light the bottom of one socket gives back, against the rest.
+# Capped under one now: a drive recess bottoms at nothing, and at the old ceiling of 1.5 the
+# floor of the deepest hole on the panel still measured 21 where the reference reaches 0
 
 
 @lru_cache(maxsize=64)
@@ -580,8 +612,29 @@ def screw(r: float, fx: float = 0.0, fy: float = 0.0, ax: float = 0.0, ay: float
     nx = np.where(head, gx * crown + skew[0], nx)
     ny = np.where(head, gy * crown + skew[1], ny)
     nz = np.where(head, np.sqrt(np.maximum(1.0 - crown * crown, 0.0)), nz)
+    # The mouth of the counterbore, which is the bright ring and the one the eye reads the light
+    # off. A cone falling inwards lights its FAR wall, so the dish alone puts the only bright
+    # thing on a head down and to the right of it: correct for the hole, and at seven pixels the
+    # whole fixing then reads as lit from the bottom right on a panel whose one lamp is at the
+    # top left. Where the bore breaks out into the collar the metal rolls over instead, and that
+    # arris is convex - so it mirrors the lamp on the NEAR side, and the ring at r=3..4 comes out
+    # brighter up-left than down-right the way the panel this is matched against measures it
+    # (upper-left over lower-right at r=2.5..4.5: 1.38 to 1.97, against 0.55 for the dish alone).
+    bore = r * SCREW_DISH
+    lip = np.clip(1.0 - (dist - bore) / max(SCREW_LIP, 1e-6), 0.0, 1.0)
+    lip = lip * (dist >= bore) * (dist < r - SCREW_RIM)
+    lip_tilt = SCREW_LIP_TILT * lip
+    nx = np.where(lip > 0.0, gx * lip_tilt, nx)
+    ny = np.where(lip > 0.0, gy * lip_tilt, ny)
+    nz = np.where(lip > 0.0, np.sqrt(np.maximum(1.0 - lip_tilt * lip_tilt, 0.0)), nz)
     diffuse, spec = shade(nx, ny, nz, lamp)
-    rgb = steel(diffuse, np.where(dish, spec * SCREW_DISH_GLOSS, spec))
+    # One specular on the part, and it is the counterbore's. The collar's own outer edge passes
+    # through the same mirror a couple of pixels further out, so left at full gloss the head
+    # came out with two concentric crescents - the fault this panel is marked down for at bar
+    # scale, drawn at seven pixels.
+    gloss = np.where(dish, SCREW_DISH_GLOSS,
+                     np.where(dist > r - SCREW_RIM, SCREW_RIM_GLOSS, 1.0))
+    rgb = steel(diffuse, spec * gloss)
     # The socket, as in bolt(): a dark floor and the far wall the light gets down to - clocked
     # where the driver left it, and dark enough that the head reads as a hole with a ring round
     # it rather than as a dished disc.
@@ -592,7 +645,11 @@ def screw(r: float, fx: float = 0.0, fy: float = 0.0, ax: float = 0.0, ay: float
     facing = np.clip(-(hx * flat[0] + hy * flat[1]) / hlen, 0.0, 1.0)
     wall = np.clip(1.0 - np.maximum(-hexd, 0.0) / BOLT_WALL, 0.0, 1.0) * facing
     floor_ = np.asarray(STEEL_DARK, np.float32) * 0.8 * dust
-    socket = floor_ + (np.asarray(STEEL, np.float32) - floor_) * (SCREW_FLOOR * wall)[..., None]
+    # The one wall the lamp reaches is a machined flat seen edge-on, so it comes back at the
+    # brightness of a lit edge and not of a face: it is the only thing inside the recess that is
+    # not black, and it is what makes a hex socket a hex socket rather than a round hole.
+    socket = (floor_
+              + (np.asarray(STEEL_LIT, np.float32) - floor_) * (SCREW_FLOOR * wall)[..., None])
     inside = np.clip(0.5 - hexd * _SS, 0.0, 1.0)[..., None]
     rgb = rgb * (1.0 - inside) + socket * inside
     mouth = np.clip(1.0 - np.maximum(hexd, 0.0) / BOLT_EDGE, 0.0, 1.0) * (1.0 - inside[..., 0])

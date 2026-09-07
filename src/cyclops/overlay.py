@@ -741,21 +741,25 @@ RAIL_TURN_FALL = 1.5  # how fast a turned bar's far half rolls away from its cro
 # inside its own silhouette, which is what puts a core shadow in the section instead of a floor.
 # The two frame rails are round bar and everything bolted to them is flat plate, which is one
 # more thing telling a member from the thing it carries
-RAIL_SHUT = 0.42  # how much of the room the far side of a *flat* bar loses to the plate under
+RAIL_SHUT = 0.52  # how much of the room the far side of a *flat* bar loses to the plate under
 # it, which is the fall that does not care which way the bar runs. The crown does care: it is
 # the lamp's bearing projected onto the section, and on a 45-degree strut that projection is
 # 0.40 where a horizontal run gets 0.93. So the same crown that fell 35 levels across the bar
 # along the bottom edge fell 12 across the strut bolted to it, and three of our seven runs came
 # out flat to within the brushing - "a flat fill bracketed by edge strokes", measured four
-# rounds running. Occlusion is geometry rather than bearing and lands the same on all of them
+# rounds running. Occlusion is geometry rather than bearing and lands the same on all of them.
+# Up from 0.42, which left a flat member's far chamfer at 24 over a crest of 224 - a section
+# whose darkest metal was a tenth of its brightest where the panel this is matched against runs
+# a member from 203 down to 12. In-member range is the measurement that says a bar was lit
+# rather than filled, and this is the number that buys it on the runs the crown cannot
 RAIL_OCCLUDE = 0.70  # ...and how much a turned one loses, which is more, because a round bar
 RAIL_OCC_AT = 0.30  # curls right under itself; and how far down the section either of them
 # starts. A dark half sitting at the ambient floor is a *fill* at 39 levels; a bar touching a
 # plate cannot see the room down there at all, and the last of its far half goes to about 20 -
 # which is the core shadow every critic measured the absence of. Ambient occlusion, and it
 # belongs to the diffuse floor rather than to the colour: see material.steel's `ambient`
-RAIL_BOUNCE = 0.26  # ...and how much light comes back UP off the plate onto the last of it,
-RAIL_BOUNCE_AT = 0.74  # over the outer quarter of the far side. This is the fourth event in the
+RAIL_BOUNCE = 0.34  # ...and how much light comes back UP off the plate onto the last of it,
+RAIL_BOUNCE_AT = 0.52  # over the outer half of the far side. This is the fourth event in the
 # section and the one that says the bar is round: core shadow, then a line of reflected light
 # under it. Capped hard - the whole point of the round bar is one specular, and a bounce that
 # gets near it is the two-lights fault this panel has been marked down for three rounds running.
@@ -1880,6 +1884,12 @@ GLASS_SHADE = 0.14  # ...and how much the far side of it darkens what is under i
 LOOM_STEEL = 0.45  # how far the conduit is put from STEEL towards STEEL_DARK
 LOOM_LIFT = 2.0  # how proud a run stands of the plate, which sets its shadow
 LOOM_RIB = 1.6  # how much the braid's ribbing shows, as multiples of a bar's brushing
+LOOM_GLOSS = 0.42  # ...and how much of the material's highlight a braided sleeve keeps. Not a
+# machined arris: a woven jacket scatters, so its light is a broad graded band round the section
+# and not a mirror of the lamp. At full gloss a nine-pixel cable put a one-pixel line at 161
+# against 25 on either side of it, in the darkest corner of the panel, and three critics in a
+# row read the pair of them as lens flare rather than as metal turning to the light. The one
+# specular on this panel belongs to the bars; the loom in front of them has a sheen
 GLAND_ROLL = 2.0  # reference px of the gland's edges that roll
 # Where the loom leaves him, in PIL's degrees - straight at the panel's own corner, because that
 # is the only direction with any run in it. His swell comes within three pixels of both the left
@@ -4389,7 +4399,17 @@ class Overlay:
         # far half of any bar lying on a plate sees less of the room than the near half, and it
         # is what carries the fall on the runs the crown cannot.
         under = np.clip((out - RAIL_OCC_AT) / (1.0 - RAIL_OCC_AT), 0.0, 1.0) * ~lit
-        bounce = np.clip((out - RAIL_BOUNCE_AT) / (1.0 - RAIL_BOUNCE_AT), 0.0, 1.0) ** 2 * ~lit
+        # ...and the bounce sits INSIDE the far chamfer, never on it. Read out to the silhouette
+        # it landed on the terminator itself, so the section came out core shadow, then a lift
+        # on its very last row: a bar that gets brighter at the outline is a bar with a light
+        # behind it. The reference's order is falloff, one row of reflected light, then the
+        # chamfer that ends the member - 203 124 75, then 86 85, then 35 19 - because the row
+        # that can see the plate is the one still turned down towards it, and the chamfer beyond
+        # it is turned out of the picture entirely. So: rise to the last row before the arris,
+        # and stop there.
+        edge_at = max((half - chamfer) / max(half - 0.5, 1e-3), RAIL_BOUNCE_AT + 1e-3)
+        bounce = np.clip((out - RAIL_BOUNCE_AT) / (edge_at - RAIL_BOUNCE_AT), 0.0, 1.0) ** 2
+        bounce = bounce * ~lit * ~arris
         shut = RAIL_SHUT + (RAIL_OCCLUDE - RAIL_SHUT) * turned
         # How squarely this member's section lies to the lamp, which is how big a crest it has to
         # sit under. The bounce off the plate is much the same whichever way a bar runs; the
@@ -5043,7 +5063,16 @@ class Overlay:
         # fibres vary along the run and hold across it - the rail's two arguments swapped.
         normals = material.roll_normals(np.maximum(half - dist, 0.0), ox, oy, half, dome=0.0)
         ribs = material.grain(along, dist * side) * LOOM_RIB
-        rgb = material.steel(*material.shade(*normals), ribs, colour=colour)
+        # ...and under the same falloff as every bar on the panel (:meth:`_sunlight`), which the
+        # loom was the one part here not taking. It runs into the deepest corner there is, and a
+        # nine-pixel cable mirroring the lamp as hard down there as the head rail does under it
+        # came out as two hard white hairlines against a face of 25 - read, correctly, as flare
+        # rather than as metal turning to the light. The face takes all of it and the highlight a
+        # fraction, exactly as RAIL_SUN_SPEC says.
+        sun = self._sunlight(x0, y0, x1 - x0, y1 - y0)
+        diffuse, spec = material.shade(*normals)
+        rgb = material.steel(diffuse * sun, spec * LOOM_GLOSS * sun**RAIL_SUN_SPEC, ribs,
+                             colour=colour)
         layer.alpha_composite(material.to_image(
             self._stilled(rgb, self._radius(x0, y0, x1 - x0, y1 - y0)), cover), (x0, y0))
 
