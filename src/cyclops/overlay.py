@@ -1549,6 +1549,20 @@ STILL_CEILING = 206.0  # the brightest luminance anything that never moves may r
 # STEEL_SPEC ceiling of 212 - this is three counts under it, which is invisible as a colour and
 # decisive as a rule: the housing is held below the band the living thing in the middle owns.
 # Applied to the *fields* each part is composited from, so it holds hue and only takes level.
+NEAR_CEILING = 144.0  # ...and the same rule again, harder, for the metal that stands right
+# against the glass. A ceiling one count under the pupil is enough out on the swell, where a
+# specular is a bezel's width away from the eye and reads as a different object; it is not
+# enough on the ring that holds the pane down. Two blind critics measured the same fault
+# independently: a still highlight on the well's own lip carried 96% of the moving blades' Weber
+# contrast twenty pixels from them, and a dead-still edge as loud as the living ones beside it is
+# how motion stops reading - the eye is given no reason to prefer the thing that is changing.
+# So the housing's ceiling falls with radius: nothing still inside the seam between the two
+# metals may pass this, and it climbs back to STILL_CEILING across the brass, where the lamp is
+# allowed to land hard again. The bevels stay - a chamfer reads from its dark side and its
+# gradient as much as from its shine - what they lose is the right to compete.
+NEAR_EASE = 5.0  # reference px of brass the ceiling takes to climb back. Short, because it is a
+# ceiling and not a shading: it only touches a pixel that was over it, and across the brass's
+# inner face that turns a flat-topped clipped band back into a section that climbs outwards.
 COLLAR_IN = 0.86  # the collar's inner flank, as a fraction of the swell
 COLLAR_LIP = 6.0  # reference px of the steel bevel on the bezel's inner edge. Wide enough to be
 # a machined face rather than a wire: at two and a half it read as a drawn white stroke round the
@@ -1556,8 +1570,13 @@ COLLAR_LIP = 6.0  # reference px of the steel bevel on the bezel's inner edge. W
 COLLAR_BEVEL = 0.35  # sin of the tilt that face keeps right across itself, so the whole of it is
 # lit on the lamp's side and dark on the other: the brightness has to go round the ring, or the
 # bevel is a white stroke again with a shadow on the far side of it.
-COLLAR_BEVEL_SHINE = 0.55  # ...and how much of the lamp it gives back. A machined face, not a
+COLLAR_BEVEL_SHINE = 0.26  # ...and how much of the lamp it gives back. A machined face, not a
 # mirror: at full it saturates flat across the whole lit half and the gradient disappears.
+# It was 0.55, which put the lit half of this ring at 200 and over - a second bright ring
+# concentric with the pupil, twenty pixels outside the blades, holding still. See NEAR_CEILING:
+# the ring the glass is bedded in is the last place on the housing allowed a hard specular, and
+# what it keeps instead is its section - a graded face, an index cut across it, a reveal under
+# the brass and a black seam - all of which read at this level and none of which needs 200.
 COLLAR_REVEAL = 2.4  # reference px of the lip's outer edge that lie in the brass's shadow. The
 # brass stands proud of the steel - the lip is sunk under it, holding the glass down - so the
 # last pixels before the seam are occluded all the way round. Without this the lip is brightest
@@ -1667,12 +1686,21 @@ COLLAR_TERMINATOR = 0.72  # how far below even the room's own light the far edge
 # from the lamp is occluded by the part it belongs to, and that goes to nothing.
 STEEL_BLOWN = (246, 250, 247)  # the same lamp in the polished lip that holds the glass down,
 # cool where the brass's is warm. Two metals, one source, and each gives it back in its own hue.
-COLLAR_LIP_BLOWN = 0.72  # how far towards it the hottest pixel of the lip goes, and down from
-# 0.88 for the same reason the brass's is - two blown lines a pixel apart from the eye's edge
-# were half the surround's peak-white budget between them...
-COLLAR_LIP_AT = 1.3  # ...and how far out from the glass's edge that line sits, in px. Inside the
-# geometric edge rather than on it: what blows out on a rolled lip is the band a pixel in from
-# the corner, where the roll has come round square to the lamp and the corner itself has not.
+COLLAR_LIP_BLOWN = 0.10  # how far towards it the hottest pixel of the lip goes. It was 0.72,
+# and 0.88 before that: three rounds of taking level off one line, and it was the wrong lever
+# every time. What a lamp's image on a lip a pixel from the glass costs is not brightness, it is
+# the well - a still line at that radius is measured in the same annulus as the blades and it is
+# read against them. So this round moves it instead of only dimming it: out onto the face, in
+# under NEAR_CEILING, and narrow. What is left is a glint on turned steel, which is all the lip
+# was ever asked for; the lamp's own image on this housing lives on the brass's roll, sixteen
+# pixels further out, where it has a bezel between it and the eye.
+COLLAR_LIP_AT = 3.4  # ...and how far out from the glass's edge that line sits, in px. Past the
+# middle of the face rather than on the corner: the corner is where the section has to go DARK
+# for the glass to read as set into something, and a line there is a stroke round the pupil at
+# the one radius nothing on this panel may put one.
+COLLAR_LIP_W = 0.55  # ...and its sigma, narrower than the brass's own. A glint that has lost
+# most of its height has to buy a faster fall or it spreads into a satin band, which is the one
+# thing a machined lip may not look like.
 WELL_FLOOR = (9, 27, 15)  # the disc he is drawn on, at its middle...
 WELL_WALL = (2, 6, 4)  # ...and where it meets the wall. Dark enough that no test counting
 # phosphor ever sees it, light enough that a shadow falling on it has something to fall on -
@@ -3724,17 +3752,49 @@ class Overlay:
         turn = (np.arctan2(ys, xs) - math.radians(GLAND_AT)) % math.tau
         return turn * self.shoulder
 
-    @staticmethod
-    def _stilled(rgb: np.ndarray) -> np.ndarray:
-        """A field of his housing held under :data:`STILL_CEILING`, its hue untouched.
+    def _stilled(self, rgb: np.ndarray, dist: np.ndarray | None = None) -> np.ndarray:
+        """A field of his housing held under its ceiling, its hue untouched.
 
         Scaled rather than clipped per channel: a clip turns a warm highlight cool as soon as one
         channel lands on the ceiling, which is the one thing brass may not do. Every part of him
         that never moves goes through here, so the only pixels on this panel in the pupil's band
         are the pupil's.
+
+        *dist* is how far each pixel is from his centre, and where it is given the ceiling is the
+        one :meth:`_near_ceiling` sets rather than the flat :data:`STILL_CEILING` - a housing that
+        may take the lamp hard out on the swell and hardly at all against the glass. A part that
+        does not know where it is on him keeps the flat ceiling and stays under the harder one by
+        being nowhere near the well.
         """
         lum = rgb @ np.asarray(LUMA, np.float32)
-        return rgb * np.minimum(1.0, STILL_CEILING / np.maximum(lum, 1e-3))[..., None]
+        ceiling = STILL_CEILING if dist is None else self._near_ceiling(dist)
+        return rgb * np.minimum(1.0, ceiling / np.maximum(lum, 1e-3))[..., None]
+
+    def _near_ceiling(self, dist: np.ndarray) -> np.ndarray:
+        """What a still pixel may reach at each radius: :data:`NEAR_CEILING` in, and full out.
+
+        Flat at the hard ceiling everywhere inside the seam between the two metals - the whole
+        lip, the mouth of the well and anything screwed down over them - then a smoothstep back
+        to :data:`STILL_CEILING` across the brass's inner face. The step is smooth rather than
+        linear because this is the one field on the housing that is not a section: an edge in a
+        ceiling would draw a ring of its own at exactly the radius the ceiling exists to keep
+        rings off.
+        """
+        seam = self.shoulder * COLLAR_IN + max(1.5, COLLAR_LIP * self.scale)
+        t = np.clip((dist - seam) / max(NEAR_EASE * self.scale, 1e-3), 0.0, 1.0)
+        return NEAR_CEILING + (STILL_CEILING - NEAR_CEILING) * (t * t * (3.0 - 2.0 * t))
+
+    def _radius(self, x0: int, y0: int, w: int, h: int) -> np.ndarray:
+        """How far each pixel of a box is from his centre, for the parts not built off one.
+
+        The loom's runs and their gland are built in the frame of the cable rather than in his,
+        so they carry no radius of their own - and they are bolted to the collar, which puts
+        their inner corners inside the seam :meth:`_near_ceiling` measures from.
+        """
+        cx, cy = self.eye
+        ys = (np.arange(y0, y0 + h, dtype=np.float32) - cy)[:, None]
+        xs = (np.arange(x0, x0 + w, dtype=np.float32) - cx)[None, :]
+        return np.hypot(xs, ys)
 
     @staticmethod
     def _facets(tilt: np.ndarray, flats: int) -> np.ndarray:
@@ -4740,6 +4800,22 @@ class Overlay:
         ux, uy = xs / safe, ys / safe
         along = self._round(xs, ys)
         lx, ly = material.lamp_2d()
+        # His body again, over anything the panel's own hardware wrote across it. The foot rail
+        # is laid down before this - the bezel has to strap over the rail and not the other way
+        # round - and :meth:`_build_plate` is a layer *under* the chrome, so the rail's top
+        # chamfer ran a still, near-white chord straight through the well: eighty pixels under
+        # the pupil, at 189 against the pupil's own 253, and dead still in every frame of a six
+        # second strip. Two blind critics named it independently, and both preferred the older
+        # face that did not have it. A housing whose bezel stands in front of a rail and whose
+        # glass does not is welded flat onto the backplate; what a cavity does where a member
+        # passes behind it is stay dark. The plate is opaque out to the swell, so this only ever
+        # puts back what was already underneath, and it goes down before the ring's own shadow
+        # so that shadow still falls across the floor inboard of the flank.
+        well = np.clip(inn + 0.5 - dist, 0.0, 1.0)
+        body = self._plate.crop((x0, y0, x1, y1))
+        body.putalpha(Image.fromarray(
+            (np.asarray(body.getchannel("A"), np.float32) * well).astype(np.uint8), "L"))
+        layer.alpha_composite(body, (x0, y0))
         # The whole ring's shadow before any of the ring, so the ring covers its own.
         cover = np.clip(0.5 - np.maximum(inn - dist, dist - out), 0.0, 1.0)
         shadow = material.cast(cover, lift) * COLLAR_SHADOW
@@ -4779,8 +4855,9 @@ class Overlay:
         # on red first on a warm metal, which leaves green the tallest channel it has: 177 px of
         # this face read G above R and came out at greenbias +31 with a p99 of +32, which is a
         # brass bezel with green highlights on it and is exactly the fault this round is about.
-        # The same scale STILL_CEILING is applied with, one ceiling earlier.
-        rgb = self._stilled(rgb)
+        # At his own radius, so the ceiling this face takes is the one _near_ceiling sets: near
+        # the seam it is NEAR_CEILING and out on the roll it is the housing's full 206.
+        rgb = self._stilled(rgb, dist)
         # ...and the two things that happen at the edges of the roll, both of them past what a
         # shaded face is allowed to reach. The far edge is occluded by the part it belongs to, so
         # it goes under the room's own light; the near one carries the lamp's own image, which is
@@ -4798,7 +4875,7 @@ class Overlay:
                + sheet * np.clip(facing, 0.0, 1.0) * rolled)
         blown = np.clip(COLLAR_BLOWN * hot, 0.0, 1.0)[..., None]
         rgb = rgb + (np.asarray(BRASS_BLOWN, np.float32) - rgb) * blown
-        layer.alpha_composite(material.to_image(self._stilled(rgb), brass), (x0, y0))
+        layer.alpha_composite(material.to_image(self._stilled(rgb, dist), brass), (x0, y0))
         # The bevel: a face of steel turned outwards all the way across, rolling to edge-on at
         # the glass. `COLLAR_BEVEL` is what makes it a ring of metal rather than a stroke - the
         # whole width of it is lit at ten o'clock and dark at four, so the brightness goes round
@@ -4839,16 +4916,18 @@ class Overlay:
         # section that is not a function of where the lamp is.
         rgb = rgb * (1.0 - COLLAR_REVEAL_DARK * np.clip(
             1.0 - (brass_in - dist) / reveal, 0.0, 1.0))[..., None]
-        rgb = self._stilled(rgb)
+        rgb = self._stilled(rgb, dist)
         # ...and the lamp itself in the lip, on the arc that faces it: the same line the brass's
         # roll carries, at the other end of the section and in the steel's own hue, so the two
-        # metals are lit by one source and say so.
+        # metals are lit by one source and say so. Out on the face and not on the corner at the
+        # glass - see COLLAR_LIP_AT - and narrow, because what is left of it has to read as a
+        # glint on a turned edge rather than as satin.
         lit = np.exp(-(((dist - (inn + COLLAR_LIP_AT + COLLAR_BLOWN_WANDER * material.wear(
-            along, seed=material.SEED + 6))) / COLLAR_BLOWN_W) ** 2))
+            along, seed=material.SEED + 6))) / COLLAR_LIP_W) ** 2))
         lit = lit * np.clip(facing, 0.0, 1.0) ** COLLAR_BLOWN_ARC
         lit = np.clip(COLLAR_LIP_BLOWN * lit, 0.0, 1.0)[..., None]
         rgb = rgb + (np.asarray(STEEL_BLOWN, np.float32) - rgb) * lit
-        layer.alpha_composite(material.to_image(self._stilled(rgb), wire), (x0, y0))
+        layer.alpha_composite(material.to_image(self._stilled(rgb, dist), wire), (x0, y0))
         # ...and the reveal between the two metals. A pixel of black is what says they are two
         # parts bolted together rather than one ring that changed colour half way across.
         seam = np.clip(0.5 - np.abs(dist - brass_in), 0.0, 1.0)
@@ -4862,6 +4941,19 @@ class Overlay:
         for deg in COLLAR_BOLTS:
             a = math.radians(deg)
             self._draw_bolt(d, cx + mid * math.cos(a), cy + mid * math.sin(a), self.bolt_r - 1)
+        # ...and one last pass holding everything inside the seam under NEAR_CEILING, whatever
+        # drew it. A bolt head is twelve pixels across on a face eight wide, so a fixing through
+        # this bezel necessarily overhangs the lip it clamps, and `_draw_bolt` is the panel's -
+        # shared with the rail's knees and both instruments - so it cannot be asked to know how
+        # near the glass it has landed. Holding the *region* rather than the member is also what
+        # makes the rule survive: inside the seam, nothing that never moves may pass the ceiling,
+        # however it got there.
+        held = np.asarray(layer.crop((x0, y0, x1, y1)), np.float32)
+        lum = held[..., :3] @ np.asarray(LUMA, np.float32)
+        under = np.where(dist <= brass_in,
+                         np.minimum(1.0, NEAR_CEILING / np.maximum(lum, 1e-3)), 1.0)
+        held[..., :3] *= under[..., None]
+        layer.paste(Image.fromarray(held.round().astype(np.uint8), "RGBA"), (x0, y0))
 
     def _draw_loom(self, layer: Image.Image) -> None:
         """The cables leaving his housing for the corner, and off the panel.
@@ -4925,7 +5017,8 @@ class Overlay:
         normals = material.roll_normals(np.maximum(half - dist, 0.0), ox, oy, half, dome=0.0)
         ribs = material.grain(along, dist * side) * LOOM_RIB
         rgb = material.steel(*material.shade(*normals), ribs, colour=colour)
-        layer.alpha_composite(material.to_image(self._stilled(rgb), cover), (x0, y0))
+        layer.alpha_composite(material.to_image(
+            self._stilled(rgb, self._radius(x0, y0, x1 - x0, y1 - y0)), cover), (x0, y0))
 
     def _draw_gland(self, layer: Image.Image, seat: tuple[float, float], aim: float,
                     size: float) -> None:
@@ -4961,10 +5054,12 @@ class Overlay:
         glen = np.maximum(np.hypot(gx, gy), 1e-6)
         normals = material.roll_normals(np.maximum(-sdf, 0.0), gx / glen, gy / glen, roll)
         rgb = material.steel(*material.shade(*normals), material.grain(v, u))
-        # Held under STILL_CEILING like the collar it is screwed into: its rolled corner mirrors
-        # the lamp almost exactly, and unheld it was the brightest thing on the whole panel
-        # outside the pupil - a fitting nobody is meant to look at, at 248.
-        layer.alpha_composite(material.to_image(self._stilled(rgb), cover), (x0, y0))
+        # Held under the collar's own ceiling, and at the collar's own radius: its rolled corner
+        # mirrors the lamp almost exactly, and unheld it was the brightest thing on the whole
+        # panel outside the pupil - a fitting nobody is meant to look at, at 248. Its inner end
+        # is screwed down inside the seam, so that end takes NEAR_CEILING with the lip beneath it.
+        layer.alpha_composite(material.to_image(
+            self._stilled(rgb, self._radius(x0, y0, x1 - x0, y1 - y0)), cover), (x0, y0))
 
     def _draw_reticle(self, layer: Image.Image) -> None:
         """Four right-angled corners on the lens axis, and nothing in the middle of them.
