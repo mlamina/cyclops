@@ -484,9 +484,9 @@ CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead,
 # was trimmed to a stub ending in an ellipsis with most of the panel's width still free beside
 # it. Two is where it stops: a third is a screen deep enough to start eating the picture, and a
 # caption that big is a dialogue box rather than something said in passing.
-CAPTION_ALPHA = 245
+CAPTION_ALPHA = 253
 BLOOM_R = 2.6  # reference px of skirt round a lit glyph. 1.3 ms a frame on the Pi...
-BLOOM_ALPHA = 0.62  # ...and how much of the letter's own alpha goes into it. Both are held well
+BLOOM_ALPHA = 0.80  # ...and how much of the letter's own alpha goes into it. Both are held well
 # under what a photograph shows: a real tube blooms far harder than this, and at 14 px a line that
 # blooms like a photograph is a line nobody can read. It is a depth cue here, not an effect.
 CURSOR = "_"  # what a line about work in flight ends in: a cursor, blinking, hard against the
@@ -1206,6 +1206,17 @@ TERM_ARRIS = 0.92  # how much of the lamp the polished arris of a rolled edge gi
 # for a blown ridge at 240-255 against ours ceilinged at 209-214.
 TERM_ARRIS_TIGHT = 1.6  # ...and how tight it is. High: an arris is one pixel of a bar, and a
 # blown line two or three wide is a stroke round a rectangle again.
+TERM_BOUNCE = 0.30  # what a face turned AWAY from the lamp keeps of the light on the face turned
+# towards it. ONE MEMBER, ONE SPECULAR: this moulding is a single ring under a single lamp
+# standing above it, so the only surface on it that can mirror the source is the top rail's outer
+# roll. The bottom rail's inner roll is turned up into the well, and what reaches it is a bounce
+# off the lit glass and the panel - a fraction of the lamp, arriving second-hand. Left at full
+# strength the ring carried two speculars of equal brightness which did not even share a falloff:
+# 224 along the top rim against 223 along the bottom across x=290-590, and past x=550 the bottom
+# was 1.3x the brighter of the two. That is what one part lit twice, from opposite sides, by two
+# people who never met, looks like - and a critic reading the whole panel picked it out of every
+# element on it. A bounce also borrows its LENGTHWISE run from the face it bounces off (see
+# `crest` in :func:`tube_frame`), because a reflection cannot outlive its own source.
 TERM_ARRIS_FALL = 0.34  # what the arris keeps at the far end of the bar. Much more than the
 # face does, and the reference says so plainly: its top crest falls 231 to 144 down the length
 # while its bottom ridge only goes 210 to 199. A mirror returns the source wherever it can see
@@ -1251,10 +1262,15 @@ TERM_INK_CEIL = 296  # the sum the glass may approach, and never reach, over the
 # prints on. The reader that finds the caption on this panel finds it by summing the channels
 # past 300 (tests/test_caption.py), so anything the pane gives back above that IS a letter as
 # far as this machine is concerned, and a reflection standing in for a letter is a word lost.
-TERM_INK_KNEE = 250  # ...and where the pane starts being held back towards it. A hard clip at
+TERM_INK_KNEE = 274  # ...and where the pane starts being held back towards it. A hard clip at
 # the ceiling is worse than the glare it prevents: it lays a plateau of one exact value across
 # whatever it catches, which is the posterisation this pane was pulled up for in the first
 # place. Compressed into the ceiling instead, every level below it stays a level of its own.
+# It sat 24 lower, and low enough that the pane's own brightest quarter lived inside the
+# compression rather than under it: half the top-left of the glass came out at 97-102 whatever
+# was actually computed there. The knee is a safety net now and not a shaper - the field is
+# built to pass under it (see GLARE_HALO), and what this catches is the skirt of the one
+# specular and nothing else.
 TUBE_TOP = (33, 70, 45)  # the phosphor at the top of the glass...
 TUBE_BOTTOM = (19, 40, 26)  # ...and at the bottom of it. Opaque, both: the module docstring has
 # always listed this glass among the parts you cannot see through, and it was only 80% of the way
@@ -1263,22 +1279,34 @@ TUBE_BOTTOM = (19, 40, 26)  # ...and at the bottom of it. Opaque, both: the modu
 # fall from the top colour to the bottom one is the curve: a tube read from a little above shows
 # the lit room in its top half and the floor in its bottom, and that alone is most of what says
 # the face is not flat.
+TUBE_RAKE = 0.52  # how far the vertical fall leans as it crosses the pane, in fractions of the
+# whole fall per pane width. It is what stops every row of the phosphor being one value: the
+# tube is lit from up and to the LEFT, so the same brightness is reached higher up the glass at
+# the right-hand end than at the left, and the iso lines run diagonally as they do on any lit
+# cylinder. Leaning the same way the lamp falls rather than against it matters - the pane's
+# tile ladder has to keep decreasing in both axes with no local maximum outside the corner the
+# lamp is over, which is the one thing this glass has been winning on.
 TUBE_GLOW_A = 0.07  # the pod's window keeps the flat wash this glass used to have, and
 # TERM_ALPHA and TERM_SCAN with it: that pane is a slot with lit readouts behind it rather than
 # a tube, it is a fifth the size, and none of the modelling below would read at that scale.
-TUBE_LIT_A = 0.46  # how much brighter the glass is where the lamp stands in it. It was two
+TUBE_LIT_A = 0.34  # how much brighter the glass is where the lamp stands in it. It was two
 # thirds again as much and half as wide, which had the *phosphor* shading 60 at the left of the
 # pane to 37 at the right - the room's lamp lighting the inside of a tube, backwards. An emissive
 # face is flat (the reference's measures 49 / 48 / 46 across) and all the direction on it belongs
 # to what its front surface REFLECTS: the corner blowout and the lit rim, which are SHEEN_* below.
-# What is left here is the small lift the lamp's own haze puts in the near corner of a picture
-# tube.
+# What is left here is the lift the lamp's own haze puts in the near corner of a picture tube.
+# It is a smaller lift than it was and a much tighter one (see TUBE_LIT_Y and TUBE_LIT_H), and
+# the two changes are one change: it used to be a cloud half again taller than the pane, so it
+# lifted the rows the caption prints on as much as the rows above them and the field came out
+# FLAT for fifteen rows under the first line. Pulled up under the lip it grades again, and the
+# glass under the type falls from 93 to 71 - which is where the line's contrast against it came
+# from, since the phosphor the letters are made of cannot get any brighter than GREEN.
 TUBE_LIT_X = 0.16  # ...and where that is, in case widths across...
-TUBE_LIT_Y = 0.28  # ...and case heights down: the upper-left quarter, the same lamp the frame
+TUBE_LIT_Y = 0.15  # ...and case heights down: the upper-left quarter, the same lamp the frame
 # is lit by. A pane with a bright quarter is lit; a pane at one brightness with marks on it is a
 # texture, and that is what this was - flat 58 the whole width with two hairlines drawn on it.
 TUBE_LIT_W = 0.40  # how far that lift carries across the glass...
-TUBE_LIT_H = 0.80  # ...and how far down it, both as fractions of the case
+TUBE_LIT_H = 0.52  # ...and how far down it, both as fractions of the case
 TUBE_LIT_FALL = 1.3  # how the lift falls away from its middle. A gaussian is 2 here, and a
 # gaussian is the wrong shape for this: flat across its own peak and then gone, which spreads
 # one soft cloud evenly over half the pane. Under one puts a definite bright patch where the
@@ -1312,16 +1340,18 @@ TUBE_INSET = 3.0  # px in from the frame's inner lip where the room's reflection
 # is casting. Measured against a 45-level field, the reference runs 19, 13, 18, 23, 28, 33, 38,
 # 39 inward from its right-hand wall and 27, 14, 11, 19, 28, 34, 40 up from its bottom one; ours
 # ran 64, 94, 90, 56, 45, 44 - a BRIGHT stroke where a recess needs its darkest line.
-TUBE_LIP = 4.2  # px below the top lip where the shadow it casts down the pane is deepest. Not
+TUBE_LIP = 3.5  # px below the top lip where the shadow it casts down the pane is deepest. Not
 # on the lip: the first two or three px of glass are the one place the pane gives back the
 # frame's own lit inner face (SHEEN_STRIP), and the shadow of an overhang starts BELOW what it
 # is reflected in. The reference reads 50, 64, 61, 57, 43, 39, 48 down from its top lip - a lift
 # to a third over field, then the trough, then the field - and ours read 55, 66, 62, 55, 64, 63
 # because the shadow was sitting on top of the reflection and the two cancelled.
-TUBE_LIP_A = 0.28  # ...and how much of the pane's light it takes there. Shallow next to the
-# other three walls, because this one is a cast shadow and not an occlusion: the lamp is wide
-# and it fills.
-TUBE_FEATHER = 2.2  # px the top trough takes to come out of its deepest, either side
+TUBE_LIP_A = 0.46  # ...and how much of the pane's light it takes there. Still the shallowest of
+# the four, because this one is a cast shadow and not an occlusion - the lamp is wide and it
+# fills - but it has to be a trough somebody can see: lift, trough, field going down the top of
+# the pane is the whole recess signature, and at 0.28 the three read 78 / 88 / 80 down a column,
+# which is a ripple. It is also what keeps the specular's own skirt off the first line of type.
+TUBE_FEATHER = 1.7  # px the top trough takes to come out of its deepest, either side
 TUBE_FOOT = 1.1  # px above the bottom lip where the floor of the well is darkest...
 TUBE_FOOT_W = 2.6  # ...how far that reaches up the pane...
 TUBE_FOOT_A = 0.62  # ...and how much it takes. The deepest of the four and the narrowest: the
@@ -1354,7 +1384,7 @@ GLARE_ALPHA = 0.10  # how much of the tube's white the glass gives back where it
 # Held down by the line printed on it as much as by taste: a reflection over a word is a word
 # lost, and anything on the glass past a brightness is read as ink (tests/test_caption.py).
 GLARE_AT = 0.42  # where down the left-hand edge the streak passes...
-GLARE_DEPTH = 0.22  # ...how broad it is either side of that...
+GLARE_DEPTH = 0.12  # ...how broad it is either side of that...
 GLARE_TILT = 1.5  # ...and how far down the face its middle travels on its way across. It
 # crosses the whole depth in two thirds of the width, which is steeper than a letterbox would
 # seem to allow, because a streak that lay along the glass read as one more scanline. It starts
@@ -1364,11 +1394,17 @@ GLARE_TILT = 1.5  # ...and how far down the face its middle travels on its way a
 GLARE_AMBIENT = 0.05  # the floor under the wipe, for the corner furthest from the lamp. It was
 # going dead black without it, which no glass in a room does - low now, because the pane has its
 # own gradient to be lit by and a flat white wash over that is what flattened it before.
-GLARE_HALO = 0.30  # how much of the lamp the pane scatters round the corner it is nearest -
-# the soft wide bloom under the hard specular, which is what a cover with any depth to it
-# does with a bright source. It is most of what lifts the upper-left third of the glass; the
-# hard specular is only ever a few pixels, and a pane with a specular and no bloom under it
-# is a sticker on a flat field.
+GLARE_HALO = 0.11  # how much of the lamp the pane scatters round the corner it is nearest -
+# the soft wide bloom under the hard specular, which is what a cover with any depth to it does
+# with a bright source. A pane with a specular and no bloom under it is a sticker on a flat
+# field. It was near three times this, doing the job the phosphor's own lift does now, and that
+# was the whole of why the upper-left third of the glass came out FLAT: white is expensive in
+# the one currency this pane has to spend, which is the sum of the three channels the panel's
+# own reader takes for a letter past 300 (see TERM_INK_CEIL). Twenty-six rows of it sat pinned
+# to the ceiling at 97-102 with nothing to tell them apart. Green buys a fifth more luminance
+# per unit of that sum than white does - the same reason the lift in :func:`tube_glow` is the
+# phosphor turned up rather than a wash laid over it - so the lifting is green now and the white
+# is spent where it is worth most, on the one specular above the first line.
 GLARE_HALO_W = 0.22  # ...how far it carries across the face, in face widths...
 GLARE_HALO_H = 0.72  # ...and down it, in face heights. An ellipse half again as wide as it is
 # tall, not a disc: this face is a letterbox cut out of a tube, so it is much straighter
@@ -1386,11 +1422,14 @@ GLARE_MARK_LEN = (7.0, 22.0)  # ...and how long they run, in reference px. Short
 # polishing mark is a flick of a cloth, and thirty-six of them at full length was a screen door.
 GLARE_MARK_BLUR = 0.7  # px they are softened by. A hairline drawn a pixel wide and left sharp
 # is aliasing at 800x480; a scratch in glass seen through the glass is never that crisp.
-GLARE_LAMP = (232, 240, 235)  # the lamp itself, as the glass gives it back. Off-white and 3%
+GLARE_LAMP = (234, 238, 235)  # the lamp itself, as the glass gives it back. Off-white and 2%
 # saturated, a step above material.STEEL_SPEC, because a mirror returns the source where metal
 # only scatters it - and undyed, which is the whole point: our brightest non-text glass pixel
 # was L 99 at (70,103,82), still 32% green, so the pane never returned a light source at all and
-# read as matte paint over a lit field. The reference's peaks at L 234 on (230,236,231).
+# read as matte paint over a lit field. The reference's peaks at L 234 on (230,236,231). It is
+# what the frame's own arris mirrors as well as the glass, so its green bias is a bias on METAL:
+# held to +3.5 on G - (R+B)/2, where the panel's rule for a metal surface is +7. A lamp has no
+# colour to lend anyway - what green there is on this element belongs to the phosphor.
 SHEEN_IN = 1.0  # px in from the pane's own edge that its reflected rim runs - on the front
 # surface, and hard against the lip, because it is the frame's own lit inner face the glass is
 # giving back and the shadow of that same lip starts BELOW it (see TUBE_LIP).
@@ -1400,19 +1439,28 @@ SHEEN_W = 1.8  # ...and how wide it is, in px to where it has fallen to a third.
 # reflection. It is also what keeps the hot end of it clear of the two rows the line is printed
 # on - a specular over a word is a word lost, and past a brightness the panel's own reader takes
 # one for a letter (tests/test_caption.py).
-SHEEN_LIT = (1.0, 0.70)  # weight of the top rim and of the left one. A cover square to the
+SHEEN_LIT = (0.50, 1.0)  # weight of the rim band and of the specular. A cover square to the
 # viewer in its middle mirrors the dark room and gives nothing back; only where it has turned
-# does it return anything, and only the rims that have turned TOWARDS the lamp are bright. The
-# lamp is more above than left (material.LAMP is -0.28, -0.72), so the top rim carries most of it.
-SHEEN_CORNER = 7.0  # px down the pane the left rim survives. There is ONE highlight on this
-# glass and it is the top-left corner: run the left rim the whole depth of the pane instead and
-# the far end of it is a second bright stroke standing exactly where the rebate's darkest line
-# has to be, which is the one thing that stops an aperture reading as a recess. Its own critics
-# measured that stroke at 1.53x the field on the right-hand end.
-SHEEN_A = 0.98  # how much of GLARE_LAMP the rim gives back where it is brightest, which is the
-# top-left corner, where the two lit rims meet and the lamp is nearest. This is the one blown
-# specular on glass on the whole panel and it wants to be blown: near white, hard against the
-# corner radius, and gone within four pixels.
+# does it return anything, and only the rim that has turned TOWARDS the lamp is bright. The band
+# is the frame's lit inner face reflected in the pane and runs the whole length of it; the
+# specular is the LAMP, and a lamp is a shape and not a stripe - so the specular is the brighter
+# of the two and it is the only place on this glass with an outline.
+SHEEN_SPEC_X = 0.056  # where the lamp's own image sits, in pane widths across...
+SHEEN_SPEC_AT = 1.1  # ...and in px below the frame's inner lip. High on the pane, and it has to
+# be. The first row the panel's own caption reader looks at is five px under the lip, and past a
+# brightness it takes a reflection for a letter (tests/test_caption.py) - so the strip above the
+# first line is the only place on this glass where a light source may actually blow out. Below
+# it the pane is held under TERM_INK_CEIL, which is a ceiling of L 98 on anything white.
+SHEEN_SPEC_W = 0.031  # how far it carries across the pane, to a third...
+SHEEN_SPEC_H = 2.4  # ...and down it, in px. Wide and shallow: a bench lamp seen in a cylinder
+# is stretched along the curve, and the pane's curve runs the long way. It replaces a second rim
+# running down the pane's left edge - two rims meeting in a corner is a corner that is bright,
+# which is not the same thing as a light source being in the glass. The critic measuring this
+# pane found it "flat to +/-2 lum over 20x22 px, one linear gradient, tinted vector fill", and a
+# reflection with no shape of its own is exactly what that reads as.
+SHEEN_A = 0.98  # how much of GLARE_LAMP the pane gives back where the specular sits on the rim,
+# which is the corner nearest the lamp. This is the one blown specular on glass on the whole
+# panel and it wants to be blown: near white, high on the pane, and gone within four pixels.
 SHEEN_STRIP = 0.11  # what the rim keeps where the lamp does not reach it - the lit inner face
 # of the frame, which the pane goes on giving back the whole length of its top edge. It is
 # what puts the reference's discrete four-pixel strip (49, 65, 61, 57 against a 45 field) all
@@ -2549,7 +2597,19 @@ def tube_glow(width: int, height: int, radius: int, bezel: int, top: int) -> np.
     """
     ys = np.arange(height, dtype=np.float32)[:, None]
     xs = np.arange(width, dtype=np.float32)[None, :]
+    # ...raked, so the fall runs across the pane as well as down it. A tube read from a little
+    # above AND a little to the right of the lamp does not shade in horizontal bands: its iso
+    # lines lean, and a field whose every row is one value is the thing that measures as "one
+    # linear gradient". The rake is in the same direction as the lamp's own fall, so the ladder
+    # down and the ladder across still both run the one way and the pane never brightens away
+    # from the light.
+    across = xs / max(1.0, float(width)) - 0.5
     down = np.clip((ys - bezel) / max(1.0, height - 2 * bezel), 0.0, 1.0)
+    # Leaned as a gamma on the ramp and not as an offset to it, so that the fall still runs the
+    # pane's whole depth at every point along its length. Offset instead, the left third of the
+    # glass spends its first ten rows clipped at the top colour and comes out FLATTER than the
+    # thing this is here to fix.
+    down = down ** (1.0 - 2.0 * TUBE_RAKE * across)
     down = down * down * (3.0 - 2.0 * down)
     face = np.asarray(TUBE_TOP, np.float32) + (
         np.asarray(TUBE_BOTTOM, np.float32) - np.asarray(TUBE_TOP, np.float32)
@@ -2626,7 +2686,15 @@ def rebate_gain(width: int, height: int, radius: int, bezel: int, scale: float) 
     deep = mix(TUBE_LIP_A, TUBE_FOOT_A, TUBE_SIDE_A)
     d = np.maximum(-edge - bezel, 0.0)  # how far in from the aperture, on the glass
     sink = deep * np.exp(-(((d - at) / soft) ** 2))
-    lift = TUBE_WALL * ends * np.exp(
+    # ...and the wall's own bounce, which is a reflection and so cannot outlive its source. The
+    # near wall stands in the lamp and throws a little of it back onto the pane; the far one is
+    # in the frame's own shadow and has nothing to throw. Left at one strength along the length
+    # it lifted the last column of the pane back above the one before it - a local maximum in
+    # the corner furthest from the lamp, which is the single fault this glass has been winning
+    # on other people having.
+    reach = max(1.0, GLARE_REACH * height)
+    near = 1.0 / (1.0 + ((xs - GLARE_X * width) ** 2 + (ys - GLARE_Y * height) ** 2) / reach ** 2)
+    lift = TUBE_WALL * ends * (near / near.max()) * np.exp(
         -(((d - TUBE_WALL_AT * scale) / max(1.0, TUBE_WALL_W * scale)) ** 2)
     )
     return (1.0 - sink) * (1.0 + lift)
@@ -2689,18 +2757,24 @@ def glare_alpha(width: int, height: int, radius: int, bezel: int, scale: float) 
 
 
 def sheen_alpha(width: int, height: int, radius: int, bezel: int, scale: float) -> np.ndarray:
-    """What the pane's own curve gives back: a lit rim all round it, blown out at the near corner.
+    """What the pane's own curve gives back: the frame's lit lip along the top, and the lamp.
 
-    A picture tube's face is convex. In its middle it is square to the viewer, so it mirrors the
-    dark room and returns nothing; only at its rims has it turned far enough to show anything,
-    and of the four only the two turned towards the lamp - the top and the left - return the
-    lamp. Where those two meet, in the top-left corner radius, they overlap and the reflection
-    blows out to near white. That corner is the one blown specular on glass on this panel, and
-    it is the thing the round before this had none of: masked of its text the pane held a
-    brightest pixel of L 99, two times its own median and still a third green, so there was no
-    light source anywhere in the glass. The reference peaks at 234, near five times its median.
+    Two things, and they are not the same kind of thing. A picture tube's face is convex: in its
+    middle it is square to the viewer, so it mirrors the dark room and returns nothing, and only
+    at the top rim has it turned far enough towards the lamp to show anything. What it shows
+    there is the frame's own lit inner face - a band, running the whole length of the pane and
+    dying along it as the lamp gets further away. That is the RIM, and a rim has no shape of its
+    own; it is an edge condition.
 
-    The other two rims get nothing. They used to get a flat bounce off the bench, and the bounce
+    What the pane also has to show is the SOURCE, and a source does have a shape: one ellipse,
+    wide and shallow, high on the glass near the corner the lamp stands over, falling to field
+    over a few px. Painted as the place two rims happen to cross - which is what was here - the
+    brightest thing on the glass has no outline, and a critic measuring a twenty-pixel block of
+    it found "97 to 102 in every row, flat to +/-2 lum, one linear gradient": a pane that reads
+    as tinted vector fill rather than as lit glass. A reflection you can put a ruler round is
+    most of the difference.
+
+    The other three rims get nothing. They used to get a flat bounce off the bench, and the bounce
     is what put a 1.53x stroke of white on the right-hand end of the pane and a 1.15x lift along
     its bottom - a BRIGHT line standing exactly where the rebate's darkest one has to be. An
     aperture outlined in light is a decal; the same aperture terminating in shadow is a pane in
@@ -2708,11 +2782,10 @@ def sheen_alpha(width: int, height: int, radius: int, bezel: int, scale: float) 
     lifts the far end back up now is the wall's own bounce a dozen px in (:data:`TUBE_WALL`),
     which is broad, set back, and under the frame's shadow rather than on top of it.
 
-    The left rim only lives as far down the pane as :data:`SHEEN_CORNER`, so this is ONE
-    highlight in one place rather than a pair. Each rim is a band in one coordinate rather than
-    a distance from the pane's outline, and that is deliberate: it holds the hot end inside the
-    strip of glass above the first line of type. Ridden round the corner radius instead, the
-    blowout would cross the line, and a reflection over a word is a word lost - past a
+    ONE specular, and it is held in the strip of glass above the first line of type. The rim is a
+    band in one coordinate rather than a distance from the pane's outline, and the specular is an
+    ellipse pinned a px under the lip, for the same reason: ridden round the corner radius
+    instead, either would cross the line, and a reflection over a word is a word lost - past a
     brightness the panel's own reader takes one for a letter (tests/test_caption.py).
     """
     edge = tube_field(width, height, radius)
@@ -2724,12 +2797,17 @@ def sheen_alpha(width: int, height: int, radius: int, bezel: int, scale: float) 
     def rim(coord: np.ndarray, at: float) -> np.ndarray:
         return np.exp(-(((coord - at) / sigma) ** 2))
 
-    lit_top, lit_left = SHEEN_LIT
+    lit_top, lit_spec = SHEEN_LIT
     top = rim(ys, bezel + inset) * lit_top
-    # ...and the left one only for as long as it is part of the same corner. Run down the whole
-    # pane it is a second stroke, and the far end of it sits in the rebate's shadow.
-    left = rim(xs, bezel + inset) * lit_left * np.exp(
-        -(((ys - bezel) / max(1.0, SHEEN_CORNER * scale)) ** 2)
+    # ...and ONE specular: the lamp's own image in the face, which is an ellipse with an edge to
+    # it rather than the place two rims happen to cross. A rim band is what the pane gives back
+    # of the frame it is set in and it runs the whole length; a specular is what it gives back of
+    # the SOURCE, and a source has a size, a shape and a falloff to field over a few px. Without
+    # one the pane measures flat to a couple of levels over a twenty-pixel block and reads as
+    # tinted fill however carefully the field under it is graded.
+    spec = lit_spec * np.exp(
+        -(((xs - SHEEN_SPEC_X * width) / max(1.0, SHEEN_SPEC_W * width)) ** 2
+          + ((ys - bezel - SHEEN_SPEC_AT * scale) / max(0.8, SHEEN_SPEC_H * scale)) ** 2)
     )
     # How much of the lamp reaches each point of the rim at all. The lamp is the same point the
     # rest of the glass reflects (GLARE_X, GLARE_Y), off the top-left corner, so the blowout is
@@ -2742,10 +2820,11 @@ def sheen_alpha(width: int, height: int, radius: int, bezel: int, scale: float) 
     # the lamp and therefore the one place the reflection is allowed to blow right out.
     corner = bezel + inset
     peak = 1.0 / (1.0 + ((corner - lx) ** 2 + (corner - ly) ** 2) / reach ** 2)
-    # Screened, so the corner where the two lit rims cross is brighter than either of them, and
-    # taken down the length by the lamp's own distance - to a floor, because the rim is still
-    # reflecting the lit frame at the far end of the pane even where the lamp does not reach.
-    lamp = (top + left - top * left) * (
+    # Screened, so where the specular sits on the rim the pane returns more than either alone
+    # without either of them clipping, and taken down the length by the lamp's own distance - to
+    # a floor, because the rim goes on reflecting the lit frame at the far end of the pane even
+    # where the lamp itself does not reach.
+    lamp = (top + spec - top * spec) * (
         SHEEN_STRIP + (1.0 - SHEEN_STRIP) * np.clip(near / peak, 0.0, 1.0)
     )
     return np.minimum(lamp, 1.0) * SHEEN_A * _glass(edge, bezel)
@@ -2765,14 +2844,25 @@ def tube_frame(
     thing about the finished part comes from :data:`material.LAMP` standing up and to the left
     of it. Two of those are worth naming, because the round before this got both wrong.
 
-    The first is that the two UP-facing surfaces are the ones that light: the top rail's OUTER
-    roll and the bottom rail's INNER one. That is an inset frame - a ring standing over a hole -
-    and it is the opposite of the outset convention (light along the top edge, dark along the
-    bottom) that this drew before, which left the bottom rail peaking at L 56 against the top
-    rail's 147 and sitting within a few levels of the glass beside it. At a pace the readout
-    lost its lower edge and went soft. On the reference the bottom rail's inner chamfer is the
-    single brightest pixel of the element, a third brighter than the top rail's crest, with a
-    175-level step straight off it into the well.
+    The first is that this ring gets ONE specular, and it goes on the top rail's outer roll -
+    the face turned towards the lamp. The bottom rail's inner roll is turned up into the well and
+    was lit as brightly, on the argument that an inset frame lights both of its up-facing edges.
+    It does, but not equally and not independently: what reaches the underside of a ring is a
+    bounce off the lit glass and the panel rather than the lamp itself, so it is a fraction of the
+    top rail's light and it dies along the length exactly as the top rail's does. Lit twice
+    instead, the part measured 224 along the top rim against 223 along the bottom over the whole
+    of x=290-590 - a ratio of 1.00 at every sample, and 1.3 past x=550 - with two different
+    falloffs, which is the signature of one member lit by two people. See :data:`TERM_BOUNCE`,
+    which is the fraction, and `crest`, which is the borrowed run. The reference's own readout
+    resolves the same corner far harder than this does: its bottom moulding sits at 12-27 against
+    a 213 top rim, an eighth, where ours holds between a fifth and three tenths.
+
+    (What must not come back with it is the earlier mistake at the other end: the outset
+    convention - light along the top edge, dark along the bottom - left the bottom rail peaking
+    at L 56 against the top rail's 147 and sitting within a few levels of the glass beside it,
+    so at a pace the readout lost its lower edge and went soft. A capped bounce is not that: it
+    is still the up-facing inner roll that carries what light there is, and it still steps off
+    into the well.)
 
     The second is the quirk groove (:data:`TERM_QUIRK`), which is not a shape but a shadow:
     a bead standing proud of a face under a low lamp cannot light the strip of face directly
@@ -2834,8 +2924,18 @@ def tube_frame(
     # top rail's specular keeps about half of what its near end has. The old ramps had it 1.86
     # top-to-bottom and 0.94 end-to-end, which is a dome overhead and reads as painted plastic.
     reach = max(1.0, TERM_REACH * height)
-    near = 1.0 / (1.0 + ((xs - GLARE_X * width) ** 2 + (ys - GLARE_Y * height) ** 2) / reach ** 2)
-    fall = TERM_FACE * (TERM_FALL_FLOOR + (1.0 - TERM_FALL_FLOOR) * near / near.max())
+    lamp_x, lamp_y = GLARE_X * width, GLARE_Y * height
+    near = 1.0 / (1.0 + ((xs - lamp_x) ** 2 + (ys - lamp_y) ** 2) / reach ** 2)
+    # ...and then the half of the ring that never sees the lamp at all. What lights the bottom
+    # rail is what the lamp lights ABOVE it, so both the level and the run along the length are
+    # the top rail's: a bounce is a fraction of a lit surface and it has to die where the surface
+    # it bounces off does. Measuring it at the crest's own row rather than at its own is the
+    # whole of what stops the two rims having falloffs of their own - see :data:`TERM_BOUNCE`.
+    down = np.clip(gy, 0.0, 1.0)  # 1 on the faces turned away from the lamp, 0 along the top rail
+    crest = 1.0 / (1.0 + ((xs - lamp_x) ** 2 + (0.5 * bezel - lamp_y) ** 2) / reach ** 2)
+    near = near * (1.0 - down) + crest * down
+    bounce = 1.0 - (1.0 - TERM_BOUNCE) * down
+    fall = TERM_FACE * bounce * (TERM_FALL_FLOOR + (1.0 - TERM_FALL_FLOOR) * near / near.max())
     # ...and the quirk groove each rolled edge throws back across the face. It is an occlusion
     # and not a shape: the bead stands proud, the lamp is low across it, and the strip of face
     # immediately behind a LIT crest is the one place on the bar the light cannot reach. Behind
@@ -2872,7 +2972,10 @@ def tube_frame(
     # taken down the length by the lamp's own distance so it decays instead of striping the part.
     lit_edge = np.clip((nx * lx + ny * ly) / np.maximum(tilt, 1e-6), 0.0, 1.0)
     carry = TERM_ARRIS_FALL + (1.0 - TERM_ARRIS_FALL) * near / near.max()
-    blown = TERM_ARRIS * (tilt * tilt * lit_edge * lit_edge) ** TERM_ARRIS_TIGHT * carry
+    # ...and only on the half of the ring the lamp can actually reach. A mirror returns what is
+    # in front of it, and there is nothing in front of a down-facing arris but the bench.
+    blown = (TERM_ARRIS * (tilt * tilt * lit_edge * lit_edge) ** TERM_ARRIS_TIGHT * carry
+             * (1.0 - down))
     rgb = rgb + (np.asarray(GLARE_LAMP, np.float32) - rgb) * blown[..., None]
     cover = np.clip(0.5 - edge, 0.0, 1.0) * np.clip(bezel - inward + 0.5, 0.0, 1.0)
     return rgb, cover
@@ -3081,7 +3184,7 @@ class Overlay:
         self.caption_top = self.tube.y + pad
         self.caption_y = self.caption_top + self.caption_h / 2  # the *first* line's middle now
 
-        self._halo = halo_alpha(width, height)
+        self._halo = halo_alpha(width, height) * (1.0 - self._terminal_front())
         # One set of hairlines for the whole sheet, before the filter and the chrome are built
         # from it: the plates wear them and so do the bars bolted across them, and a scratch that
         # runs from one onto the other is most of what says they are the same piece of metal.
@@ -5813,6 +5916,33 @@ class Overlay:
         glow.putalpha(glow.getchannel("A").point(lambda a: round(a * BLOOM_ALPHA)))
         layer.alpha_composite(glow, (tube.x, tube.y))
         layer.alpha_composite(tile, (tube.x, tube.y))
+
+    def _terminal_front(self) -> np.ndarray:
+        """Coverage of the monitor's case over the whole panel, 0..1: what stands in the light.
+
+        HARDWARE IS OPAQUE AND TOPMOST, and this is the one place on the panel where the rule was
+        being broken by something drawn *after* the hardware. The state light is a cove - it pools
+        under the surround's inner lip and falls inwards over the picture - and :meth:`_base` lays
+        it over everything, which is right for the picture and wrong for the case bolted to the
+        panel in front of it. Unmasked it put 0.31 of the state's own colour across the bottom
+        moulding at one constant level from one end of it to the other, and that single composite
+        did three separate things wrong: it washed a piece of steel in green (GREEN_DIM asleep,
+        which measured +26.5 of green bias on metal held to +7), it lit a down-facing member as
+        brightly as the up-facing one, and being flat in x it flattened the only falloff that
+        member had - the bottom rail held 186-220 along its whole length while the top rail
+        decayed 222 -> 141 beside it.
+
+        So the pool runs BEHIND the case, which is where a pool of light under a lip runs when
+        there is a monitor bolted in front of it. Built once, in __init__, off the same distance
+        field the front itself is drawn from, so the two can never disagree about where it is.
+        """
+        front = np.zeros((self.height, self.width), np.float32)
+        rows = slice(max(0, self.term.y), min(self.height, self.term.bottom))
+        cols = slice(max(0, self.term.x), min(self.width, self.term.right))
+        edge = tube_field(self.term.w, self.term.h, self.case_r)
+        cover = np.clip(0.5 - edge, 0.0, 1.0)
+        front[rows, cols] = cover[: rows.stop - rows.start, : cols.stop - cols.start]
+        return front
 
     def _draw_terminal(self, layer: Image.Image) -> None:
         """The monitor the caption is printed on: a tube in a bezel, and the rail that carries it.
