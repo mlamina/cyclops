@@ -1841,12 +1841,15 @@ DIAL_TICKS = 7  # graduations across the sweep, both ends included
 # The scale runs well inside the bezel, with the graduations between the two: a green arc drawn up
 # against a green chamfer is a green chamfer, and that is what the first cut of this looked like.
 DIAL_TRACK = 0.615
-DIAL_TICK_IN = 0.715  # the graduations stop short of the bezel's foot, so they sit on the face
-DIAL_TICK_OUT = 0.775  # and not in the shadow it drops down the wall of the recess. They stand
+DIAL_TICK_IN = 0.720  # the graduations stop short of the bezel's foot, so they sit on the face
+DIAL_TICK_OUT = 0.800  # and not in the shadow it drops down the wall of the recess. They stand
 # clear of the sweep as well as of the ring: arc and graduations fused into one eight-pixel band
 # is a band, and a scale is read by the gap between the mark and the thing pointing at it
-DIAL_TICK_W = 1.7  # reference px. Heavier than a hairline: a graduation is the one mark on a
-# gauge with no shape of its own to be recognised by, so if it does not carry it is not there
+DIAL_TICK_W = 1.35  # reference px. Heavier than a hairline: a graduation is the one mark on a
+# gauge with no shape of its own to be recognised by, so if it does not carry it is not there -
+# but taller than it is wide, which is the whole of what makes a mark POINT at a centre. At 1.7
+# by 2.2 a graduation was as wide as it was long and a critic read the set of them as nubs stuck
+# on the outside of the arc rather than as a scale; the aspect matters more than the weight
 DIAL_HAND = 0.45  # the pointer's tip. Short of the sweep by more than the sweep's own bloom,
 # which is what keeps a pointer a pointer: the skirt of light round the arc reaches inwards too,
 # and a tip that ends inside it is a tip nobody - and no test - can tell from the scale
@@ -1866,9 +1869,12 @@ SLIDER_RUNG_GAP = 0.30  # of a rung, left dark between one and the next
 SLIDER_THUMB = 5.0  # the bar across the top of what is lit: the indicator proper
 SLIDER_EAR = 7.0  # ...and how far it stands out either side of the track, so it reads as a grip
 DIAL_OFF = 0.95  # how far an unlit stretch of scale is stirred out of the screen's own black
-DIAL_LABEL = 0.63  # where the reading sits in the gap under the hub, clear of the pointer's
+DIAL_LABEL = 0.585  # where the reading sits in the gap under the hub, clear of the pointer's
 # reach: a needle at either end of the sweep points down into that quarter, and a number it
-# grazes on the way past is a number you read twice to be sure of
+# grazes on the way past is a number you read twice to be sure of. It was 0.63, which put the
+# bottom-left corner of the digits two pixels INTO the bezel - a mark printed on the face drawn
+# over the metal holding the face in. See _dial_aperture, which is what makes that impossible
+# rather than merely unlikely; this is what keeps the number off the edge of it
 
 # What an instrument is made of. A face sunk into the rail, glass over it, and a bezel holding
 # the glass in - all of it under the panel's one lamp (:mod:`cyclops.material`), so the bezel's
@@ -1913,7 +1919,7 @@ DIAL_BEZEL_ROVE = 0.30  # of the roll: how much narrower the roll is on the side
 DIAL_BEZEL_ROVE_N = 0.46  # ...and how much of that again wanders at random, so its brightest
 # point is not on one row for the whole sweep
 DIAL_BEZEL_BLOWN = 1.00  # how far the crown's brightest line is pushed past the steel's own
-DIAL_BEZEL_RIDGE = 2.6  # ...and how narrow it is: a blown highlight is a line, not a band
+DIAL_BEZEL_RIDGE = 3.4  # ...and how narrow it is: a blown highlight is a line, not a band
 DIAL_SPARK = 1.22  # of STEEL_SPEC: what a highlight that has blown out reaches. The steel's own
 # ceiling is what a *material* gives back; a specular is the lamp, and the lamp is brighter
 DIAL_BEZEL_SCRATCH = 14  # hairlines dragged across each instrument's metal. Bright only: a
@@ -1922,28 +1928,64 @@ DIAL_BEZEL_SCRATCH_A = 0.42
 DIAL_SEAT_ROVE = 0.32  # of the seat's width: how much it wanders round one ring
 DIAL_TARNISH = 0.28  # of the polish: how far one ring's finish may sit from the other's
 DIAL_SEED_STEP = 31  # so the two instruments are two parts and not one sprite stamped twice
-DIAL_BEZEL_TURNED = 0.45  # of the way from the bars' STEEL to STEEL_LIT. A bezel is turned and
+DIAL_BEZEL_TURNED = 0.38  # of the way from the bars' STEEL to STEEL_LIT. A bezel is turned and
 # then polished, and a polished face gives back more of the room than a sawn and brushed one -
 # which is what makes the ring read as the brightest metal on the panel rather than the dullest
-DIAL_BEZEL_FILL = 0.55  # what the slope turned away from the lamp still gets from the room...
+DIAL_BEZEL_FILL = 0.16  # what the slope turned away from the lamp still gets from the room...
 DIAL_BEZEL_SHUT = 0.70  # ...and how much of even that reaches the slope facing the other way.
 # The panel's ambient is what a face square to the viewer sees of the room; a slope on a ring
 # bolted to a bracket sees the bracket instead, so it goes below that floor. Without this the
 # ring has no black in it anywhere and reads as a moulding rather than as turned metal
+#
+# ...and none of that varies round the ring, which is what three critics measured and called a
+# stroke. The lamp is a long way above and to the left of a ring five pixels wide and three
+# proud: the far half of the crown stands between it and everything behind, so that half sees
+# no lamp at all and the well it is bedded in instead of the room. A flat annulus square to the
+# viewer takes the same light at every azimuth - true, and the reason the last cut measured at
+# CV 0.13 all the way round - so what has to travel round the ring is not the surface's answer
+# to the lamp but whether the lamp reaches it. These two are that, and they are what turn a
+# donut into a rim with a lit side and a dark one.
+DIAL_BEZEL_CAST = 0.18  # what of the lamp still finds the far side of the ring...
+DIAL_BEZEL_WRAP = 1.25  # ...and how quickly the crown's own shadow takes it round there
+DIAL_BEZEL_WELL = 0.74  # ...and what the room gives a ring bedded in a plate, on that side
 DIAL_BEZEL_POLISH = 2.8  # how much brighter the roll's highlight is than the land's: a ring is
 # polished where a cloth reaches, and the flat in the middle keeps the bars' own dull shine
-DIAL_BEZEL_SHINE = 1.6  # how tight the ring's highlight is. Tighter than a bar's, because a
+DIAL_BEZEL_SHINE = 1.8  # how tight the ring's highlight is. Tighter than a bar's, because a
 # turned face is smoother than a sawn one
-DIAL_BEZEL_GRAIN = 2.7  # of the bars' brushing. Round the ring, because it came off a lathe
+DIAL_BEZEL_GRAIN = 1.05  # of the bars' brushing. Round the ring, because it came off a lathe.
+# Held to an eighth of the local face value: at two and a half times the bars' amount the tooth
+# swung further either way than the shading it was laid over, and a texture louder than the form
+# under it is a noise overlay rather than a finish
 DIAL_WEAR = 0.42  # how much the bezel's highlight comes and goes round the ring
 DIAL_BEZEL_EDGE = 1.7  # reference px of the outer silhouette darkened against the bracket...
-DIAL_BEZEL_EDGE_DARK = 0.74  # ...and by how much, so the metal ends on a line and does not
-# dissolve into whatever it is bolted to
+DIAL_BEZEL_EDGE_DARK = 0.62  # ...and by how much where the ring stands in its own shadow, so
+DIAL_BEZEL_EDGE_LIT = 0.34  # ...against where the lamp is still on it. The metal has to end on
+# a line and not dissolve into what it is bolted to, but a line of one value all the way round
+# is the drawn outline this ring spent two rounds being mistaken for
 DIAL_BEZEL_LIP = 0.9  # reference px of the crown's inner edge that turn down into the groove...
-DIAL_BEZEL_LIP_DARK = 0.85  # ...and how far they go dark on the way, all round
+DIAL_BEZEL_LIP_DARK = 0.85  # ...and how far they go dark on the way where the crown stands
+DIAL_BEZEL_LIP_RAKE = 0.60  # over them. On the other side of the ring that same inward turn is
+# the one face on the whole part the lamp reaches over the crystal to touch, and it draws the
+# pale line round the inside of the far half that every photograph of a bezel has. A BOUNCE and
+# not a light: a quarter of what the crown gives back, which is what keeps it from reading as a
+# second lamp - the mistake this ring has already been rebuilt once to undo
 DIAL_BEZEL_SEAM = 2.4  # reference px of near-black groove between the crown and the glass. The
 # one line that says the glass is *inside* the ring and not printed level with it
-DIAL_SEAM = 0.65  # of STEEL_DARK: how black the bottom of that groove goes
+DIAL_SEAM = 0.27  # of STEEL_DARK: how black the bottom of that groove goes where the crown is
+DIAL_SEAM_RAKE = 5.6  # ...and how far a lamp that reaches over the glass and down into it on
+# the other side lifts that floor. An undercut is a shadow, and a shadow of one depth drawn all
+# the way round a ring is a stroke: the reveal is widest and blackest on the side the crown
+# stands between it and the lamp, and narrows to a lifted hairline where the light rakes in
+DIAL_SEAM_SHUT = 1.00  # of the groove's width where the crown shuts the lamp out of it...
+DIAL_SEAM_OPEN = 0.58  # ...against where it rakes straight down the wall
+DIAL_BEZEL_RAKE_WRAP = 2.2  # how tightly that raking light stays on the arc of the ring
+# actually turned to receive it. A bounce that spreads out over half the circumference is a
+# second lamp, and this part has already been rebuilt once for having one
+DIAL_GREENBIAS = 6.0  # levels of green over the mean of red and blue any metal on an instrument
+# may hold. Green on this panel belongs to the phosphor and to the glass over it; a bezel that
+# shares it reads from a pace away as a green painted ring rather than as steel, and the two
+# stop being different materials. Clamped rather than set, so retuning the palette in
+# :mod:`cyclops.material` moves the ring's colour and this cap never has to be touched again
 DIAL_LIFT = 3.0  # how proud an instrument stands of the rail it is bolted through
 DIAL_SHADOW = 0.60  # ...and how dark the shadow it drops is, where deepest
 DIAL_FACE_A = 0.95  # how much of the camera the face keeps out. Higher than the well a switch
@@ -1959,7 +2001,7 @@ DIAL_GLARE_REACH = 0.42  # of the glass radius: how far it spreads. One small ha
 # not a wash: a dome the size of a coin gives the lamp back from a spot the size of a pinhead
 DIAL_GLARE_A = 0.21  # its alpha where it is brightest
 DIAL_GLASS_A = 0.03  # the veil the glass lays over the whole face, so it is a glass and not air
-DIAL_GLASS_TILT = 0.04  # ...and how much more of it the half leaning towards the lamp gives
+DIAL_GLASS_TILT = 0.075  # ...and how much more of it the half leaning towards the lamp gives
 # back than the half leaning away, which is the gradient across the pane
 DIAL_GLASS_EDGE = 3.5  # reference px of the dome's edge steep enough to give the lamp back
 DIAL_GLASS_EDGE_A = 0.40  # ...how brightly, where the rim faces the lamp
@@ -1994,8 +2036,33 @@ DIAL_CAP = 0.25  # how far the hub's cap is pushed towards the tube's white wher
 # lamp. Short of where the pointer would stop reading as phosphor and start reading as held.
 DIAL_CAP_R = 0.5  # of the hub: the highlight's radius...
 DIAL_CAP_OFF = 0.35  # ...and how far off the hub's centre it sits, towards the lamp
+DIAL_CAP_SEAT = 62.0  # degrees either side of the lamp's bearing where the cap's turned-down
+DIAL_CAP_SEAT_LIT = 0.42  # edge still leans into the light, and how far towards the cap's own
+# colour it comes there. It was one black ring at one value all the way round, and that is an
+# OUTLINE: the one mark on an instrument otherwise built out of fields that a critic could name
+# as drawn rather than lit. A cap is seated in a face, and a seat is a shadow with a side to it
+DIAL_READ_LIGHT = 0.98  # the least of the lamp the reading under the hub is allowed to read by.
+# The pane's own tilt bottoms out exactly where the number sits - the far corner of the face
+# from the lamp - and a gauge's one number came out at two thirds brightness because of it,
+# which a critic measured against the reference and called our biggest liability. The number is
+# printed in phosphor and phosphor emits; what the tilt models is how much of the ROOM the
+# crystal hands back to a mark, and that is not what a lit mark is made of
+DIAL_READ_STRIKES = 2  # how many times the reading is struck. A glyph twelve pixels tall is
+# more anti-aliased edge than it is stroke, and a hairline that arrives half covered reads as
+# half a hairline; struck again, every partly covered pixel of a stroke goes opaque. It is the
+# only way to put weight into this number without putting height into it, and height is what
+# the gap under the hub has none of - see DIAL_READ_PT
+DIAL_READ_PT = 12  # reference px of face for it. Two points down from the panel's own brand,
+# and that point is what buys the whole thing: at 14 the bottom-left of "60" reached r=30.5 on a
+# ring whose metal starts at 27.8, so the one number on the instrument was printed ACROSS the
+# bezel holding the glass in. There is one gap on a dial and everything in it - the number, the
+# speaker, the pointer swinging over both - has to fit inside the glass
+DIAL_MARK = 0.139  # of the radius: the speaker in the knob's half of that gap, for the same
+# reason. It was 0.17, whose bottom corner stood a pixel and a half out on the ring
 DIAL_SS = 3  # the face's fields are drawn this many times over and boxed down
 _DIAL_LIGHT: dict[tuple[int, float], np.ndarray] = {}  # see Overlay._dial_light: one per window
+_DIAL_APERTURE: dict[tuple[int, float], np.ndarray] = {}  # ...and Overlay._dial_aperture
+_DIAL_FONT: dict[int, ImageFont.FreeTypeFont] = {}  # the reading's face, one per size
 
 # The reticle: four corners on the lens axis and nothing else. It was a cross with graduations
 # for about an hour, which is exactly as long as it took somebody to say it looked like a gun
@@ -6347,13 +6414,31 @@ class Overlay:
         the contact shadow - five or six turns, which is what a machined part does and what a
         radial gradient cannot do at all.
 
+        The section alone is not enough, and that is what three critics measured next: a flat
+        annulus square to the viewer takes the same light at every azimuth, so a ring built out
+        of a section and nothing else comes out at one value all the way round - ours read 120
+        to 125 in eight octants, a spread of a fifth, where the reference swings four times. So
+        what travels round this ring is not the surface's answer to the lamp but WHETHER THE
+        LAMP REACHES IT. A five-pixel ring standing three proud of a well in a plate shades its
+        own far side; that side sees the plate instead of the room. DIAL_BEZEL_CAST is what is
+        left of the lamp there, DIAL_BEZEL_WELL what is left of the room, and between them the
+        ring has a lit side and a dark one whichever way the metal happens to be leaning.
+
         Only the roll is ever lit. The chamfer faces in and down, so on the far side of the ring
         it is turned towards the lamp and would take a second highlight of its own - which is
-        precisely what the last cut of this drew, two speculars of near-equal strength half a
+        precisely what an earlier cut of this drew, two speculars of near-equal strength half a
         turn apart, and what every critic called a printed ring under two lamps. A chamfer is
         cut, not polished, and it stands under the crown: it keeps a thirtieth of the shine and
-        loses half the lamp to the metal over it, so what is left is a bounce - present, so the
-        far side is metal and not a hole, and never mistakable for a light.
+        loses a third of the lamp to the metal over it. What is left is a bounce - present, so
+        the far side is metal and not a hole, capped at a quarter of the crown's own highlight,
+        and never mistakable for a light.
+
+        Three strokes, not one band. Outside in: the crown with its one blown line; the lip
+        where the crown turns down, shadowed where the crown stands over it and RAKED where the
+        lamp comes in over the crystal instead; and the undercut the glass is set into, which is
+        three pixels of near black on the lit side and under two of a lifted hairline opposite.
+        A shadow of one depth drawn all the way round a ring is a stroke, and a stroke is what
+        this was.
 
         A lathe-turned part, so the brushing runs round the ring rather than along a bar. The
         wear on it is BRIGHT ONLY: a scratch takes the finish off and what is underneath catches
@@ -6401,17 +6486,32 @@ class Overlay:
         # which lives on the roll and not on the land; and the crown standing over the chamfer,
         # which is what keeps the chamfer's answer to the lamp down to a bounce.
         shut = 1.0 - DIAL_BEZEL_CUT_SHUT * into
-        diffuse = (DIAL_BEZEL_FILL + (1.0 - DIAL_BEZEL_FILL) * diffuse) * shut
+        # Which side of the ring this is, 1 turned to the lamp and 0 turned from it. Everything
+        # that travels round the ring hangs off it - it is the difference between a rim and a
+        # stroke - and it is a fact about the ASSEMBLY, not about the surface: a five-pixel ring
+        # standing three proud of a plate shades its own far side, whichever way the metal there
+        # happens to be leaning.
+        key = np.clip(0.5 + 0.5 * facing, 0.0, 1.0)
+        cast = key ** DIAL_BEZEL_WRAP
+        lamp_on = DIAL_BEZEL_CAST + (1.0 - DIAL_BEZEL_CAST) * cast
+        diffuse = (DIAL_BEZEL_FILL + (1.0 - DIAL_BEZEL_FILL) * diffuse) * shut * lamp_on
         spec = spec ** DIAL_BEZEL_SHINE * (1.0 + (DIAL_BEZEL_POLISH - 1.0) * out)
         spec = spec * (1.0 - (1.0 - DIAL_BEZEL_CUT_GLOSS) * into)
         spec = spec * (1.0 + DIAL_WEAR * np.clip(material.wear(along, seed), 0.0, 1.0))
+        # A surface in the crown's shadow cannot mirror a lamp it cannot see. Without this the
+        # chamfer on the far side answers the lamp at seven tenths of the crown's own highlight
+        # and the ring reads as a part lit from both sides at once.
+        spec = spec * lamp_on
         brushing = DIAL_BEZEL_GRAIN * material.grain(dist, along, seed)
         rgb = material.steel(diffuse, spec, brushing,
                              colour=mix(material.STEEL, material.STEEL_LIT, polish))
         # What a slope on a ring sees instead of the room is the bracket it is bolted to, so the
-        # far one goes below the panel's own ambient. Without this the ring has no black in it.
+        # far one goes below the panel's own ambient - and so does the whole far side of the
+        # ring, which is bedded in a plate and sees it rather than the room. Without these the
+        # ring has no black in it anywhere.
         seen = np.clip(nx * lx + ny * ly + 1.0, 0.0, 1.0)
-        rgb = rgb * (DIAL_BEZEL_SHUT + (1.0 - DIAL_BEZEL_SHUT) * seen)[..., None]
+        rgb = rgb * ((DIAL_BEZEL_SHUT + (1.0 - DIAL_BEZEL_SHUT) * seen)
+                     * (DIAL_BEZEL_WELL + (1.0 - DIAL_BEZEL_WELL) * cast))[..., None]
         # ...and the one line where the crown has actually blown out. material.steel stops at
         # STEEL_SPEC, which is as bright as the metal itself can be; the lamp in it is brighter
         # than that, and a highlight that never reaches the top of the range is a matte part.
@@ -6420,14 +6520,37 @@ class Overlay:
         rgb = rgb + (spark - rgb) * np.clip(DIAL_BEZEL_BLOWN * blown, 0.0, 1.0)[..., None]
         edge = np.clip(1.0 - (r - dist) / max(DIAL_BEZEL_EDGE * self.scale, 0.5), 0.0, 1.0)
         lip = np.clip(1.0 - (dist - r_in) / max(DIAL_BEZEL_LIP * self.scale, 0.5), 0.0, 1.0)
-        rgb = rgb * ((1.0 - DIAL_BEZEL_EDGE_DARK * edge)
-                     * (1.0 - DIAL_BEZEL_LIP_DARK * lip))[..., None]
-        # ...and the floor of the groove, which no light reaches from any direction.
-        groove = np.clip((r_in - dist) / np.maximum(seam, 0.5), 0.0, 1.0)
-        ink = np.asarray(material.STEEL_DARK, np.float32) * DIAL_SEAM
+        rolled = DIAL_BEZEL_EDGE_DARK - (DIAL_BEZEL_EDGE_DARK - DIAL_BEZEL_EDGE_LIT) * key
+        # The arc of the ring actually turned to take the light that comes over the crystal -
+        # not simply "the other half", which spreads a bounce over a hundred and eighty degrees
+        # and reads as a lamp of its own.
+        raked = np.clip(-facing, 0.0, 1.0) ** DIAL_BEZEL_RAKE_WRAP
+        rgb = rgb * ((1.0 - rolled * edge)
+                     * (1.0 - DIAL_BEZEL_LIP_DARK * key * lip)
+                     * (1.0 + DIAL_BEZEL_LIP_RAKE * raked * lip))[..., None]
+        # ...and the undercut the glass is set down into, which is the innermost of the ring's
+        # three strokes and the one a critic measured as two pixels of one value all the way
+        # round. It is a shadow: three pixels of it and near black where the crown stands
+        # between it and the lamp, and less than two of a floor lifted four times as high where
+        # the light reaches over the crystal and rakes down the wall.
+        reveal = np.maximum(seam * (DIAL_SEAM_OPEN + (DIAL_SEAM_SHUT - DIAL_SEAM_OPEN) * key),
+                            0.5)
+        groove = np.clip((r_in - dist) / reveal, 0.0, 1.0)
+        floor = DIAL_SEAM * (1.0 + (DIAL_SEAM_RAKE - 1.0) * raked)
+        ink = np.asarray(material.STEEL_DARK, np.float32) * floor[..., None]
         rgb = rgb * (1.0 - groove)[..., None] + ink * groove[..., None]
-        drag = self._dial_scratches(dist.shape[0], seed) * (1.0 - groove) * (1.0 - edge)
-        return rgb + drag[..., None], cover
+        # ...and the hairlines, under the same lamp as the rest of it. A scratch takes the finish
+        # off and what is underneath catches more light than the finish did - more of the light
+        # that is THERE. Added flat, they came out as bright specks lying in the ring's own
+        # shadow, which is a decal of a scratch rather than a scratch.
+        drag = (self._dial_scratches(dist.shape[0], seed)
+                * (1.0 - groove) * (1.0 - edge) * lamp_on)
+        rgb = rgb + drag[..., None]
+        # Green is the phosphor's and the glass's. Whatever the panel's steel is tuned to, no
+        # pixel of an instrument's ring leaves here carrying more of it than a metal may.
+        rgb[..., 1] = np.minimum(rgb[..., 1],
+                                 0.5 * (rgb[..., 0] + rgb[..., 2]) + DIAL_GREENBIAS)
+        return rgb, cover
 
     def _dial_scratches(self, size: int, seed: int) -> np.ndarray:
         """Hairlines dragged across one instrument's metal, in levels to be added on.
@@ -6514,6 +6637,7 @@ class Overlay:
         value: float | None,
         colour: tuple[int, int, int],
         speaker: tuple[int, int, int] | None = None,
+        reading: str | None = None,
     ) -> Image.Image:
         """The half of an instrument that moves: a pointer, its hub, and what it has covered.
 
@@ -6535,6 +6659,10 @@ class Overlay:
         every raised part on this panel drops, from :func:`material.cast`, baked into the tile
         under the crisp pointer. The speaker mark is printed on the face and drops none, which is
         why it is drawn into the tile after the shadow and not before it.
+
+        *reading* is the gauge's number, which rides here for the same reason the speaker does:
+        it belongs to the gap under the hub, it changes only when the reading does, and a tile
+        that is already being cached is the cheapest place on this panel to put anything.
         """
         span, r = self.dial_span, self.btn_r
         lx, ly = material.lamp_2d()
@@ -6573,7 +6701,14 @@ class Overlay:
             off = r * DIAL_HUB * DIAL_CAP_OFF
             t.ellipse(hub(r * DIAL_HUB * DIAL_CAP_R, lx * off, ly * off),
                       fill=linear(mix(cap, WHITE, DIAL_CAP)))
-            t.ellipse(hub(r * DIAL_HUB), outline=linear(SCREEN), width=round(wide(1)))
+            # ...and the seat it stands in, which is a shadow and not an outline: dark where the
+            # cap's turned-down edge leans out of the lamp, all but gone where it leans in.
+            seat, wall = hub(r * DIAL_HUB), round(wide(1))
+            bearing = math.degrees(math.atan2(ly, lx))
+            t.arc(seat, bearing + DIAL_CAP_SEAT, bearing - DIAL_CAP_SEAT + 360.0,
+                  fill=linear(SCREEN), width=wall)
+            t.arc(seat, bearing - DIAL_CAP_SEAT, bearing + DIAL_CAP_SEAT,
+                  fill=linear(mix(SCREEN, cap, DIAL_CAP_SEAT_LIT)), width=wall)
 
         hand = self._printed(smoothed(2 * span + 1, paint))
         cover = np.asarray(hand)[:, :, 3].astype(np.float32) / 255.0
@@ -6585,7 +6720,67 @@ class Overlay:
                 2 * span + 1, lambda t: self._paint_speaker(t, span, speaker))))
         tile.alpha_composite(self._phosphor_bloom(hand, span, r * DIAL_HUB + self.scale))
         tile.alpha_composite(hand)
-        return tile
+        if reading is not None:
+            self._print_reading(tile, reading, colour)
+        # Hardware is opaque and hardware is topmost. This tile goes on OVER the bezel, because
+        # it moves and the ring is baked into the chrome; so anything in it that reached past
+        # the glass would be a mark printed on the face drawn across the metal holding the face
+        # in. The reading is what found it - two pixels of the bottom-left of "60" were on the
+        # ring - and the mask is what stops the next mark finding it again.
+        clipped = np.asarray(tile).astype(np.float32)
+        clipped[:, :, 3] *= self._dial_aperture()
+        return Image.fromarray(np.rint(clipped).astype(np.uint8), "RGBA")
+
+    def _dial_aperture(self) -> np.ndarray:
+        """The glass, as coverage: how much of a mark printed on the face is not under the ring.
+
+        The bezel's seat wanders a third of its width round each instrument (DIAL_SEAT_ROVE), so
+        what a moving mark may reach is the innermost the ring's inner edge ever comes on either
+        of them - not its nominal radius. One array per window size, because nothing in it moves.
+        """
+        span, r = self.dial_span, self.btn_r
+        key = (span, r)
+        got = _DIAL_APERTURE.get(key)
+        if got is None:
+            reach = (r * DIAL_BEZEL_IN
+                     - max(1.0, DIAL_BEZEL_SEAM * self.scale) * (1.0 + DIAL_SEAT_ROVE))
+            ys, xs = (a.astype(np.float32) for a in np.mgrid[-span:span + 1, -span:span + 1])
+            got = _DIAL_APERTURE[key] = np.clip(reach - np.hypot(xs, ys) + 0.5, 0.0, 1.0)
+        return got
+
+    def _print_reading(self, tile: Image.Image, word: str, colour: tuple[int, int, int]) -> None:
+        """The gauge's number, in the gap under the hub of the tile it belongs to.
+
+        Flat rather than through :func:`smoothed`, because FreeType hands glyphs over
+        anti-aliased already and supersampling them is a fourfold tile for nothing. In the
+        cached tile rather than on the frame, though, which is where it used to go: it is drawn
+        with its own skirt now, and PIL renders a stroked glyph by dilating the mask - a sixth of
+        a millisecond every frame, for a number that changes once every five seconds.
+
+        The skirt is what every other lit mark on this face gets from :meth:`_phosphor_bloom`:
+        phosphor scatters in the glass over it, and a number that arrives with a hard edge is the
+        one mark on the instrument that reads as ink rather than as light.
+
+        And struck twice. What carries a number across a workshop is the WEIGHT of its strokes,
+        and weight is what the gap under the hub has no room to buy with height: a face big
+        enough for the reference's three-pixel stroke stands two pixels out on the ring, and
+        PIL's own stroke_width grows the glyph as much at the top - where the pointer swings -
+        as at the sides, where there is room. A second strike grows it in neither direction. It
+        takes the half-covered pixels along each stroke to opaque instead, which is where a
+        twelve-pixel glyph keeps most of its ink: mean 110 to 125 and a stroke run of 2.5 px,
+        against the reference's 126 and 3.0.
+        """
+        span, drop = self.dial_span, round(self.btn_r * DIAL_LABEL)
+        under = max(DIAL_READ_LIGHT, float(self._dial_light()[span + drop, span, 0]))
+        ink = tuple(round(c * under) for c in colour)
+        size = max(7, round(DIAL_READ_PT * self.scale))
+        font = _DIAL_FONT.get(size) or _DIAL_FONT.setdefault(size, _load_font(size))
+        word_tile = Image.new("RGBA", tile.size, (0, 0, 0, 0))
+        pen = ImageDraw.Draw(word_tile)
+        for _ in range(DIAL_READ_STRIKES):
+            pen.text((span, span + drop), word, font=font, fill=(*ink, 255), anchor="mm")
+        tile.alpha_composite(self._phosphor_bloom(word_tile, span, 0.0))
+        tile.alpha_composite(word_tile)
 
     def _phosphor_bloom(self, tile: Image.Image, span: int, keep_out: float) -> Image.Image:
         """The skirt a lit mark bleeds onto the face under the glass, out of *keep_out* of it.
@@ -6634,15 +6829,22 @@ class Overlay:
         return tile
 
     def _needle(self, temp_c: float | None, lit: bool) -> Image.Image:
-        """The heat needle for *temp_c*, in the band's own colour. Cached per whole percent."""
+        """The heat needle for *temp_c*, and the degrees it is reading. Cached on both.
+
+        The word is in the key as well as the percent, and not because it is tidy: the scale runs
+        a degree and a bit to the percent, so two temperatures that round to different degrees
+        can land on the same point of the sweep, and a tile keyed on the sweep alone would hand
+        one of them the other's number.
+        """
         percent = temp_percent(temp_c)
         band = temp_band(temp_c)
-        key = (percent, band, lit)
+        word = "--" if temp_c is None else f"{round(temp_c)}°"
+        key = (percent, band, lit, word)
         tile = self._needles.get(key)
         if tile is None:
             colour = WHITE if lit else HEAT_INK.get(band, GREEN_DIM)
             tile = self._needles[key] = self._hand(
-                HEAT, None if percent is None else percent / 100.0, colour
+                HEAT, None if percent is None else percent / 100.0, colour, reading=word
             )
         return tile
 
@@ -6654,7 +6856,7 @@ class Overlay:
         temp_c: float | None,
         pressed: str | None,
     ) -> None:
-        """Both pointers, and the one reading each instrument prints in the gap under its hub.
+        """Both pointers, each with whatever it prints in the gap under its hub.
 
         The gap is the quarter of the sweep neither dial uses, which is where a knob's own scale
         has always left room for a label. The knob keeps a speaker there, because its number is on
@@ -6662,27 +6864,19 @@ class Overlay:
         gauge shows its degrees always: that is the whole of what a gauge is for, and a needle
         without a number is a mood ring.
 
-        The words go on flat rather than into a tile: PIL renders glyphs through FreeType and they
-        arrive anti-aliased already. Only the shapes need the tile.
+        Two composites and nothing else. The gauge's number used to go on here, flat, on the
+        argument that FreeType hands glyphs over anti-aliased already - which is true, and stayed
+        true when the number was given the skirt every other lit mark on the face has. What was
+        no longer true was the cost: PIL draws a stroked glyph by dilating its mask, and that is
+        a sixth of a millisecond a frame for a word that changes once every five seconds. It is
+        in the needle's own cached tile now; *d* is what :meth:`render` hands every painter, and
+        this one has nothing left to draw flat.
         """
         turning = pressed == VOLUME
         for name, tile in ((VOLUME, self._knob(volume, turning)),
                            (HEAT, self._needle(temp_c, pressed == HEAT))):
             cx, cy = (round(v) for v in self.switches[name])
             layer.alpha_composite(tile, (cx - self.dial_span, cy - self.dial_span))
-
-        cx, cy = (round(v) for v in self.switches[HEAT])
-        band = temp_band(temp_c)
-        colour = WHITE if pressed == HEAT else HEAT_INK.get(band, GREEN_DIM)
-        word = "--" if temp_c is None else f"{round(temp_c)}°"
-        # The reading is printed on the plate like every other mark, so it stands in whatever
-        # light the plate has down there - which is the bottom of the dial, well out of the
-        # crystal's reflection. One lookup, because the number never moves.
-        span = self.dial_span
-        drop = round(self.btn_r * DIAL_LABEL)
-        under = float(self._dial_light()[span + drop, span, 0])
-        self._text(d, cx, cy + drop, word, self.font_brand,
-                   (*(round(c * under) for c in colour), 255), align="c")
 
     def _draw_slider(self, d: ImageDraw.ImageDraw, level: int) -> None:
         """The volume column, up for as long as a finger is on the knob.
@@ -6728,7 +6922,7 @@ class Overlay:
         rather than on the frame: the cone is two diagonals, and a diagonal drawn flat at eleven
         pixels is the staircase this whole corner was rebuilt to be rid of.
         """
-        r = max(3.0, self.btn_r * 0.17)
+        r = max(3.0, self.btn_r * DIAL_MARK)
         mid = span + self.btn_r * DIAL_LABEL
         # One silhouette rather than a throat and a cone drawn separately: two shapes that share
         # an edge each own half of the pixels along it, and the shrink out of the tile averages
