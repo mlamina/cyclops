@@ -60,14 +60,24 @@ SHADOW_SOFT = 1.3  # ...and how soft its edge is, in the same currency
 
 # ---- the steel ----
 #
-# Desaturated, with the faintest green in it: gunmetal seen by a phosphor tube. The phosphor is
-# the only light on this panel and the metal has none of its own - it is grey, and it borrows.
-STEEL = (78, 84, 80)  # a flat face square to the viewer, once the lamp has had its say
-STEEL_LIT = (152, 162, 156)  # a rolled edge turned into the lamp
-STEEL_DARK = (16, 20, 18)  # the floor of a socket, the inside of a shadow
-STEEL_SPEC = (206, 216, 210)  # the brightest a *face* may get. Short of the tube's white on
+# Cold grey, and that is the whole point of these four numbers. They used to carry a few counts
+# of green - "gunmetal seen by a phosphor tube" - and measured, that came out at a green bias
+# (G - (R+B)/2) of +5 to +8 before anything else on the panel had touched them. Every critic
+# read the result the same way: the hardware and the illuminated glass are the same material,
+# so the frame "reads as a green painted border from a pace away instead of steel". The panel
+# this one is judged against splits the two about three to one - its bars sit at +5 and its
+# glass at +16 - and the split is what says which parts are lit and which are only lit *on*.
+#
+# So the metal is neutral now, a count to the blue if anything, and green belongs to the
+# phosphor and the glass alone. The LUMINANCE of each stop is held to within a level of what it
+# was (81.8/158.3/18.6/212.3/251.5, by 0.299R+0.587G+0.114B), because every part on this panel
+# is shaded against this ladder and moving a rung would restage the whole thing.
+STEEL = (81, 83, 83)  # a flat face square to the viewer, once the lamp has had its say
+STEEL_LIT = (156, 159, 160)  # a rolled edge turned into the lamp
+STEEL_DARK = (17, 19, 20)  # the floor of a socket, the inside of a shadow
+STEEL_SPEC = (210, 213, 214)  # the brightest a *face* may get. Short of the tube's white on
 # purpose: a sheet of steel outshining the phosphor would be a second light on the panel.
-STEEL_HOT = (249, 253, 250)  # ...and the brightest the one pixel a specular actually is may get.
+STEEL_HOT = (250, 252, 252)  # ...and the brightest the one pixel a specular actually is may get.
 # A highlight is not a bright surface, it is a picture of the lamp reflected in the surface, and
 # it may be as bright as the lamp. Holding it to STEEL_SPEC put a ceiling of 212 on every arris
 # on the panel and every critic measured it: our chrome topped out at 209-214 where the panel it
@@ -173,7 +183,8 @@ def shade(nx: Field, ny: Field, nz: Field,
     return diffuse, np.minimum(spec + RIM * rim, 1.0)
 
 
-def steel(diffuse: Field, spec: Field, grain: Field | None = None, colour: Colour = STEEL) -> Field:
+def steel(diffuse: Field, spec: Field, grain: Field | None = None, colour: Colour = STEEL,
+          ambient: Field | None = None) -> Field:
     """The colour of lit steel, rows by columns by three.
 
     *colour* where a face is square to the viewer, darker as it turns from the lamp, STEEL_SPEC
@@ -183,9 +194,17 @@ def steel(diffuse: Field, spec: Field, grain: Field | None = None, colour: Colou
     a true mirror of the lamp - see HOT_SHINE. That is the difference between a bar with a bright
     edge and a bar with a *ridge* on it: the surface is held down where it is a surface, and the
     one or two pixels that are actually reflecting the lamp are allowed to blow.
+
+    *ambient* is how much of the room this pixel can actually see, defaulting to :data:`AMBIENT`
+    for a surface with the whole of it in view. A field instead lets a part say where it is
+    shut in - the underside of a bar lying on a plate sees a sliver of room and a bounce off the
+    plate, and those two together are what turn a section's dark half into a core shadow with a
+    line of reflected light under it rather than into a flat wash at the ambient floor. It moves
+    the diffuse *floor* only: the lamp's own share and the highlight are untouched, because a
+    surface being shut in does not move the lamp.
     """
     albedo = np.asarray(colour, np.float32) / (AMBIENT + (1.0 - AMBIENT) * _L[2])
-    lit = AMBIENT + (1.0 - AMBIENT) * diffuse
+    lit = (AMBIENT if ambient is None else ambient) + (1.0 - AMBIENT) * diffuse
     if grain is not None:
         lit = lit * (1.0 + GRAIN * grain)
     ceiling = np.asarray(STEEL_SPEC, np.float32)

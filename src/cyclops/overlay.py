@@ -522,7 +522,11 @@ HALO_FALLOFF = 0.0125  # and how far it reaches inwards past that before it is g
 # test_he_rides_the_ramp_and_his_rim_is_off_the_bezel measures his clearance against
 HALO_LIP = 2.0  # reference px of the surround's inner chamfer the light reaches back onto
 HALO_PEAK = 0.45  # alpha at the border, falling away to nothing before it reaches any text
-TINT_ALPHA = 0.05  # green wash under the chrome - phosphor cast, not a colour filter
+TINT_ALPHA = 0.022  # green wash under the chrome - phosphor cast, not a colour filter. It was
+# 0.05, and a twentieth of GREEN is +7 of green bias on its own: with SCREEN under it the plate
+# came out at +32 while the bars on it sat at +8, so the two read as different materials and the
+# duller one read as paint. The cast is worth keeping - the tube does throw light on its own
+# chassis - but it has to be the faintest thing on the plate rather than its colour.
 SCANLINE_EVERY = 3  # every third row of the chrome is darkened...
 SCANLINE_ALPHA = 0.17  # ...by this much, which is a CRT at arm's length and not a zebra
 VIGNETTE_FROM = 0.46  # where the corner shading starts, as a fraction of the half-diagonal
@@ -705,14 +709,44 @@ RAIL_WEAR = 0.30  # how much the highlight comes and goes along a length - handl
 # polished where hands have been and dull between. It only ever takes the ridge *down* from a
 # true mirror of the lamp (see `polish`), so at the old 0.45 most of a run sat a third under the
 # ceiling and the bar never blew anywhere along its length...
-RAIL_DRIFT = 0.30  # ...and how much the face under it does, either way, at the same pitch...
-RAIL_SWEEP = 0.20  # ...over a slow one four times its length, which is the light in the room
-# rather than the hands on the bar. Between them a bar's face moves about forty levels from one
-# end of a run to the other, against the eight it moved when the only thing changing along a
-# rail was its highlight: a face read down its own length measured flat to within a level, all
-# of its variation was across the width, and an extruded swatch is exactly what that measures as
-RAIL_GRAIN = 0.78  # of the material's brushing. Under one and the bar is smoother than the
+RAIL_DRIFT = 0.055  # ...and how much the face under it does, either way, at the same pitch...
+RAIL_SWEEP = 0.030  # ...over a slow one four times its length, which is the light in the room
+# rather than the hands on the bar. These two used to be 0.30 and 0.20, which is half the face's
+# light moving either way: on a strut whose shading spans 54 levels the texture swung 45, so the
+# noise was larger than the thing it was meant to be noise ON and the section stopped reading.
+# Texture that outruns its own gradient is a grain overlay, not a surface. Together with
+# RAIL_GRAIN the three of them now hold every face inside about fifteen per cent of its own
+# local value, which is where wear stays a finish rather than becoming the subject
+RAIL_GRAIN = 0.55  # of the material's brushing. Under one and the bar is smoother than the
 # sheet it is on; under half and at arm's length it is plastic
+RAIL_RIDGE_WEAR = 0.18  # how much of the lit arris a chip takes, at the brushing's own pitches
+# read along the bar instead of across it. This is the fix for the one measurement that says
+# "rendered" louder than any other - a specular that stayed within 0.7 of a level for 158 pixels
+# of its run, where nothing sawn, deburred and then handled has an edge that straight. About half
+# the pixels of a ridge are chipped at all and the worst of them lose a sixth, which is a
+# granular worn line rather than a wire. Down only: a broken edge cannot reflect more than a
+# clean one, and the ridge's ceiling stays exactly where the material says it is
+RAIL_TURN_FALL = 1.5  # how fast a turned bar's far half rolls away from its crown, as a power
+# of how far out of the section a pixel is. `turned` on :meth:`_draw_rail` says whether a bar
+# has that section at all, 0 for sawn flat stock and 1 for round bar: a flat member's far half
+# stays near the face's own angle, and a round one keeps rolling until the light dies well
+# inside its own silhouette, which is what puts a core shadow in the section instead of a floor.
+# The two frame rails are round bar and everything bolted to them is flat plate, which is one
+# more thing telling a member from the thing it carries
+RAIL_OCCLUDE = 0.70  # how much of the room the far side of a bar loses to the plate it is lying
+RAIL_OCC_AT = 0.30  # on, and how far down the section that starts. A section whose dark half
+# sits at the ambient floor is a *fill* at 39 levels; a bar touching a plate cannot see the room
+# down there at all, and the last of its far half goes to about 20 - which is the core shadow
+# every critic measured the absence of. Ambient occlusion, and it belongs to the diffuse floor
+# rather than to the colour: see material.steel's `ambient`
+RAIL_BOUNCE = 0.36  # ...and how much light comes back UP off the plate onto the last of it,
+RAIL_BOUNCE_AT = 0.74  # over the outer quarter of the far side. This is the fourth event in the
+# section and the one that says the bar is round: core shadow, then a line of reflected light
+# under it. Capped hard - the whole point of the round bar is one specular, and a bounce that
+# gets near it is the two-lights fault this panel has been marked down for three rounds running.
+# At 0.36 it lands about three tenths of the crest - under the 0.35 ceiling a down-facing surface
+# is held to, and still twice the core shadow it sits below, so it reads as a bounce and not as a
+# second light. It reaches only the one row the section actually turns under: see RAIL_BOUNCE_AT
 RAIL_GRAIN_DARK = 0.45  # ...and how much of it goes the other way. Brushed steel scatters more
 # than it swallows, so its tooth is bright specks on a face rather than noise about a mean: a
 # symmetric field measures as a grain overlay laid over the render, which is what it is
@@ -740,29 +774,45 @@ RAIL_BODY = 0.28  # dial bezels, which still bend the old three-band profile - s
 RAIL_SHADOW = 230  # alpha of the soft shadow the rail casts onto whatever is behind it - its
 # plate, the glass, the room. It was 150, which is a tint: under a bar in the reference the
 # ground goes to a fifth of what it was, and that drop is most of what lifts a bar off a surface
-SPINE_DROP = 10.0  # reference px up from the panel's bottom edge to the foot rail's centreline
+SPINE_DROP = 21.5  # reference px up from the panel's bottom edge to the foot rail's centreline.
+# It was 10, and the state light's cove runs rows 464 to 469 at 480 - the whole of that bar's lit
+# half. Same fault as the head rail's and the same answer: the bar stands a pixel inboard of the
+# cove, the cove lights the picture between the case and the bar, and the metal keeps its own
+# colour. See HEAD_DROP, which carries the measurements
 SPINE_W = 10.0  # ...and its section, which is a little over half a mount's. Ten and not nine
 # so that the bar's top edge lands on a whole row: at nine the one blown pixel of its ridge fell
 # across the join between two rows and read as a two-pixel band forty levels down. The whole
-# member lives in the outer fifteen pixels of a 480-pixel frame - two per cent of its height, and
-# it never crosses into the picture. That budget is the entire argument for it: three critics in
-# a row said the hardware has no spine and every bracket dead-ends in air, and one slim bar at
-# the very edge is the cheapest sentence that answers them. It is drawn before anything else, so
-# the monitor stands in front of it and the mounts land on it
-HEAD_DROP = 11.5  # reference px down from the top edge to the head rail's centreline. The border
-# owns the outer six pixels of the panel - its stroke and the steel behind it - so at half of
-# SPINE_W this puts the bar's lit edge at 6.5, hard against what the border needs and not inside
-# it. The half is not a rounding: a bar whose edge lands on a whole row samples its roll at
-# depths 0, 1, 2 and the angle that mirrors the lamp - a sine of 0.40 - falls between the first
-# two, so the ridge came out seven levels under what the same section reaches on every 17 px bar
-# on this panel, all of which have their edges on halves.
+# member and its shadow live in the outer twenty-seven pixels of a 480-pixel frame - under six
+# per cent of its height, and none of it over the middle of the picture. That budget is the
+# entire argument for it: three critics in a row said the hardware has no spine and every
+# bracket dead-ends in air, and one slim bar along the bottom is the cheapest sentence that
+# answers them. It is drawn before every other member, so the monitor stands in front of it and
+# the mounts land on it
+HEAD_DROP = 21.5  # reference px down from the top edge to the head rail's centreline. It was
+# 11.5, which put the bar's lit edge at 6.5 - hard against the border, and inside the cove the
+# state light pools in. Two faults came out of that one number, and both were measured. The
+# surround's crown sits at row 2 and the bar's at row 8, a five-pixel pair of full-strength
+# speculars with a trough between: one lamp cannot light one edge twice, and the eye reads the
+# pair as a single fat moulding rather than as a case with a rail inside it. And rows 10 to 15
+# are the cove - HALO_CORE and HALO_FALLOFF - so the bar's whole face sat in a green wash at a
+# third alpha, which took the metal to +25 of green bias and flattened its own fall to two
+# levels over six rows. At 21.5 the bar's outer edge is at 16.5, a pixel clear of the cove, and
+# its ridge is fifteen pixels from the surround's with a lit strip of picture between them.
+#   The half is not a rounding: a bar whose edge lands on a whole row samples its roll at depths
+# 0, 1, 2 and the angle that mirrors the lamp - a sine of 0.40 - falls between the first two, so
+# the ridge came out seven levels under what the same section reaches on every 17 px bar on this
+# panel, all of which have their edges on halves.
 #   What the member buys: the module across the top used to be bolted to nothing at all, and
 # three quarters of the top edge was bare picture with the module's corner fixings hanging in
-# it. The whole bar and its shadow live in the top twenty rows - about two and a half per cent
-# of the panel, all of it hugging an edge that was carrying no information
+# it. Now the module's legs come down POD_STEP and land on the bar's top edge instead of passing
+# through it, which is a load path anybody can trace
 HEAD_TURN = 34.0  # ...and how far down each side it turns before it stops. A bar that runs off
 # the edge of the frame dies in the border's glow; one that turns the corner and ends is a
 # gusset, and the two together are what say the top of this panel is a frame rather than a lid
+HEAD_BEND = 9.0  # reference px of radius its formed corner is bent to. It used to be the frame's
+# own radius offset inwards, so the gap to the panel's edge stayed constant round the turn; a bar
+# standing further in than that radius cannot be concentric with it at all, so the corner is bent
+# to a former of its own now - which is what a fabricated corner in bar actually is
 HEAD_STEP = 15.0  # degrees of the corner's arc per straight segment of the centreline. The bend
 # is a handful of pixels across, so this is already finer than a pixel; any smaller and the
 # mitre solver is doing arithmetic nobody can see
@@ -791,7 +841,13 @@ RIB_CREST = 105  # alpha of the one lit hairline along a rib's near edge. It was
 RIB_SHADOW = 120  # ...and of the shadow it drops. A web four pixels wide stands a fraction as
 # proud as a bar does, so it may not drop a bar's shadow: at RAIL_SHADOW the three of them read
 # as three dark scratches gouged across the corner rather than as stiffeners standing on it
-PLATE_WASH = 0.66  # how far a bracket's plate is put towards SCREEN. Not opaque: a bracket you
+PLATE_INK = (9, 12, 13)  # what a bracket's plate is washed with. It used to be SCREEN, which is
+# the green-black the phosphor's own furniture is drawn in, and that is the whole of why the
+# plate measured +32 of green bias against a rail at +8: a plate is *steel* seen through the
+# tube's glass, so it takes the metal's neutrality and not the tube's colour. A shade to the blue
+# for the same reason the steel is - cold metal beside warm phosphor is what tells them apart at
+# a glance. Its luminance is within a level of SCREEN's, so nothing built on the plate restages.
+PLATE_WASH = 0.66  # how far a bracket's plate is put towards PLATE_INK. Not opaque: a bracket you
 # cannot see the room through is a bar, and this layout exists to stop having those. But dark -
 # it was 0.34, and at that the plate came out at the same luminance as the bars bolted across it
 # (87 against 88), so rail, gusset and plate fused into one grey mass and the corner under the
@@ -3148,7 +3204,7 @@ class Overlay:
         covered 29% of the panel; two mounts and a pod cover 16% of it, and the picture runs edge
         to edge behind them - this is what the chrome is *made of* rather than something sitting
         under an opaque bar. The plate is much darker than it was, though, because a bracket is a
-        thing rather than a tint - see PLATE_WASH, which is as far towards SCREEN as it goes.
+        thing rather than a tint - see PLATE_WASH, which is as far towards PLATE_INK as it goes.
 
         Dark, and a *surface*: brushed along the panel's own diagonal, grooved by the sheet's
         hairlines, pitted where the finish has gone through, lifted where the lamp stands over it
@@ -3160,7 +3216,7 @@ class Overlay:
             np.zeros((*shape, 3), dtype=np.float32),
             np.zeros(shape, dtype=np.float32),
         )
-        base = _over(base, SCREEN, np.full(shape, PLATE_WASH, dtype=np.float32))
+        base = _over(base, PLATE_INK, np.full(shape, PLATE_WASH, dtype=np.float32))
         base = _over(base, material.STEEL_DARK, np.full(shape, PLATE_STEEL, dtype=np.float32))
         base = _over(base, GREEN, np.full(shape, TINT_ALPHA, dtype=np.float32))
         # The sheet every plate is cut from is brushed, and brushed along the panel's own
@@ -3651,8 +3707,15 @@ class Overlay:
         the chrome has a thickness.
         """
         layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        # The two frame rails before all of it, because everything else on the panel hangs off
-        # them: the mounts stand on the foot rail and the module hangs from the head rail.
+        # The webbing before any of the hardware. It is what is stiffening the *plate*, so it
+        # belongs to the plate, and drawn with its own bracket it went on over the foot rail:
+        # measured, the rail's specular ran flat at 150 out to x=755 and then broke into a
+        # 13 px sawtooth dipping to 51 - a two-thirds modulation, which is a see-through bar.
+        # Panel graphics, hatching and washes go behind hardware, always; a member you can see
+        # the plate through is not a member.
+        self._draw_webbing(layer)
+        # ...then the two frame rails, because everything else on the panel hangs off them: the
+        # mounts stand on the foot rail and the module hangs from the head rail.
         self._draw_spine(layer)
         self._draw_head(layer)
         # The terminal before either mount and before both instruments, because every one of them
@@ -3783,8 +3846,8 @@ class Overlay:
         return material.glare(width, height, lamp, PLATE_REACH * self.height, ambient=RAIL_SUN)
 
     def _draw_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]],
-                   thick: int | None = None) -> None:
-        """A bar of flat steel along the spine, under the panel's one lamp, and its shadows.
+                   thick: int | None = None, turned: float = 0.0) -> None:
+        """A bar of steel along the spine, under the panel's one lamp, and its shadows.
 
         One mitred outline - the spine offset both ways and closed, so the knees are corners and
         the ends are square - filled for coverage, and one frame off the same spine
@@ -3813,6 +3876,18 @@ class Overlay:
         private tile, never as writes - a translucent write is a window onto the camera - and
         only over the box the bar occupies, so the eight of these a panel builds are eight small
         tiles and not eight full frames.
+
+        *turned* is what makes the two frame rails a different member from everything bolted to
+        them. At 0 the section is sawn flat stock: the far half holds the face's own crown until
+        the chamfer takes it away. At 1 it is round bar, and the far half keeps rolling until the
+        lamp has left it entirely - which, with the plate shutting the underside in
+        (RAIL_OCCLUDE) and throwing a little back up onto its last row (RAIL_BOUNCE), is the
+        difference between a section and a slab. Measured across a flat bar the reading was
+        specular, falloff, and then six rows that never left 126: four bands and only two events.
+        A turned one gives the four the eye actually looks for - a ridge in the upper third, a
+        monotonic fall, a core shadow at about a fifth of the face, and a line of reflected light
+        under it at a third of the ridge, which is where a bounce has to stay so that the member
+        still has exactly one specular on it.
 
         Everything here is once per window size. Nothing in it may be reached from a frame.
         """
@@ -3879,9 +3954,26 @@ class Overlay:
         crown = RAIL_CROWN * np.clip(np.abs(across) / max(half - chamfer, 1e-3), 0.0, 1.0)
         arris = depth < np.where(lit, edge, chamfer)
         rolled = np.clip(1.0 - depth / np.maximum(edge, 1e-3), 0.0, 1.0)
-        tilt = np.where(lit, crown + (1.0 - crown) * rolled,
-                        np.where(arris, RAIL_FAR_TILT, crown))
+        # How far out of the section a pixel is, 0 on the centreline and 1 on the outermost row
+        # the outline actually fills. Measured against half a pixel in from the silhouette
+        # because that is where full coverage stops: normalising on `half` itself puts the end
+        # of the section in the anti-aliasing, where nothing can be read.
+        out = np.clip(np.abs(across) / max(half - 0.5, 1e-3), 0.0, 1.0)
+        # A turned bar keeps rolling away past its own crown on the far half, so the light dies
+        # inside the silhouette instead of at it; sawn stock holds the crown until the chamfer.
+        away = crown + (1.0 - crown) * out**RAIL_TURN_FALL
+        far = np.where(arris, RAIL_FAR_TILT, np.maximum(crown, turned * away))
+        tilt = np.where(lit, crown + (1.0 - crown) * rolled, far)
         diffuse, spec = material.shade(ex * tilt, ey * tilt, np.sqrt(1.0 - tilt * tilt))
+        # What the far half can see of the room, which is what turns its dark side from a floor
+        # into a section. Two things and they land in different places: the plate shuts the
+        # underside in (deepest at the contact), and the plate also throws a little light back up
+        # onto the last of it. Occlusion first, bounce over it, and the bounce is held to a
+        # third of the crest so the member keeps one specular - see RAIL_BOUNCE.
+        under = np.clip((out - RAIL_OCC_AT) / (1.0 - RAIL_OCC_AT), 0.0, 1.0) * ~lit
+        bounce = np.clip((out - RAIL_BOUNCE_AT) / (1.0 - RAIL_BOUNCE_AT), 0.0, 1.0) ** 2 * ~lit
+        room = (material.AMBIENT * (1.0 - turned * RAIL_OCCLUDE * under * under)
+                + turned * RAIL_BOUNCE * bounce)
         rub = material.wear(along)
         # ...and how polished the bar is where the ridge crosses it. Down from the mirror, never
         # up: a highlight that is already reflecting the lamp cannot reflect more of it, and
@@ -3894,6 +3986,18 @@ class Overlay:
         # and the ridge had nothing to sit inset from - the two together are the whole read.
         broken = np.where(tilt > RAIL_BREAK_AT, RAIL_BREAK, 1.0)
         spec = spec * polish * broken * np.where(arris, 1.0, RAIL_FACE_GLOSS)
+        # Where the arris has been knocked about it reflects nothing at all, and that is the fix
+        # for the loudest "this was rendered" measurement on the panel: a highlight that stayed
+        # within 0.7 of a level for a hundred and fifty-eight pixels of its run. `polish` and the
+        # arris wave are both slow - a bend every thirty pixels - and neither could break it,
+        # because a ridge sitting on its own ceiling barely moves when the specular under it
+        # does. So this is a multiply on the finished colour, and only on the two lit rows: the
+        # brushing again with its arguments the other way round, fibres that vary ALONG the bar
+        # and run across it, which is the transverse tooling a deburred edge carries and the one
+        # field here that changes from one pixel to the next down a run. Down only - a chipped
+        # edge cannot reflect more of the lamp than a clean one.
+        nick = np.clip(material.grain(along, across, seed=material.SEED + 11), -1.0, 1.0)
+        chip = RAIL_RIDGE_WEAR * np.clip(-nick, 0.0, 1.0) * (lit & arris)
         face = mix(material.STEEL, material.STEEL_LIT, RAIL_STEEL)
         # Brushed steel scatters more than it swallows: the tooth's lit side throws light back
         # at you and its shaded side only loses the little it had. Symmetric noise over a face
@@ -3909,7 +4013,8 @@ class Overlay:
         # polished. Laid over the finished colour instead, they pushed the ridge past the tube.
         sweep = material.wear(along * RAIL_SWEEP_PITCH, seed=material.SEED + 8)
         drift = (RAIL_DRIFT * rub + RAIL_SWEEP * sweep) / material.GRAIN
-        rgb = material.steel(diffuse, spec, tooth * RAIL_GRAIN + drift, face)
+        rgb = material.steel(diffuse, spec, tooth * RAIL_GRAIN + drift, face, ambient=room)
+        rgb = rgb * (1.0 - chip)[..., None]
         # Hairlines: the sheet's, where they happen to cross, and a few of the bar's own, dragged
         # along its length. Seeded off where the bar is, so every bar is scratched differently
         # and the same way on every boot. Drawn twice over and boxed down, because a hairline
@@ -3937,17 +4042,27 @@ class Overlay:
         rgb = rgb * (1.0 - RAIL_END_WEAR * np.clip(1.0 - to_end, 0.0, 1.0))[..., None]
         layer.alpha_composite(material.to_image(rgb, cover), (x0, y0))
 
-    def _spine_y(self) -> int:
+    def _spine_y(self) -> float:
         """Where the foot rail's centreline runs, in panel rows.
 
         SPINE_DROP up from the bottom edge, or far enough up that the bar's lower edge tucks
         under the monitor's foot - whichever is higher. The case stands in *front* of the rail,
         and a window size that left a pixel of steel showing below it would turn the one member
         everything hangs off into a stripe behind a box.
+
+        SPINE_DROP clears the state light's cove as well - see :meth:`_draw_head`, which had the
+        same problem at the other end of the panel and the same answer.
+
+        On a half row, always, which is the head rail's rule and for a harder reason here. The
+        section is read off how far out of the bar a pixel is, and a centreline on a whole row
+        puts the outermost sample at eight ninths of the way out: the row that carries the core
+        shadow and the row of reflected light under it are simply never sampled, and the bar ends
+        in a fade instead of in a section. Landed on a half, the ten rows sit symmetrically at
+        plus and minus a half through four and a half, and both ends of the section are pixels.
         """
         half = max(4, round(SPINE_W * self.scale)) / 2.0
-        return min(self.height - max(3, round(SPINE_DROP * self.scale)),
-                   round(self.term.bottom - half))
+        return min(round(self.height - SPINE_DROP * self.scale - 0.5) + 0.5,
+                   round(self.term.bottom - half) - 0.5)
 
     def _draw_spine(self, layer: Image.Image) -> None:
         """One bar across the whole bottom edge, and the thing that holds the panel together.
@@ -3958,17 +4073,18 @@ class Overlay:
         no spine, so nothing explains what holds what. Measured, the band along the bottom edge
         carried a highlight in three and a half per cent of its columns where the panel this one
         is judged against carries one in eighty-nine, and that whole difference is one continuous
-        member at the very edge with everything else hanging off it.
+        member along the bottom with everything else hanging off it.
 
-        So: SPINE_W of flat bar on SPINE_DROP, the same steel and the same section as every other
-        bar here (:meth:`_draw_rail`), cut to the frame's own rounded corners so it does not poke
-        out past them. It is half a mount's section, which keeps two sizes of member on the panel
-        rather than three, and it sits entirely inside the outer fifteen pixels - about two per
-        cent of the frame's height - so it buys the load path for almost none of the picture.
+        So: SPINE_W of round bar on SPINE_DROP, the same steel as every other bar here and the
+        turned section the head rail has (:meth:`_draw_rail`), cut to the frame's own rounded
+        corners so it does not poke out past them. It is half a mount's section, which keeps two
+        sizes of member on the panel rather than three, and it lives in the outer six per cent of
+        the frame's height, so it buys the load path for almost none of the picture.
 
-        First of everything on the chrome layer, which is what makes it structural rather than
+        First member on the chrome layer, which is what makes it structural rather than
         decorative: the monitor stands in front of it, the eye's housing passes over it, and each
         mount's leg comes down and is gripped by a collar on it (see :meth:`_draw_bracket`).
+        Only the plate's own webbing is behind it - see :meth:`_draw_webbing`.
 
         Once per window size, on a private layer so the corner cut is a mask and not a write.
         """
@@ -3986,22 +4102,35 @@ class Overlay:
         through their knees have been claiming all along.
 
         The same section and the same width as the foot rail, because two sizes of member on a
-        panel is a language and three is a pile of parts, and it lives just as close to the edge:
-        HEAD_DROP puts its lit arris at 6.5, immediately inboard of what the border needs.
+        panel is a language and three is a pile of parts.
+
+        It used to hug the edge - HEAD_DROP put its lit arris at 6.5, immediately inboard of the
+        surround - and that was two mistakes at once. The surround's own crown sits at row 2 and
+        this bar's at row 8, five pixels apart with a trough between them: one member under one
+        lamp, lit twice, which is the fault every critic on the coherence lens has written down.
+        And the state light pools in a cove *just* inside the surround, rows 10 to 15, which is
+        exactly where this bar's face was: measured, the green bias of the metal there ran to
+        +25 against +8 for the same steel a pixel further in, and the cove's own gradient
+        flattened the section's fall to within two levels over six rows. Hardware standing in a
+        wash is not hardware.
+
+        So HEAD_DROP now stands the bar clear of both: the cove lights the picture between the
+        case and the rail, as a cove is meant to, and the bar is its own member with its own
+        single specular fifteen pixels away from the surround's. The module's legs come down to
+        POD_STEP and land on its top edge, which they used to pass straight through.
+
         Where the foot rail runs off both ends into the frame's rounded corners, this one turns
-        into them and stops: a bend concentric with the frame's own radius, then HEAD_TURN of leg
-        down the side. Concentric is the whole of why it is an arc and not a mitred forty-five -
-        the gap between the bar's outer edge and the panel's edge stays the same all the way
-        round the corner, where a chamfer left a widening wedge of picture in it. That is a
-        formed corner plate, and a member that ends *somewhere* is the difference between a
-        frame and a stripe.
+        into them and stops: HEAD_BEND of formed corner, then HEAD_TURN of leg down the side.
+        Its own former's radius rather than the frame's, because a bar this far inboard cannot be
+        concentric with a corner it is inside of - and a member that ends *somewhere* is the
+        difference between a frame and a stripe.
 
         Drawn with the foot rail, before everything: the module, the mounts and the companion's
         own housing all pass in front of it.
         """
         inset = HEAD_DROP * self.scale
         turn = inset + HEAD_TURN * self.scale
-        bend = max(1.0, self.radius - inset)  # the frame's corner, offset in to the centreline
+        bend = max(1.0, HEAD_BEND * self.scale)  # the radius the corner is formed to
         near, far = inset + bend, self.width - inset - bend
         self._edge_rail(layer, [
             (inset, turn),
@@ -4018,13 +4147,44 @@ class Overlay:
         because a write of anything translucent is a hole onto the camera.
         """
         bar = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        self._draw_rail(bar, points, max(4, round(SPINE_W * self.scale)))
+        self._draw_rail(bar, points, max(4, round(SPINE_W * self.scale)), turned=1.0)
         corner = Image.new("L", (self.width, self.height), 0)
         ImageDraw.Draw(corner).rounded_rectangle(
             [0, 0, self.width - 1, self.height - 1], radius=self.radius, fill=255
         )
         cut = np.asarray(bar, np.float32)
         cut[:, :, 3] *= np.asarray(corner, np.float32) / 255.0
+        layer.alpha_composite(Image.fromarray(cut.astype(np.uint8), "RGBA"))
+
+    def _draw_webbing(self, layer: Image.Image) -> None:
+        """Every bracket's stiffeners, first of everything, so no hardware is drawn through.
+
+        Webbing is a feature of the plate and not of the rail on it, so it goes down with the
+        plate's other graphics and the members come over the top. It used to be drawn inside
+        :meth:`_draw_bracket`, which is after :meth:`_draw_spine`, so the bottom-right corner's
+        three ribs hatched straight across the foot rail's highlight: measured, the rail's
+        specular ran flat at 150 out to x=755 and then broke into a thirteen-pixel sawtooth
+        dipping to 51.
+
+        And cut to the picture's own opening, because the ribs cross a corner and the corner they
+        cross is the panel's - so their far ends used to run out over the case's face, dipping it
+        from 88 to 35 on the same thirteen-pixel pitch. The plate is behind the surround, and so
+        is everything drawn on the plate.
+
+        The one with a face on it has none: see :meth:`_draw_bracket` for why.
+        """
+        web = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+        for bracket in self.brackets.values():
+            if bracket.corner and not bracket.seats:
+                self._draw_ribs(web, bracket.corner, bracket.spine[0], bracket.spine[-1])
+        band = frame_band(self.height)
+        inside = Image.new("L", layer.size, 0)
+        ImageDraw.Draw(inside).rounded_rectangle(
+            [band, band, self.width - 1 - band, self.height - 1 - band],
+            radius=max(1, self.radius - band), fill=255,
+        )
+        cut = np.asarray(web, np.float32)
+        cut[:, :, 3] *= np.asarray(inside, np.float32) / 255.0
         layer.alpha_composite(Image.fromarray(cut.astype(np.uint8), "RGBA"))
 
     def _draw_bolt(
@@ -4077,13 +4237,15 @@ class Overlay:
         layer.alpha_composite(crop, (max(0, left), max(0, top)))
 
     def _draw_bracket(self, layer: Image.Image, bracket: Bracket) -> None:
-        """Stiffeners, then the rail, then the bolts at every place the rail turns.
+        """The rail, then the bolts at every place it turns.
 
-        The ribs go down first and stay near the corner. Run them out towards the rail and they
-        stop reading as webbing inside a bracket and start reading as stripes laid over the room,
-        which is the one thing this layout is spending its corners to avoid. The pod has none:
-        webbing braces a corner against a load, and a module hanging off the middle of an edge
-        has no corner and nothing to brace.
+        The stiffeners are not in here any more - see :meth:`_draw_webbing`, which puts every
+        bracket's down before any hardware at all, because a rib drawn after the foot rail
+        hatches through it. They still stay near the corner: run them out towards the rail and
+        they stop reading as webbing inside a bracket and start reading as stripes laid over the
+        room, which is the one thing this layout is spending its corners to avoid. The pod has
+        none: webbing braces a corner against a load, and a module hanging off the middle of an
+        edge has no corner and nothing to brace.
 
         Nor does the one with a face on it. The loom leaves his housing into that same corner and
         there is about forty pixels of it, so webbing and cables in there together is not two
@@ -4091,9 +4253,6 @@ class Overlay:
         over the thing that says the corner is stiff. `seats` is what asks the question, because
         the left mount is the only bracket that has one.
         """
-        corner, a, b = bracket.corner, bracket.spine[0], bracket.spine[-1]
-        if corner and not bracket.seats:
-            self._draw_ribs(layer, corner, a, b)
         self._draw_rail(layer, bracket.path())
         # Where a leg comes down onto the foot rail, the rail swells round it. That swell is the
         # clamp: no bolt, no plate, no second part - the silhouette alone says the two are gripped
