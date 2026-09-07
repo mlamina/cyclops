@@ -401,6 +401,18 @@ body:not(.kiosk) .camoff {
 body:not(.kiosk) #v-live:not([data-cam="off"]) .camoff { display: none; }
 /* Two marks saying the screen is awake is one too many, and the live picture is the better. */
 body:not(.kiosk) #v-live[data-cam="on"] .idle-eye { display: none; }
+/* One line, and it is the whole control: what the switch will do, beside the switch that does
+   it. The settings column on the panel pairs a shouted three-letter label with a hint underneath,
+   which is right when four of them are stacked in a column and wrong for a single control - it
+   read as two captions arguing over one button. So the label is the sentence, at a size and a
+   tracking meant to be read rather than scanned, and the switch's own word is the only state.
+   Scoped to .cam because .vlabel is the panel's, and the panel is measured to the pixel. */
+body:not(.kiosk) .cam .vlabel {
+  font-size: calc(15 * var(--u));
+  letter-spacing: .06em;
+  line-height: 1.35;
+  color: var(--mid);
+}
 /* A phone on its side is 390 px tall and the header has already taken a third of it. A share of
    the screen is the wrong cap there, because the switch and its hint under the frame are a fixed
    seventy pixels however small the picture gets - so at 34dvh the conversation was left with
@@ -408,11 +420,9 @@ body:not(.kiosk) #v-live[data-cam="on"] .idle-eye { display: none; }
    tests/layout_check.mjs measures exactly this shape, which is why it is a size in the list.
 
    A height question and not the width one above, so it does not touch --wide-q's single
-   definition: this asks how much room there is at all, not whether somebody is sitting down. The
-   hint goes first because the switch's own word already says which way it is set. */
+   definition: this asks how much room there is at all, not whether somebody is sitting down. */
 @media (max-height: 30rem) {
-  body:not(.kiosk) #v-live { --camh: 26; }
-  body:not(.kiosk) .cam .shint { display: none; }
+  body:not(.kiosk) #v-live { --camh: 30; }
 }
 
 /* ---- and what it is when nothing is running ---- */

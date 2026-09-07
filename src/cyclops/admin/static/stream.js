@@ -23,7 +23,6 @@ if (cam) {
   const view = document.getElementById('v-live');
   const shot = document.getElementById('camshot');
   const spk = document.getElementById('spk');
-  const hint = document.getElementById('spkhint');
   const KEY = 'cyclops.speaker';
 
   // ---- the picture ----------------------------------------------------------------------
@@ -195,12 +194,12 @@ if (cam) {
   // what is drawn: a context that is running, with a stream actually open on it.
   const settled = () => {
     const live = !!(ctx && ctx.state === 'running' && stop);
+    // The switch's own word is the whole of the state now: the label beside it is a fixed
+    // sentence saying what it does. Wanted-but-not-running therefore shows OFF, which is exactly
+    // what is true - a browser will not make a sound on a page nobody has touched, and the tap
+    // that turns it on is the tap it was waiting for.
     spk.setAttribute('aria-checked', live ? 'true' : 'false');
     spk.textContent = live ? 'ON' : 'OFF';
-    // Off it says what it will do, on it says what is true, and wanted-but-not-running says
-    // what is missing - which after a reload is a tap and nothing else.
-    hint.textContent = live ? 'this device is the speaker'
-                     : (want ? 'tap to use this device as speaker' : 'use this device as speaker');
   };
 
   const ears = () => {
