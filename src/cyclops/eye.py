@@ -135,41 +135,11 @@ HOLE_MAX = 0.78  # ...and wide open. The core can only be as big as this, which 
 # stare a wide hot core and a fault a narrow one without a single number per state.
 BEZEL = 1.14  # the ring the core is set into, as a multiple of the hole
 BEZEL_W = 1.1
-INDEX_IN, INDEX_OUT = 0.605, 0.700  # the brass ring the diaphragm is set in, as fractions of
-# him. It sits immediately outside the blades' own edge and travels with them, because it is the
-# housing they are mounted in and not a mark on the socket behind. That is also what keeps it
-# clear of the band the "rings turn" tests read, and it is what a static one got wrong the first
-# time this was tried: pinned to the socket it lay across the blade tips wherever he looked, and
-# took the motion out of the one band that had it.
-INDEX_TICKS = 60  # one cut every six degrees...
-INDEX_MAJOR = 5  # ...and every fifth of them run the full width, which is what makes a ring of
-# marks read as a scale rather than as a knurl
-INDEX_TICK = 0.45  # how far across the face a minor cut reaches, as a fraction of the width
-INDEX_LIT = 0.26  # the flat of the brass where it is turned away from the lamp...
-INDEX_TOP = 0.37  # ...and where it faces it. Two arcs rather than a grade, for the reason
-# LEAF_FACE gives: a gradient inside this tile is a numpy pass over half a million pixels a frame
-INDEX_FROM = 200  # where the lit arc starts and how far it runs, set on the panel's own lamp -
-INDEX_SPAN = 160  # up and to the left - so the ring agrees with every bevel outside him
-INDEX_CUT = 0.16  # the cut itself. A groove in brass is darker than the face it is cut into
-INDEX_LIP = 0.42  # the polished outer edge, one hair wide: a machined ring reads from its edge
-# before it reads from its face
-BRASS_EYE = (206, 168, 84)  # what the ring is made of, and the one part of him that is not his
-# tint. Darker than the collar's brass outside him (overlay.BRASS) because it is seen through the
-# same glass as the phosphor, and because the face's colour is measured over what it lights: at
-# INDEX_TOP this lands near 160 of the 200 that measurement starts counting at, so the ring is a
-# brass part on a green eye rather than a warm eye.
 CORE_N = 52  # filaments in the core at full size - see Pen.core for why it is a ceiling
 CORE_HUB = 0.10  # the filaments start here rather than at a point, or they pile up into
 # a blob at the centre and the falloff stops being a falloff
 CORE_EDGE = 0.97  # ...and stop just short of the rim, so the rim reads as a rim
 CORE_RINGS = (0.44, 0.72)  # two faint circles across them, which says "lens" and not "fan"
-GLOW_N = 5  # rings of bloom around the hot middle: the halo a bright filament throws into the
-# glass in front of it. Stepped, and cheap on purpose - five loops against a numpy pass over the
-# tile every frame, which is what a real radial falloff would cost in here (see LEAF_FACE).
-GLOW_TO = 2.9  # how far out the last of them reaches, as a multiple of the hot middle
-GLOW_LIT = 0.80  # the innermost ring's strength...
-GLOW_FALL = 1.6  # ...and the power the rest fall off at, so the bloom is tight to the middle
-# rather than a wash across the whole aperture
 HOT = 0.30  # the hot middle, as a fraction of the core...
 SPARK = 0.13  # ...and the brightest part of that again
 SPARK_FLOOR = 1.5  # ...but never a smaller radius than this in panel pixels. sqrt(2) is the
@@ -982,29 +952,6 @@ class Pen:
         self.band(rad + tall * GREEBLE_BAR, deg - GREEBLE_BAR_ARC, deg + GREEBLE_BAR_ARC,
                   GREEBLE_BAR_LIT, self.hair)
 
-    def index(self, r0: float, r1: float) -> None:
-        """The brass ring the diaphragm is set in, and the scale cut round its face.
-
-        Two arcs and not a gradient: the side turned towards the lamp is a step brighter than the
-        side turned away, which is the whole of the modelling and costs two calls. The cuts are
-        darker than the face because that is what a groove in metal is, and every fifth runs the
-        full width so the ring reads as a scale rather than as a knurl. The polished lip on the
-        outer edge goes on last - a machined ring is read from its edge before its face.
-        """
-        mid, wide = (r0 + r1) / 2.0, r1 - r0
-        face = max(1, round(wide))
-        self.d.ellipse(self.box(mid), outline=self.shade(INDEX_LIT), width=face)
-        self.d.arc(self.box(mid), start=INDEX_FROM, end=INDEX_FROM + INDEX_SPAN,
-                   fill=self.shade(INDEX_TOP), width=face)
-        cut = self.shade(INDEX_CUT)
-        for i in range(INDEX_TICKS):
-            deg = i * 360.0 / INDEX_TICKS
-            reach = r1 if i % INDEX_MAJOR == 0 else r0 + wide * INDEX_TICK
-            self.d.line([self.point(r0, deg), self.point(reach, deg)],
-                        fill=cut, width=max(1, round(self.hair)))
-        self.d.ellipse(self.box(r1), outline=self.shade(INDEX_LIP),
-                       width=max(1, round(self.hair)))
-
     def leaves(self, iris: float, hole: float, n: int, twist: float, pitch: float) -> None:
         """The diaphragm: *n* straight-edged blades cutting a regular polygon hole out of a disc.
 
@@ -1067,15 +1014,7 @@ class Pen:
         the core is small enough for that to bite.
         """
         n = max(12, min(CORE_N, round(TAU * rad / (1.2 * SUPERSAMPLE))))
-        dx, dy = lead
         self.disc(rad, CORE_FLOOR)
-        # The bloom the hot middle throws into the glass in front of it, laid straight onto the
-        # core's floor so the threads and the middle itself are drawn over it. Discs and not
-        # rings, largest first: ImageDraw writes rather than composites, so a dim ring laid over
-        # a bright thread is a dark hole - which is exactly what the first attempt at this drew.
-        for i in range(GLOW_N, 0, -1):
-            k = i / GLOW_N
-            self.disc(rad * HOT * GLOW_TO * k, GLOW_LIT * (1.0 - k) ** GLOW_FALL, dx, dy)
         thread, hair = self.shade(THREAD_LIT), max(1, round(self.hair))
         # CORE_HUB leaves a gap the filaments do not fill, and it is meant to spend its life
         # under the hot middle. At the lead this eye now uses it does not: left where it is, that
@@ -1086,6 +1025,7 @@ class Pen:
         # gap and then follow only as far as it takes to stay under it, so the fan is exactly
         # radial while he is looking at you and no more skewed than it has to be when he is not.
         # Free either way: the same lines, moved.
+        dx, dy = lead
         mag = math.hypot(dx, dy)
         over = max(0.0, mag - rad * (HOT - CORE_HUB)) / mag if mag > 0.0 else 0.0
         hx, hy = dx * over, dy * over
@@ -1149,8 +1089,6 @@ class EyeEngine:
         self._from = resting  # ...what it was before that, and when it changed
         self._at = 0.0
         self._key = ""
-        # The index ring, one picture per brightness he is ever drawn at. See :meth:`_index`.
-        self._rings_seen: dict[float, Image.Image] = {}
         # His tile is his bounding box and not a pixel more - 121 px square as it lands on the
         # 800x480 panel - which is what makes drawing him four times over affordable inside a
         # 40 ms frame. His centre in it is also the rim's radius, the rim being the tile drawn
@@ -1209,37 +1147,7 @@ class EyeEngine:
         and the room through it.
         """
         tile = smoothed(self._size, lambda d: self._draw(d, mood, phase, level))
-        # The index ring is the one part of him whose picture never changes - only where it sits.
-        # Sixty cuts and three circles is half a millisecond of PIL if they are stroked every
-        # frame, which is the whole per-frame budget for a thing that is the same picture each
-        # time; so it is drawn once per brightness and pasted at the offset his gaze has reached.
-        # Its own radii are clear of the core and the bezel, so landing it last changes no pixel
-        # that another part of him would have won.
-        gx, gy = gaze_at(phase, mood, self.places)
-        ring = self._index(round(mood.rings, 2))
-        half = ring.width // 2
-        tile.alpha_composite(ring, (round(self.r + gx * self.r * GAZE_SHIFT) - half,
-                                    round(self.r + gy * self.r * GAZE_SHIFT) - half))
         img.alpha_composite(tile, (cx - self.r, cy - self.r))
-
-    def _index(self, lit: float) -> Image.Image:
-        """The brass ring, drawn once at each brightness his mood asks for, and kept.
-
-        Keyed on `rings` rounded to a hundredth: a crossfade walks that number, and a table with
-        one entry per frame of a walk is not a cache. A hundredth is finer than the panel can
-        show, and the moods between them leave it a few dozen entries for the life of a kiosk -
-        the same bargain `Overlay._bases` makes, and bounded for the same reason.
-        """
-        ring = self._rings_seen.get(lit)
-        if ring is not None:
-            return ring
-        span = 2 * round(self.r * INDEX_OUT) + 3
-        mid = at((span - 1) / 2.0)
-        ring = smoothed(span, lambda d: Pen(
-            d, mid, mid, self.screen, BRASS_EYE, max(0.0, lit), self._stroke, self._thin,
-        ).index(at(self.r * INDEX_IN), at(self.r * INDEX_OUT)))
-        self._rings_seen[lit] = ring
-        return ring
 
     def _draw(self, d: ImageDraw.ImageDraw, mood: Mood, phase: float, level: float) -> None:
         """The whole eye at the centre of its tile: the socket, then the eye, then the glass."""
