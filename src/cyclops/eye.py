@@ -160,8 +160,17 @@ KNURL_LIT = 0.30
 LEAF_LIT = 0.08  # the flat of a blade...
 HATCH_LIT = 0.26  # ...and the hatch across it, which is the only thing telling two blades apart
 EDGE_LIT = 0.92  # the bright chord where one blade lies over the next
+EDGE_SHADE = 0.02  # ...and the dark line beside it on the blade's own face: the blade's
+# thickness, seen edge-on. A lit line on its own is a drawn edge; a lit line with a dark one
+# against it is a bevel, and a plate with a bevel has a thickness.
+EDGE_BEVEL = 1.0  # how far onto the blade that facet lies, in multiples of the thin line
 IRIS_LIT = 0.95
 BEZEL_LIT = 0.55
+BEZEL_HI = 0.85  # the bezel where the panel's lamp lands on it, up and to the left. On the
+# moved centre with the rest of the optic, and deliberately so: the brow is a highlight on the
+# glass and stays put, this is a highlight on the metal under it and travels - two reflections
+# parting company is what says there is a pane between them.
+BEZEL_HI_FROM, BEZEL_HI_TO = 204, 294  # PIL degrees, centred where the lamp is
 CORE_FLOOR = 0.10
 THREAD_LIT = 0.60
 CORE_RING_LIT = 0.26
@@ -755,6 +764,17 @@ class Pen:
         self.d.line(self.arc_pts(rad, 0.0, 360.0, n), fill=self.shade(strength),
                     width=max(1, round(width)), joint="curve")
 
+    def sweep(self, rad: float, a0: float, a1: float, strength: float, width: float) -> None:
+        """An arc drawn as a polyline: :meth:`band` for a moved centre, as :meth:`loop` is for
+        :meth:`ring`.
+
+        No rounded joints, unlike :meth:`loop`: a joint is an ellipse per vertex and is most of
+        the cost of the line, and at a step of six degrees the notch it would fill is a
+        hundredth of a pixel wide before the tile is even shrunk.
+        """
+        self.d.line(self.arc_pts(rad, a0, a1, max(6, int(abs(a1 - a0) / 6))),
+                    fill=self.shade(strength), width=max(1, round(width)))
+
     # ---- the parts ----
 
     def castle(self, rad: float, n: int, jog: float, arc: float, start: float,
@@ -827,6 +847,7 @@ class Pen:
         are separate plates lying over each other.
         """
         half = math.degrees(math.acos(max(-1.0, min(1.0, hole / iris))))
+        facet, off = self.shade(EDGE_SHADE), self.thin * EDGE_BEVEL
         for i in range(n):
             a = twist + i * 360.0 / n
             seg = self.arc_pts(iris, a - half, a + half, 20)
@@ -841,6 +862,11 @@ class Pen:
                 t += pitch
             self.d.line([seg[0], seg[-1]], fill=self.shade(EDGE_LIT),
                         width=max(1, round(self.thin)))
+            # The facet, a hairline onto the blade from its lit edge. Under the iris loop at
+            # both ends, so it has no ends of its own to read.
+            self.d.line([(seg[0][0] + ca * off, seg[0][1] + sa * off),
+                         (seg[-1][0] + ca * off, seg[-1][1] + sa * off)],
+                        fill=facet, width=max(1, round(self.hair)))
         self.loop(iris, IRIS_LIT, self.stroke)
 
     def core(self, rad: float, lead: tuple[float, float]) -> None:
@@ -1055,4 +1081,5 @@ class EyeEngine:
         if hole <= SPARK_FLOOR * SUPERSAMPLE:
             return
         pen.loop(hole * BEZEL, BEZEL_LIT, self._stroke * BEZEL_W)
+        pen.sweep(hole * BEZEL, BEZEL_HI_FROM, BEZEL_HI_TO, BEZEL_HI, self._stroke * BEZEL_W)
         pen.core(hole, (gx * hole * GAZE_LEAD, gy * hole * GAZE_LEAD))

@@ -783,9 +783,63 @@ EYE_PLATE_ALPHA = 255  # the body behind him, and the one thing on this panel th
 
 # The body runs out to the swell rather than to his rim. Between those two there used to be
 # sixteen pixels of translucent plate with the rail's inner edge floating over it, and that strip
-# is where the collar goes: the barrel he is seated in, drawn from the rail's own profile so the
-# housing and the bracket that straps over it are visibly the same alloy.
+# is where the collar goes: the bezel he is seated in, a ring of worn brass standing proud of the
+# plate with a polished steel lip on its inner edge holding the glass down, under the same lamp as
+# every bar on the panel (:mod:`cyclops.material`). Brass and not steel, and only here and on the
+# two dials: an instrument's bezel is the one part of a machine like this that was ever a
+# different metal, and it is what says "instrument" about a disc of rings before any of them turn.
 COLLAR_IN = 0.86  # the collar's inner flank, as a fraction of the swell
+COLLAR_LIP = 2.5  # reference px of the steel lip on the bezel's inner edge, a half-round wire
+COLLAR_ROLL = 3.0  # reference px of the brass's outer edge that roll down to the plate
+COLLAR_STEP = 1.5  # ...and of its inner edge that turn down onto the lip
+COLLAR_GROOVE = 0.45  # how dark the turned line just inside the roll is - the one mark a lathe
+# leaves on every bezel, and what separates the face from the roll at a glance
+COLLAR_LIFT = 3.0  # how proud the bezel stands of the plate, which is what sets its shadow
+COLLAR_SHADOW = 0.62  # ...and how dark that shadow is where it is deepest
+COLLAR_WEAR = 0.6  # how much the brass's highlight comes and goes round the ring: handled where
+# a thumb lands on it, dull between
+COLLAR_TARNISH = 0.6  # how much the same slow drift shows in the brass itself, as multiples of
+# the brushing - old brass is not one colour, it is polished in patches
+COLLAR_SCRATCH = 0.25  # how pale the sheet's hairlines show where they cross the brass
+COLLAR_CROWN = 0.40  # sin of the tilt the brass face has reached where its roll begins. Far
+# more than a bar's DOME, because a bezel is not a bar: it is turned with a rounded section, and
+# the fall from its lit side to its dark side across a dozen pixels is most of what says so.
+BRASS = (96, 86, 58)  # a flat face of it square to the viewer. Well short of the metal in a
+# catalogue: this is brass seen by a phosphor tube, and it borrows what little colour it has.
+# Never orange, and never brighter than STEEL_SPEC in any channel.
+BRASS_SPEC = (196, 176, 128)  # where the lamp lands hardest on it. Warm where steel's is cool,
+# because a highlight carries the metal's own colour, and no brighter than the steel's ceiling.
+WELL_FLOOR = (24, 32, 27)  # the machined floor he is drawn on, at its middle...
+WELL_WALL = (9, 15, 12)  # ...and where it meets the wall. Dark enough that no test counting
+# phosphor ever sees it, light enough that a shadow falling on it has something to fall on -
+# SCREEN is so near black that a shadow on SCREEN is nothing at all.
+WELL_DEPTH = 5.0  # reference px the floor sits below the bezel's lip, which is how far the near
+# wall's shadow reaches across it
+WELL_SHADOW = 0.75  # how dark that shadow is under the wall
+WELL_GRAIN = 0.5  # how much the floor's turning marks show, as a fraction of material.GRAIN
+# The glass over him. A dome held down by the lip, and the one part of him that is not drawn
+# every frame: the lamp's reflection on it and the light it gathers along its edge are a tile
+# built once and laid over the eye after it is painted. It has to stay off everything that moves.
+# The iris and everything inside it travel with his gaze, as far as IRIS + GAZE_SHIFT plus the
+# width of a stroke, and a highlight over a moving spark makes the spark's brightness a function
+# of where it is - which is exactly the flicker the sleeping face is not allowed. And it has to
+# stay off the rim, which the scan sweep is measured on. What is left is the band between, the
+# stator and the castellated ring, and that is where a dome's glare falls anyway.
+GLASS_IN = 0.735  # of his radius: where the glass may start, past the optic's furthest reach
+GLASS_OUT = 0.955  # ...and where it must have ended, short of the rim
+GLASS_EASE = 0.05  # how far past each of those it fades in and out
+GLASS_AT = 0.86  # how far up the dome towards the lamp its reflection sits, as a fraction of him
+GLASS_REACH = 0.55  # ...and how far that reflection spreads, in the same units
+GLASS_GLARE = 0.24  # its alpha where it is brightest, in the tube's own white
+GLASS_RIM = 0.14  # the light the dome gathers along its edge on the side facing the lamp
+GLASS_SHADE = 0.14  # ...and how much the far side of it darkens what is under it
+# The loom: three runs of flexible steel conduit leaving the back of his housing through a gland,
+# the same lamp on them as on everything else. Conduit and not cable, because everything on this
+# panel is metal or glass; darker than the bars, because it is braid and not a machined face.
+LOOM_STEEL = 0.45  # how far the conduit is put from STEEL towards STEEL_DARK
+LOOM_LIFT = 2.0  # how proud a run stands of the plate, which sets its shadow
+LOOM_RIB = 1.6  # how much the braid's ribbing shows, as multiples of a bar's brushing
+GLAND_ROLL = 2.0  # reference px of the gland's edges that roll
 # Where the loom leaves him, in PIL's degrees - straight at the panel's own corner, because that
 # is the only direction with any run in it. His swell comes within three pixels of both the left
 # edge and the bottom one, so the pocket between him and the corner is the whole cable budget:
@@ -1558,6 +1612,7 @@ class Overlay:
         self._backdrops: dict[int, Image.Image] = {}
         self._chromes: dict[int, Image.Image] = {}
         self._plate = self._build_plate()
+        self._glass = self._build_glass()
         self._chrome_base = self._build_chrome()
         # One engine per window size: it owns the geometry, and it remembers which mood it is
         # easing out of, which is why it is built here and not per frame.
@@ -1781,16 +1836,104 @@ class Overlay:
         plate left over between his rim and the collar's inner flank, which reads as a gap round
         the lens rather than as the barrel it is standing in.
 
-        A separate layer rather than part of :meth:`_build_chrome`, because that one blurs its own
-        alpha to make the bloom, and a filled disc this size through a Gaussian blur is not a
-        glow, it is a lamp.
+        A machined well rather than a flat disc: a turned floor, a shade lighter at its middle
+        than at the wall, and the shadow the bezel's near wall drops across it - deepest on the
+        side towards the lamp, because that is the wall standing between the lamp and the floor.
+        All of it shows only through the gaps between his rings, and that is where the depth of
+        him comes from: a flat disc behind a set of rings is a badge, and a floor with a shadow
+        falling across it is a socket. The disc's outline is the same ImageDraw ellipse
+        :meth:`_bracket_mask` cuts the hole with, so the two agree to the pixel and no tide line
+        of wash appears round him.
+
+        A separate layer rather than part of :meth:`_build_chrome`, because the collar's rings and
+        the left mount's rail are drawn over the plate and must stay over it.
         """
         layer = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        cx, cy, r = *self.eye, self.shoulder
-        ImageDraw.Draw(layer).ellipse(
-            [cx - r, cy - r, cx + r, cy + r], fill=(*SCREEN, EYE_PLATE_ALPHA)
+        cx, cy, out = *self.eye, self.shoulder
+        inn = out * COLLAR_IN
+        x0, y0, x1, y1, xs, ys = self._around(out + 1)
+        dist = np.hypot(xs, ys)
+        # The floor falls off to the wall on a square, so the middle stays level and the drop
+        # gathers where the wall is - a bowl would put the whole thing on a gradient.
+        depth = (np.clip(dist / inn, 0.0, 1.0) ** 2)[..., None]
+        floor = np.asarray(WELL_FLOOR, np.float32)
+        rgb = floor + (np.asarray(WELL_WALL, np.float32) - floor) * depth
+        rgb = rgb * (1.0 + material.GRAIN * WELL_GRAIN * material.grain(dist, self._round(xs, ys)))[
+            ..., None]
+        # Everything from the flank outwards stands above the floor; its shadow falls the other
+        # way from the lamp, and only what lands inside the flank is floor.
+        lift = max(1.0, (COLLAR_LIFT + WELL_DEPTH) * self.scale)
+        shadow = material.cast((dist >= inn).astype(np.float32), lift) * WELL_SHADOW
+        rgb = rgb * (1.0 - shadow * (dist < inn))[..., None]
+        disc = Image.new("L", (x1 - x0, y1 - y0), 0)
+        ImageDraw.Draw(disc).ellipse(
+            [cx - out - x0, cy - out - y0, cx + out - x0, cy + out - y0], fill=EYE_PLATE_ALPHA
         )
+        layer.alpha_composite(material.to_image(rgb, np.asarray(disc, np.float32) / 255.0),
+                              (x0, y0))
         return layer
+
+    def _around(self, reach: float) -> tuple[int, int, int, int, np.ndarray, np.ndarray]:
+        """A box of the panel *reach* px round him, clipped to it, and where each pixel is from him.
+
+        The base every field on his housing is built over. His swell comes within three pixels of
+        two panel edges, so the box is clipped rather than assumed, and the two coordinate fields
+        are broadcast shapes - a row and a column - so a distance or an angle off them costs one
+        pass over the box and nothing over the panel.
+        """
+        cx, cy = self.eye
+        x0, y0 = max(0, math.floor(cx - reach)), max(0, math.floor(cy - reach))
+        x1 = min(self.width, math.ceil(cx + reach) + 1)
+        y1 = min(self.height, math.ceil(cy + reach) + 1)
+        ys = (np.arange(y0, y1, dtype=np.float32) - cy)[:, None]
+        xs = (np.arange(x0, x1, dtype=np.float32) - cx)[None, :]
+        return x0, y0, x1, y1, xs, ys
+
+    def _round(self, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+        """Arc length round him at his swell, in pixels, for anything turned on a lathe.
+
+        The noise fields in :mod:`cyclops.material` run along a length and do not know they are
+        on a loop, so somewhere the length has to start again and the brushing shows a seam. It
+        starts under the gland, which is the one place on the collar that is always covered.
+        """
+        turn = (np.arctan2(ys, xs) - math.radians(GLAND_AT)) % math.tau
+        return turn * self.shoulder
+
+    def _build_glass(self) -> Image.Image:
+        """The dome over him: the lamp on a sheet of glass, kept off everything that moves.
+
+        One tile the size of his own, laid over the eye after it is painted - see :meth:`render`.
+        Two things on it. The lamp's reflection, up the dome towards the lamp, which is
+        :func:`material.glare` with the terminal's numbers made his; and the light a curved edge
+        gathers, a faint ring just inside the rim, bright on the side facing the lamp and a shade
+        darker on the side away from it. Both in the tube's own white, both faint: glass at this
+        size is a suggestion or it is a smear over the face.
+
+        The GLASS_* block says where it may and may not lie, and the rule is hard rather than
+        eased: the alpha is set to nothing inside GLASS_IN and outside GLASS_OUT after the fades,
+        so a spark drifting under the edge of the zone finds no edge to drift under.
+        """
+        r = self.eye_r
+        size = 2 * r + 1
+        ys = (np.arange(size, dtype=np.float32) - r)[:, None]
+        xs = (np.arange(size, dtype=np.float32) - r)[None, :]
+        dist = np.hypot(xs, ys) / r
+        lx, ly = material.lamp_2d()
+        facing = (xs * lx + ys * ly) / np.maximum(dist * r, 1e-6)
+        band = np.clip((dist - GLASS_IN) / GLASS_EASE, 0.0, 1.0)
+        band *= np.clip((GLASS_OUT - dist) / GLASS_EASE, 0.0, 1.0)
+        spot = (r + lx * r * GLASS_AT, r + ly * r * GLASS_AT)
+        glare = material.glare(size, size, spot, r * GLASS_REACH, ambient=0.0)
+        rim = np.exp(-(((dist - GLASS_OUT + GLASS_EASE) / GLASS_EASE) ** 2))
+        white = band * np.minimum(GLASS_GLARE * glare + GLASS_RIM * rim * np.clip(facing, 0, 1),
+                                  GLASS_GLARE)
+        shade = band * GLASS_SHADE * np.clip(-facing, 0.0, 1.0) * np.clip(dist - GLASS_IN, 0, 1)
+        rgb, alpha = _over((np.zeros((size, size, 3), np.float32), np.zeros((size, size),
+                                                                             np.float32)),
+                           WHITE, white)
+        rgb, alpha = _over((rgb, alpha), (0, 0, 0), shade)
+        alpha[(dist < GLASS_IN) | (dist > GLASS_OUT)] = 0.0
+        return _to_image(rgb, alpha)
 
     def _build_chrome(self) -> Image.Image:
         """The two mounts and the reticle, on transparency - everything of a fixed size.
@@ -2109,48 +2252,82 @@ class Overlay:
         layer.alpha_composite(ribs)
 
     def _draw_collar(self, layer: Image.Image) -> None:
-        """The barrel he is seated in: the rail's own profile, bent into a ring.
+        """The bezel he is seated in: a ring of worn brass, and the steel lip that holds his glass.
 
         A solid disc on its own is not an object, it is a hole - it has a silhouette and no
         thickness. What makes him a thing sunk into the panel is the band round the outside of
-        him, and it is built from :meth:`_rail_colour` for the same reason the bolts are borrowed
-        from the bracket: the housing and the mount that straps over it have to be the same alloy
-        or the join reads as two drawings rather than as one assembly.
+        him, and it is built the way every bar on the panel now is: fields off one distance, the
+        normals of a rolled edge, and the lamp deciding which side is lit. The housing and the
+        mount that straps over it are lit by the same lamp, which is what keeps the join reading
+        as one assembly even though they are two metals.
 
-        Concentric strokes rather than an extrusion. :meth:`_draw_rail` offsets a path, which
-        works on anything open and folds into itself on a closed loop this tight; a ring is the
-        one case where the offsets are just circles, so they are drawn as circles.
+        Three passes, in the order a real one is looked at. The shadow the ring drops onto the
+        plate, first and underneath. Then the brass: a rolled outer edge that catches the lamp
+        up-left and goes dark down-right, a face crowned just enough to be lighter on the lamp's
+        side, brushed round the way a turned part is, its highlight and its colour drifting round
+        the ring where it has been handled, and the sheet's own scratches running across it. Then
+        the lip: a half-round of polished steel on the inner edge, which is the one bright line
+        that says there is glass under it. The well inside the lip is :meth:`_build_plate`'s.
 
-        Inside the flank it drops a blurred shadow onto his face. That is where most of the depth
-        actually comes from - and it is only visible because the tile he is painted from is empty
-        between his rings, so a shadow laid down under him shows through the gaps.
+        Nothing here is written with an alpha below full - the shadow and every soft edge are
+        composited from fields, or they would be windows onto the camera.
         """
         cx, cy = self.eye
         out = float(self.shoulder)
         inn = out * COLLAR_IN
-        d = ImageDraw.Draw(layer)
-        steps = max(2, round(out - inn))
-        for i in range(steps):
-            r = inn + (out - inn) * (i + 0.5) / steps
-            d.ellipse([cx - r, cy - r, cx + r, cy + r],
-                      outline=(*self._rail_colour((r - inn) / (out - inn)), 255), width=2)
-        # The lit lip and the flank, crisp on top of the bands they end - the same two strokes
-        # that finish a rail, and for the same reason.
-        d.ellipse([cx - out + 0.6, cy - out + 0.6, cx + out - 0.6, cy + out - 0.6],
-                  outline=(*mix(GREEN_MID, GREEN, 0.5), 255), width=2)
-        d.ellipse([cx - inn, cy - inn, cx + inn, cy + inn], outline=(*SCREEN, 240), width=2)
-        shade = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        drop = max(2, round(3 * self.scale))
-        ImageDraw.Draw(shade).ellipse(
-            [cx - inn + drop, cy - inn + drop, cx + inn - drop, cy + inn - drop],
-            outline=(0, 0, 0, 170), width=max(3, round(7 * self.scale)),
-        )
-        layer.alpha_composite(shade.filter(ImageFilter.GaussianBlur(max(1.5, 4.0 * self.scale))))
+        lip = max(1.5, COLLAR_LIP * self.scale)
+        roll = max(1.0, COLLAR_ROLL * self.scale)
+        step = max(0.5, COLLAR_STEP * self.scale)
+        lift = max(1.0, COLLAR_LIFT * self.scale)
+        reach = math.ceil(lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT)) + 2
+        x0, y0, x1, y1, xs, ys = self._around(out + reach)
+        dist = np.hypot(xs, ys)
+        safe = np.maximum(dist, 1e-6)
+        ux, uy = xs / safe, ys / safe
+        along = self._round(xs, ys)
+        # The whole ring's shadow before any of the ring, so the ring covers its own.
+        cover = np.clip(0.5 - np.maximum(inn - dist, dist - out), 0.0, 1.0)
+        shadow = material.cast(cover, lift) * COLLAR_SHADOW
+        layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), shadow),
+                              (x0, y0))
+        # The brass, from the lip's outer edge to the swell. Its face tilts outwards, from level
+        # at the lip to DOME at the roll, so the ring reads as crowned rather than as a washer;
+        # its inner edge turns the other way, a narrow roll down onto the lip.
+        brass_in = inn + lip
+        brass = np.clip(0.5 - np.maximum(brass_in - dist, dist - out), 0.0, 1.0)
+        crown = COLLAR_CROWN * np.clip((dist - brass_in) / max(out - roll - brass_in, 1e-3),
+                                       0.0, 1.0)
+        nx, ny, nz = material.roll_normals(np.maximum(out - dist, 0.0), ux, uy, roll, dome=crown)
+        sx, sy, sz = material.roll_normals(np.maximum(dist - brass_in, 0.0), -ux, -uy, step,
+                                           dome=0.0)
+        inner = dist - brass_in < step
+        nx, ny, nz = np.where(inner, sx, nx), np.where(inner, sy, ny), np.where(inner, sz, nz)
+        diffuse, spec = material.shade(nx, ny, nz)
+        rubbed = material.wear(along)
+        spec = spec * (1.0 + COLLAR_WEAR * rubbed)
+        brushed = material.grain(dist, along) + COLLAR_TARNISH * rubbed
+        # The metal's own colour under the lamp, and then its highlight in its own colour too:
+        # `steel` lays its highlight down in STEEL_SPEC, which on brass is a cool smear.
+        rgb = material.steel(diffuse, np.zeros_like(spec), brushed, colour=BRASS)
+        rgb = rgb + np.asarray(BRASS_SPEC, np.float32) * (material.SPEC * spec)[..., None]
+        groove = np.exp(-(((dist - (out - roll - 1.0)) / 0.6) ** 2))
+        rgb = rgb * (1.0 - COLLAR_GROOVE * groove)[..., None]
+        marks = (self._marks[y0:y1, x0:x1] * COLLAR_SCRATCH)[..., None]
+        rgb = rgb * (1.0 - marks) + np.asarray(BRASS_SPEC, np.float32) * marks
+        rgb = np.minimum(rgb, np.asarray(material.STEEL_SPEC, np.float32))
+        layer.alpha_composite(material.to_image(rgb, brass), (x0, y0))
+        # The lip: a bevel of steel turned to face outwards all the way across, so the whole of
+        # it is lit on the lamp's side and dark on the other, one bright line round the glass.
+        wire = np.clip(0.5 - np.maximum(inn - dist, dist - brass_in), 0.0, 1.0)
+        diffuse, spec = material.shade(
+            *material.roll_normals(np.maximum(dist - inn, 0.0), ux, uy, lip, dome=0.0))
+        rgb = material.steel(diffuse, spec, material.grain(dist, along) * 0.5)
+        layer.alpha_composite(material.to_image(rgb, wire), (x0, y0))
         # ...and the mount points, in the arc the rail never reaches. The bracket bolts its own
         # two where the rail leaves the straight; without these the far side of the collar is a
         # ring resting against him rather than a housing fastened down all the way round.
         d = ImageDraw.Draw(layer)
-        mid = (inn + out) / 2.0
+        mid = (brass_in + out) / 2.0
         for deg in COLLAR_BOLTS:
             a = math.radians(deg)
             self._draw_bolt(d, cx + mid * math.cos(a), cy + mid * math.sin(a), self.bolt_r - 1)
@@ -2165,15 +2342,18 @@ class Overlay:
         drawn past the panel's edge on purpose: a loom that stops inside the frame is a loom with
         an end, and an end wants a connector on it.
 
-        Each cable is a black stroke, a steel body over it and a lit hairline along the top, which
-        is the cheapest thing that reads as round rather than as a line. The gland goes on last
-        and is what every one of them starts under - none of them has a beginning, the same way
-        the terminal's rail has no ends.
+        Each run is a round bar of braided steel under the panel's lamp - the same fields the
+        rails are built from, on a section that is all roll, ribbed across rather than brushed
+        along - with its shadow falling off it the other way from the light. The gland goes on
+        last and is what every one of them starts under - none of them has a beginning, the same
+        way the terminal's rail has no ends.
         """
         cx, cy = self.eye
         aim = math.radians(GLAND_AT)
-        d = ImageDraw.Draw(layer)
         w = max(3, round(9 * self.scale))
+        half = w / 2.0
+        lift = max(1.0, LOOM_LIFT * self.scale)
+        conduit = mix(material.STEEL, material.STEEL_DARK, LOOM_STEEL)
         for i in range(LOOM_N):
             a = aim + math.radians(LOOM_FAN) * (i - (LOOM_N - 1) / 2.0)
             along, across = (math.cos(a), math.sin(a)), (-math.sin(a), math.cos(a))
@@ -2188,29 +2368,69 @@ class Overlay:
                  root[1] + along[1] * reach * t + across[1] * sag * math.sin(math.pi * t))
                 for t in (k / 12.0 for k in range(13))
             ]
-            d.line(pts, fill=(0, 0, 0, 150), width=w + 4, joint="curve")
-            d.line(pts, fill=(*mix(GREEN_MID, SCREEN, 0.62), 255), width=w, joint="curve")
-            d.line([(x - 1, y - 1) for x, y in pts],
-                   fill=(*mix(GREEN_MID, GREEN, 0.25), 235), width=max(1, w // 3), joint="curve")
+            self._draw_conduit(layer, pts, half, lift, conduit)
         g = max(8, round(17 * self.scale))
         seat = (cx + (self.shoulder - g * 0.35) * math.cos(aim),
                 cy + (self.shoulder - g * 0.35) * math.sin(aim))
+        self._draw_gland(layer, seat, aim, g)
+
+    def _draw_conduit(self, layer: Image.Image, pts: list[tuple[float, float]], half: float,
+                      lift: float, colour: tuple[int, int, int]) -> None:
+        """One run of the loom: a round section, its shadow first, over the box it occupies."""
+        margin = math.ceil(half + lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT)) + 1
+        x0 = max(0, math.floor(min(p[0] for p in pts)) - margin)
+        y0 = max(0, math.floor(min(p[1] for p in pts)) - margin)
+        x1 = min(self.width, math.ceil(max(p[0] for p in pts)) + margin + 1)
+        y1 = min(self.height, math.ceil(max(p[1] for p in pts)) + margin + 1)
+        if x1 <= x0 or y1 <= y0:
+            return
+        dist, ox, oy, along, side = material.bar_field(pts, x0, y0, x1 - x0, y1 - y0)
+        cover = np.clip(half + 0.5 - dist, 0.0, 1.0)
+        shadow = material.cast(cover, lift) * (RAIL_SHADOW / 255.0)
+        layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), shadow),
+                              (x0, y0))
+        # All roll and no flat: a conduit is round. The braid's ribs run round it, so the grain's
+        # fibres vary along the run and hold across it - the rail's two arguments swapped.
+        normals = material.roll_normals(np.maximum(half - dist, 0.0), ox, oy, half, dome=0.0)
+        ribs = material.grain(along, dist * side) * LOOM_RIB
+        rgb = material.steel(*material.shade(*normals), ribs, colour=colour)
+        layer.alpha_composite(material.to_image(rgb, cover), (x0, y0))
+
+    def _draw_gland(self, layer: Image.Image, seat: tuple[float, float], aim: float,
+                    size: float) -> None:
+        """The fitting the loom leaves through: a rolled-edged block of steel seated on the collar.
+
+        Slightly wider where it meets the collar than where the runs leave it, so it reads as a
+        fitting screwed into the housing rather than as a block sitting on top of one. Built off
+        its own distance field - a rounded box in the frame of the run, tapered along it - so
+        the same roll, lamp and shadow as every other part fall on it.
+        """
         along, across = (math.cos(aim), math.sin(aim)), (-math.sin(aim), math.cos(aim))
-        # Slightly wider where it meets the collar than where the cables leave it, so it reads as
-        # a fitting screwed into the housing rather than as a block sitting on top of one.
-        corners = [
-            (seat[0] - along[0] * g * 0.7 + across[0] * g * 0.8,
-             seat[1] - along[1] * g * 0.7 + across[1] * g * 0.8),
-            (seat[0] + along[0] * g * 0.7 + across[0] * g * 0.62,
-             seat[1] + along[1] * g * 0.7 + across[1] * g * 0.62),
-            (seat[0] + along[0] * g * 0.7 - across[0] * g * 0.62,
-             seat[1] + along[1] * g * 0.7 - across[1] * g * 0.62),
-            (seat[0] - along[0] * g * 0.7 - across[0] * g * 0.8,
-             seat[1] - along[1] * g * 0.7 - across[1] * g * 0.8),
-        ]
-        d.polygon(corners, fill=(*mix(GREEN_MID, SCREEN, 0.62), 255),
-                  outline=(*mix(GREEN_MID, GREEN, 0.45), 240))
-        d.line([corners[0], corners[3]], fill=(*mix(GREEN_MID, GREEN, 0.6), 250), width=2)
+        roll = max(1.0, GLAND_ROLL * self.scale)
+        lift = max(1.0, LOOM_LIFT * self.scale)
+        long, wide_in, wide_out = size * 0.7, size * 0.8, size * 0.62
+        reach = math.hypot(long, wide_in) + lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT)
+        x0, y0 = max(0, math.floor(seat[0] - reach)), max(0, math.floor(seat[1] - reach))
+        x1 = min(self.width, math.ceil(seat[0] + reach) + 1)
+        y1 = min(self.height, math.ceil(seat[1] + reach) + 1)
+        ys = (np.arange(y0, y1, dtype=np.float32) - seat[1])[:, None]
+        xs = (np.arange(x0, x1, dtype=np.float32) - seat[0])[None, :]
+        u = xs * along[0] + ys * along[1]  # along the run: negative towards the collar
+        v = xs * across[0] + ys * across[1]
+        # The taper: the box's half-width narrows from the collar end to the far end.
+        width = wide_in + (wide_out - wide_in) * np.clip((u + long) / (2 * long), 0.0, 1.0)
+        qx, qy = np.abs(u) - long + roll, np.abs(v) - width + roll
+        outside = np.hypot(np.maximum(qx, 0.0), np.maximum(qy, 0.0))
+        sdf = outside + np.minimum(np.maximum(qx, qy), 0.0) - roll
+        cover = np.clip(0.5 - sdf, 0.0, 1.0)
+        shadow = material.cast(cover, lift) * (RAIL_SHADOW / 255.0)
+        layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), shadow),
+                              (x0, y0))
+        gy, gx = np.gradient(sdf)
+        glen = np.maximum(np.hypot(gx, gy), 1e-6)
+        normals = material.roll_normals(np.maximum(-sdf, 0.0), gx / glen, gy / glen, roll)
+        rgb = material.steel(*material.shade(*normals), material.grain(v, u))
+        layer.alpha_composite(material.to_image(rgb, cover), (x0, y0))
 
     def _draw_reticle(self, layer: Image.Image) -> None:
         """Four right-angled corners on the lens axis, and nothing in the middle of them.
@@ -2483,6 +2703,7 @@ class Overlay:
             mood = replace(mood, tint=GREEN, rings=1.7, aperture=1.0, swell=0.0,
                            voice=0.0, gaze=0.0, dart=0.0, drift=0.0)
         self.engine.paint(layer, *self.eye, mood, phase, level)
+        layer.alpha_composite(self._glass, (self.eye[0] - self.eye_r, self.eye[1] - self.eye_r))
         if hold > 0.0:
             self._draw_hold(layer, hold)
         if session_up(state):
