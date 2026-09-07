@@ -31,15 +31,17 @@ said by the ring in the button, by the border's colour, and by the terminal alon
 which can say "searching the web…" where a word could only say SEARCH. The state word went the
 same way and for the same reason: three things were already saying it better.
 
-A bracket is drawn to look like one. The rail is an extrusion rather than a stroke - a shadow
-cast inwards onto the plate, then a profile across its width: a lit chamfer on the outer lip, a
-body falling away, a flank in shadow - with socket-head bolts wherever it turns and stiffeners
-across the deep corner. The plate itself is still see-through: the tube filter (a phosphor wash,
-corner shading and a scanline field) laid over the live picture rather than an opaque bar, so
-the camera shows through the chrome as well as between it. The border carries the session state
-in its colour and glows inwards from it, which is the one thing that has to be readable across a
-workshop without reading any words - and it says so in *hue* rather than in brightness, because
-dim green and bright green are the same colour to anyone more than a pace away.
+A bracket is drawn to look like one. The rail is a bar of steel rather than a stroke - a
+round-edged section standing proud of the plate under the panel's one lamp
+(:mod:`cyclops.material`), bright along the edge that faces it and dark along the edge that does
+not, its shadow falling the other way - with hex-socket cap screws wherever it turns and
+stiffeners across the deep corner. The plate itself is still see-through: the tube filter (a
+phosphor wash over brushed gunmetal, corner shading and a scanline field) laid over the live
+picture rather than an opaque bar, so the camera shows through the chrome as well as between it.
+The border carries the session state in its colour and glows inwards from it, which is the one
+thing that has to be readable across a workshop without reading any words - and it says so in
+*hue* rather than in brightness, because dim green and bright green are the same colour to anyone
+more than a pace away.
 
 His eye is the one thing here that is a face rather than a readout, and it is what lets the rest
 stay this terse: a glance at the bottom-left corner answers "is he there, and what is he up to",
@@ -89,6 +91,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
+from . import material
 from .eye import (
     AHEAD,
     AWAY,
@@ -554,19 +557,36 @@ PAD = 0.036  # inner padding - wide enough that the inward glow never reaches an
 # off the frame at an angle and eats the edges either side of the corner, and these give that
 # room back to the picture.
 #
-# The rail on that spine is an extrusion rather than a stroke: a shadow cast inwards onto the
-# plate, then a profile drawn across its width - a lit chamfer on the outer lip, a body falling
-# away, a flank in shadow. That is what makes a bracket read as something bolted to the panel
+# The rail on that spine is a bar of steel rather than a stroke: a round-edged section standing
+# proud of the plate, lit by the panel's one lamp (:mod:`cyclops.material`) so the edge turned
+# towards it is bright and the edge turned away is dark, with the shadow it drops falling the
+# other way from the light. That is what makes a bracket read as something bolted to the panel
 # rather than as a line drawn on it, and it is why the rail is this thick: at a hairline there is
-# no width for a profile to happen in.
+# no width for an edge to roll in. It is not any thicker for being machined - the section is the
+# same seventeen the profile used to be painted across.
 RAIL = 17.0  # reference pixels, and the one number the whole bracket language rests on
-RAIL_LIP = 0.78  # fraction of the rail's width that is the lit chamfer
-RAIL_BODY = 0.28  # ...and where the body gives way to the flank in shadow
+RAIL_ROLL = 2.5  # reference px of each edge that turn down to the plate - the rolled corner
+# that catches the lamp on one side and goes dark on the other, and the whole of the depth
+RAIL_LIFT = 2.5  # how proud the bar stands of what it is bolted to, which sets its shadow
+RAIL_WEAR = 0.45  # how much the highlight comes and goes along a length - handled steel is
+# polished where hands have been and dull between
+RAIL_SCRATCH = 0.40  # how pale the sheet's hairlines show where they cross a bar. The same
+# marks as the plates', because a scratch that stops at the rail is a scratch on a drawing.
+RAIL_LIP = 0.78  # fraction of a ring's width that is the lit chamfer, for the collar and the
+RAIL_BODY = 0.28  # dial bezels, which still bend the old three-band profile - see _rail_colour
 RAIL_SHADOW = 165  # alpha of the shadow the rail casts onto its own plate
 BOLT_R = 7.0  # a socket head, sunk through the rail wherever it turns
 RIB_N = 3  # stiffeners across the deep corner of a bracket
+RIB_W = 4.0  # ...their section, in reference px
+RIB_ALPHA = 0.36  # how much steel a rib lays over the plate. Translucent like the plate it
+# stiffens, so the room keeps running behind it.
 PLATE_WASH = 0.34  # how far a bracket's plate is put towards SCREEN. Not opaque: a bracket you
 # cannot see the room through is a bar, and this layout exists to stop having those.
+PLATE_STEEL = 0.04  # ...and the grey stirred into that wash. A plate is gunmetal seen through
+# the tube's glass rather than the glass alone, and a wash with no grey in it is a tint.
+PLATE_GRAIN = 0.07  # how much the brushing shows through the wash, either way
+PLATE_SCRATCHES = 70  # hairlines across the whole sheet, of which the plates keep about a sixth
+PLATE_SCRATCH_ALPHA = 0.30  # ...and how pale the palest of them is
 
 # The spines, at the reference. Anything on the right or the bottom is written as a distance in
 # from that edge, so one table lays out all four and mirrors without a second.
@@ -1498,6 +1518,10 @@ class Overlay:
         self.caption_y = self.caption_top + self.caption_h / 2  # the *first* line's middle now
 
         self._halo = halo_alpha(width, height)
+        # One set of hairlines for the whole sheet, before the filter and the chrome are built
+        # from it: the plates wear them and so do the bars bolted across them, and a scratch that
+        # runs from one onto the other is most of what says they are the same piece of metal.
+        self._marks = material.scratches(width, height, PLATE_SCRATCHES, (1.0, -1.0))
         self._filter = self._build_filter()
         self._backdrops: dict[int, Image.Image] = {}
         self._chromes: dict[int, Image.Image] = {}
@@ -1678,7 +1702,18 @@ class Overlay:
             np.zeros(shape, dtype=np.float32),
         )
         base = _over(base, SCREEN, np.full(shape, PLATE_WASH, dtype=np.float32))
+        base = _over(base, material.STEEL_DARK, np.full(shape, PLATE_STEEL, dtype=np.float32))
         base = _over(base, GREEN, np.full(shape, TINT_ALPHA, dtype=np.float32))
+        # The sheet every plate is cut from is brushed, and brushed along the panel's own
+        # diagonal - the way both ramps run - so one grain serves all four brackets and none of
+        # them looks like a different offcut. Laid on as a modulation either way from the wash,
+        # never as a fill: the room has to keep coming through, fibres and all.
+        ys, xs = np.mgrid[0 : self.height, 0 : self.width].astype(np.float32)
+        across, along = (xs + ys) * math.sqrt(0.5), (xs - ys) * math.sqrt(0.5)
+        grain = material.grain(across, along)
+        base = _over(base, material.STEEL_LIT, np.clip(grain, 0.0, 1.0) * PLATE_GRAIN)
+        base = _over(base, (0, 0, 0), np.clip(-grain, 0.0, 1.0) * PLATE_GRAIN)
+        base = _over(base, material.STEEL_SPEC, self._marks * PLATE_SCRATCH_ALPHA)
         base = _over(base, (0, 0, 0), vignette_alpha(self.width, self.height))
         base = _over(base, (0, 0, 0), scanline_alpha(self.width, self.height))
         return base
@@ -1770,7 +1805,11 @@ class Overlay:
         return cached
 
     def _rail_colour(self, across: float) -> tuple[int, int, int]:
-        """The rail seen end-on. *across* runs 1 at the outer lip to 0 at the inner flank.
+        """The three-band profile the collar and the dial bezels still bend into rings.
+
+        *across* runs 1 at the outer lip to 0 at the inner flank. The bars themselves no longer
+        use it - they are steel under a lamp, see :meth:`_draw_rail` - and this stays until the
+        rings are.
 
         Three bands rather than one ramp: a smooth gradient over seventeen pixels reads as a
         blur, and a chamfer reads as an edge. The lit band is well short of full phosphor -
@@ -1787,57 +1826,78 @@ class Overlay:
 
     def _draw_rail(self, layer: Image.Image, points: Sequence[tuple[float, float]],
                    thick: int | None = None) -> None:
-        """An extrusion, not a stroke: a shadow cast onto the plate, then a profile across it.
+        """A bar of steel along the spine, under the panel's one lamp, and the shadow it drops.
 
-        The shadow is what does most of the work. A rail with a chamfer and no shadow reads as a
-        drawing of a rail; the same rail with something dark falling off its inner edge sits *on*
-        something. It is blurred, so it is composited from a layer of its own rather than drawn -
-        blurring the chrome in place would drag every hairline on the panel with it.
+        Built as fields rather than strokes, the way the terminal's face is: one distance field
+        off the centreline, and the coverage, the rolled edges' normals and the brushing all come
+        off it. The lamp does the rest - the edge turned towards it is bright, the edge turned
+        away is dark, the highlight lands where the roll faces half-way between the lamp and the
+        viewer, and the shadow falls the other way from the light. Nothing here decides which
+        side is lit: :mod:`cyclops.material` does, once, for every bar on the panel.
 
-        Both halves are built here rather than at a frame: this whole layer is cached per window
-        size, so the cost is four Gaussians once and nothing at all at 25 fps.
+        The shadow is still most of the work. A bar with a bright edge and no shadow reads as a
+        drawing of a bar; the same bar with something dark falling off it sits *on* something.
+        Both go on as composites from a private tile, never as writes - a translucent write is
+        a window onto the camera - and only over the box the bar actually occupies, so the eight
+        of these a panel builds are eight small tiles and not eight full frames.
+
+        Everything here is once per window size. Nothing in it may be reached from a frame.
         """
         thick = self.rail_w if thick is None else thick
-        shade = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
-        ImageDraw.Draw(shade).line(
-            [tuple(p) for p in offset_path(points, -thick * 0.3)],
-            fill=(0, 0, 0, RAIL_SHADOW), width=thick + max(2, round(6 * self.scale)),
-            joint="curve",
-        )
-        layer.alpha_composite(shade.filter(ImageFilter.GaussianBlur(max(1.5, 5.0 * self.scale))))
-        d = ImageDraw.Draw(layer)
         half = thick / 2.0
-        for i in range(thick):
-            at_ = half - 0.5 - i
-            d.line([tuple(p) for p in offset_path(points, at_)],
-                   fill=(*self._rail_colour((at_ + half) / thick), 255), width=2, joint="curve")
-        # The lit lip and the flank, crisp on top of the bands they end - two pixels each, which
-        # is what stops a seventeen-band profile reading as a smudge with a bright side.
-        d.line([tuple(p) for p in offset_path(points, half - 0.6)],
-               fill=(*mix(GREEN_MID, GREEN, 0.5), 255), width=2, joint="curve")
-        d.line([tuple(p) for p in offset_path(points, -(half - 0.6))],
-               fill=(*SCREEN, 240), width=2, joint="curve")
+        lift = max(1.0, RAIL_LIFT * self.scale)
+        reach = math.ceil(half + lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT)) + 1
+        x0 = max(0, math.floor(min(p[0] for p in points)) - reach)
+        y0 = max(0, math.floor(min(p[1] for p in points)) - reach)
+        x1 = min(self.width, math.ceil(max(p[0] for p in points)) + reach + 1)
+        y1 = min(self.height, math.ceil(max(p[1] for p in points)) + reach + 1)
+        if x1 <= x0 or y1 <= y0:
+            return
+        dist, ox, oy, along, side = material.bar_field(list(points), x0, y0, x1 - x0, y1 - y0)
+        cover = np.clip(half + 0.5 - dist, 0.0, 1.0)
+        shadow = material.cast(cover, lift) * (RAIL_SHADOW / 255.0)
+        layer.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), shadow),
+                              (x0, y0))
+        # The roll is a fixed size in reference pixels, capped so a thin member keeps a flat: a
+        # clamp's nine-pixel strap rolled by three a side would be a wire.
+        roll = min(max(1.5, RAIL_ROLL * self.scale), half * 0.7)
+        # The flat between the two rolls is very slightly crowned, from level at the centreline
+        # to DOME at the roll - a field, not a number, or the crown would step where the side
+        # changes sign and put a seam down the middle of every bar.
+        crown = material.DOME * np.clip(dist / max(half - roll, 1e-3), 0.0, 1.0)
+        normals = material.roll_normals(np.maximum(half - dist, 0.0), ox, oy, roll, dome=crown)
+        diffuse, spec = material.shade(*normals)
+        spec = spec * (1.0 + RAIL_WEAR * material.wear(along))
+        rgb = material.steel(diffuse, spec, material.grain(dist * side, along))
+        marks = (self._marks[y0:y1, x0:x1] * RAIL_SCRATCH)[..., None]
+        rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+        layer.alpha_composite(material.to_image(rgb, cover), (x0, y0))
 
     def _draw_bolt(
         self, d: ImageDraw.ImageDraw, x: float, y: float, r: float | None = None
     ) -> None:
-        """A socket head sunk through the rail: a shadowed seat, a lit rim above, a dark hex.
+        """A hex-socket cap screw through the rail, under the same lamp as everything else.
 
-        The one detail that says a bracket is bolted on rather than drawn on, and it costs a
-        circle and a hexagon. The rim is two arcs and not one ring, which is the whole of the
-        depth: light from above means the top half of a countersink is bright and the bottom
-        half is not.
+        The one detail that says a bracket is bolted on rather than drawn on. It is a sprite
+        from :mod:`cyclops.material` - crowned head, rolled rim, a socket the lamp reaches down
+        into, and the head's own shadow - composited rather than drawn, because the shadow and
+        the rim are translucent and a translucent *write* is a hole through the rail onto the
+        camera, which is what the old seat shadow was.
+
+        Takes the draw and not the layer so that every caller keeps its one line. The layer is
+        recovered from the draw, which Pillow has exposed since 9.x; the panel runs 12.
         """
         r = self.bolt_r if r is None else r
-        d.ellipse([x - r - 1, y - r, x + r + 1, y + r + 2], fill=(0, 0, 0, 130))
-        d.ellipse([x - r, y - r, x + r, y + r], fill=(*mix(GREEN_MID, SCREEN, 0.72), 255))
-        d.arc([x - r, y - r, x + r, y + r], start=170, end=350, fill=(*GREEN, 245), width=2)
-        d.arc([x - r, y - r, x + r, y + r], start=350, end=530, fill=(*SCREEN, 220), width=2)
-        d.polygon(
-            [(x + r * 0.52 * math.cos(math.radians(a)), y + r * 0.52 * math.sin(math.radians(a)))
-             for a in range(0, 360, 60)],
-            fill=(*SCREEN, 255), outline=(*mix(GREEN_MID, SCREEN, 0.45), 190),
-        )
+        layer: Image.Image = d._image
+        cx, cy = math.floor(x), math.floor(y)
+        tile = material.bolt(round(r, 2), round(x - cx, 2), round(y - cy, 2))
+        half = tile.width // 2
+        # A head at the panel's edge would put the tile's corner off it, which alpha_composite
+        # refuses; nothing here does, but a window size that did should lose a corner of shadow
+        # rather than the panel.
+        left, top = cx - half, cy - half
+        crop = tile.crop((max(0, -left), max(0, -top), tile.width, tile.height))
+        layer.alpha_composite(crop, (max(0, left), max(0, top)))
 
     def _draw_bracket(self, layer: Image.Image, bracket: Bracket) -> None:
         """Stiffeners, then the rail, then the bolts at every place the rail turns.
@@ -1854,15 +1914,9 @@ class Overlay:
         over the thing that says the corner is stiff. `seats` is what asks the question, because
         the left mount is the only bracket that has one.
         """
-        d = ImageDraw.Draw(layer)
         corner, a, b = bracket.corner, bracket.spine[0], bracket.spine[-1]
-        for i in range(RIB_N if corner and not bracket.seats else 0):
-            t = 0.15 + 0.075 * i
-            d.line(
-                [(corner[0] + (a[0] - corner[0]) * t, corner[1] + (a[1] - corner[1]) * t),
-                 (corner[0] + (b[0] - corner[0]) * t, corner[1] + (b[1] - corner[1]) * t)],
-                fill=(*mix(GREEN_MID, SCREEN, 0.5), 170), width=max(1, round(4 * self.scale)),
-            )
+        if corner and not bracket.seats:
+            self._draw_ribs(layer, corner, a, b)
         self._draw_rail(layer, bracket.path())
         d = ImageDraw.Draw(layer)
         # Every place the rail turns: two knees on a mount, four on the pod.
@@ -1874,6 +1928,42 @@ class Overlay:
             p0, p1, _, _ = bracket.shoulder(seat)
             self._draw_bolt(d, *p0, self.bolt_r - 1)
             self._draw_bolt(d, *p1, self.bolt_r - 1)
+
+    def _draw_ribs(self, layer: Image.Image, corner: tuple[int, int], a: tuple[int, int],
+                   b: tuple[int, int]) -> None:
+        """RIB_N raised stiffeners across a corner, lit like the rail and shadowed like it.
+
+        Each is a bar of the plate's own steel a few pixels wide: a shadow off its far side, a
+        translucent body, a lit hairline on the edge that faces the lamp and a dark one on the
+        edge that does not. All of it on a private layer and composited, because a rib written
+        translucent used to be three stripes of camera showing through the plate rather than
+        three pieces of metal standing on it.
+        """
+        w = max(1, round(RIB_W * self.scale))
+        lx, ly = material.lamp_2d()
+        # The rib's own normal, turned to face the lamp: that is the edge the light lands on.
+        rx, ry = unit(*a, *b)
+        nx, ny = (ry, -rx) if ry * lx - rx * ly > 0 else (-ry, rx)
+        edge = w / 2.0 - 0.5
+        drop = RAIL_LIFT * self.scale * material.SHADOW_DROP
+        shade = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+        ribs = Image.new("RGBA", layer.size, (0, 0, 0, 0))
+        sd, rd = ImageDraw.Draw(shade), ImageDraw.Draw(ribs)
+        body = (*material.STEEL, round(255 * RIB_ALPHA))
+        for i in range(RIB_N):
+            t = 0.15 + 0.075 * i
+            p = (corner[0] + (a[0] - corner[0]) * t, corner[1] + (a[1] - corner[1]) * t)
+            q = (corner[0] + (b[0] - corner[0]) * t, corner[1] + (b[1] - corner[1]) * t)
+            sd.line([(p[0] - lx * drop, p[1] - ly * drop), (q[0] - lx * drop, q[1] - ly * drop)],
+                    fill=(0, 0, 0, RAIL_SHADOW), width=w + 1)
+            rd.line([p, q], fill=body, width=w)
+            rd.line([(p[0] + nx * edge, p[1] + ny * edge), (q[0] + nx * edge, q[1] + ny * edge)],
+                    fill=(*material.STEEL_LIT, 150), width=1)
+            rd.line([(p[0] - nx * edge, p[1] - ny * edge), (q[0] - nx * edge, q[1] - ny * edge)],
+                    fill=(*material.STEEL_DARK, 180), width=1)
+        soft = max(0.5, RAIL_LIFT * self.scale * material.SHADOW_SOFT)
+        layer.alpha_composite(shade.filter(ImageFilter.GaussianBlur(soft)))
+        layer.alpha_composite(ribs)
 
     def _draw_collar(self, layer: Image.Image) -> None:
         """The barrel he is seated in: the rail's own profile, bent into a ring.
