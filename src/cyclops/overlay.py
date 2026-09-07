@@ -511,8 +511,16 @@ TYPE_MAX_S = 0.9  # the longest a whole line may take to arrive, however long it
 # burst of instant tools can now clip a sentence. If that ever strobes, the number to change is
 # ACTIVITY_HOLD_S, which is what decides how long a line is worth reading, not this one.
 
-HALO_CORE = 0.004  # fraction of the height held at full brightness, hard against the edge
-HALO_FALLOFF = 0.024  # and how far the light reaches inwards before it is gone
+HALO_CORE = 0.0208  # fraction of the height the state light is at full brightness by, measured
+# in from the panel's outer edge. It starts HALO_LIP short of the surround's inner arris, so the
+# frame's own inner chamfer is lit by it and the pool of light sits *under the lip* rather than
+# on the metal's face - a cove, which is where a light that has to be a light and not a wash on a
+# machined surface belongs. The outer end of the band is dark because the surround is standing in
+# front of it, and a bloom in front of the picture cannot also be in front of the case.
+HALO_FALLOFF = 0.0125  # and how far it reaches inwards past that before it is gone. The two
+# together are the light's whole reach in from the panel edge, which is what
+# test_he_rides_the_ramp_and_his_rim_is_off_the_bezel measures his clearance against
+HALO_LIP = 2.0  # reference px of the surround's inner chamfer the light reaches back onto
 HALO_PEAK = 0.45  # alpha at the border, falling away to nothing before it reaches any text
 TINT_ALPHA = 0.05  # green wash under the chrome - phosphor cast, not a colour filter
 SCANLINE_EVERY = 3  # every third row of the chrome is darkened...
@@ -548,6 +556,85 @@ SWITCH_ALPHA = 215  # ...and the well a switch is sunk into, which is dark enoug
 FRAME_RADIUS = 0.034
 LINE = 0.0042  # stroke of the border and the hairlines
 PAD = 0.036  # inner padding - wide enough that the inward glow never reaches any text
+
+# ---- the surround ----
+#
+# The panel's outermost element, and the one thing on it nothing else is bolted to. It was a two
+# pixel stroke for four rounds: a coherence critic sampled 2,240 perimeter pixels and found ONE
+# colour in all of them, the same 2 px on all four edges with no variation by direction, against
+# 1,518 colours on the same perimeter of the panel we are being judged against. A boundary with
+# no material in it reads as part of the projected layer rather than as the case the projection
+# is in, which is why that critic put it first out of five.
+#
+# So it is a machined surround now, in the panel's own bar language turned inside out: a crown
+# chamfer on the outer arris, a face crowned so gently it is a fall and not a curve, and a steep
+# chamfer on the inner one, over a radiused opening cut in a square plate - so the corners are
+# solid metal with a mitre where the two crowns meet, which is the one place a frame is ever
+# actually looked at. Nothing in here decides which of the two chamfers is the bright one: the
+# chamfer's own normal against material.lamp_2d does. The top and left rails therefore carry
+# their specular on the OUTSIDE, the bottom and right ones carry it on the INSIDE, and the face
+# falls monotonically from whichever end the lamp is at to the other, which ends up the darkest
+# metal in the section. One lamp cannot light four edges the same way and this does not pretend
+# it can.
+#
+# The state stroke stays exactly where it was, on the outer arris: read it as the light let into
+# the frame's edge, which is what carries the session's colour to the far side of a workshop and
+# what breathes (:meth:`_draw_rim`). The crown is built INWARD from it.
+FRAME_W = 11.0  # reference px the surround runs in from the panel's outer edge, of which the
+# outermost `line` are under the state stroke. Wider and it eats the bottom rail's spine and the
+# collar round his face; narrower and there is no width for a chamfer, which is the whole point
+FRAME_CROWN = 2.4  # reference px of the outer chamfer, the edge the lamp is on...
+FRAME_UNDER = 2.6  # ...and of the inner one, which is the terminator on the lit edges
+FRAME_CROWN_TILT = 0.88  # sin of the crown's steepest facet - near end-on, so where it faces the
+FRAME_UNDER_TILT = 0.92  # lamp it mirrors it, and where it does not it takes nothing at all
+FRAME_FACE_TILT = 0.42  # sin of the tilt the face has reached by its two chamfers, outward at
+# the outer end and inward at the inner one. This is what makes the top rail's face two thirds
+# brighter than the bottom rail's off the same steel: a face that only domes reads as one bar
+# lit four ways, and the panel we are matching runs 176 across its top rail against 80 across
+# its bottom one
+FRAME_FACETS = 2  # flats a chamfer is milled into. A chamfer that airbrushes from face to
+# silhouette is a fillet; a real one steps, and the steps are what say it was cut
+FRAME_FACET_AA = 0.7  # px of each step that is rolled, which is the step's anti-aliasing and
+# nothing else: a hard step following the opening's radius rasterises as a comb of teeth
+FRAME_ARRIS_WAVE = 0.55  # how much the crown's width breathes along the run, either way...
+FRAME_ARRIS_PITCH = 0.30  # ...and how slowly. Between them they walk the brightest row of the
+# surround in and out by a pixel over a few tens of columns, which is what a straight edge on
+# real stock does and what a rendered section cannot: a specular pinned to one row for eight
+# hundred columns is the tell that a section was extruded rather than lit
+FRAME_WEAR = 0.30  # how much the crown's polish comes and goes along a run. Down from the
+# mirror, never up - a highlight already reflecting the lamp cannot reflect more of it
+FRAME_BREAK_AT = 0.78  # sin past which the arris is a broken edge rather than a rolled one...
+FRAME_BREAK = 0.55  # ...and how much of its highlight survives being knocked off
+FRAME_STEEL = 0.70  # how far the face is put from STEEL towards STEEL_LIT. Above the plate it
+# stands on and a shade under the brackets bolted to it: the case is the dullest steel that is
+# still obviously steel, because everything else on the panel has to read in front of it
+FRAME_FACE_GLOSS = 0.20  # of the material's highlight the face keeps. The arris keeps all of it
+FRAME_GRAIN = 0.98  # of the material's brushing, drawn along the run rather than across it
+FRAME_GRAIN_DARK = 0.45  # ...and how much of it goes the other way - brushed steel scatters
+FRAME_DRIFT = 0.15  # how much the face's light comes and goes along a run, either way. Half
+# what a bracket's rail carries: a rail is a foot long and a hand has been all over it, and this
+# runs the whole perimeter, where a forty-level swing between two columns reads as a stain
+FRAME_SCRATCHES = 26  # hairlines dragged along each run of the surround, of which a handful
+FRAME_SCRATCH = 0.30  # cross any one stretch of it, and how pale one shows where it does
+FRAME_SHEET_MARK = 0.55  # ...and how much of the sheet's own long hairlines carry onto the case.
+# Knocked back rather than dropped: they are what says the plate and the case are one piece of
+# metal, and at full weight a 60 px diagonal across a 9 px rail is a crack and not a scratch
+FRAME_SCRATCH_SPREAD = 16.0  # degrees either side of the run they wander
+FRAME_PITS = 90  # pits over the sheet, of which the surround keeps the ones that land on it...
+FRAME_PIT_DEPTH = 0.44  # ...and how much of the face's light goes at the bottom of one
+FRAME_LIFT = 3.0  # how proud the surround stands of the picture, which sets the shadow it drops
+FRAME_SHADOW = 0.58  # alpha of that shadow where it is deepest. Soft, and it recovers over a
+# dozen rows: a shadow that is an opaque floor for five rows and then gone is a painted band
+FRAME_CONTACT = 0.80  # alpha of the hard line where the surround meets the picture...
+FRAME_CONTACT_W = 2.6  # ...how far in from its inner arris that line reaches...
+FRAME_CONTACT_LIT = 0.40  # ...and how much of it survives on an edge whose inner chamfer is the
+# one the lamp is on, because there the light gets under the lip
+FRAME_SCREW = 4.2  # reference px: the head in each corner of the plate. Smaller than a rail's,
+# because it is holding a bezel down and not a member on - and the panel already says everywhere
+# else that a fixing is sized to what it is holding
+FRAME_SCREW_AT = 0.62  # of the band, down the corner's diagonal. Out on the gusset where the
+# plate is deepest, which is the one place on a nine-pixel run a head can sit clear of both
+# chamfers - and the one place a bezel is actually fixed
 
 # ---- the four brackets ----
 #
@@ -1986,19 +2073,85 @@ class Hitboxes:
     heat: Rect  # the gauge, which is read - and, tapped, opens the screen the rest of it is on
 
 
-def halo_alpha(width: int, height: int) -> np.ndarray:
-    """A 0..1 mask that is bright along every edge and gone a little way inside it.
+def frame_band(height: int) -> int:
+    """How far in from the panel's outer edge the machined surround runs, in window pixels."""
+    return max(4, round(FRAME_W * height / 480.0))
 
-    Built once per window size: the distance to the nearest edge, run through a squared ramp so
-    the light drops off fast enough to stay a rim rather than a fog over the picture.
+
+def opening_field(width: int, height: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """How far outside the picture's rounded opening each pixel is, and the way out of it.
+
+    The opening is a rounded rectangle of FRAME_RADIUS inset by :func:`frame_band` - the window
+    cut in the plate. The plate's own outer edge is square, which is why the state stroke on it
+    is: a light let into an arris follows the arris, and a rounded line across a square corner is
+    the one thing on a frame nobody can read as a made edge. The distance is signed - positive in
+    the metal, negative on the picture - and the direction is the unit vector from the nearest
+    point on the opening outwards, which is what the inner chamfer's normal and the light under
+    its lip are both built from. Both are :func:`halo_alpha`'s and
+    :meth:`Overlay._build_surround`'s, and they have to agree to the pixel or the light lands
+    beside the lip instead of under it.
     """
-    core = max(2, round(HALO_CORE * height))
-    fall = max(6, round(HALO_FALLOFF * height))
-    xs = np.minimum(np.arange(width), width - 1 - np.arange(width))
-    ys = np.minimum(np.arange(height), height - 1 - np.arange(height))
-    dist = np.minimum(ys[:, None], xs[None, :]).astype(np.float32)
-    ramp = np.clip((core + fall - dist) / fall, 0.0, 1.0)
-    return ramp * ramp * HALO_PEAK
+    band = frame_band(height)
+    radius = max(2.0, FRAME_RADIUS * height)
+    cx, cy = (width - 1) / 2.0, (height - 1) / 2.0
+    half_w = max(0.0, cx - band - radius)
+    half_h = max(0.0, cy - band - radius)
+    xs = np.arange(width, dtype=np.float32)[None, :] - cx
+    ys = np.arange(height, dtype=np.float32)[:, None] - cy
+    out_x = xs - np.clip(xs, -half_w, half_w)  # from the opening's core rect to the pixel
+    out_y = ys - np.clip(ys, -half_h, half_h)
+    reach = np.maximum(np.hypot(out_x, out_y), 1e-6)
+    return reach - radius, out_x / reach, out_y / reach
+
+
+def halo_alpha(width: int, height: int) -> np.ndarray:
+    """A 0..1 mask of the state light, pooled under the surround's lip and gone a little inside.
+
+    Built once per window size. It used to be a squared ramp off the distance to the nearest
+    edge, peaking on the panel's outermost pixel; there is a machined surround standing there
+    now, and a bloom cannot be in front of the case it is inside. So the band starts HALO_LIP
+    short of the surround's inner arris - lighting the frame's own inner chamfer, which is what
+    makes the light read as coming from under a lip rather than as a wash laid over metal - and
+    falls away inwards from there over the picture.
+
+    HALO_CORE and HALO_FALLOFF are both measured in from the panel's outer edge, so their sum is
+    the light's whole reach and the clearance tests can go on reading it straight off them.
+    """
+    edge = max(2, round(HALO_CORE * height))
+    fall = max(3, round(HALO_FALLOFF * height))
+    lip = max(1.0, HALO_LIP * height / 480.0)
+    outside, _, _ = opening_field(width, height)
+    dist = frame_band(height) - outside  # in from the panel's outer edge, square with the opening
+    ramp = np.clip((edge + fall - dist) / fall, 0.0, 1.0)
+    # ...and up across the chamfer rather than onto it in one step. Nothing on the face, nothing
+    # on the arris the section's darkest metal is, and full where the metal ends: the undercut
+    # stays the dark line it has to be and the light sits under it, which is what a cove is. A
+    # one-pixel rise also walked on and off in whole steps round the corner and left a staircase.
+    under = np.clip((dist - (frame_band(height) - lip)) / lip, 0.0, 1.0)
+    return (under * ramp * ramp * HALO_PEAK).astype(np.float32)
+
+
+def _facets(depth: np.ndarray, width: np.ndarray | float) -> np.ndarray:
+    """A chamfer *width* px wide cut into FRAME_FACETS flats: 1 at the arris, 0 at the face.
+
+    A chamfer that airbrushes from the face to the silhouette is a fillet. A milled one steps,
+    and the steps - thirty counts or so apiece at this width - are what say it was cut.
+
+    Each step is rolled over FRAME_FACET_AA of a pixel, which is not a fillet: ImageDraw does not
+    anti-alias and neither does a hard threshold on a distance field, so a step that follows the
+    opening's corner radius came out as a comb of one-pixel teeth under a critic's 8x crop. Sub
+    pixel is the only place a step on a curve may be soft.
+    """
+    wide = np.maximum(width, 1e-3)
+    # ...and the roll is never wider than the flat it is rolling off, which is what stops it
+    # leaking out of the chamfer entirely. On a 1.3 px chamfer 0.7 px of roll came to more than
+    # one flat, so a pixel nine deep - the far chamfer, the darkest metal there is - still read a
+    # sliver of crown and was shaded as one. That flattened the whole section by half.
+    soft = np.minimum(FRAME_FACET_AA * FRAME_FACETS / wide, 1.0)
+    level = np.clip(1.0 - depth / wide, 0.0, 1.0) * FRAME_FACETS
+    flat = np.floor(level)
+    roll = np.clip((level - flat - 1.0) / soft + 1.0, 0.0, 1.0)
+    return np.minimum((flat + roll) / FRAME_FACETS, 1.0)
 
 
 def scanline_alpha(width: int, height: int) -> np.ndarray:
@@ -2450,6 +2603,7 @@ class Overlay:
         self.line = max(1, round(LINE * height))
         self.pad = max(4, round(PAD * height))
         self.radius = max(2, round(FRAME_RADIUS * height))
+        self.frame_w = frame_band(height)
         self.frame = Rect(0, 0, width, height)
 
         def px(value: float) -> int:
@@ -2642,6 +2796,7 @@ class Overlay:
         self.halo_r = max(1.0, LAMP_HALO_R * scale)
         self._skirt = math.ceil(3 * self.halo_r)  # how far a lamp's light reaches past its edge
         self._plate = self._build_plate()
+        self._surround = self._build_surround()
         self._glass = self._build_glass()
         self._chrome_base = self._build_chrome()
         # One engine per window size: it owns the geometry, and it remembers which mood it is
@@ -3056,6 +3211,170 @@ class Overlay:
         rgb, alpha = _over((rgb, alpha), (0, 0, 0), shade)
         alpha[(dist < GLASS_IN) | (dist > GLASS_OUT)] = 0.0
         return _to_image(rgb, alpha)
+
+    def _build_surround(self) -> Image.Image:
+        """The machined surround the whole chassis sits in, and the shadow it drops inwards.
+
+        A square plate with a radiused window cut in it, FRAME_W deep, shaded off two fields:
+        how far each pixel is from the panel's outer edge (which drives the crown, and mitres at
+        45 degrees where two edges meet) and how far it is out of the opening (which drives the
+        inner chamfer, and follows the corner round). Between them the face, crowned outward at
+        the crown's end and inward at the chamfer's, so it falls monotonically from whichever end
+        the lamp is at - and which end that is comes from the chamfer's own normal against
+        :func:`material.lamp_2d`, never from a per-edge constant. The top and left rails end up
+        with their one specular on the outside, the bottom and right ones on the inside, and the
+        far edge of every one of them is the darkest metal in its section.
+
+        Then the same finish every other steel face on this panel wears: brushed along the run,
+        drifting along it, the sheet's own hairlines plus a few dragged along each stretch, the
+        odd pit, and the lamp's falloff across the panel (:meth:`_sunlight`), so the bottom right
+        of the surround is a good deal duller than the top left even where the section agrees.
+
+        Underneath it, two shadows onto the picture: a soft one thrown away from the lamp, which
+        is why the light rails have a band of shade inside them and the dark ones do not, and a
+        hard line of contact hugging the opening all the way round. Both composited black, so
+        they multiply the camera and recover over a dozen rows instead of painting a floor on it.
+
+        Once per window size. Nothing here may be reached from a frame.
+        """
+        band = float(self.frame_w)
+        outside, out_x, out_y = opening_field(self.width, self.height)
+        cover = np.clip(0.5 + outside, 0.0, 1.0)
+        xs = np.arange(self.width, dtype=np.float32)[None, :]
+        ys = np.arange(self.height, dtype=np.float32)[:, None]
+        near_x = np.minimum(xs, self.width - 1 - xs)
+        near_y = np.minimum(ys, self.height - 1 - ys)
+        upright = np.broadcast_to(near_x < near_y, cover.shape)  # nearer a left or right edge
+        # The outward normal of the panel edge each pixel is nearest. Picking one edge rather
+        # than blending two is what puts a hard mitre down the diagonal of every corner.
+        edge_x = np.where(upright, np.sign(xs - (self.width - 1) / 2.0), 0.0)
+        edge_y = np.where(upright, 0.0, np.sign(ys - (self.height - 1) / 2.0))
+        # The section: a crown at the outer arris, a chamfer at the inner one, a face between.
+        deep = np.minimum(near_x, near_y)  # in from the panel's outer edge, whichever is nearest
+        run = np.where(upright, np.broadcast_to(ys, cover.shape),
+                       np.broadcast_to(xs, cover.shape))
+        # ...and the crown's width breathes along the run, so the row the ridge lands on walks in
+        # and out by a pixel every few tens of columns. A specular pinned to one row for eight
+        # hundred of them is the tell that a section was extruded rather than lit.
+        wave = material.wear(run * FRAME_ARRIS_PITCH, seed=material.SEED + 16)
+        # Measured from the state stroke's inner edge, not the panel's: the outer `line` pixels
+        # are the light let into the arris and the crown is the first metal anybody can see. Off
+        # the panel edge instead, both of the chamfer's flats fell under the stroke and the one
+        # visible row of it was the tail of the second - a 210 specular became a 160 face.
+        crown = _facets(np.maximum(deep - self.line, 0.0),
+                        FRAME_CROWN * self.scale * (1.0 + FRAME_ARRIS_WAVE * wave))
+        under = _facets(outside, FRAME_UNDER * self.scale)
+        # The face crowns outward towards the plate's own edge and rolls inward towards the
+        # opening, off two ramps rather than one. One ramp read off the opening alone put the
+        # whole corner gusset at the outer end of the section - a bright 8 px triangle in every
+        # corner - because a corner is a long way outside the opening whichever way you measure.
+        # Off both, the deep corner is flat plate, which is what a corner of a plate is.
+        rise = np.clip(1.0 - deep / band, 0.0, 1.0)
+        fall = np.clip(1.0 - outside / band, 0.0, 1.0)
+        # The three bands are mixed by their own weights rather than switched on a threshold: a
+        # chamfer that is one twentieth present still overrode the face where it was tested for
+        # zero, and the whole section went with it.
+        arris = np.clip(crown + under, 0.0, 1.0)
+        tilt = (FRAME_FACE_TILT * (rise - fall) * (1.0 - arris)
+                + FRAME_CROWN_TILT * crown - FRAME_UNDER_TILT * under)
+        # The crown faces the way its own panel edge does; the inner chamfer faces the way out of
+        # the opening, which is the same thing on a run and turns with the radius at a corner.
+        dir_x = edge_x + (out_x - edge_x) * under
+        dir_y = edge_y + (out_y - edge_y) * under
+        length = np.maximum(np.hypot(dir_x, dir_y), 1e-6)
+        dir_x, dir_y = dir_x / length, dir_y / length
+        steep = np.abs(tilt)
+        diffuse, spec = material.shade(dir_x * tilt, dir_y * tilt,
+                                       np.sqrt(np.maximum(1.0 - tilt * tilt, 0.0)))
+        # A cut edge is deburred, not moulded: past FRAME_BREAK_AT the arris scatters where a
+        # rolled one would mirror, which is what stops the silhouette matching the ridge.
+        spec = spec * np.where(steep > FRAME_BREAK_AT, FRAME_BREAK, 1.0)
+        spec = spec * (FRAME_FACE_GLOSS + (1.0 - FRAME_FACE_GLOSS) * arris)
+        section = np.where(upright, np.broadcast_to(xs, cover.shape),
+                           np.broadcast_to(ys, cover.shape))
+        tooth = material.grain(section, run, seed=material.SEED + 11)
+        tooth = np.where(tooth > 0.0, tooth, tooth * FRAME_GRAIN_DARK)
+        rub = material.wear(run, seed=material.SEED + 12)
+        # Half a run of handled steel is duller than the other half, and that is the other thing
+        # that makes the ridge wander. It goes on the highlight only: the drift below is a
+        # multiply on the *diffuse* light, and a lamp is not brighter where the metal is polished.
+        spec = spec * (1.0 - FRAME_WEAR * (1.0 - rub) / 2.0)
+        drift = FRAME_DRIFT * rub / material.GRAIN
+        rgb = material.steel(diffuse, spec, tooth * FRAME_GRAIN + drift,
+                             mix(material.STEEL, material.STEEL_LIT, FRAME_STEEL))
+        rgb = self._surround_wear(rgb, upright)
+        rgb = rgb * self._sunlight(0, 0, self.width, self.height)[..., None]
+        # What goes under it. `cast` pushes the surround's own coverage away from the lamp, so
+        # the shadow of the top and left rails falls into the picture and that of the bottom and
+        # right rails falls off the panel - which is the whole reason a shadow is worth drawing.
+        lift = max(1.0, FRAME_LIFT * self.scale)
+        shadow = material.cast(cover, lift) * FRAME_SHADOW
+        lx, ly = material.lamp_2d()
+        under_lit = (-out_x * lx - out_y * ly) > 0.0  # the inner chamfer faces the lamp here
+        hug = FRAME_CONTACT * np.clip(1.0 + outside / max(FRAME_CONTACT_W * self.scale, 1e-3),
+                                      0.0, 1.0)
+        hug = hug * np.where(under_lit, FRAME_CONTACT_LIT, 1.0) * (1.0 - cover)
+        dark = 1.0 - (1.0 - shadow) * (1.0 - hug)
+        alpha = cover + dark * (1.0 - cover)
+        layer = material.to_image(rgb * (cover / np.maximum(alpha, 1e-6))[..., None], alpha)
+        self._surround_screws(layer)
+        return layer
+
+    def _surround_screws(self, layer: Image.Image) -> None:
+        """One socket screw through each corner of the plate - where a bezel is actually fixed.
+
+        The same head as every other fixing on the panel and built the same way: its own bearing
+        to the lamp (:func:`material.bearing`), its own clocking, its own grime and its own share
+        of the falloff, so the four of them are four screws and not one screw pasted four times.
+        It goes on the corner gusset rather than on a run, because a nine pixel run has a crown
+        down one edge and a chamfer down the other and nothing in between for a head to sit on.
+        """
+        r = max(2.0, FRAME_SCREW * self.scale)
+        at = FRAME_SCREW_AT * self.frame_w
+        lamp = (PLATE_LAMP[0] * self.width, PLATE_LAMP[1] * self.height)
+        for x in (at, self.width - 1 - at):
+            for y in (at, self.height - 1 - at):
+                cx, cy = math.floor(x), math.floor(y)
+                ax, ay = unit(x, y, *lamp)
+                mark = (cx * 73856093 ^ cy * 19349663) % 65521
+                tile = material.screw(
+                    round(r, 2), round(x - cx, 2), round(y - cy, 2), round(ax, 3), round(ay, 3),
+                    round(mark % 360 * math.pi / 1080.0, 3),  # a hex repeats every sixty degrees
+                    mark, round(float(self._sunlight(cx, cy, 1, 1)[0, 0]) ** BOLT_FALL, 3),
+                )
+                half = tile.width // 2
+                left, top = cx - half, cy - half
+                crop = tile.crop((
+                    max(0, -left), max(0, -top),
+                    tile.width - max(0, left + tile.width - self.width),
+                    tile.height - max(0, top + tile.height - self.height),
+                ))
+                layer.alpha_composite(crop, (max(0, left), max(0, top)))
+
+    def _surround_wear(self, rgb: np.ndarray, upright: np.ndarray) -> np.ndarray:
+        """Hairlines and pitting over the surround's face - two sheets, one per run direction.
+
+        A single sheet of scratches would drag every hairline the same way round all four rails,
+        and a scratch that runs across a rail instead of along it is a scratch on a texture rather
+        than on a bar. The sheet's own marks go over the top of both, because a hairline that
+        carries from the plate onto the case is most of what says they are one piece of metal.
+        """
+        length = tuple(2 * n * self.scale for n in RAIL_SCRATCH_LEN)
+        drawn = [
+            # Twice over and boxed down, as the rails' are: a hairline at one pixel on a nine
+            # pixel rail is a staircase, and at half a pixel it is a line.
+            material.scratches(self.width * 2, self.height * 2, FRAME_SCRATCHES, along,
+                               seed=material.SEED + seed, spread=FRAME_SCRATCH_SPREAD,
+                               length=length)
+            .reshape(self.height, 2, self.width, 2).mean(axis=(1, 3)) * 2.0
+            for along, seed in (((1.0, 0.0), 13), ((0.0, 1.0), 14))
+        ]
+        marks = np.maximum(np.where(upright, drawn[1], drawn[0]),
+                           FRAME_SHEET_MARK * self._marks)
+        marks = (FRAME_SCRATCH * marks)[..., None]
+        rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+        pitted = material.pits(self.width, self.height, FRAME_PITS, seed=material.SEED + 15)
+        return rgb * (1.0 - FRAME_PIT_DEPTH * pitted)[..., None]
 
     def _build_chrome(self) -> Image.Image:
         """The two mounts and the reticle, on transparency - everything of a fixed size.
@@ -3882,22 +4201,28 @@ class Overlay:
         # picture between them is not covered at all - not even by the border's own corners.
         tags = self._tag_count(state, recording, heat)
         image = Image.alpha_composite(self._backdrop(tags), self._plate)
+        # ...then the case, and then everything bolted to it. The surround goes on under the
+        # chrome and over his body, which is the order it is in: the brackets' rails run under
+        # the frame's inner arris instead of off the edge of the screen, his collar stands on it,
+        # and the pod sits over the top rail - all of which is what a chassis boundary is for.
+        image = Image.alpha_composite(image, self._surround)
         image = Image.alpha_composite(image, self._chrome(tags))
 
         d = ImageDraw.Draw(image)
         self._bake_header(d, state, recording, heat)
 
-        # The state light, falling inwards from the border over everything drawn so far - a tube
-        # blooms in front of what it is showing, not behind it. It reaches about 13 px at 480,
-        # and PAD keeps every word further in than that, so nothing legible sits in it.
+        # The state light, pooled under the surround's inner lip and falling inwards over
+        # everything drawn so far - a tube blooms in front of what it is showing, not behind it.
+        # It reaches about 16 px at 480, and PAD keeps every word further in than that.
         rim = Image.new("RGBA", image.size, (*halo, 0))
         rim.putalpha(Image.fromarray((self._halo * 255.0).astype(np.uint8), "L"))
         image = Image.alpha_composite(image, rim)
 
-        # ...and the border itself, crisp on top of its own glow and in the state's colour.
-        ImageDraw.Draw(image).rounded_rectangle(
+        # ...and the border itself, crisp on the surround's outer arris and in the state's
+        # colour: the light let into the edge of the case, which is what a workshop reads the
+        # session off from across the room. Square, because the arris it is let into is.
+        ImageDraw.Draw(image).rectangle(
             [self.frame.x, self.frame.y, self.frame.right - 1, self.frame.bottom - 1],
-            radius=self.radius,
             outline=(*halo, 255),
             width=self.line,
         )
@@ -4950,11 +5275,12 @@ class Overlay:
         rim only ever dims from where it is now and never brightens past it.
 
         Redrawing over the same geometry is safe because ImageDraw does not anti-alias: the sunk
-        stroke covers precisely the pixels the bright one did, with no fringe left showing.
+        stroke covers precisely the pixels the bright one did, with no fringe left showing. That
+        is also why what breathes is only ever this stroke and never the steel behind it - the
+        surround is a baked layer, and re-laying a shaded section every frame is milliseconds.
         """
-        d.rounded_rectangle(
+        d.rectangle(
             [self.frame.x, self.frame.y, self.frame.right - 1, self.frame.bottom - 1],
-            radius=self.radius,
             outline=(*mix(halo, SCREEN, rim_breath(phase)), 255),
             width=self.line,
         )
