@@ -360,17 +360,25 @@ MOODS = {
     # goes back to being what proves somebody is home.
     #
     # He looks at *you*: the anchor is AHEAD, which is the pupil dead centre and the eye looking
-    # out of its own glass. Every few seconds he takes a peek at the picture he is sitting on and
-    # comes straight back. That is the whole of it, and it is two names and three numbers.
+    # out of its own glass. Every ten seconds or so he turns to the picture he is sitting on,
+    # HOLDS it long enough for you to see that he is looking at it, and comes back. That is the
+    # whole of it, and it is two names and three numbers.
     #
-    # 0.26 over a 2.6 s window, measured rather than guessed: he holds you for 5, 8 or 13 seconds
-    # - three lengths, because the walk's gaps come in three (see eye.gaze_at) - and the peek
-    # itself lasts about a second. Nine in ten frames have him looking at you, which is roughly
-    # what a person listening does and is nothing like the old row, which wandered continuously
-    # and never came back anywhere.
+    # 0.22 over a 2.75 s window, measured rather than guessed: he holds you for eight or fourteen
+    # seconds, the look itself runs 2.4 to 2.6 s, and 79% of frames over ten minutes have him on
+    # you - roughly what a person listening does. Swept over every start phase, a twelve-second
+    # strip sampled once a second catches that look on two or three consecutive frames 87% of the
+    # time and misses it entirely twice in a hundred. The old row was 0.26 over 2.6 s with the
+    # hold written as a *share* of the window, which came out at 1.1 s: he arrived and left inside
+    # a single sample, and three critics in a row read it as a dropped frame rather than a look.
+    #
+    # The iris is the other half of "he is here". It swelled 0.07 - a one-per-cent change in the
+    # pupil, measured, which is not a breath, it is a rounding error - and the only thing on the
+    # face that visibly moved with it was the specular core. 0.16 opens him from half to two
+    # thirds and back every four seconds, which is a lens breathing rather than a lamp flickering.
     LISTENING: Mood(
-        tint=WHITE, aperture=0.52, swell=0.07, breath_s=4.0, spin=7.0, blink_s=4.4,
-        look=(AHEAD, FRAME), gaze=0.62, dart=0.26, dart_s=2.6, drift=0.05,
+        tint=WHITE, aperture=0.50, swell=0.16, breath_s=4.0, spin=7.0, blink_s=4.4,
+        look=(AHEAD, FRAME), gaze=0.70, dart=0.22, dart_s=2.75, drift=0.05,
     ),
     # Talking: a faster breath and a wider iris, because he is doing the thing rather than waiting
     # to. The one row left that opens to level at all, and the reason the knob still exists: the
@@ -378,14 +386,17 @@ MOODS = {
     # what it is saying. That is the case the gesture was always right for. A tenth, because his
     # own words should show on him without him mouthing them.
     #
-    # He holds your eye while he talks, and what he glances at when he does look away is his own
-    # caption - the one place on the panel that is what he is saying. Fewer glances than listening
-    # and a longer window between them, which is the opposite of a person (speakers avert more
-    # than listeners do) and right for this one: he is a face on a panel, and a panel that looked
-    # away while answering you would read as not answering.
+    # He holds your eye while he talks, and what he looks at when he does look away is his own
+    # caption - the one place on the panel that is what he is saying, and the reason WORDS is
+    # named second rather than anywhere else in the list (see eye.FOCUS). It is the same gesture
+    # as reading back what you have just written. Fewer looks than listening and a longer window
+    # between them, which is the opposite of a person (speakers avert more than listeners do) and
+    # right for this one: he is a face on a panel, and a panel that looked away while answering
+    # you would read as not answering. The look itself is as long as listening's - a glance at his
+    # own line that lasted half a second would be a twitch towards the caption, not a check of it.
     SPEAKING: Mood(
-        tint=WHITE, aperture=0.70, swell=0.17, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5,
-        look=(AHEAD, WORDS), gaze=0.50, dart=0.18, dart_s=3.7, drift=0.04,
+        tint=WHITE, aperture=0.66, swell=0.19, breath_s=1.1, voice=0.10, spin=13.0, blink_s=5.5,
+        look=(AHEAD, WORDS), gaze=0.50, dart=0.22, dart_s=3.7, drift=0.04,
     ),
     # Looking at a photo, and now actually at it. Wide, still, and it does not blink: this is a
     # stare, and the thing it is aimed at is the middle of the picture rather than nowhere in

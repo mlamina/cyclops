@@ -225,6 +225,19 @@ SCAN_DIM = 0.42  # ...and how far the rim is turned *down* underneath it while i
 RINGS = 4  # the four channels above, and what `ring` indexes in wander(). The vanes and the
 # diaphragm are deliberately not among them - not everything on him turns.
 
+RING_GEAR = 34.0  # degrees a ring indexes round per unit of sideways gaze, times its own share.
+# The ring set is geared to the eye: when he turns to look at something the mechanism carrying
+# him indexes with it, forward on the knurl and back on the castellation, and it stays there for
+# as long as he holds the place. This is the answer to a measurement rather than a flourish -
+# three critics counted the castellated ring at -4.5 degrees a frame, EVERY frame, variance zero,
+# and one of them put it best: a still frame around a moving thing cannot itself be the thing
+# that moves most steadily. The alternative on the table was more `sway`, which is a second
+# unrelated motion laid over the first; this makes the loudest motion in the picture a
+# *consequence* of the thing you are supposed to be watching. Sideways rather than the full
+# vector because a ring turns about one axis, and it takes the sign with it: a mood that looks
+# down at its own hands indexes the set the other way from one that looks up at the pod.
+# The scan arc is left out of it - a rotor sweeps at its own rate whatever the gear train does.
+
 # ...and the wander on top of those, for a mood that asks for one - see `Mood.sway` and
 # :func:`wander`. Fixed multiples of one rate are a gear train: it turns, but every arrangement
 # it reaches it has reached before, and a few seconds in, the eye stops reading it as alive.
@@ -298,17 +311,25 @@ DART_PICK = 0.4142135624  # sqrt(2) - 1, and a *second* irrational on purpose.
 # this, 1306/1294/1306/1295. 1, phi and sqrt(2) are rationally independent, which is the whole of
 # why. Not a PRNG and not hash(), for the reason :func:`blink` gives.
 
-PEEK_MIN, PEEK_MAX = 0.42, 0.72  # how much of one window a glance away may occupy. A glance that
-# fills its window is not a glance, it is a change of mind - coming back inside the window is what
-# makes it read as a peek. Never 1.0: the rest of the window is the way home, and see DART_FLOOR.
-# It was 0.26 to 0.62, which at listening's 2.6 s window is a peek of 0.7 to 1.6 s - shorter than
-# the gap between two frames of the strip the motion is judged in, so the one glance in six
-# seconds fell between two samples as often as not and the face read as fixed. Long enough to be
-# caught is also long enough to be a *look*: he goes, he arrives, he stays a beat, he comes back.
-DART_FLOOR = SACCADE_S / (1.0 - PEEK_MAX)  # 0.46 s, and the shortest window a mood may ask for.
-# Under it the home leg is shorter than a saccade, so he has not finished arriving before the next
-# window starts and the sequence stops being continuous. Asserted on the table rather than clamped
-# here, because a mood that asks for one is a mood that wants telling.
+DWELL_MIN, DWELL_MAX = 2.4, 3.2  # how long he holds a place once he has arrived at it, in
+# SECONDS, and the one number this round turns on. It was a share of the window - 0.42 to 0.72 of
+# `dart_s` - which is the thing that made the old gaze read as a twitch: a share scales with the
+# span, so a mood asking for a longer, more deliberate rhythm got a *shorter* look out of it, and
+# at listening's window the hold came out 1.1 to 1.9 s. Measured on the render at one frame a
+# second: out 21.5 px on one frame, back 18.1 px on the next, and nothing at the far end at all.
+# That is a flinch, or a dropped frame. A creature looks, HOLDS, and then comes back, and the
+# hold is the whole of what says it was looking rather than glitching. Under two seconds there is
+# nothing to see; past four he has stopped attending to you and is staring at something else.
+DART_FLOOR = 3.0 * SACCADE_S  # 0.39 s, and the shortest window a mood may ask for: a saccade
+# out, a beat at the far end, and a saccade home. A hold is clipped to `dart_s - SACCADE_S` so
+# that the way back always fits inside the window - what comes out is continuous whatever the
+# table says, and the next window always starts with him arrived. Asserted on the table rather
+# than clamped here, because a mood that asks for a window this short wants telling.
+FOCUS = 2.0  # how much harder the first place a mood names pulls than the ones after it. `look`
+# is a priority and not a menu - the thing that is happening gets most of his attention and the
+# rest get what is left - which is the difference between a face watching something and one
+# sweeping a room. Squaring the picking walk gives the first of the hunt's four named places 50%
+# of its glances and the last 13%; at 1.0 it is a quarter each, which is a turret on a schedule.
 
 MICRO_S = 1.7   # the tremor's shorter period, the same shape as the drift an order faster...
 MICRO = 0.10    # ...and how far a *held* gaze still moves, as a fraction of the full travel. An
@@ -319,11 +340,19 @@ MICRO_LIT = 0.20  # the gaze below which the tremor fades out with it rather tha
 # zero. A mood that holds still - the fault, the working face, the tap acknowledgement - has to
 # hold *completely* still, and has to get there without a step at the end of the crossfade.
 
-BLINK_S = 0.22  # one blink, down and back up: five or six frames at 25 fps, and anything
-# shorter is indistinguishable from a dropped frame
+BLINK_S = 0.34  # one blink, down and back up: eight or nine frames at 25 fps. It was 0.22, which
+# is five - long enough to be seen running and not long enough to be *caught*. A strip sampled
+# once a second lands inside a 0.22 s lid one time in twenty, so three critics in a row looked at
+# a face blinking fourteen times a minute and reported that nothing blinks. This still cannot be
+# mistaken for a dropped frame, and it now shows up in a still.
 BLINK_DRIFT_S = 2.6  # how far a blink may wander inside its window: a blink on a fixed period
 # is a status LED, not a creature
 BLINK_DRIFT = 0.6180339887  # golden ratio, so no two consecutive gaps come out the same length
+LID_LEAD = 0.10  # how far *before* a saccade the gaze-evoked lid starts down - see
+# :func:`gaze_blink`. A creature blinks as it changes what it is looking at, and it starts
+# closing before it sets off, so the lid is at the bottom while the optic is crossing and on its
+# way up as it arrives. Blink, then look. Ahead of the flick rather than on it because a lid that
+# shut on arrival would hide the one frame the whole move exists to put on the screen.
 
 MOOD_EASE_S = 0.45  # how long the eye takes to become a different mood. Colour that snaps reads
 # as a warning lamp; colour that travels reads as the same creature changing its mind
@@ -458,12 +487,16 @@ class Mood:
     rings: float = 1.0  # how present he is at all. 1 is his own resting level and
     # not a ceiling - above it he comes up towards full, which is what a tap uses
     scan: float = 0.0  # length in degrees of a bright arc sweeping the rim, 0 for none
-    blink_s: float = 0.0  # mean seconds between blinks; 0 for a mood that does not blink
+    blink_s: float = 0.0  # mean seconds between blinks; 0 for a mood that does not blink, and
+    # that means every lid he has - see :func:`gaze_blink`, which is also switched off by it
     # ...and where he is looking. See :func:`gaze_at`. A mood with `gaze` at 0 and no lean stares
     # dead ahead forever, which is exactly the drawing that existed before any of this.
-    look: tuple[str, ...] = (AHEAD,)  # the places he looks, and the first of them is his anchor:
-    # where he sits by default and where a glance comes back to. A mood naming one place never
-    # takes its eyes off it. Names rather than vectors, because this module does not know where
+    look: tuple[str, ...] = (AHEAD,)  # the places he looks, in order of how much they matter.
+    # The first is his anchor - where he sits by default and where a look comes back to - and the
+    # first after that is what he is attending to, which gets most of the glances he does take.
+    # See :data:`FOCUS`: the list is a ranking, so putting the caption second under SPEAKING is
+    # the whole of "he checks his own line while he talks". A mood naming one place never takes
+    # its eyes off it. Names rather than vectors, because this module does not know where
     # anything is - see LANDMARKS.
     gaze: float = 0.0  # how far he actually turns to look at a place, 0 .. 1 of the full travel.
     # It scales the anchor as well as the glances, so 0 is dead centre whatever `look` says -
@@ -537,11 +570,16 @@ def gaze_at(phase: float, mood: Mood,
 
     He holds an anchor - ``mood.look[0]``, and for nearly every mood that is :data:`AHEAD`, which
     is (0, 0), which is straight out of the glass at whoever is standing there. Attention comes in
-    windows of ``dart_s``, and a walk decides whether each one is spent on that anchor or as a
-    peek at one of the mood's other places. Consecutive anchor windows are the *same* target, so
-    nothing happens between them and they merge: what comes out is a long hold broken by short
-    glances, and the hold varies in length because the walk's gaps do. There is no dwell parameter
-    and there does not need to be one.
+    windows of ``dart_s``, and a walk decides whether each one is spent on that anchor or on a
+    look at one of the mood's other places - weighted towards the first one it names, because
+    that is the thing that is happening. Consecutive anchor windows are the *same* target, so
+    nothing happens between them and they merge: what comes out is a long hold on you, broken by
+    looks that are themselves held.
+
+    That the look is *held* is the point, and :data:`DWELL_MIN` is where it is said. He goes, he
+    arrives, he stays two and a half to three seconds - two or three frames of a strip sampled
+    once a second - and then he comes back. Out and straight back is not a look; it is a flinch,
+    and it is what this read as for seven rounds.
 
     Between two targets he is ballistic - :data:`SACCADE_S` on a smoothstep, quick and not
     instantaneous - and while he is fixed there is always :data:`MICRO` under him, because an eye
@@ -602,32 +640,41 @@ def _flick(a: tuple[float, float], b: tuple[float, float], since: float) -> tupl
 
 
 def _stray(window: int, dart: float, n: int) -> tuple[int, float]:
-    """Which of *n* places attention *window* is spent on, and where in that place's slot it fell.
+    """Which of *n* places attention *window* is spent on, and the walk it was picked with.
 
-    0 is the anchor, and is what most windows come back. The second number is what is left of the
-    picking walk once the index has been taken out of it - free, uniform, and used for how long
-    the glance lasts, so a peek is never quite the same length twice without a third walk.
+    0 is the anchor, and is what most windows come back. The pick is weighted by :data:`FOCUS`
+    towards the *first* place the mood names, because `look` is a priority - the thing that is
+    happening - rather than a list of directions to take turns over.
+
+    The second number is the picking walk itself, untouched by the weighting: free, uniform, and
+    used for how long the glance lasts, so a look is never quite the same length twice without a
+    third walk. Uniform is the whole reason it is handed back raw rather than as the leftover of
+    the weighted index, which is bunched at one end and would make every look the shortest one.
     """
     if n < 2 or dart <= 0.0 or (window * BLINK_DRIFT) % 1.0 >= dart:
         return 0, 0.0
-    pick = ((window * DART_PICK) % 1.0) * (n - 1)
-    return 1 + int(pick), pick - int(pick)
+    part = (window * DART_PICK) % 1.0
+    return 1 + int(part**FOCUS * (n - 1)), part
 
 
 def _hold(window: int, mood: Mood, n: int) -> float:
     """How many seconds of *window* are spent away from the anchor. 0 for one spent on it.
 
-    A peek goes out and comes back inside its own window - that is what makes it a peek rather
-    than a change of mind - *unless* the next window is a glance too, in which case he stays out
-    and goes straight on to the next thing. Without that, a hunting eye at dart 0.9 would bounce
-    place, home, place, home twice a second, which is a metronome and not a search.
+    A look goes out, is HELD for :data:`DWELL_MIN` to :data:`DWELL_MAX` seconds, and comes back
+    inside its own window - that is what makes it a look rather than a change of mind - *unless*
+    the next window is a glance too, in which case he stays out and goes straight on to the next
+    thing. Without that, a hunting eye at dart 0.9 would bounce place, home, place, home twice a
+    second, which is a metronome and not a search.
+
+    The hold is clipped so the way home fits: a mood whose window is shorter than a dwell gets
+    everything but one saccade of it, which is what keeps a fast, chaining mood continuous.
     """
     where, part = _stray(window, mood.dart, n)
     if where == 0:
         return 0.0
     if _stray(window + 1, mood.dart, n)[0] != 0:
         return mood.dart_s
-    return mood.dart_s * (PEEK_MIN + (PEEK_MAX - PEEK_MIN) * part)
+    return min(mood.dart_s - SACCADE_S, DWELL_MIN + (DWELL_MAX - DWELL_MIN) * part)
 
 
 def _settled(window: int, mood: Mood, n: int, spots: dict[str, tuple[float, float]],
@@ -637,6 +684,34 @@ def _settled(window: int, mood: Mood, n: int, spots: dict[str, tuple[float, floa
     if where == 0 or _hold(window, mood, n) < mood.dart_s:
         return home
     return spots.get(mood.look[where], home)
+
+
+def gaze_blink(phase: float, mood: Mood) -> float:
+    """The lid he drops as he sets off to look at something. 1.0 whenever it is open.
+
+    The pairing that sells a creature and that the spontaneous blink alone never gets: a face
+    blinks *when it changes what it is looking at*, so the lid and the saccade are one event
+    rather than two things happening on unrelated clocks. Three critics measured the old face,
+    found its one blink nowhere near its one look, and read the blink as a flicker.
+
+    Only on the way out, so there is one lid per look and not two - and only for a mood that
+    blinks at all. ``blink_s`` at 0 means a face that does not blink for any reason, which is
+    what the stare, the working face and the fault all rely on: the knob has to shut off the
+    whole apparatus, not just the part of it that runs on its own clock.
+
+    Pure, O(1) and off the same window arithmetic as :func:`gaze_at` - it costs one floor and one
+    modulo more than the gaze already spends.
+    """
+    n = len(mood.look)
+    if mood.blink_s <= 0.0 or mood.gaze <= 0.0 or mood.dart <= 0.0 or mood.dart_s <= 0.0 or n < 2:
+        return 1.0
+    window = math.floor((phase + LID_LEAD) / mood.dart_s)
+    if _stray(window, mood.dart, n)[0] == 0:
+        return 1.0  # a window spent on the anchor: nothing sets off, so no lid
+    since = phase + LID_LEAD - window * mood.dart_s
+    if since >= BLINK_S:
+        return 1.0
+    return 1.0 - breath(since, BLINK_S)
 
 
 def at(p: float) -> float:
@@ -1045,15 +1120,18 @@ class EyeEngine:
     # ---- the drawing ----
 
     def aperture(self, mood: Mood, phase: float, level: float) -> float:
-        """How far the iris actually stands open this frame: rest, breath, voice, then the blink.
+        """How far the iris actually stands open this frame: rest, breath, voice, then the lids.
 
-        The blink multiplies rather than subtracts, so it closes the eye all the way from
-        wherever it happened to be - a mood that sits half open still blinks shut, not to a
-        quarter.
+        Two lids and not one, and they are two because they are two different things: one runs on
+        its own clock because an eye that never blinks is glass (:func:`blink`), and one falls
+        because he is about to look somewhere (:func:`gaze_blink`). Both multiply rather than
+        subtract, so either closes the eye all the way from wherever it happened to be - a mood
+        that sits half open still blinks shut, not to a quarter.
         """
         open_ = mood.aperture + mood.swell * breath(phase, mood.breath_s)
         open_ += mood.voice * max(0.0, min(1.0, level))
-        return max(0.0, min(1.0, open_)) * blink(phase, mood.blink_s)
+        lids = blink(phase, mood.blink_s) * gaze_blink(phase, mood)
+        return max(0.0, min(1.0, open_)) * lids
 
     def paint(
         self, img: Image.Image, cx: int, cy: int, mood: Mood, phase: float, level: float
@@ -1079,8 +1157,10 @@ class EyeEngine:
         # through `mix`, which clamps, so an absurd value saturates rather than raising.
         pen = Pen(d, self._c, self._c, self.screen, mood.tint,
                   max(0.0, mood.rings), self._stroke, self._thin)
-        self._shell(pen, mood, phase)
+        # The gaze first, because the socket is geared to it now - see RING_GEAR. It is still one
+        # call: the shell is handed the answer rather than asking for its own.
         gx, gy = gaze_at(phase, mood, self.places)
+        self._shell(pen, mood, phase, gx)
         self._optic(pen.shifted(gx * self._c * GAZE_SHIFT, gy * self._c * GAZE_SHIFT),
                     mood, phase, level, gx, gy)
         # The brow last, and on the *unshifted* pen. It is a highlight on the outer glass, and a
@@ -1088,8 +1168,9 @@ class EyeEngine:
         # reason the eye reads as turning rather than as sliding about.
         pen.band(self._c * BROW_AT, BROW_FROM, BROW_TO, BROW_LIT, self._thin * BROW_W)
 
-    def _shell(self, pen: Pen, mood: Mood, phase: float) -> None:
-        """The socket. Nothing in here follows his gaze, which is the whole of what it is for.
+    def _shell(self, pen: Pen, mood: Mood, phase: float, gx: float) -> None:
+        """The socket. Nothing in here *travels* with his gaze, which is the whole of what it is
+        for - but the rings do turn with it, because they are what carries him. See RING_GEAR.
 
         Not everything in here turns, either, and the exceptions are deliberate: the rim and the
         vanes hold their angle so there is something fixed to read the turning parts against. A
@@ -1098,10 +1179,14 @@ class EyeEngine:
         r = self._c
         # Each ring is asked where it has got to rather than all of them being read off one
         # clock. With no sway that is the same product it always was; with one they drift apart,
-        # overtake and turn back under each other - see :func:`wander`.
-        fast = wander(phase, mood.spin, KNURL_SPIN, mood.sway, 0, mood.sway_s)
-        mid = wander(phase, mood.spin, CASTLE_SPIN, mood.sway, 1, mood.sway_s)
-        slow = wander(phase, mood.spin, DOT_SPIN, mood.sway, 2, mood.sway_s)
+        # overtake and turn back under each other - see :func:`wander`. On top of that the set is
+        # indexed by however far he has turned, which is what stops the steady rate being the
+        # most legible thing on him: the rings hold a rate while he holds a place, and lurch
+        # round when he looks - the same event, on two parts.
+        gear = RING_GEAR * gx
+        fast = wander(phase, mood.spin, KNURL_SPIN, mood.sway, 0, mood.sway_s) + gear * KNURL_SPIN
+        mid = wander(phase, mood.spin, CASTLE_SPIN, mood.sway, 1, mood.sway_s) + gear * CASTLE_SPIN
+        slow = wander(phase, mood.spin, DOT_SPIN, mood.sway, 2, mood.sway_s) + gear * DOT_SPIN
 
         # The rim, and the sweep when a mood asks for one. A radar sweep is built the way one is:
         # the trace is bright and the ring under it is faint. The highlight used to be mixed
