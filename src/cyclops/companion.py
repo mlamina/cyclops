@@ -49,8 +49,7 @@ STILL_FPS = 1  # ...and how often that card is re-sent: it is a caption, not a p
 # the CLI loads. Two short strings against that, and a test pins them to each other.
 NO_CAMERA = "No camera found"
 CAMERA_STALLED = "Camera stopped responding"
-PACE_S = 0.1  # how often a listener's socket is written: ten syscalls a second, not fifty
-SILENCE = bytes(int(PACE_S * SAMPLE_RATE) * BYTES_PER_FRAME)  # what a listener gets between turns
+PACE_S = 0.05  # how often a listener's socket is written: smaller chunks are a smoother arrival
 VOICE_LAG_MAX = SAMPLE_RATE * BYTES_PER_FRAME  # a second; past this a slow reader is skipped on
 MAX_VIEWERS = 4  # per stream. A page left open in ten tabs is not a reason to cook the Pi
 SEND_TIMEOUT_S = 10.0  # a phone that walks out of range is dropped, not left holding a thread
@@ -106,16 +105,10 @@ class _Voice:
                     del sink[:-VOICE_LAG_MAX]  # the reader fell behind: stay live, lose the past
 
     def drain(self, sink: bytearray) -> bytes:
-        """Whatever has arrived since the last call, or silence.
-
-        Silence rather than nothing, so the stream is a flat 48 KB/s whether or not a session is
-        running. The alternative - stopping between conversations - makes the page tear its
-        audio graph down and build it again every time he stops talking, which is more code on
-        the phone and audibly worse when he starts.
-        """
+        """Whatever has arrived since the last call, empty when he has not said anything."""
         with self._lock:
             if not sink:
-                return SILENCE
+                return b""
             out = bytes(sink)
             del sink[:]
         return out
@@ -265,6 +258,19 @@ def listening() -> bool:
     process dying cannot lie about.
     """
     return time.monotonic() - _heard_at < LISTEN_FRESH_S
+
+
+def _silence(seconds: float) -> bytes:
+    """Silence for exactly the time that has passed, and that *exactly* is the whole point.
+
+    A fixed block per loop was the first version and it starved the page: one iteration is a
+    sleep plus a write, so it takes a shade longer than the sleep asks for, and a block sized to
+    the sleep therefore delivers a shade less than real time, every time, forever. The listener's
+    buffer drains at the difference and the sound breaks up. Sized to the clock instead, the
+    stream cannot drift no matter what the loop costs. Audio drained from the speaker needs no
+    such help - it arrived on the sound card's own clock and is already true.
+    """
+    return bytes(max(0, int(seconds * SAMPLE_RATE)) * BYTES_PER_FRAME)
 
 
 def _keepalive(sock) -> None:
@@ -426,9 +432,13 @@ class _Handler(BaseHTTPRequestHandler):
                     "X-Sample-Format": "s16le",
                 },
             )
+            sent_at = time.monotonic()
             while True:
                 time.sleep(PACE_S)
-                self.wfile.write(voice.drain(sink))
+                now = time.monotonic()
+                block = voice.drain(sink) or _silence(now - sent_at)
+                sent_at = now
+                self.wfile.write(block)
         finally:
             voice.leave(sink)
             print("· companion closed the voice stream", flush=True)

@@ -93,10 +93,15 @@ if (cam) {
   // ---- the voice ------------------------------------------------------------------------
 
   const RATE = 24000;    // what the service sends, and the only rate it sends
-  const BLOCK = 4096;    // frames per callback: ~85 ms at 48 kHz, which a phone can make in time
-  const HOLD = RATE / 5; // 200 ms in hand before the first sample is let out
-  const DEEP = RATE;     // ...and never more than a second, or this drifts behind the room
-  const ring = new Float32Array(RATE * 2);
+  const BLOCK = 4096;          // frames per callback, and the slack the main thread gets
+  // The cushion has to cover a whole callback, because a callback takes its 4096 frames in one
+  // go rather than a sample at a time: at 24 kHz that is 170 ms leaving the buffer at once,
+  // against chunks of 50 ms arriving. Measured with 200 ms in hand, the buffer sat between 30
+  // and 130 ms - under one block - and ran dry about twice a second, which is exactly what chop
+  // is. Two blocks plus a couple of chunks, and it stops touching the floor.
+  const HOLD = Math.round(RATE * 0.45);
+  const DEEP = Math.round(RATE * 1.5);   // ...and never more, or this lags the room audibly
+  const ring = new Float32Array(RATE * 3);
   let wrote = 0;         // samples ever written
   let read = 0;          // ...and ever played. A float: see the step below
   let filling = true;
@@ -104,7 +109,10 @@ if (cam) {
   let node = null;
   let stop = null;
   let beat = null;
-  const BEAT_MS = 3000;   // companion.LISTEN_BEAT_S; the kiosk gives the claim 8 s to be renewed
+  let want = false;      // the preference, remembered across visits - not whether it is working
+  let starved = 0;   // callbacks that ran out of audio mid-block; see window.__ears
+  const BEAT_MS = 3000;
+  const START_MS = 250;  // how long the context gets to actually start before the switch is read   // companion.LISTEN_BEAT_S; the kiosk gives the claim 8 s to be renewed
 
   // Saying, every few seconds, that this device is still the one being used as the speaker. The
   // panel takes his voice back the moment these stop - which is what makes a locked phone, a
@@ -139,7 +147,7 @@ if (cam) {
     // When it is honoured the step is exactly 1 and this degenerates to a copy.
     const step = RATE / ctx.sampleRate;
     for (let i = 0; i < out.length; i++) {
-      if (read + step >= wrote) { out.fill(0, i); filling = true; return; }
+      if (read + step >= wrote) { out.fill(0, i); filling = true; starved++; return; }
       const at = Math.floor(read);
       const f = read - at;
       const a = ring[at % ring.length];
@@ -176,21 +184,29 @@ if (cam) {
     if (stop) { stop.abort(); stop = null; }
     wrote = read = 0; filling = true;
     if (ctx && ctx.suspend) ctx.suspend();
+    settled();
   };
 
-  const paint = (on, why) => {
-    spk.setAttribute('aria-checked', on ? 'true' : 'false');
-    spk.textContent = on ? 'ON' : 'OFF';
-    // What the switch says off is what it will do; what it says on is what is true. Both are
-    // the words it was asked for rather than a description of the machinery behind them.
-    hint.textContent = why || (on ? 'this device is the speaker'
-                                  : 'use this device as speaker');
+  // What the switch says is what is *happening*, never what was asked for. Those two came apart
+  // on a reload: the preference said on, so the switch was painted on, and the audio context sat
+  // suspended behind it because a page that has not been touched yet may not make a sound. It
+  // read as broken - the only cure was to turn it off and on again - and the switch was the
+  // thing lying about it. So `want` is the preference and this is the truth, and the truth is
+  // what is drawn: a context that is running, with a stream actually open on it.
+  const settled = () => {
+    const live = !!(ctx && ctx.state === 'running' && stop);
+    spk.setAttribute('aria-checked', live ? 'true' : 'false');
+    spk.textContent = live ? 'ON' : 'OFF';
+    // Off it says what it will do, on it says what is true, and wanted-but-not-running says
+    // what is missing - which after a reload is a tap and nothing else.
+    hint.textContent = live ? 'this device is the speaker'
+                     : (want ? 'tap to use this device as speaker' : 'use this device as speaker');
   };
 
   const ears = () => {
     if (!ctx) {
       const Make = window.AudioContext || window.webkitAudioContext;
-      if (!Make) { paint(false, 'this device cannot play sound'); return; }
+      if (!Make) { want = false; settled(); return; }
       ctx = new Make({ sampleRate: RATE });
       // ScriptProcessorNode, deprecated and knowingly: AudioWorklet is secure-context only and
       // this page is plain http on a LAN name, so ctx.audioWorklet does not exist here at all.
@@ -199,24 +215,47 @@ if (cam) {
       node = ctx.createScriptProcessor(BLOCK, 1, 1);
       node.onaudioprocess = pump;
       node.connect(ctx.destination);
+      ctx.onstatechange = settled;   // it can be taken away as well as granted
     }
-    // Must be started from inside the click, or iOS never unlocks the context.
-    ctx.resume().then(() => {
-      if (ctx.state !== 'running') { paint(false, 'this device would not play sound'); return; }
-      stop = new AbortController();
-      clearTimeout(beat);
-      thump();
-      drink(stop.signal).catch(() => {
-        if (spk.getAttribute('aria-checked') === 'true') setTimeout(ears, 2000);
-      });
-    }).catch(() => paint(false, 'this device would not play sound'));
+    // resume() must be called from inside the click or iOS never unlocks the context - but its
+    // promise is not the answer to "did it start". On a page nobody has touched, Chrome leaves
+    // it pending indefinitely rather than rejecting, which is precisely how a switch came to sit
+    // on `ON` with nothing behind it. Ask the state a moment later instead.
+    ctx.resume().catch(() => {});
+    setTimeout(() => {
+      if (!ctx || ctx.state !== 'running') { settled(); return; }
+      if (!stop) {
+        stop = new AbortController();
+        clearTimeout(beat);
+        thump();
+        drink(stop.signal)
+          .catch(() => {})
+          .then(() => {   // ended or failed; either way this device is no longer the speaker
+            stop = null;
+            settled();
+            if (want) setTimeout(ears, 2000);
+          });
+      }
+      settled();
+    }, START_MS);
   };
 
+  // What the audio path is actually doing, for when it sounds wrong. Read it from the console
+  // or from a driver: `__ears()`. Cheap enough to leave in - it is five numbers.
+  window.__ears = () => ({
+    rate: ctx && ctx.sampleRate,          // what we got, which is not always what we asked for
+    block: BLOCK,                          // the slack the main thread has between callbacks
+    held: ((wrote - read) / RATE).toFixed(3),   // seconds of audio in hand
+    starved,                               // blocks that ran dry: the sound of chop
+    want,                                  // what was asked for...
+    live: !!(ctx && ctx.state === 'running' && stop),   // ...and what is actually happening
+  });
+
   spk.addEventListener('click', () => {
-    const on = spk.getAttribute('aria-checked') !== 'true';
-    paint(on);   // drawn before anything is attempted, exactly as the panel's own switches are
-    try { localStorage.setItem(KEY, on ? '1' : ''); } catch (e) { /* private mode: this visit */ }
-    if (on) ears(); else hush();
+    want = !want;
+    try { localStorage.setItem(KEY, want ? '1' : ''); } catch (e) { /* private mode: this visit */ }
+    if (want) ears(); else hush();
+    settled();
   });
 
   // ---- when either of them runs ----------------------------------------------------------
@@ -232,10 +271,14 @@ if (cam) {
   document.addEventListener('visibilitychange', follow);
   window.__cam = follow;   // app.js calls this when a drawing takes the stage
 
-  // Remembered across visits, never assumed: a context that will not start without a fresh
-  // gesture paints itself back off, which is what is true.
+  // Remembered across visits, and never assumed to have worked. A browser will not let a page
+  // it has not been touched on make a sound, so on a reload this attempt usually fails and the
+  // switch correctly reads OFF with `tap to use this device as speaker` under it - one tap, and
+  // the tap is the thing the browser was waiting for anyway.
   try {
-    if (localStorage.getItem(KEY)) { paint(true); ears(); }
+    want = !!localStorage.getItem(KEY);
   } catch (e) { /* nothing remembered, which is the safe way round */ }
+  settled();
+  if (want) ears();
   follow();
 }

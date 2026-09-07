@@ -298,16 +298,25 @@ def test_a_listener_is_handed_exactly_what_the_speaker_played() -> None:
     assert tap.drain(sink) == b"abcd"
 
 
-def test_and_silence_when_he_has_not_said_anything() -> None:
-    """A flat 48 KB/s whether or not a session is running, which is not a waste but the point:
-    the page builds its audio graph once instead of tearing it down every time he stops."""
-    tap = companion._Voice()
-    sink = tap.join()
+def test_silence_is_sized_by_the_clock_and_not_by_the_loop() -> None:
+    """A flat 48 KB/s whether or not a session is running - the page builds its audio graph once
+    instead of tearing it down every time he stops - and it has to be *exactly* flat.
 
-    assert tap.drain(sink) == companion.SILENCE
-    assert len(companion.SILENCE) == int(
-        companion.PACE_S * companion.SAMPLE_RATE
-    ) * companion.BYTES_PER_FRAME
+    A block sized to the sleep was the first version: an iteration is a sleep plus a write, so it
+    always takes a shade longer than it asks for and always delivered a shade less than real
+    time. The listener's buffer drained at the difference and the sound broke up.
+    """
+    a_second = companion._silence(1.0)
+
+    assert len(a_second) == companion.SAMPLE_RATE * companion.BYTES_PER_FRAME
+    assert set(a_second) == {0}
+    assert len(companion._silence(0.05)) == 1200 * companion.BYTES_PER_FRAME
+    assert companion._silence(-1.0) == b"", "a clock that went backwards is not negative audio"
+
+
+def test_nothing_said_is_nothing_drained() -> None:
+    tap = companion._Voice()
+    assert tap.drain(tap.join()) == b""
 
 
 def test_a_listener_that_falls_behind_is_skipped_on_rather_than_grown() -> None:
