@@ -524,7 +524,7 @@ VIGNETTE_ALPHA = 0.42
 # see what is at the bottom of. The brackets carry the filter and nothing else, so the picture
 # runs edge to edge behind them and the chrome earns its contrast from its own opaque glyphs
 # rather than from a bar.
-TERM_ALPHA = 205  # the well the caption is printed in, and the one dark backing left. It used
+TERM_ALPHA = 205  # the pod's window, and the one see-through well left on the panel. It used
 # to be a slab under a speech bubble at 170, thin because that one floated on the picture and
 # every point of alpha was a point of the room taken away from somebody holding a camera down a
 # pipe. This one is a hole in a housing, and a hole you can see the wall through is not a screen -
@@ -805,37 +805,107 @@ TERM_PAD = 3.0  # inside the glass, above the first line and below the last. It 
 TERM_RADIUS = 22.0  # the corner of the front. One radius and not two: the case and the glass are
 # the same shape at different depths into the same field, so there is one fillet to turn and no
 # pair of concentric ones to keep from drifting apart.
-TERM_ROLL = 2.5  # reference px of each of the frame's edges that turn down - RAIL_ROLL's own
-# number, because the frame is the rail's extrusion bent round the glass and a different roll
-# would make it a different bar. Both edges roll, so between them the frame keeps a short flat.
+TERM_ROLL = 1.6  # reference px of the frame's outer edge that turns down to the panel. Only
+# the outer one: the inner edge is the wall of the recess and goes down into it, see
+# TERM_REVEAL. Tighter than the rail's own roll, and it has to be - the lamp's highlight sits
+# where the surface has turned about 25 degrees into it, so the width of the roll is the width
+# of the bright line, and 2.5 px of roll on a 7 px frame is a bright band and not an edge.
 TERM_LIFT = 2.0  # how proud the frame stands of the panel behind it, which sets the shadow it
 # drops - down and to the right, away from the lamp, like every rail's. Less than a rail's: it
 # is a frame let into a bay, not a spine standing on a plate.
 TERM_SHADOW = 0.45  # ...and how dark that shadow is where it is deepest
+TERM_CONTACT = 0.55  # ...and how dark the band hard against its outer edge is. Where a part
+# meets a plate the room cannot get in, and that band is what draws the one dark contour round
+# the whole frame. Without it the top rail's specular is the outermost thing on the part, and a
+# bright line with nothing behind it reads as a stroke round a rectangle rather than as a lit edge.
+TERM_CONTACT_W = 2.0  # ...and how wide it is, in reference px
+TERM_GLOSS = 0.125  # how much of the steel's specular the frame keeps. All of it puts STEEL_SPEC
+# - lum 212, the brightest thing this palette has - along the whole top rail as a flat saturated
+# hairline, and the same field puts a second one on the bottom rail's inner roll, so the frame
+# comes out stroked at both edges with a dead flat face between: an emboss, not a bar. An eighth
+# lands the top rim at lum ~140, which is what a steel moulding under a bench lamp photographs at.
+TERM_FACE = 1.23  # how much of the lamp reaches the frame's top edge...
+TERM_FACE_FAR = 0.66  # ...and its bottom one. A bench lamp is not a sky: the far end of a part
+# is dimmer than the near end, and that fall down the face - 95 to 55 - is the whole difference
+# between one bar lit from above and four bars at the same grey. Nothing real is dead flat.
+TERM_FACE_SIDE = 0.20  # ...and how much brighter its left end is than its right, for the same
+# reason under the same lamp. Small: this frame is five times as wide as it is deep.
+TERM_WELL = 0.80  # how much light the inner half of the frame loses to the well it looks into...
+TERM_WELL_FROM = 0.20  # ...and how far across the bar that starts, as a fraction of its width.
+# This is the grade across the moulding, and without it the face is one flat grey from the
+# specular to the seam with a cliff at the end - which is what a stroked rectangle looks like.
+# A frame stands over a hole: the nearer its inner edge, the less of the room any part of it
+# can see, so it darkens all the way in. It is the same shade the glass's own walls carry
+# (TUBE_AO), on the other side of the same corner, which is why the two meet without a step.
+TERM_REVEAL = 1.4  # px of the frame's inner edge that turn down into the well...
+TERM_REVEAL_A = 0.45  # ...and how much of their light they lose doing it. That edge is the wall
+# of a recess seen from above: it faces down into the well, the lamp never reaches it, and the
+# dark seam it leaves is what says the glass is *behind* the frame rather than flush with it. It
+# used to be rolled the way the outer edge is, which lit it - and a lit line either side of one
+# face is an emboss however carefully each line is shaded.
+TERM_DRIFT = 0.9  # how far the face's own brightness wanders along the length of the bar, in
+# units of material.GRAIN - so about a tenth either way, slowly. Brushed grain alone is fine
+# noise and averages out over any patch big enough to look at: measured along this face it is
+# a standard deviation of 2.5 levels against the reference's 5.8, which is why a frame with
+# grain on it still reads as one flat grey. Rolled stock is not one thickness and handled
+# stock is not one polish, and this is the term that says so.
 TERM_WEAR = 0.45  # how much the frame's highlight comes and goes along its length - handled
 # steel is polished where hands have been and dull between
-TERM_SCRATCHES = 40  # hairlines over the frame's own box, of which the frame keeps the few that
+TERM_SCRATCHES = 16  # hairlines over the frame's own box, of which the frame keeps the few that
 # cross it - a scratch that stops at an edge is a scratch on a drawing
-TERM_SCRATCH = 0.35  # ...and how pale the palest of them shows
-TUBE_WASH = 0.13  # the phosphor a driven tube sits in with nothing to show, flat across the
-# glass. It is what makes the glass a shade greener and darker than the frame round it, so the
-# letters read as light *inside* it rather than as paint on it.
-TUBE_GLOW = 15.0  # how far in from the frame the wash takes to come all the way up...
-TUBE_GLOW_A = 0.07  # ...and how much more of it there is in the middle than at the edge. Blank
-# at the rim and a little green towards the middle is the way round a tube does it; bright at
-# the rim and dark in the centre is a hole with a lamp behind it.
-TUBE_FADE_FROM = 0.35  # where down the glass the wash starts to go...
-TUBE_FADE = 0.55  # ...and how much of it is gone by the bottom edge. A curved face reflects the
-# lit room at its top and the floor at its bottom, and a tube read from a little above is lit
-# from a little above; the bottom of a screen is its dark end.
-TUBE_LIP = 3.0  # how far down the glass, in reference px, the frame's shadow falls from the edge
-# that stands between the glass and the lamp - a crisp two pixels under the top rail, a trace
-# down the left side, nothing under the other two. This is the recess: the frame stands proud
-# and the glass is set down into it, and nothing else on the front says so.
-TUBE_LIP_A = 0.60  # ...and how dark it is right under that edge
-TUBE_AO = 4.0  # how far in from the frame the recess's walls shade the glass all the way round,
+TERM_SCRATCH = 0.30  # ...and how pale the palest of them shows, as a fraction of the light
+# already on that part of the face. A scratch is metal turned, not a decal laid over one: it has
+# to go dark at the dark end of the bar instead of crossing the whole part at one brightness.
+TERM_PITS = 26  # dark specks in the frame's steel, from whatever has been dropped on it...
+TERM_PIT_A = 0.34  # ...and how much of the light one takes away
+TUBE_TOP = (33, 70, 45)  # the phosphor at the top of the glass...
+TUBE_BOTTOM = (19, 40, 26)  # ...and at the bottom of it. Opaque, both: the module docstring has
+# always listed this glass among the parts you cannot see through, and it was only 80% of the way
+# there - close enough that a contrast stretch of the pane found the workshop, a finger and a
+# clamp knob sitting behind the caption. A screen you can see the room through is a hole. The
+# fall from the top colour to the bottom one is the curve: a tube read from a little above shows
+# the lit room in its top half and the floor in its bottom, and that alone is most of what says
+# the face is not flat.
+TUBE_GLOW_A = 0.07  # the pod's window keeps the flat wash this glass used to have, and
+# TERM_ALPHA and TERM_SCAN with it: that pane is a slot with lit readouts behind it rather than
+# a tube, it is a fifth the size, and none of the modelling below would read at that scale.
+TUBE_LIT_A = 0.78  # how much brighter the glass is where the lamp stands in it...
+TUBE_LIT_X = 0.16  # ...and where that is, in case widths across...
+TUBE_LIT_Y = 0.28  # ...and case heights down: the upper-left quarter, the same lamp the frame
+# is lit by. A pane with a bright quarter is lit; a pane at one brightness with marks on it is a
+# texture, and that is what this was - flat 58 the whole width with two hairlines drawn on it.
+TUBE_LIT_W = 0.26  # how far that lift carries across the glass...
+TUBE_LIT_H = 0.45  # ...and how far down it, both as fractions of the case
+TUBE_LIT_FALL = 1.3  # how the lift falls away from its middle. A gaussian is 2 here, and a
+# gaussian is the wrong shape for this: flat across its own peak and then gone, which spreads
+# one soft cloud evenly over half the pane. Under one puts a definite bright patch where the
+# lamp is and still leaves a long tail across the rest, which is what a photograph of a lit
+# screen has - a corner you can point at, and no edge anywhere.
+TUBE_SCAN = 0.13  # how much darker every third row of the phosphor is: the tube's own raster,
+# on the panel filter's pitch and in its phase (see *top*), so the two reinforce and never beat
+TUBE_INSET = 3.0  # px in from the frame's inner lip where the room's reflections stop. Every
+# glare mark is cut to this rather than to the glass itself, because a hairline that runs off the
+# pane and onto the moulding is a scratch on the drawing and not on the screen - two of them
+# crossed the top rail at the same brightness as the ones on the glass before this was here.
+TUBE_LIP = 4.6  # px of glass under the top lip that the frame's shadow falls across...
+TUBE_LIP_A = 0.62  # ...and how dark it is right under that edge. This is the recess: the frame
+# stands proud of the pane and the pane is set down behind it, and nothing else here says so.
+TUBE_FEATHER = 1.6  # px the two lip shadows take to come out of their deepest, which is
+# what makes each of them a band rather than a curve. A shadow under a lip has an edge - it
+# is a lip that casts it - and a smooth ramp from dark to nothing over four pixels reads as
+# a vignette instead of as a step down into a well.
+TUBE_BLEED = 8.0  # px further down the glass that the lip's shadow keeps bleeding...
+TUBE_BLEED_A = 0.30  # ...and how dark it still is where the hard band ends. The band on its
+# own is a step, and a step is a line drawn under the frame; what a lip actually casts is a
+# hard core with a long soft tail, because the lamp is not a point. It is also what keeps the
+# top of the pane off the first line of type - the sentence sits in the shade of the moulding
+# rather than on the brightest strip of the glass.
+TUBE_FOOT = 3.0  # px of glass above the bottom lip that the floor of the well shades...
+TUBE_FOOT_A = 0.62  # ...and how dark that goes. Narrower than the top and deeper at its
+# deepest: a shadow under a lip is cast, and the bottom of a well is simply where no light gets.
+TUBE_AO = 5.0  # how far in from the frame the recess's walls shade the glass all the way round,
 # in reference px, and deeper where two walls meet - the corner of a well is its darkest part
-TUBE_AO_A = 0.45  # ...and how dark, at the wall itself
+TUBE_AO_A = 0.30  # ...and how dark, at the wall itself
 # The room, and where it is coming from. Everything below is the one lamp :data:`material.LAMP`
 # points at: a white source up and to the left of the panel, which is where a bench light is and
 # where anybody reads a highlight from without having to be told. Two terms make its reflection
@@ -845,34 +915,40 @@ TUBE_AO_A = 0.45  # ...and how dark, at the wall itself
 # by its own normals under the same lamp, so a reflection painted over it would be two lamps.
 GLARE_X = 0.02  # the source, in face widths across...
 GLARE_Y = -0.16  # ...and in face heights down, so it sits just off the top-left corner
-GLARE_REACH = 1.6  # how far its light carries, in face heights
-GLARE_ALPHA = 0.13  # how much of the tube's white the glass gives back where it lands hardest.
+GLARE_REACH = 2.4  # how far its light carries, in face heights
+GLARE_ALPHA = 0.10  # how much of the tube's white the glass gives back where it lands hardest.
 # Held down by the line printed on it as much as by taste: a reflection over a word is a word
 # lost, and anything on the glass past a brightness is read as ink (tests/test_caption.py).
-GLARE_AT = 0.0  # where down the left-hand edge the streak passes...
-GLARE_DEPTH = 0.30  # ...how broad it is either side of that...
-GLARE_TILT = 1.6  # ...and how far down the face its middle travels on its way across. It
+GLARE_AT = 0.42  # where down the left-hand edge the streak passes...
+GLARE_DEPTH = 0.22  # ...how broad it is either side of that...
+GLARE_TILT = 1.5  # ...and how far down the face its middle travels on its way across. It
 # crosses the whole depth in two thirds of the width, which is steeper than a letterbox would
-# seem to allow, because a streak that lay along the glass read as one more scanline. This one
-# is a wipe off the top-left corner, and it sits high on the glass where the lamp is.
-GLARE_AMBIENT = 0.12  # the floor under the wipe, for the corner furthest from the lamp. It was
-# going dead black without it, which no glass in a room does - but low, because the wipe's
-# peak is pinned by the line under it and what is left to make it read is the fall from it.
-GLARE_MARKS = 36  # fine hairlines polished into the glass, over its whole box, which only show
+# seem to allow, because a streak that lay along the glass read as one more scanline. It starts
+# a quarter of the way down rather than in the corner: the corner is where the phosphor is
+# already brightest, and a white wipe laid over that is the one place on this pane where glare
+# could put a word out.
+GLARE_AMBIENT = 0.05  # the floor under the wipe, for the corner furthest from the lamp. It was
+# going dead black without it, which no glass in a room does - low now, because the pane has its
+# own gradient to be lit by and a flat white wash over that is what flattened it before.
+GLARE_MARKS = 11  # fine hairlines polished into the glass, clustered mid-pane, which only show
 # where the lamp reaches them - at arm's length the glare on a real screen is mostly these
-GLARE_MARK_TILT = -40.0  # degrees from horizontal the polishing ran at: up and to the right
-GLARE_MARK_SPREAD = 6.0  # ...and how far off that any one line strays, in degrees
-GLARE_MARK_A = 0.06  # how much white the palest of them adds where the lamp is full on it
-SHEEN_AT = 3.0  # how far in from the frame, in reference px, the glass catches the lamp: a
-# convex face curving up towards the top rail turns square to the light just below the rail's
-# own shadow, and that one bright line is the whole of what says the glass is curved rather
-# than flat. Only along the edge that faces the lamp, so it dies away round the corners.
-SHEEN_W = 1.1  # ...how wide it is, as a gaussian's sigma in reference px...
-SHEEN_A = 0.30  # ...and how bright at its middle
-SHEEN_AMBIENT = 0.07  # the lit room reflected in the top of the glass, and the grey it stirs
-# into the phosphor there - a screen in a room is never the pure colour of its own light...
-SHEEN_FLOOR = 0.4  # ...and what the bottom of the glass keeps of it, since a curved sheet
-# reflects the floor down there and the floor is dark. Not zero: no glass goes one flat colour.
+GLARE_MARK_TILT = -45.0  # degrees from horizontal the polishing ran at: up and to the right
+GLARE_MARK_SPREAD = 8.0  # ...and how far off that any one line strays, in degrees
+GLARE_MARK_A = 0.22  # how much white the palest of them adds where the lamp is full on it
+GLARE_MARK_BOX = (0.22, 0.28, 0.30, 0.42)  # the patch of the face they are clustered on - left,
+# top, width, height, as fractions of the case. Mid-pane and towards the lamp, because a mark the
+# light does not reach is not there at all, and one over the far end of the line is over a word.
+GLARE_MARK_LEN = (7.0, 22.0)  # ...and how long they run, in reference px. Short and few: a
+# polishing mark is a flick of a cloth, and thirty-six of them at full length was a screen door.
+GLARE_MARK_BLUR = 0.7  # px they are softened by. A hairline drawn a pixel wide and left sharp
+# is aliasing at 800x480; a scratch in glass seen through the glass is never that crisp.
+SHEEN_AT = 12.0  # px in from the frame's inner lip, across...
+SHEEN_DOWN = 3.0  # ...and down, to where the glass's curve turns square to the lamp: one soft
+# catch-light in the upper-left inner corner, where the sheet meets the moulding, and that is
+# the whole of what says this pane is curved rather than flat.
+SHEEN_W = 4.2  # ...how soft it is, as a gaussian's sigma in px, so the blob reads about 10 across
+SHEEN_A = 0.20  # ...and how bright at its middle. One highlight and one only: the bright line
+# that used to run the full width under the top rail was a second lamp on a surface that has one.
 # The eye. He rides the left bracket's ramp, sunk halfway into it - `EYE_SEAT` is that depth as a
 # fraction of the swell's radius, and acos(0.5) is a 60-degree shoulder, which is where the rail
 # leaves the straight and goes round him. Half of him is in the bracket and half is over the
@@ -1524,11 +1600,13 @@ def tube_field(width: int, height: int, radius: int) -> np.ndarray:
     return outside + np.minimum(np.maximum(qx, qy), 0.0) - radius
 
 
-def _glass(edge: np.ndarray, bezel: int) -> np.ndarray:
+def _glass(edge: np.ndarray, bezel: float) -> np.ndarray:
     """Coverage of the glass: everything inside the frame's inner edge, anti-aliased at it.
 
     Every pass laid on the glass is cut by this and nothing laid on the frame is, so the frame
     is the one place the two meet - and it is steel all the way through, so there is no seam.
+    A *bezel* wider than the frame's own is how the reflections are held off the moulding: see
+    :data:`TUBE_INSET`, which is the only reason this takes a float.
     """
     return np.clip(-edge - bezel + 0.5, 0.0, 1.0)
 
@@ -1540,134 +1618,184 @@ def _outward(edge: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return gx / length, gy / length
 
 
-def tube_alpha(width: int, height: int, radius: int, bezel: int, top: int) -> np.ndarray:
-    """How opaque the glass is, and the backing the frame sits on.
+def _pits(width: int, height: int, count: int, seed: int, scale: float) -> np.ndarray:
+    """Dark specks in a plate, 0..1: whatever has been dropped on it over the years.
 
-    Opacity is the only currency this surface has. SCREEN is near enough black that darkening it
-    says nothing (see TERM_ALPHA), so the glass's own shade is depth of glass - TERM_ALPHA flat,
-    and the raster on top of it. What is under the frame does not matter, because the frame is
-    steel all the way through; except at its outer edge, where its anti-aliased pixel has to
-    meet the room and not a dark fringe, so the backing stops a pixel short of it.
-
-    *top* is where the front sits on the panel, and it is an argument rather than a detail because
-    the raster has to land on the filter's own rows. Phased any other way the two beat against
-    each other and the one surface here that is literally a CRT ends up the flattest thing on it.
-    It stops at the glass, because a scanline running out across the frame is a crack in it.
+    Scratches are the wear anybody notices and pits are the wear nobody does, which is exactly
+    why a plate needs both - a face carrying only lines reads as a face that has been drawn on.
     """
-    edge = tube_field(width, height, radius)
-    glass = _glass(edge, bezel)
-    body = np.full((height, width), float(TERM_ALPHA), np.float32)
+    rng = np.random.default_rng(seed)
+    sheet = Image.new("L", (width, height), 0)
+    d = ImageDraw.Draw(sheet)
+    for _ in range(count):
+        x, y = rng.uniform(0.0, width), rng.uniform(0.0, height)
+        r = rng.uniform(0.4, 1.2) * scale
+        d.ellipse([x - r, y - r, x + r, y + r], fill=int(rng.uniform(110, 255)))
+    return np.asarray(sheet, np.float32) / 255.0
+
+
+def tube_alpha(width: int, height: int, radius: int) -> np.ndarray:
+    """Coverage of the front: opaque glass, out to a pixel short of the frame's own edge.
+
+    The glass is opaque, which is what the module docstring has always said it was - it lists
+    this pane with the dial wells among the parts you cannot see through - and what it actually
+    was until now is 80% of the way there. That last fifth is a whole defect on its own: stretch
+    the contrast of the pane and the workshop is in it, a finger and a clamp knob behind the
+    caption, and the green the camera shows through competes with the green the letters are made
+    of. A screen you can see the room through is a hole in the panel with a lamp behind it.
+
+    What is under the frame does not matter, because the frame is steel all the way through;
+    except at its outer edge, where its anti-aliased pixel has to meet the room and not a dark
+    fringe, so the backing stops a pixel short of it.
+    """
+    return np.clip(-0.5 - tube_field(width, height, radius), 0.0, 1.0)
+
+
+def tube_glow(width: int, height: int, radius: int, bezel: int, top: int) -> np.ndarray:
+    """The phosphor the glass is made of, as a colour at every pixel of the front.
+
+    Three things, and the first two are the ones that were missing. A vertical fall from
+    :data:`TUBE_TOP` to :data:`TUBE_BOTTOM`, which is the curve: a tube read from a little above
+    reflects the lit room in its top half and the floor in its bottom, and a pane at one
+    brightness is a texture however much is drawn on it. A lift where the lamp stands in the
+    glass, up and to the left, falling away across and down - so the pane is *lit* rather than
+    filled, and the marks on it come up in the light and vanish out of it. And the tube's own
+    raster, on the panel filter's pitch and in its phase, which is why *top* is an argument
+    rather than a detail: phased any other way the two beat against each other and the one
+    surface here that is literally a CRT ends up the flattest thing on the panel.
+
+    The lift is the phosphor's own colour turned up rather than white laid over it. Both look
+    the same at a glance and only one of them survives the caption: white doubles the red and
+    blue for the luminance it buys, and the line printed on this glass is found by summing the
+    channels (tests/test_caption.py). Green is the cheap way to be bright here, which is also
+    the true one - it is the tube that is brighter over there, not the room.
+    """
+    ys = np.arange(height, dtype=np.float32)[:, None]
+    xs = np.arange(width, dtype=np.float32)[None, :]
+    down = np.clip((ys - bezel) / max(1.0, height - 2 * bezel), 0.0, 1.0)
+    down = down * down * (3.0 - 2.0 * down)
+    face = np.asarray(TUBE_TOP, np.float32) + (
+        np.asarray(TUBE_BOTTOM, np.float32) - np.asarray(TUBE_TOP, np.float32)
+    ) * down[..., None]
+    cx, cy = TUBE_LIT_X * width, TUBE_LIT_Y * height
+    rx, ry = max(1.0, TUBE_LIT_W * width), max(1.0, TUBE_LIT_H * height)
+    reach = np.sqrt(((xs - cx) / rx) ** 2 + ((ys - cy) / ry) ** 2)
+    lit = np.exp(-(reach ** TUBE_LIT_FALL))
+    face = face * (1.0 + TUBE_LIT_A * lit)[..., None]
     rows = (np.arange(height) + top) % SCANLINE_EVERY == 0
-    body[rows] += TERM_SCAN * glass[rows]
-    return body / 255.0 * np.clip(-0.5 - edge, 0.0, 1.0)
-
-
-def tube_glow(width: int, height: int, radius: int, bezel: int) -> np.ndarray:
-    """The phosphor the glass is made of: the wash a driven tube sits in with nothing to show.
-
-    Flat across the face at TUBE_WASH, a little more towards the middle, and going down the face
-    from a third of the way down - which is the half of the bulge the opacity cannot say. Shade
-    alone gets a flat sheet with a dark border; what makes a tube look like it is standing proud
-    is that the glass is *lit* in the middle and top and dark at the bottom, the way a curved face
-    under a lamp from above is.
-
-    Held low on purpose. This runs under a live camera and under the line anybody is meant to be
-    reading, and a green fog over either is worse than a flat screen.
-    """
-    edge = tube_field(width, height, radius)
-    d = np.maximum(-edge - bezel, 0.0)  # how far in from the frame, on the glass
-    lift = np.clip(d / max(1.0, TUBE_GLOW), 0.0, 1.0)
-    lift = lift * lift * (3.0 - 2.0 * lift)
-    down = (np.arange(height, dtype=np.float32)[:, None] - bezel) / max(1.0, height - 2 * bezel)
-    gone = np.clip((down - TUBE_FADE_FROM) / (1.0 - TUBE_FADE_FROM), 0.0, 1.0)
-    gone = gone * gone * (3.0 - 2.0 * gone)
-    return (TUBE_WASH + TUBE_GLOW_A * lift) * (1.0 - TUBE_FADE * gone) * _glass(edge, bezel)
+    raster = np.zeros((height, 1), np.float32)
+    raster[rows] = TUBE_SCAN
+    return face * (1.0 - raster)[..., None]
 
 
 def recess_alpha(width: int, height: int, radius: int, bezel: int, scale: float) -> np.ndarray:
     """How much darker the glass is for being set down inside the frame. Black, on the glass only.
 
-    Two things. The frame's own shadow, which falls from whichever of its edges stands between
-    the glass and the lamp - the top rail, mostly, and a trace of the left - crisp and short, the
-    way a shadow off a two-pixel step is. And the recess's ambient shade, the same all the way
-    round and deeper where two walls meet, because the corner of a well sees less of the room
-    than a side of it does. Neither reaches the middle of the glass: a shade that did would be a
-    vignette, and the wash already does that from the other direction.
+    Three shades, and between them they are the whole of the depth. The shadow the top lip casts
+    down the pane - four hard pixels of it and then eight of tail, because the lamp is not a
+    point; that is the one everybody reads, because it is the one a photograph of any recessed
+    screen has. The floor of the well along the bottom lip, narrower and deeper, which is not a
+    cast shadow at all but simply where no light gets. And the walls' own ambient shade all the
+    way round, deeper where two of them meet, because the corner of a well sees less of the room
+    than a side of it does.
+
+    None of them reaches the middle of the glass: a shade that did would be a vignette, and the
+    lamp standing in the phosphor already lights the pane from the other direction.
     """
     edge = tube_field(width, height, radius)
-    gx, gy = _outward(edge)
-    d = np.maximum(-edge - bezel, 0.0)
-    lx, ly = material.lamp_2d()
-    facing = np.clip(gx * lx + gy * ly, 0.0, 1.0)  # this edge is between the glass and the lamp
-    lip = np.clip(1.0 - d / max(1.0, TUBE_LIP * scale), 0.0, 1.0)
-    lip = lip * lip * facing * TUBE_LIP_A
+    d = np.maximum(-edge - bezel, 0.0)  # how far in from the frame, on the glass
+    ys = np.arange(height, dtype=np.float32)[:, None] + 0.5
+    below = ys - bezel  # down from the top lip...
+    above = (height - bezel) - ys  # ...and up from the bottom one
+    feather = max(0.8, TUBE_FEATHER * scale)
+    lip = np.clip((TUBE_LIP * scale - below) / feather, 0.0, 1.0) * TUBE_LIP_A
+    bleed = np.clip(1.0 - (below - TUBE_LIP * scale) / max(1.0, TUBE_BLEED * scale), 0.0, 1.0)
+    lip = np.maximum(lip, bleed * bleed * TUBE_BLEED_A)
+    foot = np.clip((TUBE_FOOT * scale - above) / feather, 0.0, 1.0) * TUBE_FOOT_A
     reach = max(1.0, TUBE_AO * scale)
     # Each straight wall's own falloff, summed, so a corner gets both of its walls; and the
     # field's own, which is what holds the shade round the fillet where no straight wall is near.
     xs = np.arange(width, dtype=np.float32)[None, :] + 0.5 - bezel
-    ys = np.arange(height, dtype=np.float32)[:, None] + 0.5 - bezel
+    across = np.arange(height, dtype=np.float32)[:, None] + 0.5 - bezel
     glass_w, glass_h = width - 2 * bezel, height - 2 * bezel
     walls = sum(
-        np.clip(1.0 - wall / reach, 0.0, 1.0) ** 2 for wall in (xs, glass_w - xs, ys, glass_h - ys)
+        np.clip(1.0 - wall / reach, 0.0, 1.0) ** 2
+        for wall in (xs, glass_w - xs, across, glass_h - across)
     )
     rim = np.clip(1.0 - d / reach, 0.0, 1.0) ** 2
-    shade = np.minimum(np.maximum(rim, walls), 1.0) * TUBE_AO_A
-    return np.minimum(lip + shade, 1.0) * _glass(edge, bezel)
+    wall_shade = np.minimum(np.maximum(rim, walls), 1.0) * TUBE_AO_A
+    edges = np.maximum(lip, foot)
+    return np.minimum(1.0 - (1.0 - edges) * (1.0 - wall_shade), 1.0) * _glass(edge, bezel)
 
 
 def glare_alpha(width: int, height: int, radius: int, bezel: int, scale: float) -> np.ndarray:
-    """The room, wiped across the glass: the lamp, the streak a convex face smears it into, and
-    the polishing marks that only show where it lands.
+    """The room, wiped across the glass: the streak a convex face smears the lamp into, and the
+    polishing marks that only show where it lands.
 
     It is :func:`material.glare` - the same reflection every sheet of glass on the panel gives
-    back - cut to the glass. Not over the frame: that is steel now, lit by its own normals under
-    the same lamp, and a reflection painted over a bar that is already lit is two lamps.
+    back - cut to the pane and held :data:`TUBE_INSET` px clear of the moulding. Not over the
+    frame: that is steel, lit by its own normals under the same lamp, and a reflection painted
+    over a bar that is already lit is two lamps. The inset is not fussiness either; without it
+    two of these hairlines ran across the top rail at the same brightness as the ones on the
+    glass, which reads as a decal over the whole assembly rather than as wear on one part of it.
 
-    The hairlines are what a real screen's glare is mostly made of at arm's length. Fine, sparse,
-    all running the one way a cloth was dragged, and weighted by the lamp's own light without its
-    ambient floor, so they come up in the wipe and vanish in the dark end of the glass rather than
-    lying across it like a screen door.
+    The wipe starts a quarter of the way down the left edge rather than in the corner. The
+    corner is where the phosphor is brightest already, and stacking a white streak on top of the
+    one bright quarter of the pane is both the flattest place to put it and the only place on
+    this glass where a reflection could put a word out.
+
+    The hairlines are what a real screen's glare is mostly made of at arm's length. Few, short,
+    clustered, all running the one way a cloth was dragged, softened by a fraction of a pixel
+    because a scratch in glass seen through the glass is never crisp, and weighted by the lamp's
+    own light without its ambient floor, so they come up in the wipe and vanish in the dark end.
     """
     edge = tube_field(width, height, radius)
     lamp = (GLARE_X * width, GLARE_Y * height)
     lit = material.glare(width, height, lamp, GLARE_REACH * height, GLARE_AMBIENT,
                          (GLARE_AT, GLARE_DEPTH, GLARE_TILT))
     heading = math.radians(GLARE_MARK_TILT)
-    marks = material.scratches(
-        width, height, GLARE_MARKS, (math.cos(heading), math.sin(heading)),
-        seed=material.SEED + 3, spread=GLARE_MARK_SPREAD, length=(10.0 * scale, 40.0 * scale),
+    # Drawn on their own patch of the pane and pasted, rather than sown over the whole box. A
+    # cloth is wiped once in one place: eleven marks spread over a letterbox this wide are eleven
+    # separate accidents, and a cluster is what says a hand was here.
+    mx, my, mw, mh = GLARE_MARK_BOX
+    bx, by = int(mx * width), int(my * height)
+    bw, bh = max(8, int(mw * width)), max(8, int(mh * height))
+    marks = np.zeros((height, width), np.float32)
+    marks[by:by + bh, bx:bx + bw] = material.scratches(
+        bw, bh, GLARE_MARKS, (math.cos(heading), math.sin(heading)),
+        seed=material.SEED + 3, spread=GLARE_MARK_SPREAD,
+        length=(GLARE_MARK_LEN[0] * scale, GLARE_MARK_LEN[1] * scale),
     )
-    caught = (lit - GLARE_AMBIENT) / (1.0 - GLARE_AMBIENT)
-    return (lit * GLARE_ALPHA + marks * caught * GLARE_MARK_A) * _glass(edge, bezel)
+    soft = Image.fromarray((marks * 255.0).astype(np.uint8), "L")
+    soft = soft.filter(ImageFilter.GaussianBlur(max(0.3, GLARE_MARK_BLUR * scale)))
+    marks = np.asarray(soft, np.float32) / 255.0
+    # The marks are lit by how much of the lamp reaches them and not by the wipe, which is a
+    # narrow band and would show three of them and hide the rest. What a cloth leaves is all
+    # over the pane; what decides whether you can see one is where the light is.
+    caught = material.glare(width, height, lamp, GLARE_REACH * height, 0.0)
+    pane = _glass(edge, bezel + TUBE_INSET * scale)
+    return (lit * GLARE_ALPHA + marks * caught * GLARE_MARK_A) * pane
 
 
 def sheen_alpha(width: int, height: int, radius: int, bezel: int, scale: float) -> np.ndarray:
-    """The light the glass catches for being curved: one bright line under the top rail, and the
-    lit room in the top of the face.
+    """The one catch-light on the glass: a soft blob in the upper-left inner corner.
 
-    The line is the whole of the curve. A convex face rising towards the frame turns square to
-    the lamp just below the frame's own shadow, and a pixel or two of near-white there is what
-    every photograph of a CRT has and every flat rendering of one has not. Driven off which way
-    the edge faces rather than off where it is - the distance field's gradient dotted with the
-    lamp's direction - so it is brightest along the top, fades round the fillets, and is gone
-    down the sides and along the bottom without a line anywhere for the eye to catch on.
+    A convex sheet turns square to the lamp somewhere, and where it does there is a soft bright
+    patch and nowhere else. This used to be a line the full width of the pane just under the top
+    rail - which is what the curve does if the lamp is a strip light directly above it, and this
+    lamp is a bench light off the top-left corner. A line across the top and a lit rim on the
+    frame above it were two highlights on one surface, and two highlights are what say "drawn".
 
-    The frame used to take its rim light from here; it is steel now and :func:`material.shade`
-    lights its edges, from the same lamp, so what is left here is the glass's own.
+    Soft on purpose: :data:`SHEEN_W` is a gaussian sigma, so the blob has no edge anywhere. A
+    hard-edged specular on glass is a sticker.
     """
     edge = tube_field(width, height, radius)
-    gx, gy = _outward(edge)
-    lx, ly = material.lamp_2d()
-    facing = np.clip(gx * lx + gy * ly, 0.0, 1.0)
-    # Measured down from the top wall rather than in from the field's edge, so that round the
-    # fillets the line stays in its own rows and fades, instead of following the arc down the
-    # side of the glass - which is where the first letter of every sentence is measured from.
-    below = np.arange(height, dtype=np.float32)[:, None] + 0.5 - bezel
-    at, sigma = max(1.0, SHEEN_AT * scale), max(0.5, SHEEN_W * scale)
-    catch = np.exp(-(((below - at) / sigma) ** 2)) * facing * facing * SHEEN_A
-    down = below / max(1.0, height - 2 * bezel)
-    room = SHEEN_AMBIENT * (SHEEN_FLOOR + (1.0 - SHEEN_FLOOR) * np.clip(1.0 - down, 0.0, 1.0) ** 2)
-    return (catch + room) * _glass(edge, bezel)
+    xs = np.arange(width, dtype=np.float32)[None, :]
+    ys = np.arange(height, dtype=np.float32)[:, None]
+    cx, cy = bezel + SHEEN_AT * scale, bezel + SHEEN_DOWN * scale
+    sigma = max(1.0, SHEEN_W * scale)
+    blob = np.exp(-(((xs - cx) ** 2 + (ys - cy) ** 2) / (2.0 * sigma * sigma)))
+    return blob * SHEEN_A * _glass(edge, bezel + TUBE_INSET * scale)
 
 
 def tube_frame(
@@ -1676,34 +1804,56 @@ def tube_frame(
     """The steel frame round the glass, as an (rgb, coverage) pair the layer can composite.
 
     A bar of the panel's steel bent round the tube: the same distance field as the glass, so the
-    two can never drift apart, with the frame's band of it rolled at both edges - down to the
-    panel on the outside and down into the recess on the inside, two quarter-rounds off the one
-    field back to back with a flat between. :func:`material.shade` lights those normals under the
-    panel's one lamp, which is what puts the bright line along the top rail's outer edge and the
-    dark one along its inner, and the reverse on the bottom rail, with nothing here deciding
-    which side is lit. The corners come out rolled, as a bent bar's do, because the field's
-    gradient turns round them.
+    two can never drift apart, with the frame's outer edge rolled down to the panel and its inner
+    edge turned down into the well. :func:`material.shade` lights those normals under the panel's
+    one lamp, which puts a bright line along the top rail's outer edge, a dimmer one down the
+    left, and nothing along the bottom or the right - one lit edge per surface, on the lamp side.
 
-    Brushed along its length - the tangent to the outline is "along", and the depth in from the
-    edge is "across" - worn brighter and duller by turns, and crossed by a few hairlines.
+    Only the outer edge is rolled, and that is the fix this round is mostly about. Rolling the
+    inner edge as well is what a bent bar really does, and under one lamp it lights the bottom
+    rail's inner roll as brightly as the top rail's outer one: a 2 px hairline at lum 212 top and
+    208 bottom with a flat 88-91 face between them, which is an emboss stroked round a rectangle
+    rather than a bar with a light above it. The inner edge is the wall of a recess seen from
+    above, so it goes the other way - :data:`TERM_REVEAL_A` of its light taken off it, leaving
+    the dark seam that says the glass sits behind the frame.
+
+    Nothing here is flat. The lamp falls off across the part (:data:`TERM_FACE` to
+    :data:`TERM_FACE_FAR`, top to bottom, and a tenth of that left to right), the steel is
+    brushed along its length, worn brighter and duller by turns, scratched, and pitted - and the
+    scratches take their brightness from the light already on that piece of face, so they go dark
+    at the dark end of the bar instead of crossing the whole part at one grey.
     """
     edge = tube_field(width, height, radius)
     gx, gy = _outward(edge)
     inward = np.maximum(-edge, 0.0)
-    ox, oy, _ = material.roll_normals(inward, gx, gy, roll, dome=0.0)
-    ix, iy, _ = material.roll_normals(np.maximum(bezel - inward, 0.0), -gx, -gy, roll, dome=0.0)
-    nx, ny = ox + ix, oy + iy
-    nz = np.sqrt(np.maximum(1.0 - nx * nx - ny * ny, 0.0))
+    nx, ny, nz = material.roll_normals(inward, gx, gy, roll, dome=0.0)
     diffuse, spec = material.shade(nx, ny, nz)
     ys = np.arange(height, dtype=np.float32)[:, None]
     xs = np.arange(width, dtype=np.float32)[None, :]
     along = xs * -gy + ys * gx
-    spec = spec * (1.0 + TERM_WEAR * material.wear(along))
-    rgb = material.steel(diffuse, spec, material.grain(inward, along))
+    spec = spec * TERM_GLOSS * (1.0 + TERM_WEAR * material.wear(along))
+    texture = material.grain(inward, along) + TERM_DRIFT * material.wear(
+        along, seed=material.SEED + 7
+    )
+    rgb = material.steel(diffuse, spec, texture)
+    # The lamp's own falloff across the part: brightest at the top edge, dimmest at the bottom,
+    # and a little brighter at the left end than the right, which is the way the lamp is.
+    down = ys / max(1.0, height - 1.0)
+    across = xs / max(1.0, width - 1.0)
+    fall = (TERM_FACE + (TERM_FACE_FAR - TERM_FACE) * down) - TERM_FACE_SIDE * (across - 0.5)
+    rgb = rgb * fall[..., None]
     marks = material.scratches(width, height, TERM_SCRATCHES, (1.0, 0.0), seed=material.SEED + 5,
                                length=(12.0 * scale, 60.0 * scale))
-    marks = (marks * TERM_SCRATCH)[..., None]
-    rgb = rgb * (1.0 - marks) + np.asarray(material.STEEL_SPEC, np.float32) * marks
+    pits = _pits(width, height, TERM_PITS, material.SEED + 9, scale)
+    rgb = rgb * (1.0 + TERM_SCRATCH * marks - TERM_PIT_A * pits)[..., None]
+    rgb = np.minimum(rgb, np.asarray(material.STEEL_SPEC, np.float32))
+    # ...the well's own shade across the inner half of the bar, which is what grades the face
+    # from the lit edge down to the far one instead of leaving it one flat grey with a cliff at
+    # the end; and the inner edge itself, turned down into the well, dark enough to be a seam.
+    depth = np.clip(inward / max(1.0, float(bezel)), 0.0, 1.0)
+    well = np.clip((depth - TERM_WELL_FROM) / max(1e-3, 1.0 - TERM_WELL_FROM), 0.0, 1.0) ** 2
+    reveal = np.clip(1.0 - (bezel - inward) / max(1.0, TERM_REVEAL * scale), 0.0, 1.0) ** 0.6
+    rgb = rgb * ((1.0 - TERM_WELL * well) * (1.0 - TERM_REVEAL_A * reveal))[..., None]
     cover = np.clip(0.5 - edge, 0.0, 1.0) * np.clip(bezel - inward + 0.5, 0.0, 1.0)
     return rgb, cover
 
@@ -3621,6 +3771,14 @@ class Overlay:
         into its corners, the bezel drops a shadow down it, the room wipes across it, and the
         letters on it bloom (:meth:`_print`, the one part of this that is not baked).
 
+        And the glass is opaque, which the module docstring has always claimed and this method
+        was never quite doing. Four fifths is not opaque: stretch the contrast of the pane and
+        the workshop is behind the caption, and the green coming through the back competes with
+        the green the letters are made of. The pane has its own light now instead - a fall from
+        top to bottom for the curve, a lift where the lamp stands in it, the shadow the lip casts
+        across the top of it, one catch-light in the upper-left corner and one wipe of the room
+        - all of it clipped to the pane, none of it crossing onto the metal.
+
         All the rest is fixed by the window size, so all the rest is baked. What that buys is the
         half of the idea that a per-frame drawing could not have: the chassis is on the panel
         whether or not there is a caption, which is what makes it furniture rather than a slab
@@ -3635,30 +3793,36 @@ class Overlay:
         """
         box = self.term
         scale = self.scale
-        edge = tube_field(box.w, box.h, self.case_r)
         # The shadow the frame drops on the panel, first, so the front covers its own the way a
         # real one does. On a box a margin wider than the front, because a shadow falls outside
         # the thing that drops it - and only there, since inside it the recess is the shade.
+        #
+        # Two darks, not one. The cast shadow falls down and to the right, away from the lamp,
+        # and says the frame stands proud; the contact band hugs the whole outline, and says it
+        # is *seated*. Without the second one the top rail's specular is the outermost pixel of
+        # the part, and a bright line with nothing behind it reads as a stroke round a rectangle.
+        # The padded field is the same rounded rect grown by the margin, so it is the front's own
+        # distance carried out into the pad rather than a blur standing in for one.
         lift = max(1.0, TERM_LIFT * scale)
         pad = math.ceil(lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT)) + 1
-        front = np.pad(np.clip(0.5 - edge, 0.0, 1.0), pad)
-        shadow = material.cast(front, lift) * TERM_SHADOW * (1.0 - front)
+        out = tube_field(box.w + 2 * pad, box.h + 2 * pad, self.case_r + pad) + pad
+        front = np.clip(0.5 - out, 0.0, 1.0)
+        cast = material.cast(front, lift) * TERM_SHADOW
+        contact = np.clip(1.0 - out / max(1.0, TERM_CONTACT_W * scale), 0.0, 1.0) ** 2
+        shadow = (1.0 - (1.0 - cast) * (1.0 - contact * TERM_CONTACT)) * (1.0 - front)
         tile = material.to_image(np.zeros((*shadow.shape, 3), np.float32), shadow)
         left, top = box.x - pad, box.y - pad
         tile = tile.crop((max(0, -left), max(0, -top), tile.width, tile.height))
         layer.alpha_composite(tile, (max(0, left), max(0, top)))
-        # The glass, in passes on one (rgb, alpha) pair: its depth, the phosphor it is made of,
-        # the shade of the recess it sits in, the room reflected in it and the line where its
-        # curve catches the lamp. Built out here rather than drawn because ImageDraw writes
-        # rather than composites - a translucent stroke laid over this would punch a hole through
-        # the glass onto the camera instead of dimming it.
-        shape = (box.h, box.w)
+        # The glass, in passes on one (rgb, alpha) pair: the phosphor it is made of and the lamp
+        # standing in it, the shade of the recess it sits down in, the room wiped across it and
+        # the one place its curve catches the lamp. Built out here rather than drawn because
+        # ImageDraw writes rather than composites - a translucent stroke laid over this would
+        # punch a hole through the glass onto the camera instead of dimming it.
         face: tuple[np.ndarray, np.ndarray] = (
-            np.zeros((*shape, 3), dtype=np.float32),
-            np.zeros(shape, dtype=np.float32),
+            tube_glow(box.w, box.h, self.case_r, self.bezel, box.y),
+            tube_alpha(box.w, box.h, self.case_r),
         )
-        face = _over(face, SCREEN, tube_alpha(box.w, box.h, self.case_r, self.bezel, box.y))
-        face = _over(face, GREEN, tube_glow(box.w, box.h, self.case_r, self.bezel))
         face = _over(face, (0, 0, 0), recess_alpha(box.w, box.h, self.case_r, self.bezel, scale))
         face = _over(face, WHITE, glare_alpha(box.w, box.h, self.case_r, self.bezel, scale))
         face = _over(face, WHITE, sheen_alpha(box.w, box.h, self.case_r, self.bezel, scale))
