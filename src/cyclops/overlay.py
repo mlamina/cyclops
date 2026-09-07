@@ -1915,15 +1915,25 @@ MOUTH_SHADOW = 0.92
 # of where it is - which is exactly the flicker the sleeping face is not allowed. And it has to
 # stay off the rim, which the scan sweep is measured on. What is left is the band between, the
 # stator and the castellated ring, and that is where a dome's glare falls anyway.
-GLASS_IN = 0.735  # of his radius: where the glass may start, past the optic's furthest reach
+GLASS_IN = 0.62  # of his radius: where the dome's own reflection may start. It used to stop
+# outside the optic's furthest reach (0.705) so that nothing of his could ever drift under its
+# edge; it reaches past that now, on purpose, because a highlight that stops short of everything
+# that moves is a ring rather than a dome. What holds it in place instead is measured, and both
+# ends of it are one step away: at 0.60 the sleeping face's brightest pixel stops being the same
+# pixel through a breath (test_he_turns_and_breathes_while_he_is_asleep), and it is the aperture
+# moving under the glass that does it.
 GLASS_OUT = 0.955  # ...and where it must have ended, short of the rim
 GLASS_EASE = 0.05  # how far past each of those it fades in and out
-GLASS_AT = 0.86  # how far up the dome towards the lamp its reflection sits, as a fraction of him
-GLASS_REACH = 0.55  # ...and how far that reflection spreads, in the same units
-GLASS_GLARE = 0.065  # its alpha where it is brightest, in the tube's own white. It was 0.24
-# over a well that was near black; over a well with light in it that much white is a smear, and
-# it lifted the glass band far enough to be counted as part of his colour - which it is not.
-GLASS_RIM = 0.075  # the light the dome gathers along its edge on the side facing the lamp
+GLASS_AT = 0.62  # how far up the dome towards the lamp its reflection sits, as a fraction of him
+GLASS_REACH = 0.72  # ...and how far that reflection spreads, in the same units. Both were half
+# this: the reflection sat high on the rim and stayed there, which reads as a lit edge and not as
+# a curved face with a lamp somewhere above it
+GLASS_GLARE = 0.26  # its alpha where it is brightest, in the tube's own white. Four times what
+# it was, and one hundredth under the ceiling: at 0.27 the white on his face outweighs his own
+# tint and test_he_changes_colour_with_what_he_is_doing stops being able to tell his moods apart.
+# That test is the real limit on how glassy this can get, and it is the right one to be held by -
+# a dome bright enough to hide what he is doing is a dome on the wrong instrument.
+GLASS_RIM = 0.15  # the light the dome gathers along its edge on the side facing the lamp
 GLASS_SHADE = 0.14  # ...and how much the far side of it darkens what is under it
 # The loom: three runs of flexible steel conduit leaving the back of his housing through a gland,
 # the same lamp on them as on everything else. Conduit and not cable, because everything on this
