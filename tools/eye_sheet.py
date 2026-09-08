@@ -7,7 +7,7 @@ So: edit the table, run this, open the sheet.
 
     uv run python tools/eye_sheet.py                 # every mood, three seconds of each
     uv run python tools/eye_sheet.py --seconds 8     # ...over a longer window, to catch a blink
-    uv run python tools/eye_sheet.py --level 1.0     # ...with somebody shouting at it
+    uv run python tools/eye_sheet.py --level 1.0     # ...with the signal meter pinned
     uv run python tools/eye_sheet.py --state listening --frames 16 --seconds 6
 
 One row per mood, one column per frame, and the aperture printed underneath so a mood that looks
@@ -37,7 +37,8 @@ def main() -> None:
     ap.add_argument("--state", action="append", help="only these (repeatable); default is all")
     ap.add_argument("--seconds", type=float, default=3.0, help="how much time a row covers")
     ap.add_argument("--frames", type=int, default=8, help="how many frames that is sampled into")
-    ap.add_argument("--level", type=float, default=0.4, help="how loudly you are talking, 0..1")
+    ap.add_argument("--level", type=float, default=0.4,
+                    help="the level fed to the eye, 0..1. Only speaking opens to it")
     ap.add_argument("--scale", type=int, default=1, help="blow the sheet up by this much")
     args = ap.parse_args()
 
