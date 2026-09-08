@@ -392,11 +392,17 @@ body:not(.kiosk) .camshot {
   display: block; width: 100%;
   aspect-ratio: 16 / 9; object-fit: contain;
   background: #000; border: calc(1 * var(--u)) solid var(--dim);
+  /* Over the scanlines, the same lift .video and .inline take in views.css and for base.css's
+     reason: this is the room, and the phosphor was between you and the thing you opened the
+     screen to look at. The border stays - that is the bezel. */
+  position: relative; z-index: 10;
 }
 /* In the picture's own cell rather than over it: a black rectangle that never fills is
-   indistinguishable from a dark room, and this screen is often looked at from across one. */
+   indistinguishable from a dark room, and this screen is often looked at from across one.
+   Lifted with the picture, or the frame it sits in would now paint over it. */
 body:not(.kiosk) .camoff {
   grid-area: 1 / 1; place-self: center;
+  position: relative; z-index: 10;
   color: var(--dim); letter-spacing: .2em; text-transform: uppercase;
   font-size: calc(13 * var(--u));
 }
