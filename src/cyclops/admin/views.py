@@ -10,7 +10,6 @@ import hashlib
 import json
 import math
 import re
-import shutil
 from dataclasses import asdict
 from pathlib import Path
 
@@ -112,11 +111,6 @@ ASSET_VERSION = _asset_version()
 # kilobytes and a phone photo is single-digit megabytes; this is a ceiling, not a budget, and it
 # is here so that a mis-drag of something enormous is refused rather than written to the card.
 MAX_UPLOAD_BYTES = 128 * 1024 * 1024
-# What a session's video needs beside it before one is worth starting. A finished cut is a
-# few tens of megabytes; this is the headroom that stops a full card turning a two-minute
-# render into a two-minute render that fails at the end.
-MIN_FREE_BYTES = 2 * 1024 * 1024 * 1024
-
 # What may come out of a session folder, and as what. An allow-list by suffix for the same reason
 # STATIC_FILES is one: the set of legal answers is short enough to write down, and writing it down
 # is the end of every argument about what some other name might resolve to.
@@ -127,7 +121,7 @@ MEDIA_TYPES = {
 }
 # The only sub-directories of a session a browser is ever given. video.mp4 sits in the root, which
 # is the third case and the reason this is a set of names rather than a single one.
-MEDIA_DIRS = frozenset({card.PHOTOS})
+MEDIA_DIRS = frozenset({card.PHOTOS, card.CLIPS})
 RANGE = re.compile(r"^bytes=(\d*)-(\d*)$")
 CHUNK = 64 * 1024
 
@@ -543,60 +537,51 @@ def session(request: HttpRequest, name: str) -> JsonResponse:
     # field on Entry would make that a circle. It is also a stat and, where there is a video, one
     # small read - which is affordable for one session and would not be for a listing of seventy.
     folder = library.resolve(settings.sessions_dir, name)
-    extra: dict = {"cut": ""}
+    extra: dict = {"cut": "", "cut_made": 0, "cut_total": 0}
     if folder is not None:
-        plan = cut.read_plan(folder)
-        title, desc = cut.naming(
-            folder, plan.title if plan else "", plan.desc if plan else "", 0.0
-        )
-        extra = {
-            "cut": cut.state(folder),
-            "cut_title": title,
-            "cut_desc": desc,
-            "cut_seconds": round(plan.total_s, 2) if plan else 0.0,
-            "cut_bytes": cut.bytes_of(folder),
-            "cut_why": plan.why if plan else "",
-        }
+        got = cut.progress(folder)
+        extra = {"cut": got.state, "cut_made": got.made, "cut_total": got.total}
     return JsonResponse(asdict(found) | extra)
 
 
 def videos(request: HttpRequest) -> JsonResponse:
-    """Every video made from a session, newest first, and the ones still being made."""
-    return JsonResponse({"videos": [asdict(one) for one in cut.videos(_settings().sessions_dir)]})
+    """Every finished clip, newest first, and one line about what has been looked at.
+
+    Finished only, unlike the listing this replaced: nobody arrives here having just pressed a
+    button, so a half-made row is noise. The counts are what keep an empty reel from being a
+    mystery - "nobody has looked yet" and "everything was looked at and none of it was
+    interesting" are different sentences and the footer says which one it is.
+    """
+    made, seen = cut.clips(_settings().sessions_dir)
+    return JsonResponse({"clips": [asdict(one) for one in made], "seen": seen})
 
 
 @require_POST
-def make_cut(request: HttpRequest, name: str) -> HttpResponse:
-    """Ask for an edited video of one session, and answer with the state that actually landed.
+def find_clips(request: HttpRequest, name: str) -> HttpResponse:
+    """Throw away what was decided for one session, so the next sweep looks at it again.
 
-    Answers the LAN as well as the panel, unlike the volume and the two switches, and for
-    ``project_upload``'s reason rather than theirs: doing this from the machine you are going to
-    upload from is the entire feature, and a rule that let only the Pi ask the Pi would leave
-    nothing behind. What holds the line instead is ``library.resolve``, which proves the folder is
-    a direct child of the sessions directory before a byte is written - the same containment every
-    read on this page already runs on.
+    Clips are found by themselves; this is the "you judged that one wrong" button rather than
+    the way work is normally started. It answers the LAN as well as the panel, for
+    ``project_upload``'s reason: pressing it from the laptop you are watching the reel on is the
+    whole point, and a rule that let only the Pi ask the Pi would leave nothing behind. What
+    holds the line instead is ``library.resolve``, which proves the folder is a direct child of
+    the sessions directory before a byte is touched - the same containment every read on this
+    page already runs on.
 
     Never a redirect and never a bare 202: the button repaints from this response.
     """
     settings = _settings()
     if not settings.cut:
-        return HttpResponseForbidden("making videos is switched off")
+        return HttpResponseForbidden("clipping is switched off")
     folder = library.resolve(settings.sessions_dir, name)
     if folder is None:
         raise Http404("no such session")
     if not card.written(folder / card.VIDEO):
-        return HttpResponseBadRequest("that session has no recording to cut")
+        return HttpResponseBadRequest("that session has no recording to clip")
     if card.locked(folder):
         return HttpResponseBadRequest("that session is still recording")
-    # Refusing before two minutes of work beats failing after it, and a card with no room is the
-    # one failure here that would take the rest of the box down with it.
     try:
-        if shutil.disk_usage(folder).free < MIN_FREE_BYTES:
-            return HttpResponseBadRequest("there is not enough room on the card for a video")
-    except OSError:
-        pass
-    try:
-        cut.request(folder)
+        cut.forget(folder)
     except OSError as exc:
         return HttpResponseBadRequest(f"could not ask for that ({exc})")
     return JsonResponse({"name": name, "cut": cut.state(folder)})

@@ -13,7 +13,7 @@ project it must be under, every name is sanitised rather than trusted, and a fil
 something on your LAN that is not a browser — if the Pi ever sits on a network you do not own,
 this is the first thing to revisit.
 
-Four screens, picked by the tabs in the header and by the hash in the address bar, so nothing
+Five screens, picked by the tabs in the header and by the hash in the address bar, so nothing
 ever navigates (the kiosk's browser is kept warm on this page and a reload would be felt). The
 kiosk opens it on **SESSIONS**, which is what its tab promises:
 
@@ -22,6 +22,7 @@ kiosk opens it on **SESSIONS**, which is what its tab promises:
 | **LIVE** `#/live` | Companion mode — see below. Not on the panel. |
 | **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
 | **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
+| **VIDEOS** `#/videos` | The highlights reel — every clip on the card, newest first, playing one after another on its own. Muted, because there is a speaker on this thing. Tap the left or right third to step, the middle for sound; the arrow keys and space do the same on a laptop. See "Clips" below. |
 | **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one and it has a screen of its own, with a submenu down the left: **Overview**, **Log**, **Spreadsheets**, **Photos** and **Files**. |
 | **MEDIA** `#/media` | Every photo and every drawing on the card as one stream, newest first. Tap one to fill the screen and flip through with the arrows, the arrow keys, or the columns down either side. |
 
@@ -132,10 +133,11 @@ are served from `/project-media/<project>/<file>` by the same suffix allow-list 
 every path is resolved before it is compared against the project folder — so `..`, an absolute
 name and a symlink out of the tree all fail the same check.
 
-Recordings, photos and drawings are served from `/media/<session>/<file>` with byte ranges, which
-is what lets a video seek (and what lets Safari play one at all). Only `.mp4`, `.jpg` and `.svg`
-inside a session folder are ever served, and the folder has to be a direct child of `sessions/` —
-so there is nothing to escape out of and nothing else on the card to reach.
+Recordings, clips, photos and drawings are served from `/media/<session>/<file>` with byte ranges,
+which is what lets a video seek (and what lets Safari play one at all). Only `.mp4`, `.jpg` and
+`.jpeg` inside a session folder or one level down in `photos/` or `clips/` are ever served, and
+the folder has to be a direct child of `sessions/` — so there is nothing to escape out of and
+nothing else on the card to reach.
 
 The page's own CSS and JS under `src/cyclops/admin/static/` are served from the Pi, never a CDN;
 nothing about the panel needs the internet.

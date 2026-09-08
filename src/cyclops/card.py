@@ -79,6 +79,16 @@ CUT_REQUEST = "cut.request"
 CUT_PLAN = "cut.json"
 CUT_SUBS = "cut.ass"
 CUT = "cut.mp4"
+# The clips cyclops.cut finds by itself, one directory rather than a fixed set of names: a
+# session yields between zero and three of them and KNOWN is a frozenset of literals, so the
+# directory name is what goes in it. Inside: plan.json - whose presence is the whole "this
+# session has been considered" gate - and then 1.mp4/1.ass, 2.mp4/2.ass, numbered from 1,
+# best first.
+#
+# The four CUT_* names above are the one-video-per-session design this replaced. They stay
+# here, and in session._remove, so a folder still holding one can still be deleted.
+CLIPS = "clips"
+CLIP_PLAN = "plan.json"
 
 STAMP = "%Y-%m-%d_%H-%M-%S"
 STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobody has named yet
@@ -88,7 +98,7 @@ STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobod
 # removed however empty triage thinks it is.
 KNOWN = frozenset(
     {
-        LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS,
+        LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS, CLIPS,
         CUT_REQUEST, CUT_PLAN, CUT_SUBS, CUT,
     }
 )

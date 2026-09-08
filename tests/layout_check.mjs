@@ -197,24 +197,23 @@ const PICTURES = {
 // screen around them on a device that is not the panel.
 const LIVE = { name: '2026-09-01_18-13-08', n: RECORDS.records.length, records: RECORDS.records };
 
-// cut.Video: what the VIDEOS screen lists. One row per state on purpose - the unfinished ones
-// are the reason that screen shows anything at all in the two minutes after you press the button,
-// and a fixture of four finished rows would leave that column unmeasured.
+// cut.Made: what the reel plays. Two clips rather than one, so the counter reads "1 / 2" and the
+// caption is measured at its real width; the long title is the case that finds a missing
+// min-width, which on this screen is the one thing that could push the picture off the edge.
+// Every *.mp4 is aborted by the stub below, so what gets measured is the bar, the caption and the
+// footer over an empty box - which is the whole of this screen's layout.
 const VIDEOS = {
-  videos: [
-    { name: '2026-09-01_18-13-08', title: 'Swapped the USB webcam for a Raspberry Pi camera module',
-      desc: 'Worked through the case cut-out, the ribbon length and whether the official module or the Arducam clone is the one to buy. Settled on the official Camera Module 3 Wide.',
-      started: '2026-09-01T18:13:08', seconds: 94, bytes: 12905984, by: 'model', state: 'done' },
-    { name: '2026-09-01_17-02-55', title: 'ThermalThrottlingInvestigationOnThePiFiveUnderLoad',
-      desc: 'A single unbroken word, which is the only input that finds a missing min-width.',
-      started: '2026-09-01T17:02:55', seconds: 31, bytes: 4194304, by: 'rules', state: 'done' },
-    { name: '2026-08-31_09-40-00', title: 'Blocked out what to build next',
-      desc: 'Still being made, which is what this row is here to measure.',
-      started: '2026-08-31T09:40:00', seconds: 0, bytes: 0, by: '', state: 'cutting' },
-    { name: '2026-08-30_21-15-42', title: 'Removed the background and brightened the result',
-      desc: 'And one that did not work.', started: '2026-08-30T21:15:42',
-      seconds: 0, bytes: 0, by: '', state: 'failed' },
+  clips: [
+    { id: '2026-09-01_18-13-08/1', name: '2026-09-01_18-13-08', n: 1,
+      title: 'Swapped the USB webcam for a Raspberry Pi camera module',
+      started: '2026-09-01T18:13:08', seconds: 18.4, bytes: 2905984,
+      src: '/media/2026-09-01_18-13-08/clips/1.mp4' },
+    { id: '2026-09-01_17-02-55/1', name: '2026-09-01_17-02-55', n: 1,
+      title: 'ThermalThrottlingInvestigationOnThePiFiveUnderLoad',
+      started: '2026-09-01T17:02:55', seconds: 12.0, bytes: 1194304,
+      src: '/media/2026-09-01_17-02-55/clips/1.mp4' },
   ],
+  seen: { looked: 12, found: 3, waiting: 0 },
 };
 
 // Regular expressions for the project routes and globs for the rest, because these five are told
@@ -367,6 +366,9 @@ const SCREENS = [
   ['system', '#/'],
   ['sessions', '#/sessions'],
   ['session', '#/s/2026-09-01_18-13-08'],
+  // The reel is on the panel run and not only the LAN one, which is what makes the fifth tab's
+  // fit a measurement rather than a hope: the header had exactly four before this.
+  ['videos', '#/videos'],
   ['media', '#/media'],
   ['projects', '#/projects'],
   // All five of a project's, because they are one shell wearing five things and the shell is what
@@ -381,7 +383,7 @@ const SCREENS = [
 // ...and companion mode's own screen, which only the LAN run visits. The panel has no LIVE tab
 // and its kiosk never asks for that hash - the markup is inside {% if not local %} - so putting
 // it in the list above would baseline a blank screen that cannot happen.
-const LAN_SCREENS = [...SCREENS, ['live', '#/live'], ['videos', '#/videos']];
+const LAN_SCREENS = [...SCREENS, ['live', '#/live']];
 // Five shapes, chosen to be the ones in the house rather than a list of famous handsets: a
 // phone both ways up, a tablet upright, the smallest laptop worth naming, and a 15".
 const SIZES = [

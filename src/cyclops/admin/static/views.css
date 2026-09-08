@@ -45,8 +45,55 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
 .tab[aria-current="true"] { background: var(--green); color: var(--ink); border-color: var(--green); }
 .tab:active { border-color: var(--green); }
 
+/* ---- the reel ----
+
+   The whole screen, edge to edge, because a highlights reel is the one screen here that is not a
+   list. Two <video> stacked in the same box and only the one with .on is displayed, so the swap
+   at the end of a clip is a class change and never a reflow.
+
+   z-index 10 on the picture for base.css's reason: below that, the scanline layer draws over it. */
+.videos { grid-template-rows: minmax(0, 1fr) auto; padding: 0; align-content: stretch; }
+/* 5:3 because that is what a clip *is*: clip_command scales and pads every one to 800x480,
+   whatever shape the recording was, so the box can be the picture exactly. That is what keeps
+   the caption on the picture instead of spilling onto a black pillar beside it. */
+.reel {
+  position: relative; min-height: 0; background: #000; overflow: hidden;
+  aspect-ratio: 5 / 3; max-height: 100%; max-width: 100%; margin: 0 auto;
+}
+.reelvid {
+  position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10;
+  object-fit: contain; background: #000; display: none;
+}
+.reelvid.on { display: block; }
+/* Where a reel puts it: a thin bar across the top, filled as the clip runs. It is the only
+   thing on this screen that says how long you have left, and it is deliberately not a scrubber -
+   there is nothing to seek to in fifteen seconds. */
+.reelbar {
+  position: absolute; top: 0; left: 0; right: 0; z-index: 11;
+  height: calc(3 * var(--u)); background: var(--dim);
+}
+.reelfill { display: block; height: 100%; width: 0; background: var(--green); }
+/* Over the picture rather than under it, because the picture is the whole screen. The gradient
+   is what keeps the title readable over a bright frame without a plate around it. */
+.reelcap {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 11; pointer-events: none;
+  padding: calc(30 * var(--u)) calc(14 * var(--u)) calc(12 * var(--u));
+  background: linear-gradient(to top, rgba(0, 0, 0, .78), transparent);
+}
+.reeltitle { display: block; color: var(--green); font-size: calc(17 * var(--u)); }
+.reelwhen {
+  display: block; color: var(--dim); font-size: calc(12 * var(--u));
+  letter-spacing: .1em; text-transform: uppercase;
+}
+/* What has been looked at, under the picture. An empty reel is otherwise indistinguishable from
+   a broken one. */
+.reelfoot {
+  color: var(--dim); font-size: calc(12 * var(--u)); letter-spacing: .12em;
+  text-transform: uppercase; padding: calc(10 * var(--u)) calc(14 * var(--u));
+}
+
 /* ---- the session list ---- */
-.sessions, .media, .videos { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+.sessions, .media { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
 /* Two columns and no padding on the row itself - the gaps around the still *were* the padding.
    The still is flush to three of the row's edges and stretches to whatever height the title
    needs; the column is 4:3 against the min-height, which is a camera frame exactly and a

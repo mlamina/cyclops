@@ -597,38 +597,21 @@ body:not(.kiosk) .livebar::after {
     background: var(--white); opacity: .5; }
 }
 
-/* ---- the YouTube title and description, on the screens that can paste them ----
+/* ---- the reel, on a screen bigger than the panel ----
 
-   Only here, and that is the point rather than an oversight. The panel has no second
-   application to paste into, no keyboard, and no cursor; Chromium under --kiosk would answer
-   navigator.clipboard with a permission prompt that nobody standing at the bench can dismiss.
-   So app.js does not emit this markup on the panel at all, and these rules could not reach it
-   even if it did - which is what tests/test_panel_css.py is checking.
+   The panel gives the reel the whole viewport because that is the only thing on it worth the
+   whole viewport. A laptop must not: a 15-second clip of an 800x480 recording blown across a
+   27-inch monitor is a wall of soft pixels, so it is capped near its own size and centred, with
+   the aspect ratio pinned so the box does not jump between clips of different sources.
 
-   Real <textarea>s rather than divs so that the fourth fallback in copyOut() is true: if both
-   clipboard paths refuse, the text is sitting selected in a form control and Cmd-C still works. */
-body:not(.kiosk) .vitem {
-  display: grid; gap: calc(6 * var(--u)); margin-bottom: calc(8 * var(--u));
-}
-body:not(.kiosk) .vitem .row { margin-bottom: 0; }
-body:not(.kiosk) .ytbox {
-  display: grid; gap: calc(6 * var(--u));
-  padding: calc(10 * var(--u)); background: var(--screen);
-  border: calc(1 * var(--u)) solid var(--dim); border-top: 0;
-}
-body:not(.kiosk) .ytfield {
-  /* Sized to its content by showVideos(); the cap is here so a five-hundred-word description
-     cannot push the next row off the screen. */
-  width: 100%; max-height: calc(220 * var(--u)); overflow-y: auto;
-  resize: vertical; background: transparent; color: var(--green);
-  border: calc(1 * var(--u)) solid var(--dim); padding: calc(6 * var(--u));
-  font: inherit; font-size: calc(12 * var(--u)); line-height: 1.5;
-}
-body:not(.kiosk) .ytfield:focus { outline: none; border-color: var(--green); }
-body:not(.kiosk) .ytrow { display: flex; gap: calc(6 * var(--u)); flex-wrap: wrap; }
-body:not(.kiosk) .ytcopy {
-  font-size: calc(11 * var(--u)); letter-spacing: .1em;
-  padding: calc(6 * var(--u)) calc(10 * var(--u));
-  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid); color: var(--green);
-}
-body:not(.kiosk) .ytcopy:active { background: var(--green); color: var(--ink); }
+   Every selector carries body:not(.kiosk) - test_panel_css.py enforces that, and it is not
+   optional: a rule here that reached the panel would undo the rule above it. */
+body:not(.kiosk) .videos { padding: var(--pad); }
+/* The shape and the height cap are in views.css, on both screens. All this adds is a ceiling on
+   how big it gets: a fifteen-second clip of an 800x480 recording blown across a 27-inch monitor
+   is a wall of soft pixels. */
+/* min(), not the bare cap: this rule replaces the max-width: 100% in views.css rather than
+   adding to it, and without the 100% arm a 5:3 box on a tall phone sizes itself from the height
+   and runs 550 px off the right edge. layout_check.mjs found that at 390 and 820 wide. */
+body:not(.kiosk) .reel { max-width: min(100%, calc(920 * var(--u))); }
+body:not(.kiosk) .reelfoot { max-width: calc(920 * var(--u)); margin: 0 auto; width: 100%; }

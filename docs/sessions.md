@@ -11,6 +11,9 @@ sessions/
     summary.md        one sentence and one paragraph: what this session was
     project.md        which project this got filed under, or why it didn't
     video.mp4         the recording - the panel, or the camera (kiosk only)
+    clips/
+      plan.json       what was decided about this session, and when
+      1.mp4  1.ass    the moments worth watching, best first - see "Clips" below
     photos/
       14-33-12_you.jpg
       14-33-05_edit.jpg      one redrawn with a change - see tools.md
@@ -114,6 +117,38 @@ itself at 25 fps whether anything is recording or not:
 Two thirds of each figure is the kiosk handing frames over rather than ffmpeg taking them.
 `CYCLOPS_RECORD_WIDTH` caps it if the card matters more than the detail does. Nothing is ever
 pruned; delete what you don't want.
+
+## Clips
+
+A recording is an archive, not something anybody watches. So the index service looks at each
+finished session once and asks what — if anything — in it is worth showing to somebody who was
+not there, and writes what it finds to `clips/`: between **zero and three** clips of about
+fifteen seconds each, every one a single moment. They are what the **VIDEOS** screen plays.
+
+**Zero is the ordinary answer.** Two filters stand between a session and an encode, and both are
+meant to say no:
+
+1. **The log, free.** A session with fewer than two turns each way, under thirty seconds long, or
+   with barely any words in it is never asked about at all — no `ffprobe`, no model, no network.
+   On the card this was built against that answered for **55 of 98 sessions**, which is what a
+   drawer full of "does the microphone work" looks like.
+2. **The model, once.** The other 43 get one call, and the prompt spends most of its length
+   making `NOTHING` an easy answer. A session that was genuinely just a torque figure being read
+   out gets an empty plan and is never asked about again.
+
+**What makes a clip tight is the audio, not the transcript.** `session.jsonl` knows when each
+*turn* started, but a thirteen-second answer is really eight bursts of speech with 2.7 seconds of
+pause inside it. So `silencedetect` is run over each channel — 0.55 s of work for a six-minute
+recording, because `-vn` means the video is never decoded — and the moments the model named are
+trimmed down onto the spans where somebody was actually audible. Across this card that removes
+**65% of the running time**. Filler words are *not* removed and cannot be: the transcription
+model normalises them out, so 220 real turns hold one "uh" and no "um" at all. What reads as the
+"um"s going is the holes around them closing.
+
+`clips/plan.json` being there is the whole "this one has been considered" marker, which is what
+makes a render killed mid-way — by a deploy, say — cost the encode and never the model call. To
+make it look again, press **Find clips** on the session screen; to fix a bad cut by hand, edit
+the ranges in `plan.json`, delete that clip's `.mp4`, and the next sweep renders what you wrote.
 
 ## If a session is cut off
 

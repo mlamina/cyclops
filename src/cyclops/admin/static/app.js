@@ -37,6 +37,15 @@ const FRESH = 20000;   // a listing is worth re-using for as long as nothing new
 const vSessions = document.getElementById('v-sessions');
 const vMedia = document.getElementById('v-media');
 const vVideos = document.getElementById('v-videos');
+// The reel. Every identifier here is reel*-prefixed on purpose: status.js, stream.js and panel.js
+// share this global scope, and a second const of a name one of them already declares is a
+// SyntaxError that takes the whole page down.
+const reelBox = document.getElementById('reel');
+const reelPair = [document.getElementById('reel0'), document.getElementById('reel1')];
+const reelFill = document.getElementById('reelfill');
+const reelTitle = document.getElementById('reeltitle');
+const reelWhen = document.getElementById('reelwhen');
+const reelFoot = document.getElementById('reelfoot');
 // Only on the page when CYCLOPS_CUT is on ({% if cut %} in the template), so everything
 // below null-checks it the way the controls in status.js do.
 const makecut = document.getElementById('makecut');
@@ -194,115 +203,135 @@ async function showSessions() {
   }
 }
 
-// ---------------------------------------------------------------- the videos
+// ---------------------------------------------------------------- the reel
 
 // panel.js declares its own KIOSK on the same global scope - these are classic scripts and
 // not modules, so a second const of that name is a SyntaxError that takes the page down.
 const ON_PANEL = document.body.classList.contains('kiosk');
 
-// What a row says about a video that is not finished yet. Pressing the button and then finding
-// nothing on this screen for two minutes is the one outcome worth writing code to avoid, so the
-// unfinished ones are listed too and say which of the four things they are doing.
-const CUTWORD = { asked: 'queued', cutting: 'cutting…', failed: 'failed' };
+// The whole state of the screen: what there is, which one is playing, which of the two elements
+// is showing it, and whether anybody has asked for sound.
+let reelList = [], reelAt = 0, reelOn = 0, reelSound = false;
 
-function videoRow(one) {
-  const still = one.state === 'done'
-    ? '<video class="thumb" muted playsinline preload="none" data-src="/media/' +
-      encodeURIComponent(one.name) + '/cut.mp4"></video>' +
-      '<span class="len">' + stamp(one.seconds) + '</span>'
-    : '<span class="thumb none">' + esc(CUTWORD[one.state] || '') + '</span>';
-  let sub = '';
-  if (one.state === 'done') sub = '<span class="rowsub">' + megabytes(one.bytes) + '</span>';
-  else if (one.state === 'failed') sub = '<span class="rowsub broke">failed</span>';
-  else sub = '<span class="rowsub live">' + esc(CUTWORD[one.state] || '') + '</span>';
-  // Only where there is somewhere to paste it. The panel has no second application, no keyboard
-  // and no cursor, and Chromium under --kiosk would answer navigator.clipboard with a permission
-  // prompt nobody standing at the bench can dismiss.
-  const yt = (ON_PANEL || one.state !== 'done') ? '' :
-    '<div class="ytbox">' +
-    '<textarea class="ytfield" id="t-' + esc(one.name) + '" readonly rows="1">' +
-      esc(one.title) + '</textarea>' +
-    '<textarea class="ytfield" id="d-' + esc(one.name) + '" readonly rows="3">' +
-      esc(one.desc) + '</textarea>' +
-    // Both buttons on one row rather than one under each field: two full-width rows per video
-    // made a screen of four of them taller than three laptop screens.
-    '<div class="ytrow">' +
-    '<button class="ytcopy" type="button" data-copy="t-' + esc(one.name) + '">Copy title</button>' +
-    '<button class="ytcopy" type="button" data-copy="d-' + esc(one.name) + '">Copy description</button>' +
-    '</div></div>';
-  const row = '<button class="row" type="button" data-hash="#/v/' +
-    encodeURIComponent(one.name) + '">' +
-    '<span class="shot">' + still + '</span>' +
-    '<span class="rowtext"><span class="rowtitle">' + esc(one.title) + '</span>' +
-    '<span class="rowsum">' + esc(one.desc) + '</span></span>' +
-    '<span class="rowwhen">' + day(one.started) +
-    '<span class="rowtime">' + time(one.started) + '</span>' + sub + '</span>' +
-    '</button>';
-  return yt ? '<div class="vitem">' + row + yt + '</div>' : row;
+function reelSrcOf(i) {
+  const one = reelList[((i % reelList.length) + reelList.length) % reelList.length];
+  return one ? one.src : '';
 }
 
-// Held like the sessions listing, and thrown away while something is being made: a screen that
-// says "cutting…" has to be allowed to stop saying it.
-let madeHeld = null, madeAt = 0;
-async function videos() {
-  const working = madeHeld && madeHeld.some((one) => one.state !== 'done' && one.state !== 'failed');
-  if (madeHeld && !working && Date.now() - madeAt < FRESH) return madeHeld;
-  madeHeld = (await grab('/api/videos')).videos;
-  madeAt = Date.now();
-  return madeHeld;
+function reelInto(el, i) {
+  const src = reelSrcOf(i);
+  if (!src || el.dataset.src === src) return;   // already holding it: do not fetch it twice
+  el.dataset.src = src;
+  el.src = src;
+  el.load();
 }
 
-let chasing = null;
+function reelPaint() {
+  const one = reelList[reelAt] || {};
+  reelTitle.textContent = one.title || '';
+  reelWhen.textContent = (one.started ? day(one.started) + ' · ' : '') +
+    (reelList.length > 1 ? (reelAt + 1) + ' / ' + reelList.length : '');
+}
+
+function reelShow(i) {
+  if (!reelList.length) return;
+  reelAt = ((i % reelList.length) + reelList.length) % reelList.length;
+  const front = reelPair[reelOn], back = reelPair[1 - reelOn];
+  reelInto(front, reelAt);
+  back.pause();
+  back.classList.remove('on');
+  front.classList.add('on');
+  front.muted = !reelSound;
+  try { front.currentTime = 0; } catch (e) { /* not seekable yet; it starts at 0 anyway */ }
+  // Muted, so the autoplay policy allows this with no gesture at all - which matters because on
+  // the panel the tap that woke the screen landed on the kiosk and not inside this page.
+  front.play().catch(() => {});
+  reelPaint();
+  reelInto(back, reelAt + 1);   // the next one buffers behind the one you are watching
+}
+
+function reelNext() { reelOn = 1 - reelOn; reelShow(reelAt + 1); }
+function reelPrev() { reelOn = 1 - reelOn; reelShow(reelAt - 1); }
+
+for (const el of reelPair) {
+  // Only the one on screen advances: the other's `ended` is the previous clip finishing behind
+  // the swap, and acting on it would skip one.
+  el.addEventListener('ended', () => { if (el.classList.contains('on')) reelNext(); });
+  // A clip that 404s or will not decode is stepped over rather than left frozen on a black
+  // rectangle, which is the one failure that makes the whole screen look broken.
+  el.addEventListener('error', () => { if (el.classList.contains('on')) reelNext(); });
+  el.addEventListener('timeupdate', () => {
+    if (!el.classList.contains('on') || !el.duration) return;
+    reelFill.style.width = (100 * el.currentTime / el.duration) + '%';
+  });
+}
+
+// Instagram's gesture, because everybody already has it: the sides step, the middle toggles
+// sound. It starts muted and stays muted until somebody asks - there is a speaker on this thing
+// and a reel talking at you while you work at the bench is hostile.
+if (reelBox) {
+  reelBox.addEventListener('click', (e) => {
+    const where = (e.clientX - reelBox.getBoundingClientRect().left) / reelBox.clientWidth;
+    if (where < 0.3) return reelPrev();
+    if (where > 0.7) return reelNext();
+    reelSound = !reelSound;
+    reelPair[reelOn].muted = !reelSound;
+    reelBox.classList.toggle('loud', reelSound);
+  });
+}
+
+document.addEventListener('keydown', (e) => {
+  if (at !== '/videos') return;
+  if (e.key === 'ArrowRight') reelNext();
+  else if (e.key === 'ArrowLeft') reelPrev();
+  else if (e.key === ' ') {
+    e.preventDefault();
+    const front = reelPair[reelOn];
+    if (front.paused) front.play().catch(() => {}); else front.pause();
+  }
+});
+
+// An empty reel is never a blank screen with no explanation: this says whether it is empty
+// because nothing has been looked at yet or because everything has and none of it was worth a
+// clip. Those are different sentences and only one of them is worth waiting on.
+function reelWords(seen) {
+  if (!seen) return '';
+  if (seen.waiting) return 'looking at ' + seen.waiting + ' more ' +
+    (seen.waiting === 1 ? 'session' : 'sessions') + '…';
+  return seen.looked + ' sessions looked at · ' + seen.found + ' had something in them';
+}
+
 async function showVideos() {
   try {
-    const found = await videos();
-    vVideos.innerHTML = found.length
-      ? found.map(videoRow).join('')
-      : '<div class="empty">no videos yet — open a session and press Make a video</div>';
-    for (const el of vVideos.querySelectorAll('video.thumb')) watching.observe(el);
-    // A textarea is `rows` tall whatever is in it, and a title that wraps onto a second line was
-    // being cut through the middle of it. Size each one to its own content, capped in CSS.
-    for (const el of vVideos.querySelectorAll('.ytfield')) {
-      el.style.height = 'auto';
-      el.style.height = el.scrollHeight + 'px';
+    const got = await grab('/api/videos');
+    const same = reelList.length === got.clips.length &&
+                 reelList.every((c, i) => c.id === got.clips[i].id);
+    reelList = got.clips;
+    reelFoot.textContent = reelWords(got.seen);
+    reelBox.hidden = !reelList.length;
+    if (!reelList.length) {
+      reelFoot.textContent = 'nothing worth a clip yet — ' + reelFoot.textContent;
+      return;
     }
-    // A self-scheduling timeout rather than an interval, for status.js's reason: a slow Pi must
-    // never stack these on itself. It stops as soon as nothing is being made.
-    clearTimeout(chasing);
-    if (found.some((one) => one.state === 'asked' || one.state === 'cutting')) {
-      chasing = setTimeout(() => { if (at === '/videos') showVideos(); }, 5000);
-    }
+    if (same && reelPair[reelOn].dataset.src) return;   // a repoll must not restart the reel
+    reelOn = 0;
+    reelShow(0);
   } catch (e) {
-    vVideos.innerHTML = '<div class="empty">could not read the card</div>';
+    reelFoot.textContent = 'could not read the card';
+    reelBox.hidden = true;
   }
 }
 
-// Four steps, and it cannot fail. navigator.clipboard is undefined over plain HTTP to anything
-// but localhost - which is every phone and laptop that will ever use this screen - so the async
-// API is the upgrade here and not the path. If both refuse, the text is sitting selected in a
-// real form control and Cmd-C still works.
-async function copyOut(field, button) {
-  const was = button.textContent;
-  field.focus();
-  field.select();
-  field.setSelectionRange(0, field.value.length);
-  let done = false;
-  try { done = document.execCommand('copy'); } catch (e) { /* fall through */ }
-  if (!done && navigator.clipboard) {
-    try { await navigator.clipboard.writeText(field.value); done = true; } catch (e) { /* no */ }
+// Leaving the screen. Without the load() the decoder keeps the last file open behind whatever
+// you opened instead, which on the panel is a whole core of a four-core board.
+function stopReel() {
+  for (const el of reelPair) {
+    el.classList.remove('on');
+    el.pause();
+    el.removeAttribute('src');
+    el.dataset.src = '';
+    el.load();
   }
-  button.textContent = done ? 'Copied' : 'Selected — press copy';
-  setTimeout(() => { button.textContent = was; }, 1400);
-}
-
-if (vVideos) {
-  vVideos.addEventListener('click', (e) => {
-    const button = e.target.closest('[data-copy]');
-    if (!button) return;
-    e.stopPropagation();   // the row behind it is a link to the video
-    const field = document.getElementById(button.dataset.copy);
-    if (field) copyOut(field, button);
-  });
 }
 
 // ---------------------------------------------------------------- one session
@@ -468,36 +497,26 @@ WIDE.addEventListener('change', () => {
   else if (!WIDE.matches) talk.innerHTML = '';
 });
 
-// Which of the two files this screen is playing. The edited video and the recording it was cut
-// from are the same session and the same player - what differs is the file, the name over it and
-// whether the button offers to make one.
-let openCut = false;
-
-async function showSession(name, asCut) {
+// One session, one file. The clips this session produced are on the reel and are not opened
+// here - a session screen is the recording it was made from, which is the thing a transcript
+// can be scrubbed against.
+async function showSession(name) {
   openName = name;
-  openCut = !!asCut;
   talk.innerHTML = '';
   solo(!WIDE.matches);
   try {
     const one = await grab('/api/session/' + encodeURIComponent(name));
     if (openName !== name) return;   // you tapped through to another one while this landed
-    const showing = asCut && one.cut === 'done';
-    stitle.textContent = showing ? one.cut_title : one.title;
-    const bits = [day(one.started) + ' ' + time(one.started),
-                  span(showing ? one.cut_seconds : one.seconds)];
-    if (!showing && one.entrypoint) bits.push(one.entrypoint);
-    const heft = showing ? one.cut_bytes : one.video_bytes;
-    if (heft) bits.push(megabytes(heft));
-    if (!showing && one.filed) bits.push('filed under ' + one.filed);
+    stitle.textContent = one.title;
+    const bits = [day(one.started) + ' ' + time(one.started), span(one.seconds)];
+    if (one.entrypoint) bits.push(one.entrypoint);
+    if (one.video_bytes) bits.push(megabytes(one.video_bytes));
+    if (one.filed) bits.push('filed under ' + one.filed);
     smeta.textContent = bits.join(' · ');
-    ssum.textContent = showing ? one.cut_desc : one.summary;
-    vtitle.textContent = showing ? one.cut_title : one.title;
+    ssum.textContent = one.summary;
+    vtitle.textContent = one.title;
     paintCut(one);
-    if (showing) {
-      video.src = '/media/' + encodeURIComponent(name) + '/cut.mp4';
-      video.hidden = false;
-      video.play().catch(() => {});
-    } else if (one.video) {
+    if (one.video) {
       video.src = '/media/' + encodeURIComponent(name) + '/video.mp4';
       video.hidden = false;
       // You tapped a session to watch it, so watch it. The click that got you here is the
@@ -520,7 +539,6 @@ async function showSession(name, asCut) {
 
 function letGo() {
   openName = null;
-  openCut = false;
   clearTimeout(watchingCut);
   solo(false);
   video.pause();
@@ -539,17 +557,16 @@ let watchingCut = null;
 function paintCut(one) {
   if (!makecut) return;
   const state = one.cut || '';
-  const showing = openCut && state === 'done';
   const words = {
-    '': 'Make a video', asked: 'Queued…', cutting: 'Cutting…',
-    done: showing ? 'Re-cut' : 'Watch it', failed: 'Try again',
+    '': 'Find clips', asked: 'Queued…', clipping: 'Clipping…',
+    done: (one.cut_made || 0) + (one.cut_made === 1 ? ' clip' : ' clips'),
+    none: 'Nothing to clip', failed: 'Try again',
   };
-  makecut.textContent = words[state] || 'Make a video';
-  makecut.disabled = state === 'asked' || state === 'cutting';
+  makecut.textContent = words[state] || 'Find clips';
+  makecut.disabled = state === 'asked' || state === 'clipping';
   makecut.dataset.state = state;
-  makecut.title = state === 'failed' ? (one.cut_why || '') : '';
   clearTimeout(watchingCut);
-  if (state === 'asked' || state === 'cutting') {
+  if (state === 'asked' || state === 'clipping') {
     const name = openName;
     watchingCut = setTimeout(async () => {
       if (openName !== name) return;   // you left; a poll for a screen nobody is on is a warm Pi
@@ -564,21 +581,17 @@ function paintCut(one) {
 if (makecut) {
   makecut.addEventListener('click', async () => {
     if (makecut.disabled) return;
-    const name = openName, state = makecut.dataset.state || '';
+    const name = openName;
     if (!name) return;
-    // Finished, and you are looking at the session rather than the video: this is a way in, not
-    // a way to make a second one.
-    if (state === 'done' && !openCut) { location.hash = '#/v/' + encodeURIComponent(name); return; }
     const was = makecut.textContent;
     makecut.disabled = true;
     makecut.textContent = 'Asking…';
     try {
-      const r = await fetch('/api/session/' + encodeURIComponent(name) + '/cut', { method: 'POST' });
+      const r = await fetch('/api/session/' + encodeURIComponent(name) + '/clips',
+                            { method: 'POST' });
       if (!r.ok) throw new Error(await r.text().catch(() => '') || r.status);
       const found = await r.json();
       if (openName !== name) return;
-      madeHeld = null;            // the listing has a new row on it now
-      openCut = false;            // a re-cut is not something to go on watching the old one for
       paintCut(found);
     } catch (e) {
       if (openName === name) {
@@ -1327,9 +1340,9 @@ let at = '';
 function route() {
   const path = (location.hash || '#/').slice(1) || '/';
   if (path === at) return;
-  if (at.startsWith('/s/') || at.startsWith('/v/')) letGo();
+  if (at.startsWith('/s/')) letGo();
   if (at === '/live') stopLive();   // a poll for a screen nobody is on is a warm Pi
-  if (at === '/videos') clearTimeout(chasing);   // and the same for this one
+  if (at === '/videos') stopReel();   // and two decoders for a screen nobody is on is a warm Pi
   if (document.body.classList.contains('lit')) douse();
   at = path;
 
@@ -1340,13 +1353,7 @@ function route() {
   else if (path === '/videos') { view = 'view-videos'; tab = '/videos'; showVideos(); }
   else if (path.startsWith('/s/')) {
     view = 'view-session'; tab = '/sessions';
-    showSession(decodeURIComponent(path.slice(3)), false);
-  }
-  // The same shell and the same player as a session, pointed at the other file - see
-  // showSession. It keeps the menu reading VIDEOS, because that is the list you came from.
-  else if (path.startsWith('/v/')) {
-    view = 'view-session'; tab = '/videos';
-    showSession(decodeURIComponent(path.slice(3)), true);
+    showSession(decodeURIComponent(path.slice(3)));
   }
   else if (path === '/projects') { view = 'view-projects'; tab = '/projects'; showProjects(); }
   else if (path.startsWith('/p/')) {
@@ -1405,7 +1412,10 @@ if (!document.body.classList.contains('kiosk') && !location.hash) {
 // kiosk clears the drawing the screen you were on is simply uncovered again.
 window.__drawing = (on) => {
   document.body.classList.toggle('drawing', on);
-  if (on) video.pause();
+  // body.drawing .view hides a <video> with display:none, which does not stop it decoding - so
+  // both players are stopped by hand, and the reel is picked back up where it was afterwards.
+  if (on) { video.pause(); for (const el of reelPair) el.pause(); }
+  else if (at === '/videos') reelShow(reelAt);
   // A stream into a covered <img> is a stream still arriving, and the picture is the one thing
   // on this screen that costs the Pi something to send. His voice is deliberately not cut: a
   // drawing is what he is talking about. See stream.js.

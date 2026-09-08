@@ -61,10 +61,11 @@ SWEEP_EVERY_S = 900.0
 # What a single reconcile is allowed before it is abandoned. Above a first run captioning forty
 # photos one at a time; a sweep that exceeds this is wedged, not slow.
 RECONCILE_BUDGET_S = 1800.0
-# And what one video is allowed. Comfortably above cut.RENDER_TIMEOUT_S, which is the budget that
-# should actually stop a wedged encode: this is the outer one, and an outer budget that can fire
-# first would cancel the coroutine and leave the ffmpeg it was waiting on still running.
-CUT_BUDGET_S = 960.0
+# And what one unit of clipping is allowed - deciding, or one encode. Comfortably above
+# cut.RENDER_TIMEOUT_S, which is the budget that should actually stop a wedged encode: this is
+# the outer one, and an outer budget that can fire first would cancel the coroutine and leave
+# the ffmpeg it was waiting on still running.
+CUT_BUDGET_S = 420.0
 
 
 def _say(message: str, *, error: bool = False) -> None:

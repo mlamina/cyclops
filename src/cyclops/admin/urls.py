@@ -20,10 +20,11 @@ urlpatterns = [
     path("api/sessions", views.sessions, name="sessions"),
     path("api/session/<str:name>", views.session, name="session"),
     path("api/session/<str:name>/records", views.session_records, name="session-records"),
-    # The button, and the screen that lists what it made. Both answer the LAN as well as the
-    # panel - see views.make_cut. The finished file needs no route of its own: it sits in the
-    # session folder and /media/<name>/cut.mp4 already serves it.
-    path("api/session/<str:name>/cut", views.make_cut, name="make-cut"),
+    # The button, and the reel that plays what it made. Both answer the LAN as well as the
+    # panel - see views.find_clips. The finished clips need no route of their own: they sit in
+    # clips/ inside the session folder, which views.MEDIA_DIRS allows, and
+    # /media/<name>/clips/1.mp4 is already served by the byte-range file server below.
+    path("api/session/<str:name>/clips", views.find_clips, name="find-clips"),
     path("api/videos", views.videos, name="videos"),
     # The conversation as it happens, for a phone or an iPad open beside the bench. The one route
     # here that is polled while somebody watches it, which is why it takes `name` and `since` and

@@ -1036,6 +1036,13 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
             card.CUT_REQUEST, card.CUT_PLAN, card.CUT_SUBS, card.CUT,
         ):
             (folder / name).unlink(missing_ok=True)
+        # clips/ holds generated names rather than a fixed set, so it empties itself first.
+        # Reached only after surprises() cleared the folder, so everything in here is ours.
+        clips = folder / card.CLIPS
+        if clips.is_dir():
+            for made in clips.iterdir():
+                made.unlink(missing_ok=True)
+            clips.rmdir()
         for sub in (PHOTOS, PARTS):
             if (folder / sub).is_dir():
                 (folder / sub).rmdir()  # empty by definition; refuses if triage was wrong
@@ -1078,7 +1085,10 @@ def _recover(settings: Settings, *, offline: bool = False, dry_run: bool = False
             print(f"· {folder.name}: a session is writing here; left alone", flush=True)
             skipped += 1
             continue
-        for stray in card.strays(folder):
+        # ... and into clips/, because a render killed by a deploy leaves its scratch file one
+        # level down, where card.strays' non-recursive glob would never find it - and a stray
+        # there makes cut.progress say "clipping" forever.
+        for stray in [*card.strays(folder), *card.strays(folder / card.CLIPS)]:
             if not dry_run:
                 stray.unlink(missing_ok=True)
             print(f"· {folder.name}: swept {stray.name}", flush=True)
