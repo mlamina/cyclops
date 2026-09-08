@@ -49,7 +49,10 @@ room for. That is the one question here answered by the stylesheet rather than b
 </head>
 <body{% if local %} class="kiosk"{% endif %}>
   <header>
-    <span class="brand">CYCLOPS</span>
+    <!-- The way home. The panel has no live view at all - the live <main> below is LAN-only -
+         so there it means sessions, the same screen the close bar leaves you on. app.js's
+         [data-hash] listener does the routing; this needs no script of its own. -->
+    <span class="brand" data-hash="{% if local %}#/sessions{% else %}#/live{% endif %}">CYCLOPS</span>
     <span class="bar"></span>
     <nav class="nav">
       {% if local %}

@@ -197,7 +197,7 @@ body:not(.kiosk) .rowsum { padding-right: 0; overflow-wrap: anywhere; }
 body:not(.kiosk) .grid {
   grid-template-columns: repeat(auto-fill,
     minmax(min(100%, clamp(calc(140 * var(--u)), 22vw, calc(210 * var(--u)))), 1fr));
-  gap: calc(10 * var(--u));
+  gap: calc(3 * var(--u));
 }
 body:not(.kiosk) .crumb { max-width: clamp(calc(100 * var(--u)), 40%, calc(240 * var(--u))); }
 
@@ -243,7 +243,9 @@ body:not(.kiosk) .flightbar.bad { color: var(--red); }
    These used to be inside the laptop query, which answered the right question by accident. */
 @media (hover: hover) and (pointer: fine) {
   body:not(.kiosk) .row:hover { border-color: var(--mid); }
-  body:not(.kiosk) .cell:hover { border-color: var(--mid); }
+  body:not(.kiosk) .cell:hover {
+    outline: calc(2 * var(--u)) solid var(--mid); outline-offset: calc(-2 * var(--u));
+  }
   body:not(.kiosk) ::-webkit-scrollbar-thumb:hover { background: var(--mid); }
   body:not(.kiosk) .crumb.act:hover { border-color: var(--green); }
 }

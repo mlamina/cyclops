@@ -111,23 +111,27 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(calc(150 * var(--u)), 1fr));
-  gap: calc(8 * var(--u));
+  gap: calc(3 * var(--u));
   align-content: start;
 }
 .cell {
   appearance: none; padding: 0; font: inherit; color: inherit;
-  background: var(--screen); border: calc(1 * var(--u)) solid var(--dim);
+  background: var(--screen); border: 0;
   display: block; width: 100%;
 }
-.cell:active, .cell:focus-visible { border-color: var(--green); outline: none; }
-/* contain, not cover: a diagram cropped to a tile is a diagram you cannot read, and a photo
-   off this camera is 4:3 already, so it loses nothing by it. */
-.cell img { width: 100%; aspect-ratio: 4 / 3; object-fit: contain; display: block; background: #000; }
-.cellcap {
-  font-size: calc(11 * var(--u)); color: var(--mid); letter-spacing: .1em;
-  padding: calc(5 * var(--u)) calc(6 * var(--u));
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* An outline rather than a border, so the tile can be pressed without a ruled green box round
+   every picture at rest. Drawn inside, so nothing moves when it appears. */
+.cell:active, .cell:focus-visible {
+  outline: calc(2 * var(--u)) solid var(--green); outline-offset: calc(-2 * var(--u));
 }
+/* 16:9 and cover: the tile is filled edge to edge and there is no black anywhere in the grid.
+   That crops the few pictures that are not 16:9 - 9 of the 47 on the card - and the lightbox is
+   where you go to see one whole, which is a press away.
+
+   No caption row either. When it was taken is in the corner of the lightbox now (see light());
+   in the grid it was a band of text under every picture, which is where the rest of the space
+   was going. */
+.cell img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; }
 
 /* ---- one session ---- */
 /* Narrow - the panel, and a phone - is the video and what it is called. Nothing else: you are
@@ -288,6 +292,12 @@ body.solo:not(.drawing) .close .word { display: none; }
 }
 body.lit .lightbox { display: grid; }
 .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+/* Small, dim and in the corner, and pointer-events: none so the whole screen is still the way
+   out of the picture. */
+.lightwhen {
+  position: absolute; left: calc(10 * var(--u)); bottom: calc(8 * var(--u)); pointer-events: none;
+  font-size: calc(11 * var(--u)); color: var(--dim); letter-spacing: .1em;
+}
 
 .empty { color: var(--dim); letter-spacing: .2em; text-transform: uppercase;
          padding: calc(30 * var(--u)); text-align: center; font-size: calc(13 * var(--u)); }

@@ -146,7 +146,14 @@ header {
   padding: calc(4 * var(--u)) calc(16 * var(--u)) calc(10 * var(--u));
   border-bottom: calc(2 * var(--u)) solid var(--mid);
 }
-.brand { color: var(--dim); font-size: calc(14 * var(--u)); letter-spacing: .3em; }
+/* Bold, because it is the one name on the page and it was reading as the faintest thing in
+   the header. Stretched to the tabs' 44u so a thumb can hit it on the panel - the tabs set
+   the header's height either way, so this adds none, and the word does not move. */
+.brand {
+  color: var(--dim); font-size: calc(14 * var(--u)); letter-spacing: .3em;
+  font-weight: 700; cursor: pointer;
+  align-self: stretch; display: flex; align-items: center;
+}
 .bar { width: calc(2 * var(--u)); height: calc(18 * var(--u)); background: var(--dim); }
 
 /* What is running in the background, at the far end of the header - see cyclops.tasks. Amber,

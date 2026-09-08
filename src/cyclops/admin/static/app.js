@@ -1064,8 +1064,7 @@ async function showMedia() {
           '<button class="cell" type="button" data-shot="' + i + '">' +
           '<img loading="lazy" draggable="false" src="' + esc(one.url) +
           '" alt="' + esc(one.title) + '">' +
-          '<div class="cellcap">' + esc(day(one.when) + ' ' + time(one.when)) +
-          '</div></button>').join('') + '</div>'
+          '</button>').join('') + '</div>'
       : '<div class="empty">no pictures yet</div>';
   } catch (e) {
     vMedia.innerHTML = '<div class="empty">could not read the card</div>';
@@ -1073,14 +1072,16 @@ async function showMedia() {
 }
 
 // One picture on a black screen. A press anywhere on it puts it away, which is the whole of
-// the control surface - nothing to aim at, and nothing written over the photograph.
+// the control surface - nothing to aim at. When it was taken sits in the corner, because the
+// grid no longer says: it is pointer-events: none, so it is a caption and not a target.
 const lightbox = document.getElementById('lightbox');
 
 function light(i) {
   const one = shots[i];
   if (!one) return;
   lightbox.innerHTML =
-    '<img draggable="false" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">';
+    '<img draggable="false" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">' +
+    '<div class="lightwhen">' + esc(day(one.when) + ' ' + time(one.when)) + '</div>';
   document.body.classList.add('lit');
 }
 const douse = () => { document.body.classList.remove('lit'); lightbox.textContent = ''; };
