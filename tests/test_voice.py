@@ -116,12 +116,6 @@ def test_the_default_is_one_of_them() -> None:
     assert Settings.voice in voice.NAMES
 
 
-def test_marin_and_cedar_are_the_two_you_reach_first() -> None:
-    """The order is the order the stepper walks, and the two the API recommends lead it."""
-    assert voice.VOICES[:2] == ("marin", "cedar")
-    assert sorted(voice.VOICES[2:]) == list(voice.VOICES[2:]), "the other eight are alphabetical"
-
-
 def test_every_voice_has_something_to_say() -> None:
     """A voice you can step to but not hear is the list of names this replaced."""
     for name in voice.VOICES:

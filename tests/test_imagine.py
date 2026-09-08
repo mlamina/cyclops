@@ -140,7 +140,7 @@ def test_a_drawing_asked_for_at_the_panel_s_own_shape() -> None:
 def test_a_drawing_with_no_style_note_still_asks_for_something() -> None:
     """The tool makes `style` required, but a missing adjective must not cost the whole picture."""
     prompt = imagine.DRAW_PROMPT.format(request="a relay", style="" or imagine.DEFAULT_STYLE)
-    assert "service-manual" in prompt
+    assert imagine.DEFAULT_STYLE in prompt
 
 
 def test_a_missing_photo_is_a_sayable_error_and_not_an_OSError(tmp_path) -> None:
@@ -329,7 +329,6 @@ def test_the_model_is_shown_the_picture_it_had_made(voice) -> None:
     assert image["image_url"].startswith("data:image/jpeg;base64,")
     label = next(part for part in content if part["type"] == "input_text")["text"]
     assert "paint the doors matt black" in label
-    assert "illustration" in label, "the nearest text to the image says what it is"
     assert label.startswith("[") and label.endswith("]"), "flat, so it is not read out verbatim"
 
 

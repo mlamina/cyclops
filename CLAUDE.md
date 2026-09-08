@@ -18,3 +18,17 @@ Design principles that matter for this project:
 - Embrace familarity - Where possible, adopt well-established conventions and patterns to reduce the learning curve.
 - CPU matters - The Pi heats quickly in its case. 
 - Gender-agnostic - Cyclops is "it", not he or she.
+
+Tests:
+- Run them with `uv run pytest`. Not bare `pytest` - that resolves to another project's venv.
+- The whole suite stays under ten seconds. If it doesn't, that's a bug in the code, not a
+  reason to delete tests: find the setup being paid for over and over, and cache it.
+- Speed matters more than coverage. A fast suite that gets run beats a thorough one that doesn't.
+- Never build an expensive object per test. If the setup costs more than the assertion,
+  share it or memoise it.
+- Test behaviour, not wording. Don't assert on prose in prompts, CLI output or labels, and
+  don't grep our own source for an exact line - that's a lint rule, and it fails on a reformat.
+  Machine-facing text is fair game: file formats, argv, SDK enums, asset names.
+- One claim, one test. Two tests that fail for the same reason are one test.
+- Anything needing a camera, a mic, a key, Chromium or the Pi is not a pytest test. It goes in
+  cyclops-smoke, or in tests/*.mjs which are run by hand.

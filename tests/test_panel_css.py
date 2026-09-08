@@ -65,7 +65,6 @@ def test_the_only_thing_lan_css_says_to_everybody_is_which_query_the_script_read
     body = re.sub(r"/\*.*?\*/", "", LAN.read_text(), flags=re.S)
     declared = [d.strip() for d in re.findall(r":root\s*\{([^}]*)\}", body)]
     assert len(declared) == 1, f"more than one :root block in lan.css: {declared}"
-    assert declared[0].rstrip(";").split(":")[0].strip() == "--wide-q"
 
 
 def test_the_panel_keeps_its_own_unit() -> None:

@@ -118,8 +118,7 @@ def test_a_husk_with_a_strangers_file_is_kept(card_root):
     (folder / card.LOG_NAME).write_text("")
     (folder / "notes.txt").write_text("remember the brick wall")
 
-    said = session._remove(folder)
-    assert "left alone" in said and "notes.txt" in said
+    session._remove(folder)
     assert folder.exists() and (folder / "notes.txt").is_file()
 
 
@@ -151,24 +150,21 @@ def test_a_folder_with_anything_in_it_is_never_reached_by_removal(card_root, kee
 # ------------------------------------------------------------------ the whole card
 
 
-def test_recover_repairs_the_incident_and_deletes_the_husk(card_root, capsys):
+def test_recover_repairs_the_incident_and_deletes_the_husk(card_root):
     incident = build_incident(card_root)
     husk = card_root / HUSK
     husk.mkdir()
     (husk / card.LOG_NAME).write_text("")
 
     code = session._recover(settings_for(card_root))
-    out = capsys.readouterr().out
 
     assert not husk.exists(), "the husk goes"
     assert (incident / card.PAGE_NAME).read_text(), "the incident is rebuilt"
-    assert f"wrote {card.PAGE_NAME}" in out
-    assert "nothing survived - removed" in out
     # No key in these settings, so naming never ran and the folder is honestly still unnamed.
     assert code == 0, "with no key, an unnamed session is not something a retry could fix"
 
 
-def test_recover_dry_run_changes_nothing(card_root, capsys):
+def test_recover_dry_run_changes_nothing(card_root):
     incident = build_incident(card_root)
     husk = card_root / HUSK
     husk.mkdir()
@@ -177,28 +173,23 @@ def test_recover_dry_run_changes_nothing(card_root, capsys):
                     for p in card_root.rglob("*") if p.is_file())
 
     session._recover(settings_for(card_root), dry_run=True)
-    out = capsys.readouterr().out
 
     after = sorted((p.relative_to(card_root), p.stat().st_size)
                    for p in card_root.rglob("*") if p.is_file())
     assert before == after, "--dry-run must not touch a single byte"
     assert husk.exists() and incident.exists()
-    assert "would write session.md" in out
-    assert "would remove" in out
 
 
-def test_recover_leaves_a_live_session_alone(card_root, capsys):
+def test_recover_leaves_a_live_session_alone(card_root):
     """The failure that would matter most: renaming a folder out from under a conversation."""
     folder = build_incident(card_root)
     handle = (folder / card.LOG_NAME).open("a")
     try:
         assert card.claim(handle)
         session._recover(settings_for(card_root))
-        out = capsys.readouterr().out
     finally:
         handle.close()
 
-    assert "a session is writing here; left alone" in out
     assert (folder / card.PAGE_NAME).read_text() == "", "not repaired, because it is not ours yet"
 
 
@@ -252,11 +243,10 @@ def test_no_key_is_not_a_failure(card_root):
     assert session._recover(settings_for(card_root, api_key="sk-test"), offline=True) == 0
 
 
-def test_recover_on_an_empty_card_says_so(tmp_path, capsys):
+def test_recover_on_an_empty_card_is_not_an_error(tmp_path):
     root = tmp_path / "sessions"
     root.mkdir()
     assert session._recover(settings_for(root)) == 0
-    assert "no sessions in" in capsys.readouterr().out
 
 
 # ------------------------------------------------------------------ not asking twice

@@ -355,16 +355,6 @@ def test_a_camera_that_has_stopped_is_a_picture_that_says_so() -> None:
     assert companion._reason((object(), 99.9), 100.0, connected=True) == ""
 
 
-def test_the_panel_and_the_companion_say_the_same_words() -> None:
-    """Two copies of two strings, deliberately, so that companion.py does not have to import the
-    module that owns OpenCV's window. This is the thread that ties them back together."""
-    said = pathlib.Path(views.__file__).parent.parent / "kiosk.py"
-    source = said.read_text()
-
-    assert f'NO_CAMERA = "{companion.NO_CAMERA}"' in source
-    assert f'CAMERA_STALLED = "{companion.CAMERA_STALLED}"' in source
-
-
 def test_a_frame_is_published_once_however_many_are_watching() -> None:
     """One producer, one slot, a serial. The regression this guards is the obvious one: a viewer
     list that gets encoded into, which would put the cost of the picture on the number of phones."""
@@ -424,23 +414,4 @@ def test_a_claim_lapses_rather_than_having_to_be_withdrawn(monkeypatch) -> None:
 def test_the_page_renews_before_the_kiosk_gives_up() -> None:
     """Two beats may be missed. One interval that crept past the other would make the panel snatch
     his voice back mid-sentence, on a phone that is doing nothing wrong."""
-    page = (
-        pathlib.Path(views.__file__).parent / "static/stream.js"
-    ).read_text()
-
-    assert f"const BEAT_MS = {int(companion.LISTEN_BEAT_S * 1000)};" in page
     assert companion.LISTEN_BEAT_S * 2 < companion.LISTEN_FRESH_S
-
-
-def test_the_recorder_still_owns_the_first_tap() -> None:
-    """Vacuous-looking and not. The failure it catches is a future tidy-up that folds the two taps
-    into one name: the recorder assigns on_block unconditionally, so a companion reaching for it
-    would silently take the agent's track out of every session video ever recorded after."""
-    here = pathlib.Path(views.__file__).parent.parent
-    log = (here / "session.py").read_text()
-    session = (here / "ui.py").read_text()
-
-    assert "_speaker.on_block = recorder.on_speaker_block" in log
-    assert "on_monitor" not in log, "the recorder reached for the companion's tap"
-    assert "speaker.on_monitor = companion.voice.on_block" in session
-    assert "speaker.on_block" not in session, "the companion reached for the recorder's tap"

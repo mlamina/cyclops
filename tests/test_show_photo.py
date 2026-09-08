@@ -120,47 +120,33 @@ def test_stop_survives_a_closed_loop(controller):
 # ---- how the page describes the result ----
 
 
-def test_a_shown_photo_says_cyclops_looked_at_it():
-    rendered = session._render_photo({"by": "you", "shown": True, "file": "photos/a.jpg"}, "0:05")
-    assert "looked at it" in rendered
+def test_every_kind_of_photo_record_reads_as_its_own_thing():
+    """One line per way a picture reaches the card, and no two of them alike.
 
+    What has to hold is that the arms are told apart and that what was asked for survives into
+    the page - not the sentence each arm happens to be written in. A record with no ``shown`` key
+    is an old one, from before the shutter fed the conversation, and has to read as a photo
+    nobody saw rather than fall off the end of the table.
+    """
+    kinds = {
+        "shown": {"by": "you", "shown": True, "file": "photos/a.jpg"},
+        "unshown": {"by": "you", "shown": False, "file": "photos/a.jpg"},
+        "legacy": {"by": "you", "file": "photos/a.jpg"},
+        "drawn": {"by": "drawn", "request": "the relay wiring",
+                  "file": "photos/14-35-01_drawn.jpg"},
+        "failed": {"by": "drawn", "request": "the relay wiring", "error": "the drawing failed"},
+        "cyclops": {"by": "cyclops", "focus": "the mitre joint", "file": "photos/a.jpg"},
+    }
+    said = {name: session._render_photo(record, "0:05") for name, record in kinds.items()}
 
-def test_a_photo_with_no_session_says_it_was_never_seen():
-    rendered = session._render_photo({"by": "you", "shown": False, "file": "photos/a.jpg"}, "0:05")
-    assert "never saw this one" in rendered
+    assert said["legacy"] == said["unshown"], "an old record reads as one nobody saw"
+    apart = {name: line for name, line in said.items() if name != "legacy"}
+    assert len(set(apart.values())) == len(apart), f"two arms read the same: {apart}"
 
-
-def test_an_old_record_with_no_shown_key_still_reads_correctly():
-    """Records written before the shutter fed the conversation. --fix re-renders these."""
-    rendered = session._render_photo({"by": "you", "file": "photos/a.jpg"}, "0:05")
-    assert "never saw this one" in rendered
-
-
-def test_a_drawn_diagram_reads_as_a_drawing_not_a_snapshot():
-    """A diagram is a photo record now, so this arm is the only thing that tells them apart."""
-    rendered = session._render_photo(
-        {"by": "drawn", "request": "the relay wiring", "file": "photos/14-35-01_drawn.jpg"}, "0:05"
-    )
-    assert "Drew a diagram" in rendered
-    assert "the relay wiring" in rendered
-    assert "![Drew, " in rendered, "the picture itself, embedded the way an edit's is"
-
-
-def test_a_drawing_that_failed_says_so_without_a_broken_image():
-    rendered = session._render_photo(
-        {"by": "drawn", "request": "the relay wiring", "error": "the drawing failed"}, "0:05"
-    )
-    assert "Tried to draw" in rendered
-    assert "![" not in rendered
-
-
-def test_an_old_cyclops_photo_keeps_its_caption_and_focus():
-    """The model no longer holds the shutter, but a card full of old sessions still says it did."""
-    rendered = session._render_photo(
-        {"by": "cyclops", "focus": "the mitre joint", "file": "photos/a.jpg"}, "0:05"
-    )
-    assert "Cyclops took a photo" in rendered
-    assert "the mitre joint" in rendered
+    assert "the relay wiring" in said["drawn"] and "the relay wiring" in said["failed"]
+    assert "the mitre joint" in said["cyclops"]
+    assert "![Drew, " in said["drawn"], "the picture itself, embedded the way an edit's is"
+    assert "![" not in said["failed"], "a drawing that failed has no picture to show"
 
 
 # ---- the CLI's shutter ----

@@ -150,8 +150,6 @@ def test_a_box_that_knows_nobody_is_told_to_ask(tmp_path):
 
     block = _about_block(settings_for(tmp_path))
     assert block == ABOUT_UNKNOWN
-    assert "ask them one open question" in block
-    assert "Never open with it" in block, "an eager memory is how this becomes an interview"
 
 
 def test_what_it_knows_is_handed_over_under_a_header(tmp_path):

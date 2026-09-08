@@ -208,12 +208,11 @@ def _plan(**over):
     return cut.Plan(**(base | over))
 
 
-def test_the_script_carries_both_cards_and_the_captions(tmp_path) -> None:
+def test_the_script_carries_both_cards_and_the_captions() -> None:
     text = cut.script(_records(), _plan(), None)
     assert "[Script Info]" in text and "PlayResX: 1280" in text
     assert text.count("\nStyle: ") == 4, "one per voice, plus the two card styles"
     assert "0:00:00.00,0:00:02.00,Card" in text, "the title card sits at the very front"
-    assert "CYCLOPS" in text, "and the end card at the back"
     assert "newton metres" in text, "with what was said in between"
 
 
@@ -357,8 +356,8 @@ def test_a_session_that_is_still_recording_is_never_cut(tmp_path, monkeypatch) -
     """x264 at 200% of a core, against a realtime audio thread, on four cores."""
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, request="{}")
     monkeypatch.setattr(cut.card, "locked", lambda f: f == folder)
-    assert "waiting for the conversation" in cut.busy(tmp_path)
-    assert "waiting for the conversation" in cut.one(settings_for(tmp_path))
+    assert cut.busy(tmp_path), "a conversation still writing is a reason not to render"
+    assert cut.one(settings_for(tmp_path)), "and one() declines rather than starting ffmpeg"
     assert (folder / card.CUT_REQUEST).exists(), "the request survives; this is a pause"
 
 
@@ -373,11 +372,11 @@ def test_a_session_with_no_recording_is_taken_off_the_queue(tmp_path, monkeypatc
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, video=None, request="{}")
     monkeypatch.setattr(cut.card, "locked", lambda f: False)
     monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
-    assert "no recording" in cut.one(settings_for(tmp_path))
+    assert cut.one(settings_for(tmp_path)), "it declines rather than rendering nothing"
     assert not (folder / card.CUT_REQUEST).exists(), "it will never succeed; stop asking"
 
 
-def test_a_recording_with_no_picture_in_it_says_so_in_a_sentence(tmp_path, monkeypatch) -> None:
+def test_a_recording_with_no_picture_in_it_never_reaches_ffmpeg(tmp_path, monkeypatch) -> None:
     """Three sessions on the card turned out to be sound only - a camera that never gave a frame
     still muxes, and still leaves several megabytes. ffmpeg's answer to that is half a page of
     filtergraph ending "matches no streams", which is no use to somebody who pressed a button."""
@@ -388,10 +387,10 @@ def test_a_recording_with_no_picture_in_it_says_so_in_a_sentence(tmp_path, monke
     ran = []
     monkeypatch.setattr(cut, "render", lambda *a: ran.append(1) or cut.Cut(True))
 
-    assert "no picture" in cut.one(settings_for(tmp_path))
+    assert cut.one(settings_for(tmp_path)), "it declines"
     assert ran == [], "and ffmpeg is never asked to try"
     assert not (folder / card.CUT_REQUEST).exists(), "it will not become true later"
-    assert cut.read_plan(folder).why == "that recording has sound but no picture in it"
+    assert cut.read_plan(folder).why, "and the card is left saying why, in whatever words"
 
 
 def test_switching_it_off_leaves_the_queue_alone(tmp_path) -> None:

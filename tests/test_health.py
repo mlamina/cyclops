@@ -228,43 +228,32 @@ def test_one_blocked_read_is_enough_to_stop_believing_the_device(
     Five minutes is not a recovery, it is an outage: the preview holds one frame the whole time
     and the shutter refuses every tap. One read that spent longer than the panel's own staleness
     limit getting nowhere is all the evidence there is to be had.
+
+    The clock on that read starts when it *began*, not when it gave up, and this measures both
+    in one pass because they are one scenario: the seconds a stalled read spends waiting are
+    seconds with no frame, and timing the grace from the return would throw them away and cost
+    a second full timeout to notice the first - another ten seconds of frozen panel on the Pi.
     """
     monkeypatch.setattr(camera, "STALE_AFTER_S", 0.2)
-    cap = _Stalling(block_s=0.35)
-    source = camera.CameraSource()
-
-    source._read_loop(cap, source._generation)
-
-    assert cap.reads == 2, "a good frame and one stalled read should have settled it"
-    assert "stopped delivering" in source.error
-
-
-def test_the_clock_starts_when_the_read_did_not_when_it_gave_up(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The ten seconds a stalled read spends waiting are ten seconds with no frame.
-
-    Timing the grace from when the read *returned* would throw those away and cost a second
-    full timeout to notice the first - which on the Pi is another ten seconds of frozen panel.
-    """
-    monkeypatch.setattr(camera, "STALE_AFTER_S", 0.2)
-    cap = _Stalling(block_s=0.35)
+    cap = _Stalling(block_s=0.25)
     source = camera.CameraSource()
 
     started = time.monotonic()
     source._read_loop(cap, source._generation)
 
+    assert cap.reads == 2, "a good frame and one stalled read should have settled it"
+    assert "stopped delivering" in source.error
     assert time.monotonic() - started < 1.0, "it waited out a second timeout to be sure"
 
 
 def test_a_run_of_dropped_frames_is_not_an_unplugged_camera() -> None:
     """Failing fast is the device saying "not that one", not the device going away.
 
-    The grace is a duration exactly so these two are told apart: twenty instant failures cost a
-    fraction of a second and must not throw away a camera that is about to hand over a frame.
+    The grace is a duration exactly so these two are told apart: a run of instant failures costs
+    a fraction of a second and must not throw away a camera that is about to hand over a frame.
     """
     source = camera.CameraSource()
-    cap = _Hiccup(source._stop, bad=20)
+    cap = _Hiccup(source._stop, bad=5)
 
     source._read_loop(cap, source._generation)
 

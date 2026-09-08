@@ -842,8 +842,7 @@ def test_a_dial_with_nothing_behind_it_is_not_a_dial_reading_zero() -> None:
         assert not len(ys), f"the {name} dial drew a pointer with no reading"
 
 
-@pytest.mark.parametrize("state", STATES)
-def test_neither_instrument_changes_with_the_session(state: str) -> None:
+def test_neither_instrument_changes_with_the_session() -> None:
     """Byte for byte, in every state. A volume and a board temperature are true whether or not
     anybody is talking to him, and this is what keeps them out of the per-state bake: the two
     switches they replace *did* carry the state, and rebuilt a full-screen layer to say so.
@@ -857,7 +856,7 @@ def test_neither_instrument_changes_with_the_session(state: str) -> None:
         frame = ov.render(phase=10.0, **shown)  # type: ignore[arg-type]
         for name, box in ((overlay.VOLUME, ov.hitboxes.volume), (overlay.HEAT, ov.hitboxes.heat)):
             seen[name].add(frame[box.y : box.bottom, box.x : box.right].tobytes())
-    assert [len(v) for v in seen.values()] == [1, 1], f"a dial changed with the state ({state})"
+    assert [len(v) for v in seen.values()] == [1, 1], "a dial changed with the state"
 
 
 def test_the_rings_turn_while_he_is_awake() -> None:
