@@ -120,17 +120,19 @@ body::after {
   z-index: 9;
 }
 
-/* - except over the thing you opened to look at. The scanlines and the glow are what makes
-   this a screen rather than a web page, and they earn that on the frame, the numbers and the
-   thumbnails. They do not earn it on a wiring diagram you are trying to read a pin label off,
-   or on a photo you took to check a part number: there the phosphor is between you and the
-   only reason the picture is on the card.
+/* - except over a picture. The scanlines and the glow are what makes this a screen rather than
+   a web page, and they earn that on the chrome: the frame, the type, the tabs, the numbers.
+   They never earn it on a photograph. A thumbnail is not a decoration of a page, it is the
+   only reason the picture is on the card - the part number you are squinting at, the wiring
+   diagram you are reading a pin label off - and a grid of stills half-covered in phosphor is
+   forty of them at once. Media is shown as it was taken.
 
    Two mechanisms, because there are two shapes of "looking at it". A picture that has taken
    the whole screen - the lightbox, and a drawing on the panel - is the entire view, so both
-   overlays simply stop. A video or a photo sitting in a page that still has a header and a
-   transcript around it lifts itself over them instead, and leaves the rest of the page
-   wearing them. The border stays either way: that is the bezel, not a filter. */
+   overlays simply stop. A picture sitting in a page that still has a header and a transcript
+   around it lifts itself over them instead with z-index: 10, and leaves the rest of the page
+   wearing them: .shot, .cell, .video, .inline, .doc img and .lone in views.css, .camshot and
+   .camoff in lan.css. The border stays either way: that is the bezel, not a filter. */
 body.lit::after, body.drawing::after { content: none; }
 body.lit::before, body.drawing::before { box-shadow: none; }
 /* The server went away, and every number on this page is now whatever it was when it last
