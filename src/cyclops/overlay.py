@@ -1915,24 +1915,28 @@ MOUTH_SHADOW = 0.92
 # of where it is - which is exactly the flicker the sleeping face is not allowed. And it has to
 # stay off the rim, which the scan sweep is measured on. What is left is the band between, the
 # stator and the castellated ring, and that is where a dome's glare falls anyway.
-GLASS_IN = 0.62  # of his radius: where the dome's own reflection may start. It used to stop
-# outside the optic's furthest reach (0.705) so that nothing of his could ever drift under its
-# edge; it reaches past that now, on purpose, because a highlight that stops short of everything
-# that moves is a ring rather than a dome. What holds it in place instead is measured, and both
-# ends of it are one step away: at 0.60 the sleeping face's brightest pixel stops being the same
-# pixel through a breath (test_he_turns_and_breathes_while_he_is_asleep), and it is the aperture
-# moving under the glass that does it.
+GLASS_IN = 0.10  # of his radius: where the dome's own reflection may start. Almost nowhere -
+# it washes the whole face and stops only at the spark, which is right anyway: the spark is the
+# light, not a surface for the light to land on. It used to stop at 0.62, and the reason given
+# for that was wrong. The first attempt at a stronger dome failed two tests at once, and the
+# radius was pulled back until they passed on the assumption that reach was what they objected
+# to. It was not. Re-measured one variable at a time: at this alpha the reach may go to 0.10 with
+# everything green, and the only test that ever objected to reach is the sleeping face's peak
+# (test_he_turns_and_breathes_while_he_is_asleep), and only at 0.0, where the wash covers the
+# spark itself and the breath moves the brightest pixel under it. The other objection was always
+# to ALPHA and never to radius - see GLASS_GLARE.
 GLASS_OUT = 0.955  # ...and where it must have ended, short of the rim
 GLASS_EASE = 0.05  # how far past each of those it fades in and out
 GLASS_AT = 0.62  # how far up the dome towards the lamp its reflection sits, as a fraction of him
 GLASS_REACH = 0.72  # ...and how far that reflection spreads, in the same units. Both were half
 # this: the reflection sat high on the rim and stayed there, which reads as a lit edge and not as
 # a curved face with a lamp somewhere above it
-GLASS_GLARE = 0.26  # its alpha where it is brightest, in the tube's own white. Four times what
-# it was, and one hundredth under the ceiling: at 0.27 the white on his face outweighs his own
-# tint and test_he_changes_colour_with_what_he_is_doing stops being able to tell his moods apart.
-# That test is the real limit on how glassy this can get, and it is the right one to be held by -
-# a dome bright enough to hide what he is doing is a dome on the wrong instrument.
+GLASS_GLARE = 0.20  # its alpha where it is brightest, in the tube's own white. Three times what
+# it was, and the one number the glass is actually bounded by: at 0.26 with this reach the white
+# on his sleeping face outweighs its own dim green and test_he_changes_colour_with_what_he_is_
+# doing reads him as awake. The asleep face is the binding one because it is the dimmest, so a
+# neutral wash moves it furthest. Traded down from 0.26 to buy the reach above, which is the
+# right way round: a reflection that stops at a ring inside the eye is not a reflection.
 GLASS_RIM = 0.15  # the light the dome gathers along its edge on the side facing the lamp
 GLASS_SHADE = 0.14  # ...and how much the far side of it darkens what is under it
 # The loom: three runs of flexible steel conduit leaving the back of his housing through a gland,
