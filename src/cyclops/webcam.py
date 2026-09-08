@@ -7,6 +7,8 @@ import base64
 import concurrent.futures
 import contextlib
 import os
+import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -15,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from .overlay import sharpen
 
@@ -27,6 +30,9 @@ FRAME_WIDTH, FRAME_HEIGHT = 1280, 720
 FRAME_RATE = 15  # asked of the camera, not the reader; see the format note in open_camera
 USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
+RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
+V4L_NODES = Path("/sys/class/video4linux")  # absent off Linux, which is what picks the fallback
+PIPE_CHUNK = 1 << 16  # a pipe hands back its buffer, not your frame; see _RpicamCapture._fill
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
 CAPTURE_TIMEOUT_S = 12.0  # generous: a cold open can sit behind a macOS permission prompt
 
@@ -57,14 +63,35 @@ class Capture:
     width: int
     height: int
     jpeg_bytes: int
-    camera_index: int | str  # a /dev/video number, or USEEPLUS
+    camera_index: int | str  # a /dev/video number, or USEEPLUS, or RPICAM
+
+
+def _usb_video_nodes() -> list[int]:
+    """The ``/dev/video*`` numbers that belong to something plugged into USB, lowest first.
+
+    Probing a fixed 0, 1, 2 was right while a USB webcam was the only camera the box could
+    have. A CSI module ends that: ``rp1-cfe`` and ``pispbe`` between them claim video0 through
+    video7 before anything is plugged in at all, so a C920 now comes up as video8 and a fixed
+    range of three never reaches it. Fitting the module would have quietly cost us the webcam.
+
+    So the bus decides rather than the number. Every node the Pi's own silicon owns is a
+    platform device; only something plugged in sits on the USB bus, and ``device/subsystem``
+    says which in one link, for any node, without opening it.
+    """
+    nodes = []
+    for entry in V4L_NODES.glob("video*"):
+        with contextlib.suppress(OSError, ValueError):
+            if (entry / "device" / "subsystem").resolve().name == "usb":
+                nodes.append(int(entry.name.removeprefix("video")))
+    return sorted(nodes)
 
 
 def _candidate_indices(preferred: int | None) -> list[int]:
     if preferred is not None:
         return [preferred]  # an explicit choice is never silently overridden
+    found = _usb_video_nodes() if V4L_NODES.is_dir() else list(range(PROBE_INDICES))
     order = [] if _last_good_index is None else [_last_good_index]
-    return order + [i for i in range(PROBE_INDICES) if i not in order]
+    return order + [i for i in found if i not in order]
 
 
 @contextlib.contextmanager
@@ -130,8 +157,8 @@ def _open_useeplus() -> tuple[_UseeplusCapture, str]:
     """Open the first endoscope on the bus, or raise :class:`WebcamError` if there is none.
 
     Every failure here is the ordinary "no camera of this kind" answer, including an import
-    that fails because the driver was never installed: this is one of two places a camera might
-    be found, and neither is allowed to take the kiosk down by being absent.
+    that fails because the driver was never installed: this is one of three places a camera
+    might be found, and none of them is allowed to take the kiosk down by being absent.
     """
     try:
         from supercamera import Camera, list_devices
@@ -144,15 +171,152 @@ def _open_useeplus() -> tuple[_UseeplusCapture, str]:
     return _UseeplusCapture(camera, lambda: bool(list_devices())), USEEPLUS
 
 
-def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture | _UseeplusCapture, int | str]:
+class _RpicamCapture:
+    """The CSI camera module wearing :class:`cv2.VideoCapture`'s clothes.
+
+    A camera module is not a webcam with a shorter cable. It hangs off the CSI bus, and the
+    nodes it brings up - ``rp1-cfe-csi2_ch0`` and friends - carry raw Bayer straight off the
+    sensor, not frames: V4L2 will tell you outright that they are "not a video capture device",
+    which is exactly what :func:`open_camera`'s probe was being told. Everything that makes the
+    sensor into a picture - debayer, black level, lens shading, AWB, the whole ISP - lives in
+    libcamera, above those nodes. There is no index to open. Something has to run the pipeline.
+
+    The obvious something is picamera2, and it cannot be used here: it imports ``libcamera``,
+    whose Python binding is a compiled extension built against the system's 3.11, while this
+    venv is 3.14. No ``PYTHONPATH`` bridges an ABI. ``rpicam-vid`` is that same libcamera stack
+    reached over a pipe instead of an import, so it does not care what Python we are - which is
+    what makes this a subprocess rather than a library, and not a preference.
+
+    Raw YUV420 out of it rather than MJPEG, deliberately. MJPEG would buy a smaller pipe by
+    spending a software encode there and a decode here - the Pi 5 has no JPEG encoder in
+    hardware - and the pipe is local and not the bottleneck. Measured, this costs 4% of one
+    core and delivers the 15 fps we ask for.
+    """
+
+    def __init__(self, proc: subprocess.Popen, width: int, height: int) -> None:
+        self._proc = proc
+        self._width, self._height = width, height
+        self._frame_bytes = width * height * 3 // 2  # YUV420: Y, then two quarter-size planes
+        self._first = None  # the frame prime() read, handed to the first read() that asks
+
+    def read(self) -> tuple[bool, object]:
+        if self._first is not None:
+            frame, self._first = self._first, None
+            return True, frame
+        return self._read_frame()
+
+    def prime(self) -> bool:
+        """Read one frame now, so that opening either proves the camera or fails.
+
+        This is what earns the CSI path the same guarantee the ``/dev/video`` path gets from its
+        probe read: :func:`open_camera` never hands back a capture that will turn out to be a
+        camera which was not there. Without it, a Pi with no module fitted answers every open
+        with a healthy-looking object, and :class:`~cyclops.camera.CameraSource` spawns a fresh
+        ``rpicam-vid`` every two seconds, for ever, each one dying on its own. It costs the
+        second or so libcamera spends configuring the sensor, once per open.
+        """
+        ok, self._first = self._read_frame()
+        return ok
+
+    def _read_frame(self) -> tuple[bool, object]:
+        buf = self._fill(self._frame_bytes)
+        if buf is None:
+            return False, None
+        plane = np.frombuffer(buf, np.uint8).reshape(self._height * 3 // 2, self._width)
+        return True, cv2.cvtColor(plane, cv2.COLOR_YUV2BGR_I420)
+
+    def _fill(self, want: int) -> bytes | None:
+        """Read exactly one frame, or None once the stream has ended.
+
+        A pipe read returns what is in the pipe - 64 KB - and not what you asked for, so a
+        1.4 MB frame arrives as twenty-odd of them. That makes the obvious ``read(n)`` wrong
+        twice over: taken as a frame it is a torn image, and taken as end-of-stream (which is
+        what a bare ``len(buf) != n`` check makes it) it tears down a camera that is working
+        perfectly and closes the pipe under ``rpicam-vid``, which then dies of SIGPIPE. Only an
+        empty read means the stream is over.
+        """
+        chunks, got = [], 0
+        while got < want:
+            chunk = self._proc.stdout.read(min(want - got, PIPE_CHUNK))
+            if not chunk:
+                return None
+            chunks.append(chunk)
+            got += len(chunk)
+        return b"".join(chunks)
+
+    def release(self) -> None:
+        """Stop the encoder and reap it, from the thread that owns it and no other.
+
+        Closing the pipe alone would be enough eventually - ``rpicam-vid`` takes a SIGPIPE on
+        its next write - but only at its next write, which is why the signal comes first: this
+        has to be synchronous, so that the next open finds the sensor free rather than racing
+        the previous holder for it.
+        """
+        self._proc.terminate()
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            self._proc.wait(timeout=2.0)
+        if self._proc.poll() is None:
+            self._proc.kill()
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                self._proc.wait(timeout=1.0)
+        with contextlib.suppress(OSError):
+            self._proc.stdout.close()
+
+
+def _open_rpicam() -> tuple[_RpicamCapture, str]:
+    """Start ``rpicam-vid`` on the camera module, or raise if there is no module to start it on.
+
+    Absence is the ordinary answer here as it is for the endoscope, and takes two shapes: a box
+    with no ``rpicam-vid`` at all (any Mac), and a Pi that has it but no module on the ribbon.
+    The second only announces itself when the frame does not come, which is what :meth:`prime`
+    is for.
+    """
+    if shutil.which("rpicam-vid") is None:
+        raise WebcamError("no rpicam-vid installed")
+    proc = subprocess.Popen(
+        # -n because the kiosk owns the screen: rpicam-vid's own preview would open a second
+        # window on top of it. -t 0 because the supervisor decides when this ends, not a timeout.
+        [
+            "rpicam-vid",
+            "-n",
+            "-t",
+            "0",
+            "--codec",
+            "yuv420",
+            "--width",
+            str(FRAME_WIDTH),
+            "--height",
+            str(FRAME_HEIGHT),
+            "--framerate",
+            str(FRAME_RATE),
+            "-o",
+            "-",
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,  # libcamera greets every start with a dozen INFO lines
+        bufsize=0,
+    )
+    cap = _RpicamCapture(proc, FRAME_WIDTH, FRAME_HEIGHT)
+    if not cap.prime():
+        cap.release()
+        raise WebcamError("no CSI camera module (rpicam-vid produced no frame)")
+    return cap, RPICAM
+
+
+def open_camera(
+    preferred: int | None,
+) -> tuple[cv2.VideoCapture | _UseeplusCapture | _RpicamCapture, int | str]:
     """Open the preferred camera, or probe for one that actually delivers frames.
 
     On macOS the index order follows AVFoundation's uniqueID sort, so an idle iPhone
     (Continuity Camera) can sit at index 0 and "open" without ever returning a frame.
 
-    A useeplus endoscope is looked for only once no ``/dev/video*`` has answered, because it
-    cannot be probed the same way - it has no node to probe - and because a real webcam, when
-    one is plugged in, should stay the camera you get.
+    A useeplus endoscope, and then the CSI camera module, are looked for only once no
+    ``/dev/video*`` has answered. Neither can be probed the same way, neither having a capture
+    node to probe, and a real webcam - when one is plugged in - should stay the camera you get.
+    The module comes last for that same reason turned around: it is screwed to the case and so
+    it is always there, and anything always there put first is a camera you can never override
+    by plugging one in. Last, it is what you get whenever you have not chosen something else.
 
     The format is asked for explicitly because the default is expensive. Left alone, V4L2 hands
     out the driver's first format - uncompressed YUYV - and 720p of that is 1.8 MB a frame,
@@ -183,17 +347,19 @@ def open_camera(preferred: int | None) -> tuple[cv2.VideoCapture | _UseeplusCapt
                 if ok:
                     return cap, index
             cap.release()
-    with contextlib.suppress(WebcamError):
-        return _open_useeplus()
+    for fallback in (_open_useeplus, _open_rpicam):
+        with contextlib.suppress(WebcamError):
+            return fallback()
     hint = (
         "Check System Settings → Privacy & Security → Camera for your terminal app, or set "
         "CYCLOPS_CAMERA_INDEX."
         if sys.platform == "darwin"
-        else "Check that it shows up in `lsusb`, and is a UVC camera or a useeplus endoscope."
+        else "Check that a webcam shows up in `lsusb` and is UVC or a useeplus endoscope, or "
+        "that `rpicam-hello --list-cameras` sees the module on the ribbon."
     )
     raise WebcamError(
-        f"No camera delivered a frame (tried indices {candidates}, and the USB bus for a "
-        f"useeplus endoscope). {hint}"
+        f"No camera delivered a frame (tried indices {candidates}, the USB bus for a useeplus "
+        f"endoscope, and rpicam-vid for a CSI module). {hint}"
     )
 
 

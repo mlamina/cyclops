@@ -76,7 +76,8 @@ class CameraSource:
 
     @property
     def index(self) -> int | str | None:
-        """What delivered frames: a ``/dev/video`` number, ``webcam.USEEPLUS``, or None."""
+        """What delivered frames: a ``/dev/video`` number, ``webcam.USEEPLUS``,
+        ``webcam.RPICAM``, or None."""
         return self._index
 
     @property
