@@ -86,6 +86,7 @@ import sys
 from bisect import bisect_right
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
+from functools import lru_cache, wraps
 from pathlib import Path
 
 import numpy as np
@@ -2521,8 +2522,39 @@ _FONT_CANDIDATES = (
 )
 
 
+def _by_size(build):
+    """Memoise a chassis layer on the panel's size, so every Overlay of a size shares one.
+
+    The machined chrome - plate, surround, glass, chrome sheet, lamp filter - is a pure function
+    of width and height: the same steel, the same lamp, the same seeded hairlines every time.
+    Building it per Overlay cost a third of a second a panel, which is most of a test run and a
+    visible slice of the kiosk's start on the Pi.
+
+    What this buys has to be written down, because it is the thing the next change breaks: these
+    layers are now SHARED between every panel of a given size, so nothing may draw into one in
+    place. Composite onto a copy - :meth:`_chrome` shows the shape with
+    ``self._chrome_base.copy()``, and ``Image.alpha_composite`` hands back a new image rather
+    than touching either side.
+    """
+    memo: dict[tuple[int, int], object] = {}
+
+    @wraps(build)
+    def cached(self):
+        key = (self.width, self.height)
+        if key not in memo:
+            memo[key] = build(self)
+        return memo[key]
+
+    return cached
+
+
+@lru_cache(maxsize=64)
 def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    """First real TrueType face that exists on this machine; PIL's bitmap default if none do."""
+    """First real TrueType face that exists on this machine; PIL's bitmap default if none do.
+
+    Cached: six faces are asked for per panel, and reading the same TTF off the disk six times
+    over is the rest of what an Overlay used to cost. A face is read from and never written to.
+    """
     for path in _FONT_CANDIDATES:
         if Path(path).exists():
             try:
@@ -3637,6 +3669,7 @@ class Overlay:
         )
         return inside * (np.asarray(rounded, np.float32) / 255.0)
 
+    @_by_size
     def _build_filter(self) -> tuple[np.ndarray, np.ndarray]:
         """The tube filter - a wash, corner shading and scanlines - over the whole panel.
 
@@ -3697,6 +3730,7 @@ class Overlay:
             cached = self._backdrops[tags] = _to_image(rgb, alpha * self._bracket_mask(tags))
         return cached
 
+    @_by_size
     def _build_plate(self) -> Image.Image:
         """His body: the solid disc he is drawn on, on its own layer under the chrome.
 
@@ -3979,6 +4013,7 @@ class Overlay:
         drop = material.cast((dist >= inn).astype(np.float32), lift) * MOUTH_SHADOW
         return rgb * (1.0 - np.clip(drop, 0.0, 1.0) * (dist < inn))[..., None]
 
+    @_by_size
     def _build_glass(self) -> Image.Image:
         """The dome over him: the lamp on a sheet of glass, kept off everything that moves.
 
@@ -4015,6 +4050,7 @@ class Overlay:
         alpha[(dist < GLASS_IN) | (dist > GLASS_OUT)] = 0.0
         return _to_image(rgb, alpha)
 
+    @_by_size
     def _build_surround(self) -> Image.Image:
         """The machined surround the whole chassis sits in, and the shadow it drops inwards.
 
@@ -4179,6 +4215,7 @@ class Overlay:
         pitted = material.pits(self.width, self.height, FRAME_PITS, seed=material.SEED + 15)
         return rgb * (1.0 - FRAME_PIT_DEPTH * pitted)[..., None]
 
+    @_by_size
     def _build_chrome(self) -> Image.Image:
         """The two mounts and the reticle, on transparency - everything of a fixed size.
 
