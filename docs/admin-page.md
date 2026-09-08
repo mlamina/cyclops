@@ -22,7 +22,7 @@ kiosk opens it on **SESSIONS**, which is what its tab promises:
 | **LIVE** `#/live` | Companion mode — see below. Not on the panel. |
 | **SYSTEM** `#/` | **CPU temperature**, **memory**, **disk**, and **how many sessions have been recorded**. A session counts as finished once it has written its `session.md`; anything else shows as in progress. |
 | **SESSIONS** `#/sessions` | Every session, newest first, each with a still lifted straight out of its own recording. Open one to watch it. |
-| **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one for a plain file browser over its folder; open a file to read it. From anything that is not the panel, also **+ Folder** and **↑ Upload**. |
+| **PROJECTS** `#/projects` | Every project in `projects/`, most recently worked on first. Open one and it has a screen of its own, with a submenu down the left: **Overview**, **Log**, **Spreadsheets**, **Photos** and **Files**. |
 | **MEDIA** `#/media` | Every photo and every drawing on the card as one stream, newest first. Tap one to fill the screen and flip through with the arrows, the arrow keys, or the columns down either side. |
 
 **The session view changes shape with the screen.** On a laptop it is the recording on the left
@@ -90,16 +90,29 @@ either. `AudioWorklet` is not available: it is secure-context only and this is p
 LAN name, so the page uses a `ScriptProcessorNode` — deprecated, and the only thing that works
 here.
 
-**A project opens as its folder.** `#/p/<project>/<folder>` browses, `#/f/<project>/<file>`
-reads, and a bar across the top says where you are and is the way back out. `README.md` and
-`Log.md` are rendered as markdown, with the pictures they link to shown inline — the paths are
-rewritten server-side, which is why a relative `![](Photos/x.jpg)` written by the sweep resolves
-at all. `Project Data.xlsx` is shown as what it is: the remembered pairs, under the tab name they
-were written on, rather than a spreadsheet grid nobody wants on a 7" panel. Pictures, drawings
-and recordings open in place; anything else says what it weighs and leaves it at that.
+**A project opens as a project.** A folder holds a README, a log, a workbook and its pictures,
+and until this screen existed they were four rows of a directory listing told apart only by their
+filenames. The rail down the left names them instead — `#/p/<project>/<section>`, five of them:
 
-**And you can put things in.** At the right-hand end of that same bar, from anything that is not
-the panel, **+ Folder** names a new folder inline and **↑ Upload** opens a file picker — or you
+| | |
+|---|---|
+| **Overview** | `README.md`. What it is, where it stands, what is still open and what was decided. Rewritten by the sweep from the log. |
+| **Log** | `Log.md`. One dated entry per session, oldest first, with the photographs that came out of each. |
+| **Spreadsheets** | Every `.xlsx` in the folder — in practice `Project Data.xlsx` — as the remembered pairs under the tab name they were written on, rather than a spreadsheet grid nobody wants on a 7" panel. |
+| **Photos** | Every picture anywhere in the project, newest first, and not only the ones the sweep filed into `Photos/` — a folder of drawings you dropped in is as much this project as a photograph Cyclops took. Tap one for the whole frame, with whatever the index service saw in it along the bottom. |
+| **Files** | The plain file browser it used to open as. `#/p/<project>/files/<folder>` browses, `#/f/<project>/<file>` reads, and a bar across the top says where you are inside it. |
+
+Markdown is rendered with the pictures it links to shown inline — the paths are rewritten
+server-side, which is why a relative `![](Photos/x.jpg)` written by the sweep resolves at all, and
+why the README's own link to `Log.md` lands on the **Log** section rather than on a file. Pictures,
+drawings and recordings open in place; anything else says what it weighs and leaves it at that.
+
+The rail is a column beside the pane on the panel and on anything with room for one, and two rows
+above it on a phone — the same question the header's tabs ask, answered by the same media query in
+`lan.css`. Nothing is ever a tap out of sight.
+
+**And you can put things in.** At the right-hand end of the **Files** bar, from anything that is
+not the panel, **+ Folder** names a new folder inline and **↑ Upload** opens a file picker — or you
 drag files onto the browser. Files go up one request at a time, so the listing repainting under
 you *is* the progress bar and a failure names the file it belongs to. A name already there is
 replaced whole: the bytes land on a scratch name beside the target and are renamed onto it, so

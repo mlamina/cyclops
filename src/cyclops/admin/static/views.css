@@ -15,8 +15,7 @@ body.view-live     #v-live,
 body.view-sessions .sessions,
 body.view-session  .watch,
 body.view-projects .projects,
-body.view-browse   .browse,
-body.view-file     .file,
+body.view-project  .project,
 body.view-media    .media,
 body.view-videos   .videos { display: grid; }
 /* #v-live by id and not `.live` like its six neighbours: `.rowsub.live` is the word "recording"
@@ -292,12 +291,26 @@ body.solo:not(.drawing) .close .word { display: none; }
 }
 body.lit .lightbox { display: grid; }
 .lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
-/* Small, dim and in the corner, and pointer-events: none so the whole screen is still the way
-   out of the picture. */
+/* Small, dim and along the bottom, and pointer-events: none so the whole screen is still the way
+   out of the picture.
+
+   Two lines and no more. A session's picture says only when it was taken and would never need
+   the room; a project's carries what the index service saw in it, which runs to a paragraph -
+   and a paragraph laid over a photograph is not a caption, it is the photograph gone. */
 .lightwhen {
-  position: absolute; left: calc(10 * var(--u)); bottom: calc(8 * var(--u)); pointer-events: none;
-  font-size: calc(11 * var(--u)); color: var(--dim); letter-spacing: .1em;
+  position: absolute; left: calc(10 * var(--u)); right: calc(10 * var(--u));
+  bottom: calc(8 * var(--u)); pointer-events: none;
+  font-size: calc(11 * var(--u)); color: var(--mid); letter-spacing: .1em;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden; line-height: 1.35;
+  /* The running time's own treatment off a session still - see .len. A date in the corner could
+     be dim and unbacked because it was six characters on whatever happened to be behind them; a
+     sentence across the bottom of a photograph taken in daylight is grey on white without it. */
+  background: rgba(0, 0, 0, .72); padding: calc(4 * var(--u)) calc(7 * var(--u));
 }
+/* Nothing to say and nothing drawn: a picture with no caption and no date must not leave a black
+   bar lying across the bottom of itself. */
+.lightwhen:empty { display: none; }
 
 .empty { color: var(--dim); letter-spacing: .2em; text-transform: uppercase;
          padding: calc(30 * var(--u)); text-align: center; font-size: calc(13 * var(--u)); }
@@ -307,15 +320,62 @@ body.lit .lightbox { display: grid; }
    is, which is the same row with the same target and nothing new to learn. */
 .projects { align-content: start; padding: calc(8 * var(--u)) calc(2 * var(--u)); }
 
-/* The browser and the reader are one shape twice: a bar saying where you are, and the thing
-   itself scrolling under it. Two rows rather than one scroller, because on the panel that bar
-   is the only way back and a way back that scrolls off the top is not one. */
-.browse, .file { grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+/* ---- one project ---- */
+/* A rail down the left naming the five things a project is, and the pane it points at. Two
+   columns rather than five screens: the rail and the crumb bar are the fixed part, and #pbody is
+   the only thing a section change rewrites - which is what lets the upload controls in the bar
+   keep the listeners app.js binds to them once at load.
+
+   The rail is a fixed width and not `auto`. Sized by its own content it would be as wide as the
+   longest label, so editing a word would move the whole pane and every row in it - and on the
+   panel, which is measured against a saved baseline, that is a page of diff for a rename. 152u is
+   what SPREADSHEETS needs at 14u and .08em with its padding, and the pane still has 613 of the
+   panel's 766 px left. */
+.project { grid-template-columns: calc(152 * var(--u)) minmax(0, 1fr);
+           grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+.rail { display: flex; flex-direction: column; min-height: 0; overflow-y: auto;
+        border-right: calc(1 * var(--u)) solid var(--dim); }
+/* Which project this is, and the way out of it - one button, because the whole name is the
+   target. The name is the project's *title* and not its folder: the folder is what somebody
+   renamed in Finder, the title is what it calls itself, which is also why the crumb trail below
+   starts at "Files" and never repeats it. */
+.railback {
+  appearance: none; -webkit-appearance: none; border: 0; background: transparent;
+  font: inherit; text-align: left; width: 100%; padding: 0; flex: none;
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center;
+  min-height: calc(44 * var(--u));
+  border-bottom: calc(1 * var(--u)) solid var(--dim);
+}
+.railback:active { background: rgba(86, 255, 140, .1); }
+.railup { color: var(--green); font-size: calc(22 * var(--u)); padding: 0 calc(8 * var(--u)); }
+.railname { color: var(--green); font-size: calc(14 * var(--u)); letter-spacing: .06em;
+            padding: calc(6 * var(--u)) calc(8 * var(--u)) calc(6 * var(--u)) 0;
+            overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2; line-height: 1.25; }
+/* The header's tabs, stood on end: same target, same lit state, one row of the rail each. */
+.railtab {
+  appearance: none; -webkit-appearance: none; border: 0; background: transparent;
+  color: var(--dim); font: inherit; font-size: calc(14 * var(--u)); letter-spacing: .08em;
+  text-transform: uppercase; text-align: left;
+  min-height: calc(40 * var(--u)); padding: 0 calc(8 * var(--u)); flex: none;
+}
+.railtab[aria-current="true"] { background: var(--green); color: var(--ink); }
+.railtab:active { color: var(--green); }
+.pane { display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; overflow: hidden; }
+/* Everything a section draws. Two rows rather than one scroller, because on the panel the crumb
+   bar is the only way back out of a folder and a way back that scrolls off the top is not one. */
+.pbody { overflow-y: auto; overscroll-behavior: contain; }
+.pbody.files, .pbody.shots { padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+/* Only FILES has a path to say. The other four are one thing each, and a bar naming it would be
+   a row of chrome repeating the rail directly above it. The display lives on the body rule alone
+   - a `display: flex` here as well would be a second declaration to keep in step, and the one
+   that lost would lose silently. */
 .crumbs {
-  display: flex; align-items: center; gap: calc(2 * var(--u));
+  display: none; align-items: center; gap: calc(2 * var(--u));
   border-bottom: calc(1 * var(--u)) solid var(--dim);
   overflow-x: auto; white-space: nowrap;
 }
+body.sec-files .crumbs { display: flex; }
 .crumb {
   appearance: none; -webkit-appearance: none; border: 0; background: transparent;
   color: var(--mid); font: inherit; font-size: calc(13 * var(--u)); letter-spacing: .1em;
@@ -341,8 +401,6 @@ body.lit .lightbox { display: grid; }
    Here rather than in lan.css because it is a state of .row, which is this file's shape - the
    controls that cause it live over there, with everything else the panel is never sent. */
 .files .row.flight { opacity: .55; }
-.files { overflow-y: auto; overscroll-behavior: contain;
-         padding: calc(8 * var(--u)) calc(2 * var(--u)); }
 /* A file row is a project row with the still swapped for a mark. Same box, same border, same
    target - the column is narrower because a glyph is not a photograph. */
 .files .row { grid-template-columns: calc(46 * var(--u)) minmax(0, 1fr);
@@ -357,20 +415,23 @@ body.lit .lightbox { display: grid; }
                    padding-right: calc(70 * var(--u)); }
 .files .rowwhen { top: 50%; transform: translateY(-50%); }
 
-/* ---- a file, open ---- */
-/* The markdown arrives as HTML with its pictures already pointed at /project-media - see
-   shelf.py, which is also the only thing that ever put a tag in it. All that is left here is
-   to make a document look like it belongs on this screen rather than in a browser's defaults. */
+/* ---- a document ---- */
+/* OVERVIEW, LOG, SPREADSHEETS and any file opened out of FILES: four sections, one shape, because
+   they are four markdown-or-workbook files and the difference between them is which one. The
+   markdown arrives as HTML with its pictures already pointed at /project-media - see shelf.py,
+   which is also the only thing that ever put a tag in it. All that is left here is to make a
+   document look like it belongs on this screen rather than in a browser's defaults.
+
+   Scrolling and padding are on .pbody above, which is the element wearing this class. */
 .doc {
-  overflow-y: auto; overscroll-behavior: contain;
   padding: calc(12 * var(--u)) calc(14 * var(--u));
-  color: var(--mid); line-height: 1.5;
+  color: var(--mid); font-size: calc(16 * var(--u)); line-height: 1.55;
 }
 .doc h1, .doc h2, .doc h3 { color: var(--green); line-height: 1.25;
                             margin: calc(14 * var(--u)) 0 calc(6 * var(--u)); }
-.doc h1 { font-size: calc(19 * var(--u)); letter-spacing: .04em; }
-.doc h2 { font-size: calc(13 * var(--u)); letter-spacing: .18em; text-transform: uppercase; }
-.doc h3 { font-size: calc(14 * var(--u)); letter-spacing: .08em; }
+.doc h1 { font-size: calc(21 * var(--u)); letter-spacing: .04em; }
+.doc h2 { font-size: calc(14 * var(--u)); letter-spacing: .18em; text-transform: uppercase; }
+.doc h3 { font-size: calc(16 * var(--u)); letter-spacing: .08em; }
 .doc > :first-child { margin-top: 0; }
 .doc p, .doc ul, .doc ol, .doc blockquote { margin: calc(8 * var(--u)) 0; }
 .doc ul, .doc ol { padding-left: calc(18 * var(--u)); }
@@ -389,7 +450,7 @@ body.lit .lightbox { display: grid; }
           margin: calc(14 * var(--u)) 0; }
 .doc img { display: block; max-width: 100%; height: auto; margin: calc(10 * var(--u)) 0;
            border: calc(1 * var(--u)) solid var(--dim); background: #000; }
-.doc table { border-collapse: collapse; width: 100%; font-size: calc(12 * var(--u)); }
+.doc table { border-collapse: collapse; width: 100%; font-size: calc(13 * var(--u)); }
 .doc th, .doc td { border: calc(1 * var(--u)) solid var(--dim);
                    padding: calc(4 * var(--u)) calc(7 * var(--u)); text-align: left; }
 .doc th { color: var(--green); }

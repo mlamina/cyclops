@@ -779,6 +779,11 @@ def project_files(request: HttpRequest, name: str) -> JsonResponse:
     return JsonResponse(found)
 
 
+def project_pictures(request: HttpRequest, name: str) -> JsonResponse:
+    """Every picture in one project, newest first - the PHOTOS section of its screen."""
+    return JsonResponse({"items": shelf.pictures(name, _project(name))})
+
+
 def project_file(request: HttpRequest, name: str) -> JsonResponse:
     """One file inside one project, in whatever shape it is worth reading in."""
     relative = request.GET.get("path", "")

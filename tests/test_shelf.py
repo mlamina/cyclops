@@ -13,9 +13,12 @@ rather than displayed.
 
 from __future__ import annotations
 
+import json
+import os
+
 import pytest
 
-from cyclops import shelf
+from cyclops import card, shelf
 from cyclops.projects import data, store
 
 FRONT = """---
@@ -139,6 +142,88 @@ def test_listing_refuses_a_path_outside_the_project(tmp_path):
     folder = make(tmp_path)
     assert shelf.listing(folder, "../..") is None
     assert shelf.listing(folder, "README.md") is None  # a file is not a directory
+
+
+# ------------------------------------------------------------------ every picture
+
+
+def picture(folder, relative, *, when):
+    """One image file in a project, with the modification time the gallery orders it by."""
+    path = folder / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"\x89PNG")
+    os.utime(path, (when, when))
+    return path
+
+
+def test_pictures_finds_every_picture_and_not_only_the_ones_the_sweep_filed(tmp_path):
+    """The point of the section: a folder a person made is as much this project as Photos/ is."""
+    folder = make(tmp_path)
+    picture(folder, "Photos/2026-08-28_cyclops.jpg", when=1000)
+    picture(folder, "Eye Designs/eye-round4.png", when=3000)
+    picture(folder, "UI Evolution/contact_sheet.png", when=2000)
+
+    found = shelf.pictures("Pelican Display Mount", folder)
+    assert [one["path"] for one in found] == [
+        "Eye Designs/eye-round4.png",
+        "UI Evolution/contact_sheet.png",
+        "Photos/2026-08-28_cyclops.jpg",
+    ]
+    assert found[0]["url"] == "/project-media/Pelican%20Display%20Mount/Eye%20Designs/eye-round4.png"
+    assert found[0]["kind"] == "photo"
+
+
+def test_pictures_leaves_out_what_a_grid_of_images_cannot_show(tmp_path):
+    folder = make(tmp_path)
+    picture(folder, "Photos/a.jpg", when=1000)
+    (folder / "Photos" / "clip.mp4").write_bytes(b"\x00")
+    (folder / "Photos" / "notes.txt").write_text("words", encoding="utf-8")
+    picture(folder, ".trash/old.png", when=9000)
+    picture(folder, "Photos/.b.jpg.tmp.png", when=9000)
+
+    assert [one["path"] for one in shelf.pictures("Pelican Display Mount", folder)] == ["Photos/a.jpg"]
+
+
+def test_pictures_says_what_the_index_service_says_a_picture_is_of(tmp_path):
+    folder = make(tmp_path)
+    picture(folder, "Photos/a.jpg", when=1000)
+    picture(folder, "Photos/b.jpg", when=900)
+    (folder / "Photos" / card.CAPTIONS_NAME).write_text(
+        json.dumps({"a.jpg": "A caliper torque table, 60-65 Nm"}), encoding="utf-8"
+    )
+
+    found = shelf.pictures("Pelican Display Mount", folder)
+    assert found[0]["title"] == "A caliper torque table, 60-65 Nm"
+    assert found[1]["title"] == "b.jpg"  # nothing has described it yet; its name is the honest answer
+
+
+def test_pictures_survives_captions_somebody_hand_edited_into_nonsense(tmp_path):
+    folder = make(tmp_path)
+    picture(folder, "Photos/a.jpg", when=1000)
+    (folder / "Photos" / card.CAPTIONS_NAME).write_text("{not json", encoding="utf-8")
+
+    assert [one["title"] for one in shelf.pictures("Pelican Display Mount", folder)] == ["a.jpg"]
+
+
+def test_pictures_cannot_walk_out_of_the_project(tmp_path):
+    """rglob does not descend a symlinked directory - so the gallery cannot be pointed elsewhere."""
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    (outside / "secret.png").write_bytes(b"\x89PNG")
+    folder = make(tmp_path)
+    (folder / "Datasheets").symlink_to(outside, target_is_directory=True)
+
+    assert shelf.pictures("Pelican Display Mount", folder) == []
+
+
+def test_pictures_caps_what_it_will_hand_over(tmp_path):
+    folder = make(tmp_path)
+    for i in range(shelf.MAX_PICTURES + 5):
+        picture(folder, f"Photos/{i:04d}.jpg", when=1000 + i)
+
+    found = shelf.pictures("Pelican Display Mount", folder)
+    assert len(found) == shelf.MAX_PICTURES
+    assert found[0]["path"] == f"Photos/{shelf.MAX_PICTURES + 4:04d}.jpg"  # the newest survives
 
 
 # ------------------------------------------------------------------ markdown

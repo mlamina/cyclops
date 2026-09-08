@@ -11,7 +11,7 @@ The layout it walks is ``projects/store.py``'s, described in full at the top of 
         README.md   frontmatter is ours, the prose under it is the model's
         Log.md      one dated entry per session, appended and never rewritten
         Project Data.xlsx
-        Photos/ Diagrams/
+        Photos/     what the sweep copied out of sessions, plus a captions.json beside it
 
 Read-only, all of it. ``store.py`` is the only thing in this repo that writes into ``projects/``
 and that invariant is checkable with a grep - so this module reads, classifies and renders, and
@@ -32,6 +32,7 @@ agent gets.
 from __future__ import annotations
 
 import html
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -39,6 +40,7 @@ from urllib.parse import quote
 
 import markdown
 
+from . import card
 from .projects import data, store
 
 # What may be handed to a browser as bytes, and as what. An allow-list by suffix for the reason
@@ -52,6 +54,12 @@ MEDIA_TYPES = {
     ".svg": "image/svg+xml",
     ".mp4": "video/mp4",
 }
+# What the gallery can hold. Derived from the set above rather than written out again, so a new
+# picture format only has to be admitted once - and .mp4 is out because a grid of <img> cannot
+# show a recording, not because a project may not have one. It is still browsable in FILES.
+IMAGE_TYPES = frozenset(suffix for suffix in MEDIA_TYPES if suffix != ".mp4")
+MAX_PICTURES = 500  # library.STREAM_LIMIT's sibling: a ceiling, not a page size
+
 # Shown as words rather than served as bytes. `.md` is not here: it has its own renderer, and a
 # markdown file that failed to render falls back to this set's treatment anyway.
 TEXT_TYPES = frozenset({".txt", ".csv", ".json", ".log", ".yml", ".yaml", ".md"})
@@ -206,6 +214,68 @@ def listing(folder: Path, relative: str = "") -> dict | None:
         "parent": relative.rsplit("/", 1)[0] if "/" in relative else "",
         "entries": entries,
     }
+
+
+# ------------------------------------------------------------------ every picture
+
+
+def _captions(folder: Path) -> dict[str, str]:
+    """What the index service wrote about the pictures in one folder, or nothing at all.
+
+    :func:`cyclops.captions.read` is this function, and it is deliberately not imported: that
+    module reaches for ``openai`` at import time, and the admin service has no more business
+    loading an API client to caption a grid than it has loading a video encoder to list a
+    directory. Same argument the module docstring makes about ``session.py``, one import along.
+    """
+    try:
+        found = json.loads((folder / card.CAPTIONS_NAME).read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return {}
+    if not isinstance(found, dict):
+        return {}
+    return {str(k): str(v) for k, v in found.items() if isinstance(v, str) and v.strip()}
+
+
+def pictures(name: str, folder: Path) -> list[dict]:
+    """Every picture anywhere in one project, newest first.
+
+    Not only ``Photos/``. That folder holds what the sweep copied out of sessions, and a project
+    somebody actually works in also has an ``Eye Designs/`` and a ``UI Evolution/`` full of PNGs -
+    which are pictures of the project by any reading a person would give the word. So the whole
+    tree is walked, and the only thing kept out is what a grid of ``<img>`` cannot show.
+
+    ``rglob`` does not descend a symlinked directory, so this cannot walk out of the project; the
+    bytes themselves are still guarded by :func:`inside` when the page comes back for them.
+
+    The shape is :class:`cyclops.library.Item`'s, so the gallery on the page is one renderer and
+    not two.
+    """
+    captions: dict[Path, dict[str, str]] = {}
+    out = []
+    for found in folder.rglob("*"):
+        if found.suffix.lower() not in IMAGE_TYPES or not found.is_file():
+            continue
+        relative = found.relative_to(folder)
+        if any(part.startswith(".") for part in relative.parts):
+            continue
+        if found.parent not in captions:
+            captions[found.parent] = _captions(found.parent)
+        # Two fields and not one. ``title`` is alt text and always says something; ``caption`` is
+        # only there when the index service has actually looked at the picture, so the page can
+        # print it without having to guess whether it is a description or a filename repeated.
+        caption = captions[found.parent].get(found.name, "")
+        out.append(
+            {
+                "kind": "photo",
+                "title": caption or found.name,
+                "caption": caption,
+                "when": _when(found),
+                "url": media_url(name, relative.as_posix()),
+                "path": relative.as_posix(),
+            }
+        )
+    out.sort(key=lambda one: one["when"], reverse=True)
+    return out[:MAX_PICTURES]
 
 
 # ------------------------------------------------------------------ one file

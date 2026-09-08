@@ -328,38 +328,68 @@ room for. That is the one question here answered by the stylesheet rather than b
 
   <main class="view projects" id="v-projects"></main>
 
-  <main class="view browse" id="v-browse">
+  {% comment %}
+  One project, and the five things it is. A project folder holds a README, a Log, a workbook, its
+  pictures and whatever else you put there - and until this screen existed they were five rows of
+  a directory listing, told apart only by their filenames. The rail names them instead.
+
+  One shell for all five, not five screens. The rail and the crumb bar are the fixed part and
+  #pbody is the part each section writes, which is what lets the upload controls below keep the
+  listeners app.js binds to them once at load: a section change rewrites #pbody and never the bar
+  they live in. #pbody wears .files, .doc or .grid depending on what is in it, so the rules those
+  three classes already had are the rules that still apply.
+  {% endcomment %}
+  <main class="view project" id="v-project">
     {% comment %}
-    Two children rather than one run of buttons, because showBrowse() rewrites the trail on every
-    folder you open and the controls beside it must survive that. The trail is `display: contents`
-    so the crumbs are still direct flex items of the bar and its layout is unchanged.
+    Marco's five words, in his order, as static markup for the same reason the tabs above are:
+    app.js's route() sets aria-current on whichever one you are on, and there is one idiom on this
+    page for "which of these am I looking at" rather than two. data-sec and not data-hash, because
+    the project half of the destination is only known at run time.
     {% endcomment %}
-    <div class="crumbs" id="crumbs"><span class="trail" id="crumbtrail"></span>
+    <nav class="rail">
+      <!-- Which project this is, and the way out of it: one control and not a glyph beside a
+           label. A chevron on its own is a 22 px target at the top left corner of a touchscreen,
+           which is the hardest place on the panel to hit; the name is the thing you would aim at
+           anyway, so the name is the button. -->
+      <button class="railback" type="button" data-hash="#/projects" aria-label="Back to projects">
+        <span class="railup">&#8249;</span><span class="railname" id="railname"></span>
+      </button>
+      <button class="railtab" type="button" data-sec="overview">Overview</button>
+      <button class="railtab" type="button" data-sec="log">Log</button>
+      <button class="railtab" type="button" data-sec="sheets">Spreadsheets</button>
+      <button class="railtab" type="button" data-sec="photos">Photos</button>
+      <button class="railtab" type="button" data-sec="files">Files</button>
+    </nav>
+    <div class="pane">
       {% comment %}
-      Putting something *in*, which is a thing you can only do from the machine the file is on.
-      The panel is never sent this: it has no filesystem to upload from, no file picker worth
-      opening at 800x480, and a keyboard only if one happens to be plugged in. Same {% if %} as
-      the kiosk-only chrome elsewhere in this file, pointed the other way.
-
-      Inside the crumb bar rather than in a row of its own, so the browser stays two rows and the
-      file list does not move down the screen to make space for something the panel never shows.
+      Where you are inside FILES, and only there - the other four sections are one thing each and
+      a bar saying so would be a row of chrome repeating the rail. Two children rather than one run
+      of buttons, because showBrowse() rewrites the trail on every folder you open and the controls
+      beside it must survive that. The trail is `display: contents` so the crumbs are still direct
+      flex items of the bar and its layout is unchanged.
       {% endcomment %}
-      {% if not local %}
-      <span class="put" id="put">
-        <span class="flightbar" id="flight"></span>
-        <input class="newdir" id="newdir" type="text" placeholder="folder name" hidden>
-        <button class="crumb act" id="mkdir" type="button">+ Folder</button>
-        <button class="crumb act" id="pick" type="button">&#8593; Upload</button>
-        <input class="pickfile" id="pickfile" type="file" multiple>
-      </span>
-      {% endif %}
-    </div>
-    <div class="files" id="files"></div>
-  </main>
+      <div class="crumbs" id="crumbs"><span class="trail" id="crumbtrail"></span>
+        {% comment %}
+        Putting something *in*, which is a thing you can only do from the machine the file is on.
+        The panel is never sent this: it has no filesystem to upload from, no file picker worth
+        opening at 800x480, and a keyboard only if one happens to be plugged in. Same {% if %} as
+        the kiosk-only chrome elsewhere in this file, pointed the other way.
 
-  <main class="view file" id="v-file">
-    <div class="crumbs" id="fcrumbs"></div>
-    <div class="doc" id="doc"></div>
+        Inside the crumb bar rather than in a row of its own, so the browser stays two rows and the
+        file list does not move down the screen to make space for something the panel never shows.
+        {% endcomment %}
+        {% if not local %}
+        <span class="put" id="put">
+          <span class="flightbar" id="flight"></span>
+          <input class="newdir" id="newdir" type="text" placeholder="folder name" hidden>
+          <button class="crumb act" id="mkdir" type="button">+ Folder</button>
+          <button class="crumb act" id="pick" type="button">&#8593; Upload</button>
+          <input class="pickfile" id="pickfile" type="file" multiple>
+        </span>
+        {% endif %}
+      </div>
+      <div class="pbody" id="pbody"></div>
+    </div>
   </main>
 
   <!-- Last of the views, and only because of that: adding one anywhere else shifts every

@@ -85,6 +85,41 @@ body:not(.kiosk) .nav::after {
   pointer-events: none;
 }
 
+/* ---- the rail is whichever one fits, which is the header's argument one screen down ---- */
+/* The panel has 766 px and a rail down the left costs it 132 of them. A phone has 390, and the
+   same rail would leave a README 250 px wide - a column of four-word lines, which is not reading.
+   So off the panel the rail starts as a row above the pane and becomes a column again at exactly
+   the width the header's six tabs come back at, in that same query at the end of this file's nav
+   block. One breakpoint for "is there room to put things side by side", not two.
+
+   The rail keeps its 40u targets either way: it is the same five buttons, stood up or laid down. */
+body:not(.kiosk) .project {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+/* Wrapping and not scrolling sideways. Six monospace words at .08em do not share a 390 px row -
+   they end 138 px past its right edge, which tests/layout_check.mjs fails on and is right to. A
+   scroller would hide three of the five sections behind a gesture with nothing on screen saying
+   it is there; two ragged rows hide none of them, and cost 44u of a screen 844u tall. This is the
+   fix the header could not use, because a *second* header row pushes the whole page down and a
+   second rail row does not. */
+body:not(.kiosk) .rail {
+  flex-direction: row; flex-wrap: wrap; align-items: stretch; overflow: visible;
+  border-right: 0; border-bottom: calc(1 * var(--u)) solid var(--dim);
+}
+/* Which project this is, first and on a line of its own: it is the way back, and a way back that
+   shares a row with the section you are reading is one you have to look for. */
+body:not(.kiosk) .railback {
+  border-bottom: 0; border-right: calc(1 * var(--u)) solid var(--dim);
+  width: auto; flex: none; max-width: 100%;
+}
+body:not(.kiosk) .railname {
+  -webkit-line-clamp: 1; padding-right: calc(10 * var(--u));
+  max-width: clamp(calc(90 * var(--u)), 30vw, calc(220 * var(--u)));
+}
+body:not(.kiosk) .railtab { min-height: calc(44 * var(--u)); padding: 0 calc(11 * var(--u));
+                            display: inline-flex; align-items: center; white-space: nowrap; }
+
 /* ---- ...and when the room is there, the row ---- */
 /* Both terms carry weight, and the second is the one nobody expects: a phone held sideways is
    844 px wide and a tablet stood upright is 820, so width on its own sorts those two the wrong
@@ -135,6 +170,22 @@ body:not(.kiosk) .nav::after {
   body:not(.kiosk) .job {
     position: static; transform: none; margin-left: auto; min-width: 0; max-width: none;
   }
+  /* And the project rail stands back up, for the reason the tabs come back: there is room to put
+     two things beside each other, so the submenu stops eating a row off the top of what you came
+     to read. Fluid rather than the panel's fixed 132u - a monitor can spare more than a tablet,
+     and the labels are the same six words at either end. */
+  body:not(.kiosk) .project {
+    grid-template-columns: clamp(calc(132 * var(--u)), 16vw, calc(200 * var(--u))) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+  body:not(.kiosk) .rail {
+    flex-direction: column; flex-wrap: nowrap; overflow-x: hidden; overflow-y: auto;
+    border-right: calc(1 * var(--u)) solid var(--dim); border-bottom: 0;
+  }
+  body:not(.kiosk) .railback {
+    border-right: 0; border-bottom: calc(1 * var(--u)) solid var(--dim); width: 100%;
+  }
+  body:not(.kiosk) .railname { -webkit-line-clamp: 2; max-width: none; }
 }
 
 /* ---- the four readings ---- */

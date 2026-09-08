@@ -28,7 +28,10 @@ const WIDE = window.matchMedia(
   getComputedStyle(document.documentElement).getPropertyValue('--wide-q').trim().slice(1, -1));
 
 const VIEWS = ['view-status', 'view-live', 'view-sessions', 'view-session', 'view-media',
-               'view-videos', 'view-projects', 'view-browse', 'view-file'];
+               'view-videos', 'view-projects', 'view-project'];
+// The five things a project is, in the rail's order. The first is where a project opens, and an
+// address naming none of them - or one this list has never heard of - lands there too.
+const SECTIONS = ['overview', 'log', 'sheets', 'photos', 'files'];
 const FRESH = 20000;   // a listing is worth re-using for as long as nothing new can have ended
 
 const vSessions = document.getElementById('v-sessions');
@@ -39,9 +42,12 @@ const vVideos = document.getElementById('v-videos');
 const makecut = document.getElementById('makecut');
 const vProjects = document.getElementById('v-projects');
 const crumbTrail = document.getElementById('crumbtrail');
-const files = document.getElementById('files');
-const fileCrumbs = document.getElementById('fcrumbs');
-const doc = document.getElementById('doc');
+const railName = document.getElementById('railname');
+const rails = [...document.querySelectorAll('.railtab')];
+// The one element every section of a project screen writes: a listing, a document or a grid. It
+// is the pane's *body* and not the pane, because the crumb bar above it holds controls whose
+// listeners are bound once at load and must outlive a section change.
+const pbody = document.getElementById('pbody');
 const video = document.getElementById('video');
 const stitle = document.getElementById('stitle');
 const smeta = document.getElementById('smeta');
@@ -746,15 +752,20 @@ function showLive() {
 
 // ---------------------------------------------------------------- the projects
 
-// Where a project's folder and one file inside it live in the hash. Both halves are encoded
-// whole, slashes included - shelf.file_route builds the same string server-side - so a nested
-// Photos/x.jpg stays one segment and the router's split cannot land in the middle of it.
-const pRoute = (name, path) => '#/p/' + encodeURIComponent(name) + '/' + encodeURIComponent(path || '');
+// Where a project, one section of it and one file inside it live in the hash. The project and the
+// path are encoded whole, slashes included - shelf.file_route builds the same string server-side -
+// so a nested Photos/x.jpg stays one segment. The section between them is a bare word out of
+// SECTIONS, which is what lets a split on "/" find all three however deep the file is.
+const pRoute = (name, sec, path) => '#/p/' + encodeURIComponent(name) + '/' + (sec || 'overview') +
+  (path ? '/' + encodeURIComponent(path) : '');
 const fRoute = (name, path) => '#/f/' + encodeURIComponent(name) + '/' + encodeURIComponent(path || '');
-const twoParts = (rest) => {
-  const cut = rest.indexOf('/');
-  return cut < 0 ? [decodeURIComponent(rest), '']
-    : [decodeURIComponent(rest.slice(0, cut)), decodeURIComponent(rest.slice(cut + 1))];
+// #/p/<name>/<sec>/<path> and #/f/<name>/<path>. A file route has no section, so `sec` comes back
+// empty and the caller supplies the one it means.
+const hashParts = (rest, hasSection) => {
+  const found = rest.split('/');
+  return [decodeURIComponent(found[0] || ''),
+          hasSection ? (found[1] || '') : '',
+          decodeURIComponent(found[hasSection ? 2 : 1] || '')];
 };
 
 let shelfHeld = null, shelfAt = 0;
@@ -775,7 +786,7 @@ function projectRow(one) {
   const sub = one.status !== 'active'
     ? '<span class="rowsub">' + esc(one.status) + '</span>'
     : one.sessions ? '<span class="rowsub">' + many(one.sessions, 'session') + '</span>' : '';
-  return '<button class="row" type="button" data-hash="' + esc(pRoute(one.name, '')) + '">' +
+  return '<button class="row" type="button" data-hash="' + esc(pRoute(one.name, 'overview')) + '">' +
     '<span class="shot">' + shot + '</span>' +
     '<span class="rowtext"><span class="rowtitle">' + esc(one.title) + '</span>' +
     '<span class="rowsum">' + esc(one.tagline) + '</span></span>' +
@@ -796,22 +807,30 @@ async function showProjects() {
 
 // ---------------------------------------------------------------- one project
 
-// Where you are, and every step of the way back. Up is one step, whatever that means from
-// here: out of a file, out of a folder, or off the project entirely and back to the shelf.
+// Where you are inside FILES, and every step of the way back. Up is one step, whatever that means
+// from here: out of a file, or out of a folder. It stops at the section root - the way out of the
+// project is the arrow at the top of the rail, and a second one saying the same thing in the same
+// bar would be two answers to one question.
+//
+// The trail begins at "Files" rather than at the project, because the rail is already saying
+// which project this is - and it says it by title, where a folder tree can only say it by folder
+// name. One name for one thing.
 function crumbs(name, path, leaf) {
-  const parts = path ? path.split('/') : [];
-  const up = leaf ? pRoute(name, path)
-    : parts.length ? pRoute(name, parts.slice(0, -1).join('/'))
-    : '#/projects';
-  let out = '<button class="crumb up" type="button" aria-label="Back" data-hash="' +
-    esc(up) + '">&#8249;</button>' +
-    '<button class="crumb" type="button" data-hash="' + esc(pRoute(name, '')) + '">' +
-    esc(name) + '</button>';
+  const walk = path ? path.split('/') : [];
+  const up = leaf ? pRoute(name, 'files', path)
+    : walk.length ? pRoute(name, 'files', walk.slice(0, -1).join('/'))
+    : '';
+  let out = up
+    ? '<button class="crumb up" type="button" aria-label="Back" data-hash="' +
+      esc(up) + '">&#8249;</button>'
+    : '';
+  out += '<button class="crumb" type="button" data-hash="' + esc(pRoute(name, 'files')) +
+    '">Files</button>';
   let walked = '';
-  for (const part of parts) {
+  for (const part of walk) {
     walked = walked ? walked + '/' + part : part;
     out += '<span class="sep">/</span><button class="crumb" type="button" data-hash="' +
-      esc(pRoute(name, walked)) + '">' + esc(part) + '</button>';
+      esc(pRoute(name, 'files', walked)) + '">' + esc(part) + '</button>';
   }
   if (leaf) out += '<span class="sep">/</span><span class="crumb here">' + esc(leaf) + '</span>';
   return out;
@@ -827,7 +846,7 @@ const MARKS = {
 function fileRow(name, one) {
   const dir = one.kind === 'dir';
   const mark = dir ? '\u25b8' : (MARKS[one.suffix] || '\u00b7');
-  const hash = dir ? pRoute(name, one.path) : fRoute(name, one.path);
+  const hash = dir ? pRoute(name, 'files', one.path) : fRoute(name, one.path);
   return '<button class="row" type="button" data-hash="' + esc(hash) + '">' +
     '<span class="mark' + (dir ? ' dir' : '') + '">' + mark + '</span>' +
     '<span class="rowtext"><span class="rowtitle">' + esc(one.name) + '</span></span>' +
@@ -847,7 +866,7 @@ let putReset = null;
 // reading `here`, so a listing that lands late cannot paint itself into whatever is on screen by
 // then - the same care showSession takes with `openName`.
 function redraw(at, found) {
-  files.innerHTML = found.entries && found.entries.length
+  pbody.innerHTML = found.entries && found.entries.length
     ? found.entries.map((one) => fileRow(at.name, one)).join('')
     : '<div class="empty">this folder is empty</div>';
 }
@@ -863,7 +882,7 @@ async function showBrowse(name, path) {
     if (here !== at) return;
     redraw(at, found);
   } catch (e) {
-    files.innerHTML = '<div class="empty">could not read that folder</div>';
+    pbody.innerHTML = '<div class="empty">could not read that folder</div>';
   }
 }
 
@@ -906,9 +925,9 @@ if (putBar) {
   // crossing the LAN looks like a folder doing nothing, and the second click is how you end up
   // sending it twice.
   function waiting(rest) {
-    const gone = files.querySelector('.empty');
+    const gone = pbody.querySelector('.empty');
     if (gone) gone.remove();
-    files.insertAdjacentHTML('beforeend', rest.map((file) =>
+    pbody.insertAdjacentHTML('beforeend', rest.map((file) =>
       '<button class="row flight" type="button" disabled>' +
       '<span class="mark">\u00b7</span>' +
       '<span class="rowtext"><span class="rowtitle">' + esc(file.name) + '</span></span>' +
@@ -996,17 +1015,17 @@ if (putBar) {
   // either of those is Chromium leaving for file:///. Catching the screen means every drop
   // anywhere in the browser is ours. The outline still goes on the list, because that is the
   // thing you are putting something into.
-  const screen = document.getElementById('v-browse');
+  const screen = document.getElementById('v-project');
   screen.addEventListener('dragover', (e) => {
     e.preventDefault();
-    files.classList.add('drop');
+    pbody.classList.add('drop');
   });
   screen.addEventListener('dragleave', (e) => {
-    if (!screen.contains(e.relatedTarget)) files.classList.remove('drop');
+    if (!screen.contains(e.relatedTarget)) pbody.classList.remove('drop');
   });
   screen.addEventListener('drop', (e) => {
     e.preventDefault();
-    files.classList.remove('drop');
+    pbody.classList.remove('drop');
     if (e.dataTransfer.files.length) send(e.dataTransfer.files);
   });
 }
@@ -1040,34 +1059,149 @@ function workbook(tabs) {
     : '<div class="empty">empty</div>')).join('');
 }
 
+// One file, drawn where the listing was. Handed the folder it belongs to as well as the file, so
+// a listing that lands late cannot paint itself over a document you have already opened - the
+// same care showBrowse takes, through the same `here`.
 async function showFile(name, path) {
+  const at = here = { name, path };
   const cut = path.lastIndexOf('/');
-  fileCrumbs.innerHTML = crumbs(name, cut < 0 ? '' : path.slice(0, cut), path.slice(cut + 1));
-  doc.innerHTML = '';
-  const url = '/api/project/' + encodeURIComponent(name) +
-    '/file?path=' + encodeURIComponent(path);
+  crumbTrail.innerHTML = crumbs(name, cut < 0 ? '' : path.slice(0, cut), path.slice(cut + 1));
+  pbody.innerHTML = '';
   try {
-    doc.innerHTML = asDoc(await grab(url));
+    const found = await grab(fileUrl(name, path));
+    if (here !== at) return;
+    pbody.innerHTML = asDoc(found);
   } catch (e) {
-    doc.innerHTML = '<div class="empty">could not read that file</div>';
+    if (here === at) pbody.innerHTML = '<div class="empty">could not read that file</div>';
   }
+}
+
+// ---------------------------------------------------------------- the five sections
+
+const fileUrl = (name, path) => '/api/project/' + encodeURIComponent(name) +
+  '/file?path=' + encodeURIComponent(path);
+
+// What the project's own root holds. The rail needs it to find the workbooks - "Spreadsheets" is
+// whatever .xlsx is in there, not a filename this page has memorised - and it is the same request
+// FILES makes for its first folder, so opening a project costs one listing and not five.
+let rootHeld = null, rootOf = '', rootAt = 0;
+async function projectRoot(name) {
+  if (rootHeld && rootOf === name && Date.now() - rootAt < FRESH) return rootHeld;
+  rootHeld = await grab('/api/project/' + encodeURIComponent(name) + '/files?path=');
+  rootOf = name;
+  rootAt = Date.now();
+  return rootHeld;
+}
+
+// README.md and Log.md, which every project has because store.py makes both when it makes the
+// project. Rendered by the same asDoc() a file opened out of FILES goes through, because it is
+// the same file - all this section does is know its name so you do not have to.
+async function showDoc(name, leaf) {
+  const at = here = { name, path: leaf };
+  pbody.innerHTML = '';
+  try {
+    const found = await grab(fileUrl(name, leaf));
+    if (here !== at) return;
+    pbody.innerHTML = asDoc(found);
+  } catch (e) {
+    if (here === at) pbody.innerHTML = '<div class="empty">nothing written down yet</div>';
+  }
+}
+
+// Every workbook in the project's root, under its own name when there is more than one. In
+// practice there is exactly one and it is called Project Data.xlsx - but the name is the model's
+// to choose and a second book somebody dropped in is still this project's numbers.
+async function showSheets(name) {
+  const at = here = { name, path: '' };
+  pbody.innerHTML = '';
+  try {
+    const root = await projectRoot(name);
+    const books = root.entries.filter((one) => one.suffix === '.xlsx');
+    if (!books.length) {
+      if (here === at) pbody.innerHTML = '<div class="empty">no spreadsheets in this project</div>';
+      return;
+    }
+    const found = await Promise.all(books.map((one) => grab(fileUrl(name, one.path))));
+    if (here !== at) return;
+    pbody.innerHTML = found.map((book, i) =>
+      (books.length > 1 ? '<h1>' + esc(books[i].name) + '</h1>' : '') +
+      workbook(book.tabs || [])).join('');
+  } catch (e) {
+    if (here === at) pbody.innerHTML = '<div class="empty">could not read that</div>';
+  }
+}
+
+// The rail's five destinations, and what #pbody is wearing while it shows each. The class decides
+// the padding and the scrolling, which is why it is set here and not inside the renderers: a
+// section that failed to load still has to be the right shape to say so in.
+const SHOW = {
+  overview: { dress: 'doc', open: (name) => showDoc(name, 'README.md') },
+  log:      { dress: 'doc', open: (name) => showDoc(name, 'Log.md') },
+  sheets:   { dress: 'doc', open: showSheets },
+  photos:   { dress: 'shots', open: showPhotos },
+  files:    { dress: 'files', open: (name, path) => showBrowse(name, path) },
+  // One file out of FILES. Not a sixth thing in the rail - it stays lit on FILES, because that is
+  // where you were and where the way back goes - but the pane is a document rather than a list.
+  file:     { dress: 'doc', open: showFile },
+};
+
+// One project, on whichever of its screens you asked for. `shown` is a key of SHOW and has been
+// settled by the router already, so there is no fallback here to disagree with the one up there -
+// and it is not always the section the rail is lit on, because a file lights FILES.
+function showProject(name, shown, path) {
+  if (putReset) putReset();   // a refusal belongs to the folder that caused it, not to the next screen
+  pbody.className = 'pbody ' + SHOW[shown].dress;
+  // The title and not the folder name: the folder is what a person renamed in Finder, and the
+  // title is what the project calls itself. It is already on the card from the shelf listing, so
+  // this is a paint and not a request - and it opens as the folder name for the one moment a
+  // deep-linked address arrives before that listing does.
+  railName.textContent = name;
+  shelf().then((found) => {
+    const one = found.find((project) => project.name === name);
+    if (one && here.name === name) railName.textContent = one.title;
+  }).catch(() => {});
+  SHOW[shown].open(name, path);
 }
 
 // ---------------------------------------------------------------- the picture stream
 
+// The pictures on show, whichever screen is showing them. One array and not two, because only one
+// of the two galleries is ever on screen and light() has to be able to open whatever was clicked.
 let shots = [];
+
+// A run of pictures as a grid. Both galleries draw the same thing - the whole card on MEDIA, one
+// project on its PHOTOS - and shelf.pictures deliberately answers in library.Item's shape so that
+// stays true.
+function gallery(items, empty) {
+  shots = items;
+  return items.length
+    ? '<div class="grid">' + items.map((one, i) =>
+        '<button class="cell" type="button" data-shot="' + i + '">' +
+        '<img loading="lazy" draggable="false" src="' + esc(one.url) +
+        '" alt="' + esc(one.title) + '">' +
+        '</button>').join('') + '</div>'
+    : '<div class="empty">' + empty + '</div>';
+}
+
 async function showMedia() {
   try {
-    shots = (await grab('/api/media')).items;
-    vMedia.innerHTML = shots.length
-      ? '<div class="grid">' + shots.map((one, i) =>
-          '<button class="cell" type="button" data-shot="' + i + '">' +
-          '<img loading="lazy" draggable="false" src="' + esc(one.url) +
-          '" alt="' + esc(one.title) + '">' +
-          '</button>').join('') + '</div>'
-      : '<div class="empty">no pictures yet</div>';
+    vMedia.innerHTML = gallery((await grab('/api/media')).items, 'no pictures yet');
   } catch (e) {
     vMedia.innerHTML = '<div class="empty">could not read the card</div>';
+  }
+}
+
+// Every picture in one project, and not only the ones the sweep filed into Photos/ - a folder of
+// drawings you made is as much this project as a photograph Cyclops took. See shelf.pictures.
+async function showPhotos(name) {
+  const at = here = { name, path: '' };
+  pbody.innerHTML = '';
+  try {
+    const found = await grab('/api/project/' + encodeURIComponent(name) + '/pictures');
+    if (here !== at) return;
+    pbody.innerHTML = gallery(found.items, 'no pictures in this project yet');
+  } catch (e) {
+    if (here === at) pbody.innerHTML = '<div class="empty">could not read the card</div>';
   }
 }
 
@@ -1079,14 +1213,21 @@ const lightbox = document.getElementById('lightbox');
 function light(i) {
   const one = shots[i];
   if (!one) return;
+  // What it is of, when something has actually looked. Project pictures carry a caption from the
+  // index service and session ones do not, so this is a description on one screen and a date on
+  // the other - and never a filename repeated under a picture of itself, which is what `title`
+  // falls back to and why it is not the field read here.
+  const said = one.caption ? esc(one.caption) + ' · ' : '';
   lightbox.innerHTML =
     '<img draggable="false" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">' +
-    '<div class="lightwhen">' + esc(day(one.when) + ' ' + time(one.when)) + '</div>';
+    '<div class="lightwhen">' + said + esc(day(one.when) + ' ' + time(one.when)) + '</div>';
   document.body.classList.add('lit');
 }
 const douse = () => { document.body.classList.remove('lit'); lightbox.textContent = ''; };
 
-vMedia.addEventListener('click', (e) => {
+// One listener for both galleries, the way [data-hash] is one listener for every row and crumb -
+// only one of them is ever on screen, and they draw the same markup out of the same array.
+document.addEventListener('click', (e) => {
   const el = e.target.closest('[data-shot]');
   if (el) light(parseInt(el.dataset.shot, 10));
 });
@@ -1153,8 +1294,7 @@ if (document.body.classList.contains('kiosk')) {
   dragScroll(vSessions);
   dragScroll(vMedia);
   dragScroll(vProjects);
-  dragScroll(files);
-  dragScroll(doc);
+  dragScroll(pbody);
 }
 
 // ---------------------------------------------------------------- the router
@@ -1167,6 +1307,14 @@ for (const tab of tabs) {
   tab.addEventListener('click', () => { location.hash = '#' + tab.dataset.go; });
 }
 if (menu) menu.addEventListener('change', () => { location.hash = '#' + menu.value; });
+// The rail. data-sec and not data-hash like everything else on this page, because only half of a
+// section's address is written in the markup - the other half is whichever project you are in,
+// which `here` is holding.
+for (const el of rails) {
+  el.addEventListener('click', () => {
+    if (here.name) location.hash = pRoute(here.name, el.dataset.sec);
+  });
+}
 // Every project row, every file row and every crumb says where it goes, so one listener moves
 // all of them. The markdown's own links need none: shelf.py writes them as hashes already, and
 // a hash is the one href that changes this page without navigating away from it.
@@ -1185,7 +1333,7 @@ function route() {
   if (document.body.classList.contains('lit')) douse();
   at = path;
 
-  let view = 'view-status', tab = '/';
+  let view = 'view-status', tab = '/', sec = '';
   if (path === '/live') { view = 'view-live'; tab = '/live'; showLive(); }
   else if (path === '/sessions') { view = 'view-sessions'; tab = '/sessions'; showSessions(); }
   else if (path === '/media') { view = 'view-media'; tab = '/media'; showMedia(); }
@@ -1202,23 +1350,40 @@ function route() {
   }
   else if (path === '/projects') { view = 'view-projects'; tab = '/projects'; showProjects(); }
   else if (path.startsWith('/p/')) {
-    view = 'view-browse'; tab = '/projects';
-    showBrowse(...twoParts(path.slice(3)));
+    view = 'view-project'; tab = '/projects';
+    const [name, asked, where] = hashParts(path.slice(3), true);
+    // An address naming no section, or one this page has never heard of, opens the project rather
+    // than nothing - which is also what every #/p/<name>/ bookmark from before the rail existed
+    // now does.
+    sec = SECTIONS.includes(asked) ? asked : 'overview';
+    showProject(name, sec, where);
   }
+  // One file out of FILES, and the only route the server writes: shelf.file_route puts this hash
+  // in every relative link of a rendered README. So the two files the rail already has a section
+  // for are sent to it - the README's own footer links Log.md, and landing on LOG is what that
+  // link means - and everything else opens where its folder is, with FILES still lit.
   else if (path.startsWith('/f/')) {
-    view = 'view-file'; tab = '/projects';
-    showFile(...twoParts(path.slice(3)));
+    const [name, , where] = hashParts(path.slice(3), false);
+    const asSection = { 'README.md': 'overview', 'Log.md': 'log' }[where];
+    if (asSection) { location.hash = pRoute(name, asSection); return; }
+    view = 'view-project'; tab = '/projects'; sec = 'files';
+    showProject(name, 'file', where);
   }
   document.body.classList.remove(...VIEWS);
   document.body.classList.add(view);
+  // Which of the five the rail is lit on, set the same way and for the same reason the header's
+  // tabs are: the markup says what the sections are, and the router says which one you are on.
+  document.body.classList.remove(...SECTIONS.map((one) => 'sec-' + one));
+  if (sec) document.body.classList.add('sec-' + sec);
+  for (const el of rails) el.setAttribute('aria-current', el.dataset.sec === sec ? 'true' : 'false');
   for (const el of tabs) el.setAttribute('aria-current', el.dataset.go === tab ? 'true' : 'false');
   // The parent route, so a session or a file leaves the menu reading the list it came from.
   if (menu) menu.value = tab;
-  // Views scroll on their own, and a new one always starts at the top. The browser and the
-  // reader keep their crumb bar still and scroll the half under it, so those two are named
-  // here rather than caught by the .view sweep.
+  // Views scroll on their own, and a new one always starts at the top. The project screen keeps
+  // its rail and crumb bar still and scrolls the pane under them, so that one is named here
+  // rather than caught by the .view sweep.
   for (const el of document.querySelectorAll('.view')) el.scrollTop = 0;
-  files.scrollTop = doc.scrollTop = 0;
+  pbody.scrollTop = 0;
 }
 window.addEventListener('hashchange', route);
 route();

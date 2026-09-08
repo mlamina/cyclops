@@ -137,6 +137,61 @@ const PROJECTS = {
   ],
 };
 
+// shelf.listing(): one directory of one project. The root, which is the only folder the run
+// opens - it holds the four things every project has plus the two kinds of row (a folder and a
+// file), which is every branch fileRow() has.
+const PROJECT_FILES = {
+  path: '', parent: '',
+  entries: [
+    { name: 'Photos', path: 'Photos', kind: 'dir', size: 0, when: '2026-09-01T18:20:00', suffix: '' },
+    { name: 'UI Evolution', path: 'UI Evolution', kind: 'dir', size: 0, when: '2026-09-01T18:20:00', suffix: '' },
+    { name: 'Log.md', path: 'Log.md', kind: 'file', size: 14447, when: '2026-09-01T18:20:00', suffix: '.md' },
+    { name: 'Project Data.xlsx', path: 'Project Data.xlsx', kind: 'file', size: 4955, when: '2026-08-29T18:33:00', suffix: '.xlsx' },
+    { name: 'README.md', path: 'README.md', kind: 'file', size: 3072, when: '2026-09-01T18:20:00', suffix: '.md' },
+  ],
+};
+// shelf.view(), three ways: the two markdown files the rail has a section for, and the workbook.
+// The prose is long enough to wrap and to scroll, because a one-line README measures a screen
+// nobody has - and the last list item is the 44-character word again.
+const README = { name: 'README.md', path: 'README.md', size: 3072, kind: 'markdown', html:
+  '<h1>Camera swap</h1><p>Official Module 3 Wide, case-mounted, no new cut-out. The ribbon is ' +
+  '200 mm and the bracket is the one already in the lid.</p><h2>Where it stands</h2><p>The case ' +
+  'cut-out is settled and the ribbon length is ordered; what is left is the bracket, which needs ' +
+  'the exact standoff height before anything can be drilled.</p><h2>Still open</h2><ul>' +
+  '<li>Need the standoff height.</li><li>ThermalThrottlingInvestigationOnThePiFiveUnderLoad</li>' +
+  '</ul><hr><p><em>Filed from 4 sessions. The full history is in ' +
+  '<a href="#/f/cyclops-camera-swap/Log.md">Log.md</a>.</em></p>' };
+const LOG = { name: 'Log.md', path: 'Log.md', size: 14447, kind: 'markdown', html:
+  '<h1>Camera swap - log</h1><h2>Tuesday 1 September 2026 - Planned the swap</h2><p>Worked ' +
+  'through the case cut-out, the ribbon length and whether the official module or the Arducam ' +
+  'clone is the one to buy.</p><p><img alt="the bracket" src="/project-media/x/Photos/a.jpg"></p>' +
+  '<h2>Sunday 30 August 2026 - Cut the bracket</h2><p>Three photographs came out of this one.</p>' };
+const SHEET = { name: 'Project Data.xlsx', path: 'Project Data.xlsx', size: 4955, kind: 'sheet',
+  tabs: [
+    { name: 'Dimensions', rows: [
+      { key: 'Screen size', value: '640 by 480', note: 'as stated' },
+      { key: 'Ribbon length', value: '200 mm', note: '' }] },
+    { name: 'Torque', rows: [
+      { key: 'Caliper cap screws', value: '60-65 Nm', note: 'from the service manual, front only' }] },
+  ] };
+// shelf.pictures(): every picture in the project, and the two rows that decide this layout - one
+// the index service has described at paragraph length, and one nothing has looked at yet.
+const pic = (path, when, caption) => ({
+  kind: 'photo', title: caption || path.split('/').pop(), caption, when,
+  url: `/project-media/cyclops-camera-swap/${path}`, path });
+const PICTURES = {
+  items: [
+    pic('Photos/2026-09-01_bracket.jpg', '2026-09-01T18:13:40',
+      'A close-up of a hand holding a yellow tool with a round silver metal part and a small ' +
+      'screw; the screen overlay reads "listening - talk to me" on a dark bar, the upper centre ' +
+      'displays "00:12", and a circular gauge at the bottom right shows 60 degrees.'),
+    pic('UI Evolution/r3_contrast-restored_idle.png', '2026-09-01T18:00:54', ''),
+    pic('Photos/2026-08-30_ribbon.jpg', '2026-08-30T21:16:00', 'The ribbon, seated in the header.'),
+    pic('UI Evolution/EVOLUTION_contact_sheet.png', '2026-08-30T21:15:00', ''),
+    pic('Photos/2026-08-30_case.jpg', '2026-08-30T21:14:00', 'The case, cut.'),
+  ],
+};
+
 // views.live(): a session being recorded right now, and its lines so far. The same records the
 // transcript above is made of, because it is the same renderer - what is measured here is the
 // screen around them on a device that is not the panel.
@@ -162,10 +217,19 @@ const VIDEOS = {
   ],
 };
 
+// Regular expressions for the project routes and globs for the rest, because these five are told
+// apart by their query string - `/file?path=README.md` and `/file?path=Log.md` are one route and
+// two screens - and a glob cannot see one. `/files?` before `/file?` is a distinction the `s`
+// makes, not the order.
 const STUBS = [
   ['**/api/status', STATUS], ['**/api/sessions', SESSIONS], ['**/api/media', MEDIA],
   ['**/api/projects', PROJECTS], ['**/api/session/*/records', RECORDS],
   ['**/api/live*', LIVE], ['**/api/videos', VIDEOS], ['**/api/session/*', SESSION],
+  [/\/api\/project\/[^/]+\/files\?/, PROJECT_FILES],
+  [/\/api\/project\/[^/]+\/pictures$/, PICTURES],
+  [/\/api\/project\/[^/]+\/file\?path=README\.md$/, README],
+  [/\/api\/project\/[^/]+\/file\?path=Log\.md$/, LOG],
+  [/\/api\/project\/[^/]+\/file\?path=Project%20Data\.xlsx$/, SHEET],
 ];
 
 async function stub(ctx) {
@@ -207,7 +271,8 @@ const WATCH = ['body', 'header', '.brand', '.nav', '.tab', '.menu', '.system', '
   '.meters', '.meter', '.mtrack', '.mrow', '.mlabel', '.mvalue', '.vslider', '.sw', '.close',
   '.view', '.row', '.shot', '.rowtext', '.rowtitle', '.rowsum', '.rowwhen', '.grid', '.cell',
   '.watch', '.playing', '.video', '.talk', '.line', '.caption', '.stitle', '.smeta', '.ssum',
-  '.lightbox', '.crumbs', '.files', '.doc', '.projects'];
+  '.lightbox', '.crumbs', '.crumb', '.projects',
+  '.project', '.rail', '.railback', '.railname', '.railtab', '.pane', '.pbody'];
 const PROPS = ['display', 'grid-template-columns', 'grid-template-rows', 'flex-wrap',
   'font-size', 'padding', 'gap', 'align-content', 'overflow-x', 'overflow-y', 'position'];
 
@@ -304,6 +369,14 @@ const SCREENS = [
   ['session', '#/s/2026-09-01_18-13-08'],
   ['media', '#/media'],
   ['projects', '#/projects'],
+  // All five of a project's, because they are one shell wearing five things and the shell is what
+  // moves. The browser and the reader were never in this list at all before the rail existed - so
+  // the file list and the rendered README are measured here for the first time.
+  ['project-overview', '#/p/cyclops-camera-swap/overview'],
+  ['project-log', '#/p/cyclops-camera-swap/log'],
+  ['project-sheets', '#/p/cyclops-camera-swap/sheets'],
+  ['project-photos', '#/p/cyclops-camera-swap/photos'],
+  ['project-files', '#/p/cyclops-camera-swap/files'],
 ];
 // ...and companion mode's own screen, which only the LAN run visits. The panel has no LIVE tab
 // and its kiosk never asks for that hash - the markup is inside {% if not local %} - so putting

@@ -38,6 +38,10 @@ urlpatterns = [
     path("api/projects", views.projects, name="projects"),
     path("api/project/<str:name>/files", views.project_files, name="project-files"),
     path("api/project/<str:name>/file", views.project_file, name="project-file"),
+    # The gallery, which is the whole folder and not just Photos/ - see shelf.pictures. A route
+    # of its own rather than a flag on /files, because it answers a different question: /files
+    # says what is in one directory, this says what pictures the project has.
+    path("api/project/<str:name>/pictures", views.project_pictures, name="project-pictures"),
     # And the two that write, which are the only routes here that do. Reading a project on a
     # laptop and then having to scp a datasheet onto the Pi is a browser that stops halfway, so
     # these exist and - unlike every other POST below - they answer to the LAN rather than to
