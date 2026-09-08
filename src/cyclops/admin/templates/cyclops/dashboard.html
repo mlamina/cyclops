@@ -363,15 +363,9 @@ room for. That is the one question here answered by the stylesheet rather than b
        .view index after it and turns one new screen into a page of baseline diff. -->
   <main class="view videos" id="v-videos"></main>
 
-  <!-- Flipping through, which is the verb the stream exists for. Outside the views on purpose:
-       it covers whichever one you opened it from, and going back is closing it. -->
-  <div class="lightbox" id="lightbox">
-    <div class="lit-shot" id="litshot"></div>
-    <div class="lit-cap" id="litcap"></div>
-    <button class="lit-nav lit-prev" id="litprev" type="button" aria-label="Previous">&#8249;</button>
-    <button class="lit-nav lit-next" id="litnext" type="button" aria-label="Next">&#8250;</button>
-    <button class="lit-close" id="litclose" type="button" aria-label="Close">&#10005;</button>
-  </div>
+  <!-- The picture, and nothing else. Outside the views on purpose: it covers whichever one
+       you opened it from, and a press anywhere on it is the way back. -->
+  <div class="lightbox" id="lightbox"></div>
 
   {% comment %}
   Where a picture lands - and it lands on every device, not only the panel. This is companion

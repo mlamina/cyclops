@@ -1072,37 +1072,27 @@ async function showMedia() {
   }
 }
 
-// Flipping through, which is what the stream is for. The side columns are 96u wide - a thumb,
-// not a glyph - because on the panel the gesture is the control.
+// One picture on a black screen. A press anywhere on it puts it away, which is the whole of
+// the control surface - nothing to aim at, and nothing written over the photograph.
 const lightbox = document.getElementById('lightbox');
-const litshot = document.getElementById('litshot');
-const litcap = document.getElementById('litcap');
-let lit = -1;
 
 function light(i) {
-  if (!shots.length) return;
-  lit = (i + shots.length) % shots.length;
-  const one = shots[lit];
-  litshot.innerHTML =
+  const one = shots[i];
+  if (!one) return;
+  lightbox.innerHTML =
     '<img draggable="false" src="' + esc(one.url) + '" alt="' + esc(one.title) + '">';
-  litcap.textContent = one.title + ' · ' + day(one.when) + ' ' + time(one.when) +
-    ' · ' + (lit + 1) + ' of ' + shots.length;
   document.body.classList.add('lit');
 }
-const douse = () => { document.body.classList.remove('lit'); litshot.textContent = ''; lit = -1; };
+const douse = () => { document.body.classList.remove('lit'); lightbox.textContent = ''; };
 
 vMedia.addEventListener('click', (e) => {
   const el = e.target.closest('[data-shot]');
   if (el) light(parseInt(el.dataset.shot, 10));
 });
-document.getElementById('litprev').addEventListener('click', () => light(lit - 1));
-document.getElementById('litnext').addEventListener('click', () => light(lit + 1));
-document.getElementById('litclose').addEventListener('click', douse);
+lightbox.addEventListener('click', douse);
+// Escape is not a control on the picture - it is nowhere on the screen - so it can stay.
 document.addEventListener('keydown', (e) => {
-  if (!document.body.classList.contains('lit')) return;
-  if (e.key === 'Escape') douse();
-  else if (e.key === 'ArrowLeft') light(lit - 1);
-  else if (e.key === 'ArrowRight') light(lit + 1);
+  if (e.key === 'Escape' && document.body.classList.contains('lit')) douse();
 });
 
 // ---------------------------------------------------------------- dragging a list about

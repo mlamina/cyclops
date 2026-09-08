@@ -279,32 +279,15 @@ body.solo:not(.drawing) .close {
 }
 body.solo:not(.drawing) .close .word { display: none; }
 
-/* ---- flipping through ---- */
+/* ---- one picture, full screen ---- */
+/* No caption row and no padding: the picture is the whole screen, and the whole screen is the
+   way out of it. Nothing sits on top of it to be aimed at. */
 .lightbox {
   display: none; position: fixed; inset: 0; z-index: 12; background: #000;
-  grid-template-rows: minmax(0, 1fr) auto; padding: calc(20 * var(--u));
+  place-items: center;
 }
 body.lit .lightbox { display: grid; }
-.lit-shot { min-height: 0; display: grid; place-items: center; }
-.lit-shot img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
-.lit-cap { color: var(--mid); font-size: calc(13 * var(--u)); letter-spacing: .1em;
-           text-align: center; padding-top: calc(10 * var(--u));
-           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* Two thumb-wide columns down the sides of the picture, and a corner to leave by. Flipping
-   through is the verb here, so the targets for it are the size of the gesture, not of a glyph. */
-.lit-nav {
-  position: absolute; top: 0; bottom: 0; width: calc(96 * var(--u));
-  background: transparent; border: 0; color: var(--mid);
-  font: inherit; font-size: calc(34 * var(--u));
-}
-.lit-prev { left: 0; } .lit-next { right: 0; }
-.lit-nav:active { background: rgba(86, 255, 140, .12); color: var(--green); }
-.lit-close {
-  position: absolute; top: calc(14 * var(--u)); right: calc(14 * var(--u));
-  width: calc(58 * var(--u)); height: calc(58 * var(--u));
-  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
-  color: var(--green); font: inherit; font-size: calc(24 * var(--u));
-}
+.lightbox img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
 
 .empty { color: var(--dim); letter-spacing: .2em; text-transform: uppercase;
          padding: calc(30 * var(--u)); text-align: center; font-size: calc(13 * var(--u)); }
