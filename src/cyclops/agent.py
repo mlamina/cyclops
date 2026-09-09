@@ -594,10 +594,14 @@ HOW YOU TALK
 
 USING THE EYE
 - You cannot take photos. They take them, by pressing the SNAP button on the panel, and the
-  photo reaches you the moment they do.
-- A photo arriving means they just pressed that button, sometimes mid-sentence. Go straight to
-  what you actually see, briefly, then answer whatever they were asking about it. No preamble:
-  never open with "look at this", "let me see", or by narrating that a photo arrived.
+  photo reaches you the moment they do, silently.
+- A photo arriving is not a question. They press that button to put something in front of you,
+  often several shots in a row, and then they talk. Stay quiet when one lands: do not describe
+  it, do not remark on it, do not say that it arrived. They can see it - it goes up on the panel
+  as they take it.
+- When they do speak, you have every photo they have taken. Answer off the pictures, going
+  straight to what you actually see, briefly. No preamble: never open with "look at this",
+  "let me see", or by narrating which photo you are looking at.
 - When they hold something up or ask what you can see, and no photo has arrived, ask them for
   one - once, in a few words. "Hit SNAP and I'll look." Only there. Not as a way to round off a
   turn, not in a greeting, and not tacked onto an answer that never needed the eye.
@@ -1129,16 +1133,22 @@ class VoiceAgent:
         self._spawn(self.add_photo(capture))
 
     async def add_photo(self, capture: Capture) -> None:
-        """Put a photo into the conversation as an image, and ask for a reply about it.
+        """Put a photo into the conversation as an image, and say nothing about it.
 
         The model has no camera of its own, so this is the only way anything is ever seen. The
         item is a synthetic user turn rather than a tool result, because there is no tool call
         to answer: as far as the conversation is concerned the user held something up.
+
+        No ``response.create`` here, and that is the whole point: pressing the shutter is not a
+        question. The picture sits in the conversation until they say something, and the reply
+        they get then is about what they actually asked - not a description of a photo they are
+        already looking at on the panel. Server VAD creates that response the moment they speak,
+        with the image already in context, so nothing has to be re-sent.
         """
         if not self.connected:
             return
         self.tool_active = True
-        job = self._start_doing("looking at the photo…")
+        job = self._start_doing("taking the photo in…")
         try:
             await self._send_item(
                 {
@@ -1149,7 +1159,12 @@ class VoiceAgent:
                             "type": "input_text",
                             # Flat and unquotable on purpose: a caption written as speech
                             # ("look at this") comes back out of the speaker verbatim.
-                            "text": "[Photo from their camera, taken just now.]",
+                            "text": (
+                                "[Photo from their camera, taken just now. It is on their "
+                                "screen as well. They have not asked anything about it - do "
+                                "not speak about it until they do, then answer off the "
+                                "picture.]"
+                            ),
                         },
                         {
                             "type": "input_image",
@@ -1161,7 +1176,6 @@ class VoiceAgent:
             )
             # Only now: this means "shown", not "taken".
             self._on_panel = Panel(capture.path, "photo")
-            await self._request_response()
         finally:
             self.tool_active = False
             self._done_doing(job)

@@ -168,3 +168,35 @@ def test_a_non_tty_stdin_is_never_watched(monkeypatch):
 
     teardown = app.watch_stdin(LoudLoop(), lambda: None)
     teardown()  # must be callable and harmless
+
+
+# ---- what the handoff does at the far end ----
+
+
+def test_a_snapped_photo_arrives_without_asking_for_a_reply(monkeypatch, tmp_path):
+    """The shutter is not a question. The image goes into the conversation and nothing is asked
+    of the model, so the next thing it says is an answer to whatever they eventually say."""
+    from cyclops.agent import VoiceAgent
+    from cyclops.webcam import Capture
+
+    made = VoiceAgent(Settings(api_key=""))
+    made._conn = object()  # `connected` asks only whether this is set
+    sent: list[dict] = []
+    asked: list[bool] = []
+
+    async def _send_item(item):
+        sent.append(item)
+
+    async def _request_response():
+        asked.append(True)
+
+    monkeypatch.setattr(made, "_send_item", _send_item)
+    monkeypatch.setattr(made, "_request_response", _request_response)
+    monkeypatch.setattr(made, "_log", lambda *a, **k: None)
+
+    shot = Capture("data:image/jpeg;base64,x", tmp_path / "a.jpg", 640, 480, 1024, 0)
+    asyncio.run(made.add_photo(shot))
+
+    assert len(sent) == 1 and sent[0]["role"] == "user"
+    assert any(part["type"] == "input_image" for part in sent[0]["content"])
+    assert not asked, "a photo on its own must not start a turn"

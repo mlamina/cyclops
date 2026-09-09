@@ -142,6 +142,8 @@ async def _main() -> int:
         )
         print(f"· photo {capture.width}x{capture.height} → {capture.path}")
         await agent.add_photo(capture)
+        # A photo on its own is deliberately silent now, so the question is what makes the turn.
+        await agent.send_text("What do you see in that photo? One short sentence.")
         await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
         print(
             f"· turn 2: {turn.seconds_of_audio:.1f}s audio, transcript={turn.transcripts!r}"

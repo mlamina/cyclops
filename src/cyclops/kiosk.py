@@ -1004,7 +1004,8 @@ class Kiosk:
             # with no session running there is nobody to show it to and it should still go up.
             # The same two lines every other picture reaches the panel through.
             panel = self._show_snapped(shot.path)
-            # The whole point of the button: the photo goes to Cyclops, which answers out loud.
+            # The whole point of the button: the photo goes to Cyclops, which takes it in and
+            # says nothing until they ask about it.
             # False means there was no live session to show it to - it is still on the card.
             shown = self.controller.show_photo(shot)
             session.note(
