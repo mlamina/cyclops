@@ -33,7 +33,20 @@ USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a d
 RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
 RPICAM_ROTATION = 180  # the module is mounted upside down in the case; see _open_rpicam
 RPICAM_AF = "continuous"  # a fixed camera watching a changing bench, not a shutter to half-press
-RPICAM_MODE = "2304:1296"  # the whole sensor, binned; the default picks a crop. See _open_rpicam
+# The three framings the panel cycles between, as the rpicam-vid flags each one takes. Only the
+# module has them: a webcam is one lens at one angle, and there is nothing here to choose from.
+# Every step is a smaller piece of the *sensor* rather than a bigger piece of the same frame, so
+# each one is real detail arriving and not a magnified version of the last - see _open_rpicam.
+WIDE, NARROW, ZOOMED = "wide", "narrow", "zoomed"
+FRAMINGS: dict[str, list[str]] = {
+    WIDE: ["--mode", "2304:1296"],  # the whole sensor, binned 2x2. 1x, and what the lens is for
+    NARROW: ["--mode", "1536:864"],  # the sensor's own centre crop, 1.5x, still every pixel of it
+    # 1:1 sensor pixels: 1280x720 of the full 4608x2592 frame, which is 0.278 of each edge and
+    # centred, so 3.6x with nothing interpolated. The mode tops out at 14.35 fps against the 15
+    # we ask for, which is the whole of what this framing costs.
+    ZOOMED: ["--mode", "4608:2592", "--roi", "0.361,0.361,0.278,0.278"],
+}
+DEFAULT_FRAMING = WIDE
 V4L_NODES = Path("/sys/class/video4linux")  # absent off Linux, which is what picks the fallback
 PIPE_CHUNK = 1 << 16  # a pipe hands back its buffer, not your frame; see _RpicamCapture._fill
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
@@ -266,7 +279,7 @@ class _RpicamCapture:
             self._proc.stdout.close()
 
 
-def _open_rpicam() -> tuple[_RpicamCapture, str]:
+def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
     """Start ``rpicam-vid`` on the camera module, or raise if there is no module to start it on.
 
     Absence is the ordinary answer here as it is for the endoscope, and takes two shapes: a box
@@ -301,6 +314,13 @@ def _open_rpicam() -> tuple[_RpicamCapture, str]:
     against 2304x1296 on 2026-09-09, the whole window and both sides of the sill were outside the
     picture. 2304x1296 is the full frame binned 2x2, and the PiSP scales it to 1280x720 on the way
     past - the one place a downscale costs no CPU at all.
+
+    Which mode, though, is now the *framing*'s to say, and that is why this takes an argument at
+    all. A sensor mode is chosen when the camera is configured and cannot be changed under a
+    running pipeline, so the panel's three framings are three processes and switching between
+    them is a stop and a start - 0.9 s to the first frame, measured on the Pi 2026-09-09.
+    :meth:`~cyclops.camera.CameraSource.cycle_framing` is what spends it, and what keeps the last
+    picture on the panel while it does.
     """
     if shutil.which("rpicam-vid") is None:
         raise WebcamError("no rpicam-vid installed")
@@ -324,8 +344,7 @@ def _open_rpicam() -> tuple[_RpicamCapture, str]:
             str(RPICAM_ROTATION),
             "--autofocus-mode",
             RPICAM_AF,
-            "--mode",
-            RPICAM_MODE,
+            *FRAMINGS[framing],
             "-o",
             "-",
         ],
@@ -341,7 +360,7 @@ def _open_rpicam() -> tuple[_RpicamCapture, str]:
 
 
 def open_camera(
-    preferred: int | None,
+    preferred: int | None, framing: str = DEFAULT_FRAMING
 ) -> tuple[cv2.VideoCapture | _UseeplusCapture | _RpicamCapture, int | str]:
     """Open the preferred camera, or probe for one that actually delivers frames.
 
@@ -384,7 +403,7 @@ def open_camera(
                 if ok:
                     return cap, index
             cap.release()
-    for fallback in (_open_useeplus, _open_rpicam):
+    for fallback in (_open_useeplus, lambda: _open_rpicam(framing)):
         with contextlib.suppress(WebcamError):
             return fallback()
     hint = (

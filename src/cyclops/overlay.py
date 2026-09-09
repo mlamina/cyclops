@@ -2688,6 +2688,7 @@ class Hitboxes:
     volume: Rect  # the knob, and the only control on this panel you turn rather than press
     eye: Rect  # his face, which opens what the box has kept
     heat: Rect  # the gauge, which is read - and, tapped, opens the screen the rest of it is on
+    framing: Rect  # the reticle, which is how far in the module is looking
 
 
 def frame_band(height: int) -> int:
@@ -3569,7 +3570,7 @@ class Overlay:
         return Rect(cx - r, cy - r, r * 2, r * 2)
 
     def _layout(self) -> Hitboxes:
-        """Three round targets in two corners. The rest of the frame is picture.
+        """Three round targets in two corners, and the reticle. The rest of the frame is picture.
 
         They are discs now rather than thirds of a row, which costs area and buys the middle of
         the screen back: the tab row was 17% of the panel and the three cells here are under 6%
@@ -3581,11 +3582,19 @@ class Overlay:
         Bounding boxes rather than circles because that is what the kiosk's hit test takes, and
         the two switches are spaced along the ramp so their boxes do not overlap: a tap in a
         corner shared by two controls would silently belong to whichever was tested first.
+
+        The fourth is the reticle, and it is exactly the mark that is already drawn there: the
+        corners say "the frame is here", so they are the thing to press to ask for a different
+        one. It gets no target of its own beyond them - 108 px at 480, about 21 mm on the 7"
+        panel - because a control drawn nowhere is one nobody finds, and this one was already on
+        the glass. It is tested last of the four and, sitting in the middle of a panel whose
+        other controls are in the corners, overlaps none of them on any window this is drawn at.
         """
         return Hitboxes(
             volume=self._disc(self.switches[VOLUME], self.btn_r),
             eye=self._disc(self.eye, self.eye_r),
             heat=self._disc(self.switches[HEAT], self.btn_r),
+            framing=self._disc((self.width // 2, self.height // 2), self.reticle_r),
         )
     def _menu_layout(self) -> tuple[Rect, dict[str, Rect]]:
         """The power menu's card and its rows, sized off the panel like everything else here.
@@ -5242,6 +5251,35 @@ class Overlay:
         layer.alpha_composite(material.to_image(
             self._stilled(rgb, self._radius(x0, y0, x1 - x0, y1 - y0)), cover), (x0, y0))
 
+    def _draw_framing(self, d: ImageDraw.ImageDraw, name: str, fade: float) -> None:
+        """The framing's name inside the reticle, fading out.
+
+        It goes in the one part of this panel deliberately kept empty, and it is the only thing
+        that ever draws there - which is what earns it the middle rather than a corner. The mark
+        under it says where the frame is; this says which frame, at the moment that changes, and
+        then gets out of the way. The picture behind it is the real answer and arrives about a
+        second later, which is the whole reason a word is needed at all: without one the panel
+        holds a still frame for a second and looks like it missed the tap.
+
+        Outlined rather than plated. Everything else here with words in it has a bracket or a tab
+        under them; this lands on bare picture, which on a bench is as likely to be a sunlit
+        window as a dark part, and a rim of the panel's own near-black holds the letters against
+        either for eight short draws - where a plate would have to be built, faded and thrown
+        away every frame of the second it is up.
+        """
+        alpha = round(255 * min(1.0, max(0.0, fade)))
+        if alpha <= 0:
+            return
+        cx, cy = self.width // 2, self.height // 2
+        tracking = max(1.0, 2.0 * self.scale)
+        rim = max(1, round(1.5 * self.scale))
+        for dx in (-rim, 0, rim):
+            for dy in (-rim, 0, rim):
+                if dx or dy:
+                    self._text(d, cx + dx, cy + dy, name, self.font_mode, (*SCREEN, alpha),
+                               align="c", tracking=tracking)
+        self._text(d, cx, cy, name, self.font_mode, (*GREEN, alpha), align="c", tracking=tracking)
+
     def _draw_reticle(self, layer: Image.Image) -> None:
         """Four right-angled corners on the lens axis, and nothing in the middle of them.
 
@@ -5436,6 +5474,8 @@ class Overlay:
         volume: int | None = None,
         temp_c: float | None = None,
         turning: bool = False,
+        framing: str = "",
+        framing_fade: float = 0.0,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -5474,6 +5514,10 @@ class Overlay:
         is whether that press has landed - the power menu, over everything else. The two are the
         one gesture on this panel that is not a tap, so they are the one thing here drawn from a
         clock the kiosk is holding rather than from the state.
+
+        ``framing`` is which of the module's three the reticle has just been tapped to, and
+        ``framing_fade`` how much of its second is left - the same shape as ``flash``, and for
+        the same reason: what fades is the kiosk's to time, and what is drawn is ours.
         """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording, heat).copy()
@@ -5489,6 +5533,8 @@ class Overlay:
         self._draw_hands(layer, d, volume, temp_c, pressed)
         if turning and volume is not None:
             self._draw_slider(d, volume)
+        if framing and framing_fade > 0.0:
+            self._draw_framing(d, framing, framing_fade)
         # Him, last of everything in his corner. He is the one control that never inverts under
         # a thumb: a face in photographic negative is not the same face, and half of him is over
         # the picture anyway, where there is nothing to invert. He acknowledges a tap by coming

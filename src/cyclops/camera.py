@@ -28,7 +28,7 @@ from collections import deque
 
 import cv2
 
-from .webcam import WebcamError, open_camera
+from .webcam import DEFAULT_FRAMING, FRAMINGS, RPICAM, WebcamError, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
 RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
@@ -71,6 +71,7 @@ class CameraSource:
         self._stop = threading.Event()
         self._cap: cv2.VideoCapture | None = None
         self._index: int | str | None = None
+        self._framing = DEFAULT_FRAMING  # read by the reader thread, which stands down for it
         self._error = ""
         self._generation = 0  # bumped by start(); a supervisor with a stale one retires itself
 
@@ -79,6 +80,31 @@ class CameraSource:
         """What delivered frames: a ``/dev/video`` number, ``webcam.USEEPLUS``,
         ``webcam.RPICAM``, or None."""
         return self._index
+
+    @property
+    def framing(self) -> str:
+        """Which of :data:`webcam.FRAMINGS` the module is running - always ``wide`` elsewhere."""
+        return self._framing
+
+    def cycle_framing(self) -> str | None:
+        """Move to the next framing, or None if this camera has only the one.
+
+        The change is a *request*, not an action: a sensor mode is fixed when the pipeline is
+        configured, so what actually happens is that the reader sees a framing it was not started
+        under, stands down, and the supervisor opens the module again with the new flags. About a
+        second, all of it in :meth:`_supervise`, and the panel keeps drawing the last frame
+        throughout - see the ``finally`` there, which is the only reason this does not flash the
+        "no camera" card at every tap.
+
+        None for a webcam or an endoscope, because they have one lens at one angle and there is
+        nothing to cycle. Answering None rather than restarting them for no change matters: a
+        C920 taken down and put back up is the exact move that wedges it (see :meth:`stop`).
+        """
+        if self._index != RPICAM:
+            return None
+        order = list(FRAMINGS)
+        self._framing = order[(order.index(self._framing) + 1) % len(order)]
+        return self._framing
 
     @property
     def error(self) -> str:
@@ -212,8 +238,9 @@ class CameraSource:
         to stop on - it is a state to sit in, and to leave again when a camera turns up.
         """
         while not self._stop.is_set() and self._generation == token:
+            framing = self._framing
             try:
-                cap, index = open_camera(self._preferred)
+                cap, index = open_camera(self._preferred, framing)
             except WebcamError as exc:
                 self._error = str(exc)
                 self._forget()  # whatever it was showing is now last minute's room
@@ -227,12 +254,17 @@ class CameraSource:
             with self._lock:
                 self._cap, self._index, self._error = cap, index, ""
             try:
-                self._read_loop(cap, token)
+                self._read_loop(cap, token, framing)
             finally:
                 with self._lock:
                     self._cap = None
                 cap.release()
-                self._forget()
+                if self._framing == framing:
+                    self._forget()  # the device went; what it was showing is now last minute's
+                # Otherwise this is a framing change we asked for, and the frames are kept on
+                # purpose: the reopen below takes about a second, and dropping them would put
+                # the "no camera" card up in the middle of a deliberate gesture. A second is
+                # comfortably inside STALE_AFTER_S, so nothing downstream believes it is live.
 
     def _forget(self) -> None:
         """Drop the frames from before the device went away, so none is drawn or photographed."""
@@ -242,7 +274,7 @@ class CameraSource:
             self._recent.clear()
         self.last_pick = None
 
-    def _read_loop(self, cap, token: int) -> None:
+    def _read_loop(self, cap, token: int, framing: str = DEFAULT_FRAMING) -> None:
         """Read frames until the device stops giving them, then return so it is opened again.
 
         The grace is a *duration*, and deliberately the same one the panel calls a frame stale
@@ -258,7 +290,7 @@ class CameraSource:
         a second timeout to notice the first.
         """
         failing_since = 0.0
-        while not self._stop.is_set() and self._generation == token:
+        while not self._stop.is_set() and self._generation == token and self._framing == framing:
             attempted = time.monotonic()
             ok, frame = cap.read()
             if not ok or frame is None or frame.size == 0:

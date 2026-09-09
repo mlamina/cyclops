@@ -144,6 +144,12 @@ NO_CAMERA_SIZE = (800, 480)
 TEMP_POLL_S = 5.0  # how often the heat lamp re-reads sysfs; a board warms up over minutes
 NOTICE_S = 4.0  # how long one of the kiosk's own lines holds the caption
 FLASH_SECONDS = 0.45
+# How long the framing's name stays in the middle of the reticle after a tap, and how much of
+# that is spent fading. A second, because that is about what the camera takes to come back with
+# the new picture - the word is there to cover exactly that gap, and outstaying it would leave a
+# label sitting on a picture that has already answered.
+FRAMING_SECONDS = 1.0
+FRAMING_FADE_S = 0.3
 PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 # How long his face has to be held to open the power menu. Long enough that no tap can arrive
 # there by accident - this is the one control on the panel that ends the session you are in the
@@ -443,6 +449,8 @@ class Kiosk:
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
+        self._framing = ""  # the framing just tapped to, and...
+        self._framing_until = 0.0  # ...when its name comes off the middle of the screen
         self._heat = ""  # stats.heat_alarm(), re-read on TEMP_POLL_S; drives the lamp on the strip
         self._heat_at = 0.0
         # The reading the lamp is derived from, kept now that the panel has a gauge to put it on.
@@ -672,7 +680,11 @@ class Kiosk:
         a finger that landed on the knob is still down, so the level follows it and you hear
         where you are rather than having to look.
 
-        The fourth target is everything that is not the other three, and it only exists while
+        The reticle is the fourth, and the only control in the middle of the glass: it cycles
+        the module's framing, because the mark that says where the frame is is the obvious thing
+        to press to ask for a different one.
+
+        The last target is everything that is not the other four, and it only exists while
         INTERRUPT is off: a press on the bare picture stops him talking. It is deliberately the
         fall-through rather than a box of its own, so it can never take a tap away from a
         control - it is only ever reached by one that missed all of them.
@@ -736,14 +748,41 @@ class Kiosk:
             # numbers on it. The tap opens that screen rather than the recordings his face opens.
             self._press(HEAT)
             self._open_admin(SYSTEM_SCREEN)
+        elif boxes.framing.contains(x, y):
+            # The reticle: how far in the module is looking. Its own branch above the picture's
+            # so a tap on the mark that says where the frame is can never be read as "stop
+            # talking" instead.
+            self._reframe()
         elif self._barge_margin is None:
-            # None of the three, which is most of the panel: "stop, my turn". With INTERRUPT off
+            # None of the four, which is most of the panel: "stop, my turn". With INTERRUPT off
             # the mic is held shut for as long as he is audible, so a finger on the picture is
             # the only way back into a sentence you have heard enough of. Gated on the switch
             # because with INTERRUPT on you simply talk over him, and a second answer to a
             # settled question is one more rule to carry. Nothing sounds and nothing lights:
             # what this does is make the room quiet, which no cue could say more plainly.
             self.controller.interrupt()
+
+    def _reframe(self) -> None:
+        """The reticle, tapped: the module's next framing of the three.
+
+        The cue is the point of this method. The picture is the real answer and it takes about a
+        second to arrive - the sensor mode is fixed when the pipeline is configured, so a
+        framing change is a camera stopped and started - and a second of a frozen picture with
+        nothing said is a second in which anybody would tap again. So the panel answers the
+        finger immediately and the module catches up. Nothing is drawn: what changes is the
+        whole picture, which is not a thing that needs a label to be noticed.
+
+        A webcam or an endoscope has one lens at one angle, and there cycle_framing answers None:
+        the tap then does nothing at all, silently, which is what a control that is not there
+        should do rather than sounding as though something happened.
+        """
+        name = self.camera.cycle_framing()
+        if name is None:
+            return
+        self._cues.play("rung")
+        self._framing = name
+        self._framing_until = time.monotonic() + FRAMING_SECONDS
+        print(f"· framing {name}", flush=True)
 
     def _lifted(self, x: int, y: int) -> None:
         """A finger coming off the glass. His face, and the knob, have something left to do here.
@@ -1888,6 +1927,13 @@ class Kiosk:
                     volume=self._wanted if self._sliding else self._volume,
                     temp_c=self._temp_c,
                     turning=self._turning,
+                    # The framing's name, up for its second and fading out of the last third of
+                    # it. Held at full for the rest: it is covering the gap while the camera
+                    # comes back, so it has to be readable from the moment the finger lifts.
+                    framing=self._framing,
+                    framing_fade=min(
+                        1.0, max(0.0, (self._framing_until - started) / FRAMING_FADE_S)
+                    ),
                 )
                 self._paint(composite(canvas, chrome), width, height)
 
