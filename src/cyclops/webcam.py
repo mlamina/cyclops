@@ -31,6 +31,8 @@ FRAME_RATE = 15  # asked of the camera, not the reader; see the format note in o
 USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
+RPICAM_ROTATION = 180  # the module is mounted upside down in the case; see _open_rpicam
+RPICAM_AF = "continuous"  # a fixed camera watching a changing bench, not a shutter to half-press
 V4L_NODES = Path("/sys/class/video4linux")  # absent off Linux, which is what picks the fallback
 PIPE_CHUNK = 1 << 16  # a pipe hands back its buffer, not your frame; see _RpicamCapture._fill
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
@@ -270,6 +272,26 @@ def _open_rpicam() -> tuple[_RpicamCapture, str]:
     with no ``rpicam-vid`` at all (any Mac), and a Pi that has it but no module on the ribbon.
     The second only announces itself when the frame does not come, which is what :meth:`prime`
     is for.
+
+    Two of these flags are about the module being *screwed into a case* rather than sitting on
+    a desk, and both are free here and expensive anywhere else - the ISP does them on the way
+    past, where doing either in numpy would cost a copy of every frame on a Pi that runs warm.
+
+    ``--rotation 180`` because the module went in upside down. A whole rotation and not
+    ``--vflip``, which is the tempting one-word answer and is wrong: a camera bolted to a case
+    can only ever be *rotated*, never mirrored, so undoing an upside-down mount with a bare
+    vertical flip fixes the sky and leaves the world reflected left-to-right. Nobody notices
+    that on a row of houses. Everybody notices it the first time they hold up a part and ask
+    what the number on it says.
+
+    Autofocus because nothing was asking for it. The module has PDAF and the default mode
+    leaves the lens parked, which looks fine on a wall two metres away and is soft on
+    everything else - that is the whole of why the first picture out of it was blurry.
+    Continuous rather than a one-off ``auto`` pass: there is no shutter button to half-press
+    here, the camera simply watches whatever has been put in front of it, and a session where
+    focus is a thing you have to ask for is a session spent thinking about the tool. Hunting
+    costs a few soft frames when the scene changes, which is exactly what
+    :meth:`~cyclops.camera.CameraSource.snapshot` already picks around.
     """
     if shutil.which("rpicam-vid") is None:
         raise WebcamError("no rpicam-vid installed")
@@ -289,6 +311,10 @@ def _open_rpicam() -> tuple[_RpicamCapture, str]:
             str(FRAME_HEIGHT),
             "--framerate",
             str(FRAME_RATE),
+            "--rotation",
+            str(RPICAM_ROTATION),
+            "--autofocus-mode",
+            RPICAM_AF,
             "-o",
             "-",
         ],
