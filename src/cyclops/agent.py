@@ -242,13 +242,13 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "edit_photo",
     "description": (
-        "Redraw the photo on the touchscreen with a change made to it, and put the result up "
-        "in its place. Use it when the answer is 'like this' about the actual thing in front of "
+        "Redraw their photo with a change made to it, and put the result up on the "
+        "touchscreen. Use it when the answer is 'like this' about the actual thing in front of "
         "them and saying it would take a paragraph: a colour or a finish, a part moved or taken "
         "away, a shelf on that wall, the half-built thing shown finished, that corner tidied. "
-        "It works on whichever photo is on the panel - one they just took, one you found for "
-        "them, one you drew for them, or one you already edited, so a second change carries on "
-        "from the first. If nothing has been up at all yet, ask them to hit SNAP. "
+        "It works on the last picture in play - the photo they most recently took, or one you "
+        "found for them, drew for them, or already edited, so a second change carries on from "
+        "the first. If they have not taken one yet, ask them to hit SNAP. "
         "This call comes back straight away and the picture arrives about half a minute later, "
         "so say one short sentence out loud and then carry on - do not wait for it and do not "
         "call it a second time. You are told when it lands or if it fails. It fills the panel "
@@ -597,8 +597,8 @@ USING THE EYE
   photo reaches you the moment they do, silently.
 - A photo arriving is not a question. They press that button to put something in front of you,
   often several shots in a row, and then they talk. Stay quiet when one lands: do not describe
-  it, do not remark on it, do not say that it arrived. They can see it - it goes up on the panel
-  as they take it.
+  it, do not remark on it, do not say that it arrived. They held the thing up themselves and
+  know what is in the picture.
 - When they do speak, you have every photo they have taken. Answer off the pictures, going
   straight to what you actually see, briefly. No preamble: never open with "look at this",
   "let me see", or by narrating which photo you are looking at.
@@ -891,7 +891,9 @@ class VoiceAgent:
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
         self.drawing_active = False  # True while a picture is being made (UI 'drawing')
-        # The picture on the panel, which is what edit_photo works on. See :class:`Panel`.
+        # The last picture in play, which is what edit_photo works on. See :class:`Panel`.
+        # Not "what is on the glass" any more: a snapped photo is handed over without going up,
+        # so the two parted company the day the shutter stopped filling the screen.
         # Kept here rather than found by scanning photos/ for the newest file, because those two
         # are not the same thing: a shutter pressed before the session was ready writes a jpg
         # nothing ever saw, and editing a picture the model cannot reason about is worse than
@@ -1160,10 +1162,9 @@ class VoiceAgent:
                             # Flat and unquotable on purpose: a caption written as speech
                             # ("look at this") comes back out of the speaker verbatim.
                             "text": (
-                                "[Photo from their camera, taken just now. It is on their "
-                                "screen as well. They have not asked anything about it - do "
-                                "not speak about it until they do, then answer off the "
-                                "picture.]"
+                                "[Photo from their camera, taken just now. They have not "
+                                "asked anything about it - do not speak about it until they "
+                                "do, then answer off the picture.]"
                             ),
                         },
                         {
@@ -1548,12 +1549,11 @@ class VoiceAgent:
             await self._request_response()
             return
 
-        if shown:
-            # What they are looking at is no longer a picture, so ``edit_photo`` has nothing to
-            # work on. Saying so here is the honest answer: the alternative is an edit that
-            # spends a minute and a real API call redrawing a photograph that came off the glass
-            # when this went up, and hands back something nobody asked to see.
-            self._on_panel = None
+        # ``_on_panel`` is deliberately left alone. It used to be cleared here, because what
+        # they were looking at was no longer a picture and editing one they could not see was
+        # worse than asking for another. A snapped photo never reaches the glass now, so that
+        # reasoning has gone with it: the photo they took two sentences ago is still the thing
+        # an edit is about, and a torque figure written down in between does not change that.
         output = (
             {"ok": True, "shown": True, "note": "It is on the screen. Do not read it out."}
             if shown

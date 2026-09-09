@@ -40,7 +40,6 @@ from . import (  # noqa: E402
     barge,
     companion,
     filming,
-    imagine,
     mixer,
     panel,
     power,
@@ -999,13 +998,11 @@ class Kiosk:
             self._shutter_error_until = time.monotonic() + NOTICE_S
             print(f"· snapshot failed: {exc}", file=sys.stderr, flush=True)
         else:
-            # Up on the glass first, then off to Cyclops. The panel is a file write away and the
-            # model is a network round trip, and the picture belongs on the screen either way:
-            # with no session running there is nobody to show it to and it should still go up.
-            # The same two lines every other picture reaches the panel through.
-            panel = self._show_snapped(shot.path)
-            # The whole point of the button: the photo goes to Cyclops, which takes it in and
-            # says nothing until they ask about it.
+            # Straight to Cyclops, and nowhere else. The photo deliberately does not go up on
+            # the panel: it used to, and it held the whole screen until somebody tapped it,
+            # which is a tap you have to make with dirty hands for a picture you were holding
+            # in front of the camera a second ago. The flash and the shutter say it was taken;
+            # the eye stays where it was.
             # False means there was no live session to show it to - it is still on the card.
             shown = self.controller.show_photo(shot)
             session.note(
@@ -1016,39 +1013,13 @@ class Kiosk:
                 height=shot.height,
                 bytes=shot.jpeg_bytes,
                 shown=shown,
-                # Whether it reached the *panel*, which is the other question - `shown` answers
-                # whether Cyclops was shown it. The edit record already splits the two this way.
-                panel=panel,
             )
-            print(f"· snapped {shot.path}{'' if shown else ' (nothing live to show it to)'}"
-                  f"{'' if panel else ' (no panel free)'}", flush=True)
+            print(
+                f"· snapped {shot.path}{'' if shown else ' (nothing live to show it to)'}",
+                flush=True,
+            )
         finally:
             self._snap_busy.clear()
-
-    def _show_snapped(self, path: Path) -> bool:
-        """Put the photo just taken on the panel. False if there is no panel free for it.
-
-        The one picture somebody was deliberate about used to be the one they could not see: the
-        shutter flashed, the photo went to Cyclops, and the panel carried on showing the live
-        camera. It now goes up exactly the way a recalled picture does, through the same two
-        lines and the same offer file - which is also what makes it editable, because
-        ``edit_photo`` works on whatever is on the panel.
-
-        ``for_panel`` is close to a no-op here, ``webcam._save`` having already capped the long
-        edge at the same 1024, but it is what the other callers use and it is what keeps this
-        honest whatever the camera hands over. Read from the card rather than reusing
-        ``Capture.data_url``: that one is the model's copy, and ``offer_image`` wants raw bytes
-        and builds its own.
-
-        Never raises. A photo that will not go on the panel is still on the card and still went
-        to Cyclops, and the shutter is not the place to find that out the hard way.
-        """
-        try:
-            small = imagine.for_panel(path.read_bytes())
-        except OSError as exc:
-            print(f"· could not read {path} for the panel ({exc})", file=sys.stderr, flush=True)
-            return False
-        return bool(panel.offer_image(small, path.stem) and panel.show())
 
     # ---- admin page ----
 
