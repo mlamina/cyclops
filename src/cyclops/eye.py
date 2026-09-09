@@ -148,6 +148,88 @@ BROW_AT = 0.40  # the catchlight, on the outer glass
 BROW_FROM, BROW_TO = 198, 256
 BROW_W = 1.2
 
+# ---------------------------------------------------------------- the cover, in front of it all
+#
+# A steel diaphragm at his full radius: a lens cap, not another ring on him. It is the one part
+# of this drawing that is not phosphor - see :meth:`Pen.steel` - and the one part that is not
+# there at all most of the time. While he is awake every blade is wound clear of the rim and
+# nothing below is drawn, so an awake eye is the same pixels it was before any of this existed.
+# That is the whole licence for it: metal inside his radius measurably killed the face when it
+# was there while he was looking at you, and this is only there while nobody is.
+COVER_N = 6  # blades. Six is the reference's, and it is also the fewest that still meet in a
+# spiral rather than in a star: each blade has to sweep 360/n and a wider sweep is a fatter blade.
+COVER_PIVOT = 1.00  # where a blade turns, as a fraction of him: on the rim, like a lens's.
+# It sets the whole mechanism. A blade's cutting edge is an arc of *his own radius* whose centre
+# rides at this distance from the pivot, so at rest that centre is dead centre, the arc IS the rim
+# and every blade lies outside the drawing. Wind them all on by the same angle and the centres
+# swing out to 2 * COVER_PIVOT * sin(turn/2); the n discs still overlap in a curved polygon whose
+# inradius is what is left of him, and that polygon is the aperture. Nothing scales and nothing
+# is masked: the hole is what n rigid shapes happen to leave.
+COVER_SHUT = math.degrees(2.0 * math.asin(min(1.0, 1.0 / (2.0 * COVER_PIVOT))))  # ...and how far
+# each blade has to wind for that inradius to reach zero. 60 degrees at a pivot on the rim, and
+# derived rather than typed so that moving the pivot moves the throw with it.
+COVER_AT = 96  # where blade zero's pivot sits. Off the vertical, so the shut spiral does not
+# line up with the seam, the greeblies or the lug - the eye's one rule about symmetry.
+COVER_BAND = 1.09  # the lit band along a blade's cutting edge, as a multiple of that edge's own
+# radius about the same centre. A blade is not one value: it is a plate tilted towards the light
+# at its working edge, so the edge is a shade brighter than the flat behind it. Drawn as a second
+# crescent laid inside the first rather than as a gradient, for the reason `leaves` bands rather
+# than grades - a gradient inside this tile is a numpy pass over a quarter of a million pixels
+# every frame, and this is one more polygon.
+COVER_FALL = 0.12  # ...and how far the flat behind it falls off that band
+COVER_GROOVE = 1.42  # the machined arc along a blade's back, as a multiple of its cutting arc's
+# radius about the same centre. Rigid, like everything else here: it is a fixed radius about a
+# point the blade carries, so it turns with the blade and cannot slide across its face. Out at
+# the back because that is where the reference's is, and because the front of a blade is already
+# carrying a seam.
+COVER_SEAT = 0.90  # where the collar's inner edge sits, as a fraction of him: the blades run
+# under it and are never seen ending. It grows in from the rim rather than appearing at full
+# width - see the floor, which is what it is allowed to lie on and nothing else.
+COVER_STEP = 6.0  # degrees between samples along any of those arcs. The chord it leaves is a
+# tenth of a panel pixel; `sweep` uses the same step for the same reason.
+COVER_LAMP = 249  # PIL degrees, the same lamp BEZEL_HI_FROM/TO is centred on. A blade's face
+# takes its value from how squarely it looks at it, so the six of them are six different greys
+# and the disc reads as turned metal rather than as a printed spiral.
+
+# How present each part of it is - against STEEL rather than against the mood, and NOT scaled by
+# `rings`. A tap brightens the phosphor because that is him answering; the cover is a lump of
+# metal in front of him and answers nothing.
+STEEL = (198, 209, 212)  # brushed steel, a shade cool. The only colour on this panel that is not
+# the phosphor's, and it is why the cover reads as a part rather than as a drawing of one.
+COVER_FLOOR = 0.16  # the plate the blades ride on, seen through the seams and under the collar
+COVER_FACE = 0.48  # a blade's cutting edge turned away from the lamp...
+COVER_SHEEN = 0.44  # ...and how much more of it the blade facing the lamp takes. Wide, because
+# the six values are the only thing telling six blades apart before the seams are drawn, and a
+# narrow spread reads as one flat disc with lines scratched on it.
+COVER_GAP = 0.05  # the seam itself: the dark line where one blade lies over the next
+COVER_SEAM = 0.85  # ...and the light that gets past it, in the mood's own colour, on the blade
+# behind. The one thing on the cover that is his rather than the steel's, and the whole of what a
+# shut face says: he is behind it, and the light is still on.
+COVER_ARC_LIT = 0.10  # the machined arc along a blade's back
+COVER_COLLAR = 0.86  # the collar where the lamp lands on it...
+COVER_COLLAR_LO = 0.22  # ...and away from it
+COVER_COLLAR_N = 32  # ...and how many arcs that grade is cut into. A ring drawn dark with one
+# bright arc laid over it is what this was first, and the two ends of that arc are steps: a
+# machined ring has no seam in it, so the grade has to go all the way round. Sixteen is where the
+# steps stop showing at his size.
+COVER_LIP = 0.72  # the machined lip along its inner edge, which is what gives the assembly a
+# depth: the blades run into a shadow and the ring above them catches the light
+
+COVER_SHUT_S = 0.80  # how long it takes to wind across, and the slower of the two on purpose.
+# Shutting is the gesture - he is going to sleep - and a lid that falls in a fifth of a second is
+# a shutter rather than a cover.
+COVER_OPEN_S = 0.42  # ...and how long to clear him again. Waking is not a deliberation.
+COVER_HEFT = 0.70  # the shut's travel, pushed towards its own start before the ease. Under 1 the
+# set breaks hard and then settles into the seal: three quarters of the throw in the first half
+# of the window, and the last of it creeping home. That is a driven mechanism arriving at a stop
+# rather than a wipe, and it is the shape a strip of this actually shows - measured on eight
+# frames, the aperture goes 1.00, 0.82, 0.60, 0.40, 0.24, 0.12, 0.03, 0, which is a picture of
+# something *closing* rather than eight evenly spaced holes. Linear is a wipe, and pushing the
+# other way (a slow break and a slam) spends five of those eight frames on an eye with nothing
+# in front of it - which was tried, and reads as a lid that sticks.
+COVER_SPRING = 0.55  # ...and the open's, pushed harder the same way: a fifth of the steel is off
+# him in the first twentieth of the window. What you see of an open is its first three frames.
+
 # ---------------------------------------------------------------- how present each part is
 #
 # Against the mood's own tint, before ``Mood.rings`` scales all of them. The hierarchy is the
@@ -510,6 +592,9 @@ class Mood:
     # full travel. Not the same thing as MICRO: that is the tremor every open eye has whether it
     # is asked for or not, and this is a mood asking to wander. It is what a sleeping face is
     # made of, and what nothing awake and attending should have much of.
+    cover: float = 0.0  # whether the steel is across him: 0 wound clear, 1 shut. Not a fraction
+    # anybody sets in between - it is a destination, and :meth:`EyeEngine.shut` is what takes its
+    # time getting there. A mood at 0 is drawn exactly as it was before the cover existed.
 
     def lerp(self, other: Mood, t: float) -> Mood:
         """Part-way from this mood to *other*, colour included."""
@@ -550,6 +635,13 @@ class Mood:
                 # does. That is a saccade, and it is fine - what the rule above forbids is a
                 # *sliding* index, which changes dozens of times inside the 0.45 s. Changing
                 # where you are looking once is what a creature does when it is told something.
+                #
+                # `cover` is not eased, and it is the clearest case on the line: it is a
+                # destination rather than an amplitude, and something else owns the journey.
+                # Halfway through a crossfade the cover is not half across - it is wherever
+                # :meth:`EyeEngine.shut` has wound it to on a clock twice as long as this one,
+                # which is the only place that answer can live if the close is to look mechanical
+                # rather than to inherit the colour fade's timing.
                 #
                 # `dart` is eased even though it is compared against a walk rather than scaling
                 # one, and that is safe for a reason worth writing down before somebody "fixes"
@@ -849,6 +941,16 @@ class Pen:
         """
         return linear(mix(self.screen, mix(self.tint, HEAT, towards), self.lit))
 
+    def steel(self, strength: float) -> tuple:
+        """Metal at *strength*, mixed towards the screen's own black and drawn opaque.
+
+        Deliberately not :meth:`shade`, on two counts. It does not wear the mood's colour, because
+        a cover that went amber with him would be a drawing of a cover; and it is not scaled by
+        ``lit``, because ``rings`` is how present *he* is - a tap brings the phosphor up to full
+        and must not also polish the lid over it.
+        """
+        return linear(mix(self.screen, STEEL, strength))
+
     # ---- points ----
 
     def point(self, rad: float, deg: float) -> tuple[float, float]:
@@ -860,6 +962,31 @@ class Pen:
 
     def box(self, rad: float) -> list[float]:
         return [self.cx - rad, self.cy - rad, self.cx + rad, self.cy + rad]
+
+    def _onto(self, rad: float, x: float, y: float) -> tuple[float, float]:
+        """*x, y*, pulled back onto the circle at *rad* if it is outside it and left alone if not.
+
+        The cover's blades run well past his rim and are cut off by it; this is the cut. Cheap
+        rather than exact - a polygon clipped this way follows the rim as a chord between two
+        samples instead of as an arc, which at :data:`COVER_SEGS` is a third of a panel pixel and
+        lies under a collar several times that. What it buys is that nothing needs a mask, and
+        the eye is still one tile.
+        """
+        dx, dy = x - self.cx, y - self.cy
+        far = math.hypot(dx, dy)
+        if far <= rad or far <= 0.0:
+            return x, y
+        return self.cx + dx * rad / far, self.cy + dy * rad / far
+
+    def _within(self, rad: float, pts: list) -> list:
+        """The part of *pts* that is inside the circle at *rad*: a line that stops at the rim.
+
+        Kept rather than clamped, because this is for the lines rather than the fills - a seam
+        clamped onto the rim would draw itself along it. Assumes what it is handed is an arc, so
+        that what is inside is one run and not two.
+        """
+        return [p for p in pts
+                if math.hypot(p[0] - self.cx, p[1] - self.cy) <= rad]
 
     # ---- shapes ----
 
@@ -1060,6 +1187,154 @@ class Pen:
         self.d.ellipse([self.cx + dx - spark, self.cy + dy - spark,
                         self.cx + dx + spark, self.cy + dy + spark], fill=self.heat(SPARK_MIX))
 
+    def cover(self, rad: float, shut: float) -> None:
+        """The steel across him: :data:`COVER_N` rigid blades wound about their own fixed pivots.
+
+        Real diaphragm kinematics, and the reason none of this is a mask or a hole that grows -
+        see :data:`COVER_PIVOT` for the construction. *shut* becomes one angle, every blade turns
+        by it about a pivot that never moves, and the aperture is whatever the rigid shapes leave
+        in the middle. A blade cannot stretch between two frames because there is nowhere in the
+        arithmetic for it to stretch: its cutting edge, its lit band and its machined arc are each
+        a fixed radius about a point carried at a fixed distance from the pivot, and the only
+        thing any of them is a function of is the angle.
+
+        What each blade is *drawn* as is the crescent between its own cutting circle and the next
+        blade's - which is what a real one shows, since the rest of it is under its neighbour.
+        That is not a saving, it is the only arrangement that works: the blades are a cyclic pile
+        and a painter's algorithm cannot order one, so drawing them whole leaves the last two down
+        covering the other four and a six-bladed iris comes out with two faces. Crescents do not
+        overlap, so all six keep their own value and the pile never has to be resolved at all.
+
+        The floor under them is not scenery either: it runs from the aperture's widest corner out
+        to the rim, so nothing of him can show between two blades however they land - which is
+        what lets everything above it be about the look rather than about the coverage.
+        """
+        turn = math.radians(COVER_SHUT * shut)
+        piv = rad * COVER_PIVOT
+        out = 2.0 * piv * math.sin(turn / 2.0)  # how far a cutting arc's centre has swung out
+        half = math.pi / COVER_N
+        # What the n of them leave: `rad - out` across the aperture's flats, and this to its
+        # corners, which is where the floor has to start if it is never to intrude on the hole.
+        corner = math.sqrt(max(0.0, rad * rad - (out * math.sin(half)) ** 2)) - out * math.cos(half)
+        floor = self.steel(COVER_FLOOR)
+        if corner <= 0.0:
+            self.d.ellipse(self.box(rad), fill=floor)
+        else:
+            self.d.ellipse(self.box(rad), outline=floor, width=max(1, round(rad - corner)))
+
+        # Where each blade's cutting arc is centred. All of them before any of them is drawn: a
+        # blade is defined against its neighbour, so they have to exist first.
+        hubs = []
+        for i in range(COVER_N):
+            phi = math.radians(COVER_AT + i * 360.0 / COVER_N)
+            hinge = phi + math.pi + turn
+            hubs.append((self.cx + piv * (math.cos(phi) + math.cos(hinge)),
+                         self.cy + piv * (math.sin(phi) + math.sin(hinge))))
+
+        gap, bleed = self.steel(COVER_GAP), self.shade(COVER_SEAM)
+        machined = self.steel(COVER_ARC_LIT)
+        hair, thin = max(1, round(self.hair)), max(1, round(self.thin))
+        for i, hub in enumerate(hubs):
+            near = hubs[(i + 1) % COVER_N]
+            lit = self._sheen(*hub)
+            self.d.polygon(self._lune(rad, hub, rad, near, rad), fill=self.steel(lit))
+            body = self._lune(rad, hub, rad * COVER_BAND, near, rad)
+            if body:
+                self.d.polygon(body, fill=self.steel(lit - COVER_FALL))
+            # Every line on a blade runs parallel to its own cutting edge and is kept off the
+            # neighbour it would otherwise spill onto. The seam is two of them: the dark line
+            # where one plate lies over the next, and his light coming past it on the plate below.
+            for scale, tone, width in ((COVER_GROOVE, machined, hair), (1.0, gap, thin),
+                                       (1.0 - self.thin / rad, bleed, hair)):
+                self._score(rad, hub, rad * scale, near, tone, width)
+
+        # The collar the whole assembly is set in, last of everything. It only ever lies on the
+        # floor plate, never on him: its width is clipped to what the floor has reached, so it
+        # grows in from the rim with the cover rather than landing on his rings at full width.
+        wall = max(1.0, min(rad * (1.0 - COVER_SEAT), rad - corner))
+        # A true circle first, so the eye's own outline is never a polygon, and the grade laid
+        # inside it: a thick polyline's outer edge is a chord, and at his size that reads as
+        # facets round the rim.
+        self.d.ellipse(self.box(rad), outline=self.steel(COVER_COLLAR_LO),
+                       width=max(1, round(wall)))
+        inner = max(1.0, wall - 2.0 * hair)
+        for k in range(COVER_COLLAR_N):
+            a0 = k * 360.0 / COVER_COLLAR_N
+            self.d.line(
+                # A degree of overlap on each, so the ring has no gaps where its own grade is cut.
+                self.arc_pts(rad - hair - inner / 2.0, a0, a0 + 360.0 / COVER_COLLAR_N + 1.0, 4),
+                fill=self.steel(COVER_COLLAR_LO + (COVER_COLLAR - COVER_COLLAR_LO) * 0.5 * (
+                    1.0 + math.cos(math.radians(a0 + 180.0 / COVER_COLLAR_N - COVER_LAMP)))),
+                width=max(1, round(inner)))
+        self.d.line(self.arc_pts(rad - wall, 0.0, 360.0, 64), fill=self.steel(COVER_LIP),
+                    width=hair)
+
+    def _lune(self, rim: float, hub: tuple, rad: float, near: tuple, reach: float) -> list:
+        """The crescent outside the circle at *hub, rad* and inside the one at *near, reach*.
+
+        One blade, and with a fatter *rad* the flat behind that blade's lit edge - which is why
+        the two radii are separate. Bounded by the near side of one circle and the far side of the
+        other, between the two points where they cross; empty when one swallows the other, which
+        is what a blade barely off the rim amounts to.
+
+        Everything is pulled back onto the eye's own rim on the way out, since a blade runs well
+        past it and is cut off by it. That cut is the one boundary here that is not rigid, and it
+        is also the one that is never seen - it lies under the collar.
+        """
+        span = math.hypot(near[0] - hub[0], near[1] - hub[1])
+        if span <= abs(rad - reach) or span >= rad + reach:
+            return []
+        towards = math.atan2(near[1] - hub[1], near[0] - hub[0])
+        # Where the two cross, as an angle at each centre. The law of cosines, and nothing else.
+        out = math.acos(max(-1.0, min(1.0, (rad * rad + span * span - reach * reach)
+                                      / (2.0 * rad * span))))
+        back = math.acos(max(-1.0, min(1.0, (reach * reach + span * span - rad * rad)
+                                       / (2.0 * reach * span))))
+        pts = self._arc(hub, rad, towards - out, towards + out)
+        # ...and the long way round the other, because the short way lies inside this blade.
+        pts += self._arc(near, reach, towards + math.pi - back, towards - math.pi + back)
+        return [self._onto(rim, *p) for p in pts]
+
+    def _score(self, rim: float, hub: tuple, rad: float, near: tuple, tone: tuple,
+               width: int) -> None:
+        """A line along the circle at *hub, rad*, over the part of it that is on this blade.
+
+        Which is the part inside the neighbour's cutting circle and inside the rim - the same two
+        bounds :meth:`_lune` fills between, said for a line instead of for a polygon. Dropped
+        rather than clamped: a seam pulled onto the rim would draw itself along it.
+        """
+        span = math.hypot(near[0] - hub[0], near[1] - hub[1])
+        if span <= 0.0:
+            return
+        out = math.acos(max(-1.0, min(1.0, (rad * rad + span * span - rim * rim)
+                                      / (2.0 * rad * span))))
+        towards = math.atan2(near[1] - hub[1], near[0] - hub[0])
+        run = [p for p in self._arc(hub, rad, towards - out, towards + out)
+               if math.hypot(p[0] - self.cx, p[1] - self.cy) <= rim]
+        if len(run) > 1:
+            self.d.line(run, fill=tone, width=width)
+
+    def _arc(self, hub: tuple, rad: float, a0: float, a1: float) -> list:
+        """Points along a circle about *hub* - not about the pen - with angles in radians.
+
+        The cover's own primitive, and the reason it is not :meth:`arc_pts`: every curve on a
+        blade is drawn about a point that blade carries rather than about the eye's centre, which
+        is the whole of what makes it a rigid shape turning instead of a hole growing.
+        """
+        n = max(2, round(abs(a1 - a0) / math.radians(COVER_STEP)))
+        return [(hub[0] + rad * math.cos(a0 + (a1 - a0) * k / n),
+                 hub[1] + rad * math.sin(a0 + (a1 - a0) * k / n)) for k in range(n + 1)]
+
+    def _sheen(self, hx: float, hy: float) -> float:
+        """How much of the lamp a blade takes, off the direction its face lies in.
+
+        Six blades at six values, and it costs one cosine. Without it a shut cover is one flat
+        disc with a spiral scratched on it; with it, it is turned metal - which is most of what
+        the reference's blades are, before any of their detail.
+        """
+        return COVER_FACE + COVER_SHEEN * 0.5 * (1.0 + math.cos(
+            math.atan2(self.cy - hy, self.cx - hx) - math.radians(COVER_LAMP)))
+
 
 class EyeEngine:
     """Draws the eye at one size, and remembers which mood it is on its way to.
@@ -1089,6 +1364,11 @@ class EyeEngine:
         self._from = resting  # ...what it was before that, and when it changed
         self._at = 0.0
         self._key = ""
+        # ...and the cover, which has its own of all three. It starts where the resting mood
+        # leaves it rather than open, so a box that boots asleep boots shut instead of winding
+        # itself closed in front of whoever just switched it on.
+        self._shut = self._was = self._want = max(0.0, min(1.0, resting.cover))
+        self._since = 0.0
         # His tile is his bounding box and not a pixel more - 121 px square as it lands on the
         # 800x480 panel - which is what makes drawing him four times over affordable inside a
         # 40 ms frame. His centre in it is also the rim's radius, the rim being the tile drawn
@@ -1133,6 +1413,33 @@ class EyeEngine:
         lids = blink(phase, mood.blink_s) * gaze_blink(phase, mood)
         return max(0.0, min(1.0, open_)) * lids
 
+    def shut(self, mood: Mood, phase: float) -> float:
+        """How far the cover has wound across right now: 0 clear of him, 1 shut.
+
+        On its own clock and not the mood crossfade's, which is the whole of why it reads as a
+        mechanism. The colour fade is 0.45 s because a face changing its mind should not snap;
+        the cover is twice that going one way and half again the other, because it is a lump of
+        steel being driven and the two directions are not the same gesture - see COVER_SHUT_S.
+
+        Neither end is linear. `k**bias` before the smoothstep pushes the speed to one end of the
+        travel: shutting breaks away slowly and arrives with the speed coming off it, and opening
+        breaks hard and spends the tail of its window creeping out of a picture it has already
+        left. Both start and end at rest, so nothing steps on the frame the state changes.
+
+        Stateful, unlike :meth:`aperture`, and it has to be: what it needs to know is *when* the
+        target last changed, and a mood does not carry that. It is the same three fields
+        :meth:`look` keeps for the crossfade, kept for the same reason.
+        """
+        want = max(0.0, min(1.0, mood.cover))
+        if want != self._want:
+            self._was, self._want, self._since = self._shut, want, phase
+        shutting = want > self._was
+        span = COVER_SHUT_S if shutting else COVER_OPEN_S
+        k = 1.0 if span <= 0.0 else max(0.0, min(1.0, (phase - self._since) / span))
+        k = k ** (COVER_HEFT if shutting else COVER_SPRING)
+        self._shut = self._was + (want - self._was) * k * k * (3.0 - 2.0 * k)
+        return self._shut
+
     def paint(
         self, img: Image.Image, cx: int, cy: int, mood: Mood, phase: float, level: float
     ) -> None:
@@ -1146,27 +1453,39 @@ class EyeEngine:
         The tile is opaque only where he is, so what shows between the rings is still his plate
         and the room through it.
         """
-        tile = smoothed(self._size, lambda d: self._draw(d, mood, phase, level))
+        shut = self.shut(mood, phase)
+        tile = smoothed(self._size, lambda d: self._draw(d, mood, phase, level, shut))
         img.alpha_composite(tile, (cx - self.r, cy - self.r))
 
-    def _draw(self, d: ImageDraw.ImageDraw, mood: Mood, phase: float, level: float) -> None:
-        """The whole eye at the centre of its tile: the socket, then the eye, then the glass."""
+    def _draw(self, d: ImageDraw.ImageDraw, mood: Mood, phase: float, level: float,
+              shut: float = 0.0) -> None:
+        """The whole eye at the centre of its tile: the socket, then the eye, then the glass.
+
+        ...and then the steel over all three, when there is any. The two halves are exclusive at
+        the ends and that is the point: with the cover clear, not a line below runs and he is the
+        drawing he has always been; with it shut, the face underneath is not drawn at all, so the
+        one state that used to cost a full eye now costs six polygons and a disc. Only the
+        crossing pays for both, and it is under a second.
+        """
         # `rings` is not clamped at 1: it is how present he is, and the parts below are drawn
         # well short of full on purpose (see the *_LIT block), so "brighter than usual" needs
         # somewhere above 1 to go. That is what the tap acknowledgement uses. `Pen.shade` mixes
         # through `mix`, which clamps, so an absurd value saturates rather than raising.
         pen = Pen(d, self._c, self._c, self.screen, mood.tint,
                   max(0.0, mood.rings), self._stroke, self._thin)
-        # The gaze first, because the socket is geared to it now - see RING_GEAR. It is still one
-        # call: the shell is handed the answer rather than asking for its own.
-        gx, gy = gaze_at(phase, mood, self.places)
-        self._shell(pen, mood, phase, gx)
-        self._optic(pen.shifted(gx * self._c * GAZE_SHIFT, gy * self._c * GAZE_SHIFT),
-                    mood, phase, level, gx, gy)
-        # The brow last, and on the *unshifted* pen. It is a highlight on the outer glass, and a
-        # highlight does not travel with what is under it - which is the whole depth cue, and the
-        # reason the eye reads as turning rather than as sliding about.
-        pen.band(self._c * BROW_AT, BROW_FROM, BROW_TO, BROW_LIT, self._thin * BROW_W)
+        if shut < 1.0:
+            # The gaze first, because the socket is geared to it now - see RING_GEAR. It is still
+            # one call: the shell is handed the answer rather than asking for its own.
+            gx, gy = gaze_at(phase, mood, self.places)
+            self._shell(pen, mood, phase, gx)
+            self._optic(pen.shifted(gx * self._c * GAZE_SHIFT, gy * self._c * GAZE_SHIFT),
+                        mood, phase, level, gx, gy)
+            # The brow last, and on the *unshifted* pen. It is a highlight on the outer glass, and
+            # a highlight does not travel with what is under it - which is the whole depth cue,
+            # and the reason the eye reads as turning rather than as sliding about.
+            pen.band(self._c * BROW_AT, BROW_FROM, BROW_TO, BROW_LIT, self._thin * BROW_W)
+        if shut > 0.0:
+            pen.cover(self._c, shut)
 
     def _shell(self, pen: Pen, mood: Mood, phase: float, gx: float) -> None:
         """The socket. Nothing in here *travels* with his gaze, which is the whole of what it is

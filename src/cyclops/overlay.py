@@ -332,8 +332,14 @@ MOODS = {
     # and this panel is not claiming that. `drift` rather than a glance, because there is nothing
     # he is attending to - the float is the third thing that moves while he is asleep, after the
     # rings and the breath, and that scarcity is what makes awake read as awake.
+    #
+    # And the one row with the steel across it. The cover is a property of being asleep rather
+    # than of any face - see eye.COVER_PIVOT - so it is set here, once, and every other row in
+    # this table is drawn exactly as it was before the cover existed. A state arriving without a
+    # row falls back to this one and gets the lid with it, which is right: an unknown state is
+    # not a face this panel knows how to put up.
     IDLE: Mood(tint=GREEN_MID, aperture=0.24, swell=0.14, breath_s=6.5, spin=2.5, sway=1.6,
-               drift=0.30),
+               drift=0.30, cover=1.0),
     # Coming round: the iris only half up, the rings running fast, and a highlight sweeping the
     # rim - a thing spinning itself up rather than a thing paying attention. It checks its own
     # instruments while it does it - the pod, the picture, then nothing in particular - which is

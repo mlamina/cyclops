@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import math
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 
 import numpy as np
@@ -43,6 +45,27 @@ AWAKE = dict(state=overlay.LISTENING, level=0.0, elapsed=12.0)
 
 def _panel(width: int = 800, height: int = 480) -> overlay.Overlay:
     return overlay.Overlay(width, height)
+
+
+@contextmanager
+def _uncovered() -> Iterator[None]:
+    """The sleeping face with the steel wound off it, so a measurement can reach him.
+
+    Four of the tests here are about the face he wears while he is asleep - what colour it is,
+    how open its iris is, whether its rings turn - and since the cover went across him none of
+    that is on the panel at IDLE. That is the feature and not a regression, so they lift the lid
+    rather than quietly become tests about a lump of steel. What the lid itself does is three
+    tests of its own; this is what is behind it.
+
+    The panel has to be built inside the block: the engine takes its resting mood at
+    construction, and that is where the cover learns it starts open rather than shut.
+    """
+    was = overlay.MOODS[overlay.IDLE]
+    overlay.MOODS[overlay.IDLE] = replace(was, cover=0.0)
+    try:
+        yield
+    finally:
+        overlay.MOODS[overlay.IDLE] = was
 
 
 def _settle(ov: overlay.Overlay, **shown: object) -> None:
@@ -669,6 +692,14 @@ def _peak(crop: np.ndarray) -> int:
 
 def test_he_turns_and_breathes_while_he_is_asleep() -> None:
     # What "asleep and breathing" was asked to look like, on the pixels rather than on the table.
+    # Under the lid, which is where he does it now: the steel is across him at IDLE and holds
+    # still, so this is a measurement of the face and not of what is in front of it. That the
+    # cover hides all of this is its own test.
+    with _uncovered():
+        _he_turns_and_breathes()
+
+
+def _he_turns_and_breathes() -> None:
     ov = _panel()
     asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **asleep)
@@ -921,14 +952,107 @@ def test_the_scan_arc_sweeps_the_rim_while_he_is_hunting() -> None:
     assert 15 < moved < 345, f"the trace sat still ({moved:.0f} degrees in a quarter second)"
 
 
-def test_the_iris_is_narrower_asleep_than_awake() -> None:
+# ------------------------------------------------------------ the steel across him
+
+
+def _colour_of_him(crop: np.ndarray) -> float:
+    """The share of the lit face inside his rim wearing his own colour rather than steel.
+
+    Chromaticity and not brightness, for the reason :func:`_nearest` gives: a lid drawn dark
+    would pass any threshold about how bright he is while still being his colour, and the
+    question here is whether what is on the screen is him or the thing in front of him.
+    """
+    r = crop.shape[0] // 2
+    ys, xs = np.ogrid[-r:r, -r:r]
+    px = crop[:, :, :3][(ys**2 + xs**2 <= r**2) & (crop[:, :, 3] > 200)].astype(float)
+    px = px[px.sum(axis=1) > 60]  # ...that is lit at all
+    assert len(px), "nothing lit inside his rim"
+    hue = px / px.sum(axis=1)[:, None]
+    his = np.array(overlay.GREEN_MID) / sum(overlay.GREEN_MID)
+    steel = np.array(eye.STEEL) / sum(eye.STEEL)
+    return float(np.mean(np.abs(hue - his).sum(1) < np.abs(hue - steel).sum(1)))
+
+
+def test_a_shut_cover_hides_the_whole_face() -> None:
+    """Edge to edge, and nothing of him left but the light coming past the seams.
+
+    The point of the whole thing, and the only version of it worth having: a cover that left his
+    rings showing round the outside would be a lens cap drawn on top of a face rather than one in
+    front of it. Measured as a share of his colour rather than as a count of pixels, because the
+    steel is bright - a threshold on brightness passes a lid that is not covering anything.
+
+    The second half is the price, and it is stated here so nobody has to rediscover it: with the
+    steel down he holds *completely* still. He turns and breathes underneath it - that is
+    `test_he_turns_and_breathes_while_he_is_asleep`, run with the lid lifted - and none of it is
+    on the panel. Nothing in this drawing can move while it is shut without the movement being a
+    change of brightness, which is the one thing the sleeping face has never been allowed to do.
+    """
     ov = _panel()
     asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **asleep)
-    dozing = _face(ov, ov.render(phase=10.0, **asleep))
-    _settle(ov, **AWAKE)
-    open_ = _face(ov, ov.render(phase=10.0, **AWAKE))
-    assert _lit(open_) > _lit(dozing), "an attending iris is not wider than a dozing one"
+    lid = _face(ov, ov.render(phase=10.0, **asleep))
+    assert _colour_of_him(lid) < 0.02, "his rings are showing round the outside of the cover"
+    half = overlay.MOODS[overlay.IDLE].breath_s / 2
+    assert np.array_equal(lid, _face(ov, ov.render(phase=10.0 + half, **asleep))), (
+        "the shut cover moves - the steel is a lid, not a part of the face"
+    )
+    with _uncovered():
+        bare = _panel()
+        _settle(bare, **asleep)
+        assert _colour_of_him(_face(bare, bare.render(phase=10.0, **asleep))) > 0.4, (
+            "he is not there to be hidden - this test would pass over an empty bracket"
+        )
+
+
+def test_only_the_sleeping_face_is_behind_steel() -> None:
+    # The non-negotiable: awake, there is no cover, and there is none at any uptime either. Not
+    # "a thin one" - metal inside his radius is what killed the face the last time it was tried,
+    # and the whole licence for this one is that it is gone while somebody is looking at him.
+    assert {s for s, m in overlay.MOODS.items() if m.cover} == {overlay.IDLE}
+    for state, mood in overlay.MOODS.items():
+        if mood.cover:
+            continue
+        engine = eye.EyeEngine(50, 2, overlay.SCREEN, mood)
+        for phase in (0.0, 0.37, 4.2, 9000.0):
+            assert engine.shut(mood, phase) == 0.0, f"{state} has steel across it"
+
+
+def test_the_cover_takes_its_time_and_gets_all_the_way_there() -> None:
+    """Both ends reached exactly, nothing between them out of order, and neither one a wipe.
+
+    What this catches is a curve rather than a look. An ease that misses its end leaves a
+    hairline of him showing under a cover that is meant to be shut; one that steps arrives in a
+    frame and reads as a cut; and a linear one is a wipe, which is the whole thing this design is
+    not. The last assertion is the only one with an opinion in it - the shut is FRONT-loaded, so
+    a strip of it shows something closing rather than eight evenly spaced holes.
+    """
+    engine = eye.EyeEngine(50, 2, overlay.SCREEN, overlay.MOODS[overlay.LISTENING])
+    steps = 40
+    walk = [engine.shut(overlay.MOODS[overlay.IDLE], i * eye.COVER_SHUT_S / steps)
+            for i in range(steps + 1)]
+    assert (walk[0], walk[-1]) == (0.0, 1.0), "it starts part way across, or never arrives"
+    assert all(b >= a for a, b in zip(walk, walk[1:], strict=False)), "it backs up"
+    # A frame at 25 fps is 1/20 of this window, so nothing may cross more than that much of the
+    # travel in one: past that the close is a cut with a couple of frames on either side of it.
+    assert max(b - a for a, b in zip(walk, walk[1:], strict=False)) < 0.05, "it steps"
+    assert walk[steps // 2] > 0.55, "half the window, half the travel - the close is a wipe"
+    back = [engine.shut(overlay.MOODS[overlay.LISTENING],
+                        eye.COVER_SHUT_S + i * eye.COVER_OPEN_S / steps)
+            for i in range(steps + 1)]
+    assert (back[0], back[-1]) == (1.0, 0.0), "it opens from somewhere else, or never clears him"
+    assert all(b <= a for a, b in zip(back, back[1:], strict=False)), "it backs up on the way out"
+    assert eye.COVER_OPEN_S < eye.COVER_SHUT_S, "waking is as much of a deliberation as sleeping"
+
+
+def test_the_iris_is_narrower_asleep_than_awake() -> None:
+    with _uncovered():  # the iris he has under the steel is still an iris
+        ov = _panel()
+        asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
+        _settle(ov, **asleep)
+        dozing = _face(ov, ov.render(phase=10.0, **asleep))
+        _settle(ov, **AWAKE)
+        open_ = _face(ov, ov.render(phase=10.0, **AWAKE))
+        assert _lit(open_) > _lit(dozing), "an attending iris is not wider than a dozing one"
     # ...and on the table, where the pupil's own size comes from.
     assert overlay.MOODS[overlay.IDLE].aperture < overlay.MOODS[overlay.LISTENING].aperture
 
@@ -969,7 +1093,14 @@ def test_the_face_is_where_the_state_is_read() -> None:
 
     Measured over his rim rather than the whole square, for the reason :func:`_face` gives: the
     housing around him never changes colour, and a mood measured over it is measured over steel.
+    That is also why the sleeping face is measured with its cover lifted: shut, it IS steel, and
+    the question here is what colour he goes when he wakes up rather than what the lid is made of.
     """
+    with _uncovered():
+        _hues_differ()
+
+
+def _hues_differ() -> None:
     ov = _panel()
 
     def hue(state: str) -> np.ndarray:
@@ -1095,6 +1226,11 @@ def test_he_changes_colour_with_what_he_is_doing() -> None:
     # Stated as what it claims rather than as "warmer": the accent used to be a colour and is now
     # the tube's own white, which is neutral, so a test that measured red-versus-green was really
     # a test about one particular accent. Chromaticity against the mood's own tint holds for any.
+    with _uncovered():  # ...and the sleeping one from under its lid, which is not a colour of his
+        _each_face_wears_its_own_colour()
+
+
+def _each_face_wears_its_own_colour() -> None:
     ov = _panel()
     faces = {
         "asleep": overlay.IDLE,
