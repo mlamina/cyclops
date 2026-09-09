@@ -33,6 +33,7 @@ USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a d
 RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
 RPICAM_ROTATION = 180  # the module is mounted upside down in the case; see _open_rpicam
 RPICAM_AF = "continuous"  # a fixed camera watching a changing bench, not a shutter to half-press
+RPICAM_MODE = "2304:1296"  # the whole sensor, binned; the default picks a crop. See _open_rpicam
 V4L_NODES = Path("/sys/class/video4linux")  # absent off Linux, which is what picks the fallback
 PIPE_CHUNK = 1 << 16  # a pipe hands back its buffer, not your frame; see _RpicamCapture._fill
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
@@ -292,6 +293,14 @@ def _open_rpicam() -> tuple[_RpicamCapture, str]:
     focus is a thing you have to ask for is a session spent thinking about the tool. Hunting
     costs a few soft frames when the scene changes, which is exactly what
     :meth:`~cyclops.camera.CameraSource.snapshot` already picks around.
+
+    ``--mode`` because asking for 1280x720 does not ask for the whole lens. Mode selection takes
+    the smallest sensor mode that covers the size requested, and on the IMX708 that is 1536x864 -
+    which is not the sensor binned down but ``crop (768,432)/3072x1728``, two thirds of it,
+    centred. A *Wide* module was therefore framing like the standard one, at about 1.5x: shot
+    against 2304x1296 on 2026-09-09, the whole window and both sides of the sill were outside the
+    picture. 2304x1296 is the full frame binned 2x2, and the PiSP scales it to 1280x720 on the way
+    past - the one place a downscale costs no CPU at all.
     """
     if shutil.which("rpicam-vid") is None:
         raise WebcamError("no rpicam-vid installed")
@@ -315,6 +324,8 @@ def _open_rpicam() -> tuple[_RpicamCapture, str]:
             str(RPICAM_ROTATION),
             "--autofocus-mode",
             RPICAM_AF,
+            "--mode",
+            RPICAM_MODE,
             "-o",
             "-",
         ],
