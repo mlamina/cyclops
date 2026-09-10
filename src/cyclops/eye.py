@@ -158,29 +158,37 @@ BROW_W = 1.2
 # was there while he was looking at you, and this is only there while nobody is.
 COVER_N = 6  # blades. Six is the reference's, and it is also the fewest that still meet in a
 # spiral rather than in a star: each blade has to sweep 360/n and a wider sweep is a fatter blade.
-COVER_PIVOT = 1.00  # where a blade turns, as a fraction of him: on the rim, like a lens's.
-# It sets the whole mechanism. A blade's cutting edge is an arc of *his own radius* whose centre
-# rides at this distance from the pivot, so at rest that centre is dead centre, the arc IS the rim
-# and every blade lies outside the drawing. Wind them all on by the same angle and the centres
-# swing out to 2 * COVER_PIVOT * sin(turn/2); the n discs still overlap in a curved polygon whose
-# inradius is what is left of him, and that polygon is the aperture. Nothing scales and nothing
-# is masked: the hole is what n rigid shapes happen to leave.
-COVER_SHUT = math.degrees(2.0 * math.asin(min(1.0, 1.0 / (2.0 * COVER_PIVOT))))  # ...and how far
-# each blade has to wind for that inradius to reach zero. 60 degrees at a pivot on the rim, and
-# derived rather than typed so that moving the pivot moves the throw with it.
+COVER_LEAD = 0.62  # the radius of a blade, as a fraction of him. THE number in here, because it
+# is the one that sets how far the spiral wraps: the seam a shut blade leaves runs from the
+# middle out to the rim along an arc of this radius, and how far round the face that arc carries
+# is what sets the pinwheel, against an arc of his own radius before - which is the flattest
+# curve the old construction could draw and read as a lazy curve.
+#
+# It cannot be tighter than R / (2*cos(pi/n)) - 0.5774 at six blades - and the floor is not
+# arbitrary: below it the six arcs stop between them reaching every point of the face, and the
+# plate behind them shows through at the rim in the six places none of them gets to. This sits
+# clear of it by four hundredths, which is seven panel pixels at his size.
+COVER_PIVOT = 1.40  # where a blade turns, and how far it carries its own centre from there, both
+# as multiples of COVER_LEAD. It sets the whole mechanism. The centre rides at
+# 2*PIVOT*LEAD*cos(turn/2) from the middle, so at rest it is far enough out that the blade is
+# clear of the face entirely, and it swings in as the set winds on. That is where the clearance
+# comes from now: a blade is a bounded shape parked outside the rim. It used to come from the
+# cutting arc BEING the rim, which pinned the arc's radius to his own and the spiral to the
+# flattest curve the construction can draw.
+COVER_SHUT = math.degrees(2.0 * math.acos(min(1.0, 1.0 / (2.0 * COVER_PIVOT))))  # ...and how far
+# a blade winds to bring its centre in to its own radius, which is where the six of them meet in
+# the middle and the hole is gone. Derived rather than typed, so moving the pivot moves the throw.
 COVER_AT = 96  # where blade zero's pivot sits. Off the vertical, so the shut spiral does not
 # line up with the seam, the greeblies or the lug - the eye's one rule about symmetry.
-COVER_SLICES = 40  # how many flat wedges one blade's shading is cut into, along its own arc.
+COVER_SLICES = 44  # how many flat wedges one blade's shading is cut into, along its own arc.
 # The blade is drawn as a fan of quads between its cutting circle and its neighbour's, each one
 # a constant value, because the shading has to run ALONG the arc rather than across the disc and
 # nothing cheaper does that. Twenty is where the steps stop being steps at his size and start
-# being the grain - each wedge is four or five panel pixels of arc, and COVER_GRAIN breaks the
-# ramp up inside that. At twenty they were nine, and a jitter that wide is not grain, it is a
-# fan: the wedges read as the facets they are. A real gradient here would be a numpy pass over a
-# quarter of a million pixels every frame, which is the same trade `leaves` made and lost.
-COVER_GROOVE = 1.42  # the machined arc along a blade's back, as a multiple of its cutting arc's
-# radius about the same centre. Rigid, like everything else here: it is a fixed radius about a
-# point the blade carries, so it turns with the blade and cannot slide across its face.
+# being facets. It can be this few because a plate's own value is constant across it - see
+# COVER_LIGHT - so all a wedge has to follow is the room's ramp, which is gentle. When the value
+# came off the bearing round the blade's own centre it took sixty-four to stop reading as a fan,
+# and cost twice as much for it. A real gradient here would be a numpy pass over a quarter of a
+# million pixels every frame, which is the same trade `leaves` made and lost.
 COVER_SEAT = 0.968  # where the collar's inner edge sits, as a fraction of him: under three panel
 # pixels of ring. It was 0.90, which is a fifth of his radius and made the brightest thing in the
 # frame a bezel - the blades have to own the face, and a collar is a rim, not a mount.
@@ -199,36 +207,49 @@ STEEL = (233, 242, 245)  # brushed steel at its brightest, a shade cool - the to
 # colour on this panel that is not the phosphor's, and it is why the cover reads as a part rather
 # than as a drawing of one.
 COVER_FLOOR = 0.10  # the plate the blades ride on, seen through the seams and under the collar
-COVER_DARK = 0.12  # a blade's face turned away from the lamp: near black, and it has to be. A
+COVER_DARK = 0.26  # a blade's face turned away from the lamp: near black, and it has to be. A
 # blade is a piece of metal in a room with one light in it, and metal says so by having a range -
 # nothing on the disc near white and nothing near black is a paper cutout, whatever it is shaped
 # like. This was 0.42 to 0.92 for a round, which is a fifth of the range there is, and it read as
 # grey card laid over a lit face.
-COVER_LIGHT = 0.64  # ...and turned towards it. The diffuse half, and it runs along the blade's
-# own arc rather than across the disc, so the six blades catch the light at six different points
-# along themselves and the highlight walks round the spiral instead of landing on all of them.
-COVER_SPEC = 0.34  # the specular band on top of that, which is what takes the brightest part of
+COVER_LIGHT = 0.64  # ...and turned towards it. A blade's value is set by where its own grain
+# lies against the lamp, and the six of them are rolled at six different angles, so the six come
+# out six different greys and the highlight walks round the spiral rather than landing on all of
+# them at once. Constant across one plate, because a flat plate under one lamp IS constant - the
+# variation across the face is the ramp below, and it belongs to the room rather than the metal.
+# Value taken from the bearing round a blade's own centre instead was tried and is wrong for a
+# shape this wide: it makes every blade a spun disc with a sunburst in it.
+COVER_SPEC = 0.30  # the specular band on top of that, which is what takes the brightest part of
 # a blade to the top of the tube - and just to it, rather than past it. A band that clips spends
 # its middle on a flat plateau, which is the one part of a blade with no grain in it and the part
 # the eye goes to first...
-COVER_GLINT = 0.30  # ...and how wide it is, in radians of the blade's own arc. Narrow: a broad
-# specular is a diffuse, and the band has to be a band.
-COVER_GRAIN = 0.06  # how far consecutive wedges are pushed off the ramp, which is the brushing.
-# Walked on the golden ratio for the reason :func:`blink` walks its own by it - not a PRNG, so
-# the same blade has the same grain on every boot, and no two wedges in a row agree.
-COVER_MACHINED = 0.78  # the machined arc along a blade's back, as a share of that blade's own
-# value: a mark ON the metal, so it has to move with the metal rather than being one grey.
+COVER_GLINT = 0.55  # ...and how wide it is, in radians of grain angle. Narrow enough that one
+# or two blades have it and the rest do not, which is what makes a highlight read as polish
+# rather than as a second diffuse.
+COVER_RAMP = 0.26  # how much brighter the face is at the lamp's side than at the far side, edge
+# to edge. The room rather than the metal: one light and one flat assembly, so the whole thing
+# has a gradient across it whatever each plate's own grain is doing. Without it six flat plates
+# read as six paper cut-outs however far apart their values are.
+COVER_BRUSH = (0.885, 0.925, 0.962)  # where the brush marks run, as multiples of a
+# blade's cutting radius about its own centre. Arcs, so they run ALONG the grain the shading runs
+# along rather than across it, and rigid for the same reason everything else here is. Alternately
+# a shade over and a shade under the metal they are drawn on, which is what a rolled finish looks
+# like and what the wedge fan cannot do: a jitter per wedge was tried and it is not grain, it is
+# facets - the fan reads as folded card, and smooth metal is half of what makes it read as shiny.
+COVER_BRUSH_LIT = 0.016  # ...and how far over and under
+COVER_CHAMFER = 2.2  # the lit chamfer along a blade's top face, in thin lines, and how far out
+# from the cutting edge it sits. A plate has a top, an edge and a thickness; a hairline has none
+# of the three, and that is what made this read as foil.
+COVER_LIP_LIT = 0.22  # ...and how much brighter than the face behind it that chamfer runs
+COVER_CAST = 2.0  # the dark the plate's own thickness casts onto the plate below it, in thin
+# lines, just inside the cutting edge. The one mark here that is not on the blade that owns it,
+# and the one that says the blade is standing above something rather than printed on it.
 COVER_EDGE = 1.00  # the chamfer down a blade's cutting edge: the top of the tube, and the one
 # line that says "machined" at this size...
 COVER_EDGE_HELD = 0.90  # ...but only once the lid is home. See COVER_MUTED: this and the
 # specular are the two things on the cover that reach the top of the tube, so they are the two
 # that have to wait until there is no face left for them to out-shine.
 COVER_GAP = 0.03  # ...and the dark line under it where one plate lies over the next
-COVER_SEAM = 0.95  # the light that gets past that, in the mood's own colour, on the plate below.
-# The one thing on the cover that is his rather than the steel's, and the whole of what a shut
-# face says: he is behind it, and the light is still on.
-COVER_SEAM_FADE = 0.15  # ...and what is left of it out at the rim. Brightest at the hub, because
-# that is where the light is and because a seam lit evenly along its length is a drawn line.
 COVER_COLLAR = 0.86  # the collar where the lamp lands on it...
 COVER_COLLAR_LO = 0.14  # ...and away from it
 COVER_COLLAR_N = 32  # ...and how many arcs that grade is cut into. A ring drawn dark with one
@@ -491,12 +512,15 @@ def buried(shut: float) -> float:
     the socket part way through a close - by then the whole ring set is behind the metal, and
     drawing it is a third of the eye's cost spent on pixels nobody will see.
 
-    The aperture is a curved polygon; this is the radius to its corners, which is the widest it
-    ever gets and so the only safe place for the plate to start.
+    The hole is the ground no blade's arc has swept past yet - the middle of the face, which
+    every cutting circle is still short of. A blade's arc is COVER_LEAD across and its centre is
+    `hub` out from the middle, so its near edge stands `hub - lead` off him and that is the hole:
+    the whole face while the set is parked, nothing at all once the centres have come in to their
+    own radius. The plate is laid to exactly it and can never intrude on the hole however far
+    round the set has wound.
     """
-    out = 2.0 * COVER_PIVOT * math.sin(math.radians(COVER_SHUT * shut) / 2.0)
-    half = math.pi / COVER_N
-    return math.sqrt(max(0.0, 1.0 - (out * math.sin(half)) ** 2)) - out * math.cos(half)
+    hub = 2.0 * COVER_PIVOT * COVER_LEAD * math.cos(math.radians(COVER_SHUT * shut) / 2.0)
+    return max(0.0, min(1.0, hub - COVER_LEAD))
 
 
 def mix(base: tuple[int, int, int], other: tuple[int, int, int], amount: float) -> tuple:
@@ -1225,113 +1249,176 @@ class Pen:
         """The steel across him: :data:`COVER_N` rigid blades wound about their own fixed pivots.
 
         Real diaphragm kinematics, and the reason none of this is a mask or a hole that grows -
-        see :data:`COVER_PIVOT` for the construction. *shut* becomes one angle, every blade turns
-        by it about a pivot that never moves, and the aperture is whatever the rigid shapes leave
-        in the middle. A blade cannot stretch between two frames because there is nowhere in the
-        arithmetic for it to stretch: its cutting edge, its chamfer and its machined arc are each
-        a fixed radius about a point carried at a fixed distance from the pivot, and the only
-        thing any of them is a function of is the angle.
+        see :data:`COVER_LEAD` and :data:`COVER_PIVOT`. *shut* becomes one angle, every blade
+        turns by it about a pivot that never moves, and the hole is whatever the six rigid shapes
+        leave. A blade cannot stretch between two frames because there is nowhere in the
+        arithmetic for it to stretch: it is a disc of one radius about a point carried at a fixed
+        distance from its pivot, and the only thing that is a function of anything is the angle.
 
-        What each blade *is* is the crescent between its own cutting circle and the next blade's -
-        which is what a real one shows, since the rest of it is under its neighbour. That is not a
-        saving, it is the only arrangement that works: the blades are a cyclic pile and a
-        painter's algorithm cannot order one, so drawing them whole leaves the last two down
-        covering the other four and a six-bladed iris comes out with two faces.
+        A blade is the ground INSIDE its own circle, which is what lets it retract: at rest its
+        centre is far enough out that the whole disc is off the face, and it sweeps in from the
+        rim as the set winds on. The blades are separate discs at a wide hole - which is what a
+        wide iris looks like - and they close over each other as it shuts.
 
-        And what each blade is *drawn* as is a fan of flat wedges along that crescent, because
-        the shading has to run along the blade's own arc rather than across the disc - see
-        :data:`COVER_SLICES`. Every wedge is a quad from the cutting circle out to whichever of
-        the neighbour's circle and the rim it meets first, both solved rather than clipped, so the
-        fan tiles the crescent exactly and no part of it needs a mask.
+        What each is *drawn* as is its own disc less the next blade's, so the six territories are
+        disjoint and the pile never has to be resolved: a painter's algorithm cannot order a
+        cyclic stack, and drawing them whole leaves the last one down covering half the face.
 
-        The floor under all of it is not scenery: it runs from the aperture's widest corner out
-        to the rim, so nothing of him can show between two blades however they land.
+        The floor under all of it is not scenery: it runs from the hole's widest corner out to the
+        rim, so nothing of him can show between two blades however they land.
         """
+        lead = rad * COVER_LEAD
+        piv = lead * COVER_PIVOT
         turn = math.radians(COVER_SHUT * shut)
-        piv = rad * COVER_PIVOT
-        corner = rad * buried(shut)  # ...and the plate under them starts here
+        corner = rad * buried(shut)
         floor = self.steel(COVER_FLOOR)
         if corner <= 0.0:
             self.d.ellipse(self.box(rad), fill=floor)
-        else:
+        elif corner < rad:
             self.d.ellipse(self.box(rad), outline=floor, width=max(1, round(rad - corner)))
 
-        # Where each blade's cutting arc is centred. All of them before any of them is drawn: a
-        # blade is defined against its neighbour, so they have to exist first.
+        # Where each blade's centre has got to. All of them before any of them is drawn: a blade
+        # is defined against its neighbour, so they have to exist first.
         hubs = []
         for i in range(COVER_N):
             phi = math.radians(COVER_AT + i * 360.0 / COVER_N)
-            hinge = phi + math.pi + turn
-            hubs.append((self.cx + piv * (math.cos(phi) + math.cos(hinge)),
-                         self.cy + piv * (math.sin(phi) + math.sin(hinge))))
+            hubs.append((self.cx + piv * (math.cos(phi) + math.cos(phi + turn)),
+                         self.cy + piv * (math.sin(phi) + math.sin(phi + turn))))
 
+        # Every body before any seam: a seam is where two plates meet, so it cannot be laid down
+        # under a plate.
         for i, hub in enumerate(hubs):
-            self._blade(rad, hub, hubs[(i + 1) % COVER_N], shut)
+            self._blade(rad, lead, hub, hubs[(i + 1) % COVER_N], shut)
+        for i, hub in enumerate(hubs):
+            self._marks(rad, lead, hub, hubs[(i + 1) % COVER_N], shut)
         self._collar(rad, corner)
 
-    def _blade(self, rim: float, hub: tuple, near: tuple, shut: float) -> None:
-        """One blade: the fan of wedges, then the seam that its cutting edge makes with the next.
+    def _blade(self, rim: float, lead: float, hub: tuple, near: tuple, shut: float) -> None:
+        """One blade's body: its own disc, less the next blade's, less whatever the rim cuts off.
 
-        The seam is three hairlines and they are three different things - the chamfer catching
-        the lamp on this plate, the dark under its thickness, and his own light coming past it
-        onto the plate below. One of those alone is a drawn line; the three together are an edge.
+        Drawn as a fan of wedges out from its own centre, because the shading has to run along the
+        blade's grain - which is round that centre - rather than across the face. Every wedge is
+        bounded by three quadratics and no clipping, so the fan tiles the territory exactly.
         """
         gap = math.hypot(near[0] - hub[0], near[1] - hub[1])
-        if gap <= 0.0:
-            return
-        towards = math.atan2(near[1] - hub[1], near[0] - hub[0])
-        reach = math.acos(max(-1.0, min(1.0, gap / (2.0 * rim))))
         far = math.hypot(hub[0] - self.cx, hub[1] - self.cy)
-        at = math.atan2(hub[1] - self.cy, hub[0] - self.cx)
+        if far >= rim + lead:
+            return  # still parked outside the rim
+        at = math.atan2(self.cy - hub[1], self.cx - hub[0])  # ...towards the middle of the face
+        towards = math.atan2(near[1] - hub[1], near[0] - hub[0])
+        # Only the part of the blade that can be on the face at all, which at a wide hole is a
+        # narrow window and at a shut one is the whole way round.
+        span = math.pi if far <= rim else math.asin(min(1.0, rim / far))
         edge = []
         for k in range(COVER_SLICES + 1):
-            a = towards + reach * (2.0 * k / COVER_SLICES - 1.0)
-            # How far this blade reaches along the ray at *a*: to the neighbour's cutting circle,
-            # or to the rim if that comes first. Both are one quadratic; neither is a clip.
-            side, held = math.sin(a - towards) * gap, math.cos(a - towards) * gap
-            stop = held + math.sqrt(max(0.0, rim * rim - side * side))
-            side, held = math.sin(a - at) * far, math.cos(a - at) * far
-            stop = min(stop, math.sqrt(max(0.0, rim * rim - side * side)) - held)
-            edge.append((a, max(rim, stop)))
+            a = at + span * (2.0 * k / COVER_SLICES - 1.0)
+            side = math.sin(a - at) * far
+            deep = rim * rim - side * side
+            if deep <= 0.0:
+                # This ray misses the face entirely. Collapse it onto the rim rather than onto
+                # the blade's own centre: a wedge that runs to the centre is a bright triangle
+                # with its point in the middle of the picture, which is what this drew for a
+                # round and what read as searchlights over the metal.
+                held = max(0.0, math.cos(a - at) * far)
+                edge.append((a, held, held))
+                continue
+            held, deep = math.cos(a - at) * far, math.sqrt(deep)
+            inner, outer = max(0.0, held - deep), min(lead, held + deep)
+            # ...and stopping short of wherever the next blade lies over it. Only where the ray
+            # actually runs into that blade going forwards: a centre is never inside its
+            # neighbour's disc, so a crossing behind the centre is not a crossing at all - and
+            # taking it for one collapses every wedge pointing away from the neighbour, which is
+            # most of the blade.
+            side = math.sin(a - towards) * gap
+            deep = lead * lead - side * side
+            if deep > 0.0:
+                ahead = math.cos(a - towards) * gap - math.sqrt(deep)
+                if ahead > 0.0:
+                    outer = min(outer, ahead)
+            edge.append((a, inner, outer))
         for k in range(COVER_SLICES):
-            (a0, r0), (a1, r1) = edge[k], edge[k + 1]
-            if r0 <= rim and r1 <= rim:
-                continue  # this wedge is entirely past the rim, or past the neighbour
-            self.d.polygon([(hub[0] + rim * math.cos(a0), hub[1] + rim * math.sin(a0)),
-                            (hub[0] + r0 * math.cos(a0), hub[1] + r0 * math.sin(a0)),
-                            (hub[0] + r1 * math.cos(a1), hub[1] + r1 * math.sin(a1)),
-                            (hub[0] + rim * math.cos(a1), hub[1] + rim * math.sin(a1))],
-                           fill=self.steel(self._brushed((a0 + a1) / 2.0, k, shut)))
-        self._score(rim, hub, rim * COVER_GROOVE, near,
-                    lambda _: self._brushed(towards, 0, shut) * COVER_MACHINED)
-        self._score(rim, hub, rim + self.thin, near, lambda _: COVER_EDGE_HELD
+            (a0, i0, o0), (a1, i1, o1) = edge[k], edge[k + 1]
+            if o0 <= i0 and o1 <= i1:
+                continue
+            o0, o1 = max(o0, i0), max(o1, i1)
+            mid, arm = (a0 + a1) / 2.0, (i0 + o0 + i1 + o1) / 4.0
+            self.d.polygon([(hub[0] + i0 * math.cos(a0), hub[1] + i0 * math.sin(a0)),
+                            (hub[0] + o0 * math.cos(a0), hub[1] + o0 * math.sin(a0)),
+                            (hub[0] + o1 * math.cos(a1), hub[1] + o1 * math.sin(a1)),
+                            (hub[0] + i1 * math.cos(a1), hub[1] + i1 * math.sin(a1))],
+                           fill=self.steel(self._brushed(
+                               hub, hub[0] + arm * math.cos(mid), hub[1] + arm * math.sin(mid),
+                               rim, shut)))
+
+    def _marks(self, rim: float, lead: float, hub: tuple, near: tuple, shut: float) -> None:
+        """The brushing on a blade, and the edge it makes with whatever is under it.
+
+        The edge is where a plate stops being foil. Four lines and they are four different things:
+        the lit chamfer along the top face, the near-white line the chamfer breaks at, the dark
+        the plate's own thickness casts onto the plate below it, and his light coming past that.
+        Any one alone is a drawn line; the four in order are steel with a thickness in it, which
+        is the whole of what "sturdy" amounts to at this size.
+        """
+        def face(off: float) -> Callable[[float, float], float]:
+            """The blade's own value where this line runs, nudged by *off*.
+
+            Which is what makes a brush mark a mark on metal rather than a scratch drawn over it:
+            it takes the ramp where it lies instead of being one grey the whole way along.
+            """
+            # Clamped to the same ceiling the metal under it obeys - see :meth:`_arrived`. A
+            # mark that is allowed past it is a white line on the steel while the core is still
+            # in shot, which is the one thing none of this may be.
+            return lambda x, y: min(self._brushed(hub, x, y, rim, shut) + off,
+                                    COVER_EDGE_HELD
+                                    + (COVER_EDGE - COVER_EDGE_HELD) * self._arrived(shut))
+
+        for k, scale in enumerate(COVER_BRUSH):
+            self._score(rim, lead, hub, lead * scale, near,
+                        face(COVER_BRUSH_LIT if k % 2 else -COVER_BRUSH_LIT))
+        self._score(rim, lead, hub, lead - self.thin * COVER_CHAMFER, near,
+                    face(COVER_LIP_LIT), width=COVER_CHAMFER)
+        self._score(rim, lead, hub, lead, near, lambda x, y: COVER_EDGE_HELD
                     + (COVER_EDGE - COVER_EDGE_HELD) * self._arrived(shut))
-        self._score(rim, hub, rim, near, lambda _: COVER_GAP)
-        # ...and his own light on the plate below, brightest at the hub end and gone by the rim.
-        # The only one of the four drawn in pieces, because it is the only one that changes along
-        # its length - a constant line cut up is the same line and several more calls.
-        self._score(rim, hub, rim - self.thin, near,
-                    lambda t: COVER_SEAM * (COVER_SEAM_FADE + (1.0 - COVER_SEAM_FADE) * t),
-                    parts=COVER_BLEED_N, tint=True)
+        self._score(rim, lead, hub, lead + self.thin * COVER_CAST, near,
+                    lambda x, y: COVER_GAP, width=COVER_CAST)
+        # There was a fifth line here and it was his own light bleeding past the seam, which is
+        # a good idea drawn in the wrong place. A blade is the ground INSIDE its arc, so a line
+        # at `lead + cast` is outside its own blade by construction: it never lands on a seam at
+        # all, it lands on the open face of whatever plate is underneath, and what that draws is
+        # a green stripe across the middle of a piece of steel. Marco called it a stray line that
+        # looks out of place, which is exactly what it is. The seam reads from the chamfer and
+        # the cast shadow either side of it without any help.
 
-    def _brushed(self, a: float, k: int, shut: float) -> float:
-        """How bright the blade is at *a* along its own arc: diffuse, specular, and the grain.
+    def _brushed(self, hub: tuple, x: float, y: float, rim: float, shut: float) -> float:
+        """How bright a blade is at *x, y*: its own grain against the lamp, and the room's ramp.
 
-        A brushed surface's value is a function of one angle - the one round its brush marks -
-        and here those run along the arc, so this is that angle and nothing else. The blades'
-        arcs are centred sixty degrees apart, so the same function gives six different answers
-        and the highlight walks the spiral instead of landing on all six at once.
+        A brushed plate's value is a function of one angle - the one between its grain and the
+        light. On a blade that angle is not one number, and taking it for one is what made these
+        read as coins: a blade is cut on an arc about its own hub, so the brushing runs in arcs
+        about that hub too, and the angle it makes with the lamp swings the whole way across the
+        plate. Read locally it gives every blade a bright band where its grain happens to face
+        the light, and that band SLIDES along the blade as the blade turns rather than sitting
+        where it was painted - which is the difference between a plate that is lit and a plate
+        with a highlight drawn on it.
+
+        Six of them sixty degrees apart, so no two are the same and the bright one walks round
+        the spiral. What varies within a plate on top of that is the room: one lamp over one
+        assembly leaves a gradient across the whole face, and that is the ramp.
 
         The specular is held back until the lid is nearly home; see :data:`COVER_MUTED`.
         """
-        off = (a - math.radians(COVER_LAMP) + math.pi) % TAU - math.pi
+        grain = math.atan2(y - hub[1], x - hub[0]) + math.pi / 2.0
+        off = (grain - math.radians(COVER_LAMP) + math.pi) % TAU - math.pi
         lit = COVER_DARK + (COVER_LIGHT - COVER_DARK) * 0.5 * (1.0 + math.cos(off))
         lit += COVER_SPEC * self._arrived(shut) * math.exp(-((off / COVER_GLINT) ** 2))
-        lit += COVER_GRAIN * (((k + 1) * BLINK_DRIFT % 1.0) - 0.5)
+        lit += COVER_RAMP * ((x - self.cx) * math.cos(math.radians(COVER_LAMP))
+                             + (y - self.cy) * math.sin(math.radians(COVER_LAMP))) / rim
+        # ...but never darker than the plate it is lying on. A blade that goes to the screen's own
+        # black stops being a blade in shadow and becomes a hole in the cover.
+        lit = max(COVER_FLOOR, lit)
         # Nothing on the steel may go brighter than the chamfer is allowed to be - see
         # :meth:`_arrived`. The band is the one thing here that can reach the top of the tube on
         # its own, and it is held to the same ceiling as the line that is meant to be brightest.
-        # After the grain and not before it: a ceiling a jitter can climb over is not one.
         return min(lit, COVER_EDGE_HELD + (COVER_EDGE - COVER_EDGE_HELD) * self._arrived(shut))
 
     def _arrived(self, shut: float) -> float:
@@ -1346,31 +1433,40 @@ class Pen:
         """
         return shut**COVER_MUTED
 
-    def _score(self, rim: float, hub: tuple, rad: float, near: tuple,
-               tone: Callable[[float], float], parts: int = 1, tint: bool = False) -> None:
-        """A line along the circle at *hub, rad*, over the part of it that is on this blade.
+    def _score(self, rim: float, lead: float, hub: tuple, rad: float, near: tuple,
+               tone: Callable[[float, float], float], width: float = 1.0,
+               tint: bool = False) -> None:
+        """A line round the circle at *hub, rad*, over the part of it that is on this blade.
 
-        Which is the part inside the rim - the neighbour's circle bounds the far end of it, and
-        the span here is that. Dropped rather than clamped: a seam pulled onto the rim would draw
-        itself along it. *tone* is asked for a value per piece, 0 at the rim end and 1 at the hub
-        end, so a seam can fade along its length for the cost of drawing it in pieces.
+        Which is the part outside the next blade's disc - that is what bounds a territory - and
+        inside the rim. Both are dropped rather than clamped, and dropped in RUNS: a mark on a
+        blade that is half off the face comes back as two pieces, and joining them draws a chord
+        straight across the middle of the picture. That was on the panel for a round as loose
+        staples round the rim, and it is why this walks rather than filters.
+
+        *tone* is asked for a value at each piece's own middle, so a line can change along its
+        length - the shading it sits on does, and a mark that does not is a scratch drawn over
+        the metal rather than one in it.
         """
-        span = math.hypot(near[0] - hub[0], near[1] - hub[1])
-        if span <= 0.0:
-            return
-        reach = math.acos(max(-1.0, min(1.0, (rad * rad + span * span - rim * rim)
-                                        / (2.0 * rad * span))))
+        gap = math.hypot(near[0] - hub[0], near[1] - hub[1])
         towards = math.atan2(near[1] - hub[1], near[0] - hub[0])
-        run = [p for p in self._arc(hub, rad, towards - reach, towards + reach)
-               if math.hypot(p[0] - self.cx, p[1] - self.cy) <= rim]
-        if len(run) < 2:
-            return
-        hair = max(1, round(self.thin))
-        step = max(1, len(run) // parts)
-        for k in range(0, len(run) - 1, step):
-            piece = run[k:k + step + 1]
-            at = tone(min(1.0, (k + step) / max(1, len(run) - 1)))
-            self.d.line(piece, fill=self.shade(at) if tint else self.steel(at), width=hair)
+        # Where this circle crosses the neighbour's. Inside it is the neighbour's ground, so the
+        # run is the long way round, from one crossing to the other the far side.
+        cut = (rad * rad + gap * gap - lead * lead) / (2.0 * rad * gap) if rad * gap else 2.0
+        if cut <= -1.0:
+            return  # this whole circle is under the next blade
+        keep = math.acos(cut) if cut < 1.0 else 0.0
+        pts = self._arc(hub, rad, towards + keep, towards + TAU - keep)
+        hair = max(1, round(self.thin * width))
+        run = []
+        for p in pts + [None]:
+            if p is not None and math.hypot(p[0] - self.cx, p[1] - self.cy) <= rim:
+                run.append(p)
+                continue
+            if len(run) > 1:
+                at = tone(*run[len(run) // 2])
+                self.d.line(run, fill=self.shade(at) if tint else self.steel(at), width=hair)
+            run = []
 
     def _arc(self, hub: tuple, rad: float, a0: float, a1: float) -> list:
         """Points along a circle about *hub* - not about the pen - with angles in radians.

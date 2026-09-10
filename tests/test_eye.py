@@ -992,7 +992,11 @@ def test_a_shut_cover_hides_the_whole_face() -> None:
     asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **asleep)
     lid = _face(ov, ov.render(phase=10.0, **asleep))
-    assert _colour_of_him(lid) < 0.02, "his rings are showing round the outside of the cover"
+    # A twentieth, and most of what it does allow is the seam light rather than him: with the
+    # seams drawn in steel instead of in his colour the same measurement reads a hundredth, and
+    # that hundredth is the darkest metal on the disc, which is nearer the screen's green-black
+    # than it is to steel. What this would catch is a ring of him left showing round the outside.
+    assert _colour_of_him(lid) < 0.05, "his rings are showing round the outside of the cover"
     half = overlay.MOODS[overlay.IDLE].breath_s / 2
     assert np.array_equal(lid, _face(ov, ov.render(phase=10.0 + half, **asleep))), (
         "the shut cover moves - the steel is a lid, not a part of the face"
@@ -1056,7 +1060,7 @@ def test_the_face_outshines_the_lid_while_there_is_still_a_face() -> None:
         phase = 100.04 + i * eye.COVER_SHUT_S / 32
         mood = engine.look(overlay.IDLE, overlay.MOODS[overlay.IDLE], phase)
         shut = engine.shut(mood, phase)
-        hole = r * (1.0 - 2.0 * math.sin(math.radians(eye.COVER_SHUT * shut) / 2.0))
+        hole = r * eye.buried(shut)
         under = (far <= r * r) & (far > (hole + 1) ** 2)
         if hole < 0.1 * r or not under.any():
             continue  # ...or there is no steel on the tile yet to out-shine anything
