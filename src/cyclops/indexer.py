@@ -171,7 +171,11 @@ async def reconcile(settings: Settings, *, rebuild: bool = False) -> bool:
     fresh: list[recall.Item] = []
     for item in wanted:
         found = known.get(item.key)
-        if found is not None and found[1].stamp == item.stamp:
+        # And the text, not only the stamp. Half of what a picture is embedded under lives
+        # outside the JPEG - in captions.json, in a project's Log.md, in the session log - so
+        # for a picture the stamp has always been a partial answer to "did what we said about
+        # this stop being true". Rewrite a caption and the file it describes does not move.
+        if found is not None and found[1].stamp == item.stamp and found[1].text == item.text:
             keep.append((item, current.vectors[found[0]]))
         else:
             fresh.append(item)

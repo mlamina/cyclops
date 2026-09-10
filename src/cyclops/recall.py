@@ -61,14 +61,16 @@ IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png"})
 # Files that are somebody's bookkeeping rather than content. README.md and Log.md are read as
 # structured sources below and must not also be swept up as plain text, or every project would be
 # in the index twice with the second copy chunked at arbitrary boundaries.
-SKIP_NAMES = frozenset({
-    card.CAPTIONS_NAME,
-    "README.md",
-    "Log.md",
-    card.LOG_NAME,
-    card.PAGE_NAME,
-    card.RECEIPT_NAME,
-})
+SKIP_NAMES = frozenset(
+    {
+        card.CAPTIONS_NAME,
+        "README.md",
+        "Log.md",
+        card.LOG_NAME,
+        card.PAGE_NAME,
+        card.RECEIPT_NAME,
+    }
+)
 
 # One `![caption](path)` out of a Log.md or a README. This is where the filing curator's caption
 # for a hero shot lives, and it is often better than anything a picture alone would produce -
@@ -78,6 +80,27 @@ IMAGE_LINK = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 ENTRY_SPLIT = re.compile(r"^## ", re.MULTILINE)
 # The bookkeeping terminator store.py appends to every log entry. Never wanted in index text.
 COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+
+# A date or a clock time anywhere in a folder or file name. Stripped out of index text: six
+# digits are not words anybody searches by, and every session folder and every photo in it
+# carries two of them, so left in they are the loudest thing in a picture's vector.
+STAMPS = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{2}")
+
+# Folders whose name says nothing a person would search by. An `Eye Designs/` is a name somebody
+# chose and is worth embedding; `photos/` is where every session puts every picture.
+PHOTO_DIRS = frozenset({"Photos", card.PHOTOS})
+
+# What the role at the end of a photo's filename means, in the words somebody would ask for it
+# by. This is the only thing in the index that says a picture is a *photograph* - the caption
+# prompt forbids "this image shows", so nothing else does - and it is why asking for a photo of
+# the bike used to return a diagram of it three sessions running. The names are webcam.py's and
+# imagine.py's, and `deps.PhotoLine.line` says the same four things to the filing curator.
+ROLES = {
+    "you": "photograph",
+    "cyclops": "photograph",
+    "drawn": "a diagram Cyclops drew",
+    "edit": "an illustration Cyclops made from a photograph, not a record of anything",
+}
 
 
 @dataclass(frozen=True)
@@ -123,7 +146,7 @@ class Item:
         _, _, folder = self.scope.partition(":")
         parts = Path(self.path).parts
         if folder and folder in parts:
-            return "/".join(parts[len(parts) - parts[::-1].index(folder):])
+            return "/".join(parts[len(parts) - parts[::-1].index(folder) :])
         return Path(self.path).name
 
 
@@ -237,6 +260,25 @@ def _log_captions(project: Path) -> dict[str, str]:
     return found
 
 
+def _where(scope: str, folder: Path, path: Path) -> str:
+    """What a picture is and where it lives, in words - never what is in it.
+
+    A caption says what is in the frame and nothing else; the prompt that writes it is emphatic
+    about that. So the project it belongs to, the folder somebody filed it under, and the fact
+    that it is a photograph rather than a drawing exist nowhere in the words about a picture -
+    they are only in its path, which is not embedded. Asking for "the UI design photos for the
+    Cyclops project" could not reach `projects/Cyclops/UI Evolution/` for exactly that reason.
+
+    Kept out of :attr:`Item.title`, which is read out loud. Nobody wants to hear a file path.
+    """
+    holder = scope.partition(":")[2]
+    names = [holder, "" if folder.name in PHOTO_DIRS else folder.name, path.stem]
+    words = STAMPS.sub(" ", " ".join(n for n in names if n)).replace("-", " ").replace("_", " ")
+    said = [w for w in words.split() if w not in ROLES]
+    role = ROLES.get(path.stem.rpartition("_")[2], "picture")
+    return ". ".join([role, " ".join(said)]) if said else role
+
+
 def _images_in(folder: Path, scope: str, log_captions: dict[str, str], kind: str) -> list[Item]:
     """Every picture in one folder, described by whatever words exist about it."""
     if not folder.is_dir():
@@ -252,13 +294,17 @@ def _images_in(folder: Path, scope: str, log_captions: dict[str, str], kind: str
             continue
         if path.name.startswith("."):
             continue
-        parts = [captions.get(path.name, ""), log_captions.get(path.name, "")]
+        # Where it lives always, and what has been said about it when anything has. Joined and
+        # not chosen between: they answer different questions, the same argument `_log_captions`
+        # makes about the curator's words sitting beside the machine's. Before a picture has been
+        # described at all, where it lives is the whole of what is known about it - which is
+        # still a real answer to "the sixth eye sketch".
+        parts = [
+            _where(scope, folder, path),
+            captions.get(path.name, ""),
+            log_captions.get(path.name, ""),
+        ]
         text = ". ".join(p.strip(" .") for p in parts if p.strip())
-        if not text:
-            # Nothing has described it yet - the index service will, on a later pass. Its folder
-            # and filename are the only words that exist about it, and they are worth something:
-            # "Eye Designs/eye-round6.png" is a real answer to "the sixth eye sketch".
-            text = f"{folder.name} {path.stem}".replace("-", " ").replace("_", " ")
         mtime, size = _stat(path)
         out.append(
             Item(

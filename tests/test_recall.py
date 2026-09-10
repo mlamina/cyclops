@@ -155,6 +155,37 @@ def test_an_uncaptioned_dropped_image_still_says_something(settings) -> None:
     assert "Eye Designs" in found.text
 
 
+def test_a_captioned_picture_still_says_where_it_lives(settings) -> None:
+    """The caption is about the frame, so nothing in it says which project this belongs to."""
+    photos = settings.projects_dir / "BMW R80RT" / "Photos"
+    captions.write(photos, {"2026-09-04_16-22-00_you.jpg": "A torque table, 60-65 Nm"})
+    found = next(
+        i for i in recall.corpus(settings) if i.path.endswith("2026-09-04_16-22-00_you.jpg")
+    )
+    assert "BMW R80RT" in found.text
+    assert "60-65 Nm" in found.text
+
+
+def test_what_gets_read_out_is_the_caption_and_nothing_else(settings) -> None:
+    """`title` is spoken and printed. Where a file lives has no business being either."""
+    photos = settings.projects_dir / "BMW R80RT" / "Photos"
+    captions.write(photos, {"2026-09-04_16-22-00_you.jpg": "A torque table, 60-65 Nm"})
+    found = next(
+        i for i in recall.corpus(settings) if i.path.endswith("2026-09-04_16-22-00_you.jpg")
+    )
+    assert found.title == "A torque table, 60-65 Nm"
+
+
+def test_a_photograph_and_a_drawing_say_which_they_are(settings) -> None:
+    """Asking for a photo of the bike returned a drawing of it three sessions running."""
+    photos = settings.sessions_dir / "2026-09-04_16-17-13_bmw-r80rt-build-status" / card.PHOTOS
+    (photos / "16-29-00_you.jpg").write_bytes(jpeg(33, 24))
+    (photos / "16-30-00_drawn.jpg").write_bytes(jpeg(34, 24))
+    found = {Path(i.path).name: i.text for i in recall.corpus(settings)}
+    assert recall.ROLES["you"] in found["16-29-00_you.jpg"]
+    assert recall.ROLES["drawn"] in found["16-30-00_drawn.jpg"]
+
+
 def test_log_entries_carry_their_prose_not_just_the_heading(settings) -> None:
     entry = next(
         i for i in recall.corpus(settings) if i.kind == "entry" and "torque" in i.title.lower()
@@ -340,6 +371,30 @@ def test_a_captioned_photo_is_embedded_again_with_its_new_words(settings, no_net
     assert any("60-65 Nm" in t for t in no_network[0])
 
 
+def test_words_that_changed_are_embedded_again_though_the_picture_did_not(
+    settings, no_network, index_at
+):
+    """Half of what a picture is embedded under is not in the picture. The stamp cannot see it."""
+    photos = settings.projects_dir / "BMW R80RT" / "Photos"
+    captions.write(photos, {"2026-09-04_16-22-00_you.jpg": "A torque table, 60-65 Nm"})
+    reconcile(settings)
+    no_network.clear()
+
+    # The curator's words land in Log.md, which leaves `title` - and so `key` - alone.
+    log = settings.projects_dir / "BMW R80RT" / "Log.md"
+    log.write_text(
+        log.read_text(encoding="utf-8").replace(
+            "![Discussing the missing torque spec]", "![Shot of the caliper he could not seat]"
+        ),
+        encoding="utf-8",
+    )
+
+    # Both halves in one string, because the Log.md *entry* also changed and carries the new
+    # words too. Only the photo's own text has the caption beside them.
+    assert reconcile(settings) is True
+    assert any("could not seat" in t and "60-65 Nm" in t for t in no_network[0])
+
+
 # ------------------------------------------------------------------ captions on the card
 
 
@@ -449,8 +504,9 @@ def test_the_project_copy_is_the_one_that_survives(settings) -> None:
 
 def test_a_folder_whose_only_picture_is_a_duplicate_is_still_captioned(settings) -> None:
     """image_folders drives the captioner, so a deduped folder must not vanish from it."""
-    assert (settings.sessions_dir / "2026-09-04_16-17-13_bmw-r80rt-build-status"
-            / card.PHOTOS) in recall.image_folders(settings)
+    assert (
+        settings.sessions_dir / "2026-09-04_16-17-13_bmw-r80rt-build-status" / card.PHOTOS
+    ) in recall.image_folders(settings)
 
 
 def test_different_pictures_are_never_collapsed(tmp_path) -> None:
