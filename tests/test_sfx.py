@@ -160,8 +160,16 @@ def test_unknown_cue_names_itself() -> None:
 
 
 def test_connecting_loops_seamlessly() -> None:
-    """It is played with loop=True, so its own end meets its own start every 1.1 s."""
-    pcm = sfx.render("connecting", RATE)
+    """It is played with loop=True, so its own end meets its own start every time round.
+
+    Two properties, and the second is the one that stops a mechanism from becoming a drone: it
+    has to end quieter than it runs, so there is a rest between one turn and the next. The
+    length is not asserted - it is a recording now, and how long a gear takes to turn is the
+    recording's business.
+    """
+    pcm = sfx.load("connecting")
     quiet = 0.05 * 32767
     assert abs(int(pcm[0])) < quiet and abs(int(pcm[-1])) < quiet
-    assert len(pcm) / RATE == pytest.approx(1.1, abs=0.01), "the gap is what keeps it ignorable"
+    body = np.abs(pcm[: len(pcm) // 2].astype(np.int32)).mean()
+    rest = np.abs(pcm[-len(pcm) // 10 :].astype(np.int32)).mean()
+    assert rest < body / 4, "it butts up against itself; the rest between turns is gone"

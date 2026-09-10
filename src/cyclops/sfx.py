@@ -91,14 +91,6 @@ def repeat(part: np.ndarray, times: int) -> np.ndarray:
 #
 # Add a cue by adding a line. It is a function of the sample rate and nothing else.
 CUES: dict[str, Callable[[int], np.ndarray]] = {
-    # Two blips and a long gap, looped: the gap is what keeps a cue you are meant to ignore for
-    # several seconds from becoming a drone in a small workshop.
-    "connecting": lambda rate: join(
-        tone(660, 60, rate=rate),
-        silence(90, rate=rate),
-        tone(660, 60, rate=rate),
-        silence(890, rate=rate),
-    ),
     # A rising fifth: the resolution the pinging was asking for.
     "ready": lambda rate: join(tone(740, 130, rate=rate), tone(1110, 130, rate=rate)),
     # Ending a session is three things heard as one gesture, and this cue is the first two of
@@ -174,6 +166,12 @@ SAMPLES: dict[str, str] = {
     # what the same mechanism running backwards actually sounds like.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
+    # Gears turning over while the socket comes up, looped until it is. This was two blips and a
+    # long gap for a long time - a cue you were meant to ignore, built to be ignorable - and what
+    # replaced them is the sound the rest of the box now makes: the same mechanism the iris is,
+    # still running because the thing you asked for has not arrived yet. Its own tail is the rest
+    # between turns and is why it can loop without droning; see tools/cut_cues.py.
+    "connecting": "cyclops_connecting.wav",
     # The rising note under a finger on the button, started on the way down and cut dead on the
     # way up. It is the only cue here that answers a finger rather than an event, and the only
     # one whose length nobody hears the end of: what it is for is the wait, so what matters is

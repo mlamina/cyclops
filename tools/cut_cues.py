@@ -34,6 +34,7 @@ import subprocess
 import sys
 import wave
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 
@@ -41,15 +42,26 @@ from cyclops.sfx import SAMPLE_HZ, SOUNDS, _envelope
 
 MASTERS = Path(__file__).resolve().parent.parent / "sounds"
 
-# cue name -> the master it comes from, and whether it is that master played backwards.
-CUTS: dict[str, tuple[str, bool]] = {
-    "iris_open": ("cyclops_iris_open.wav", False),
-    "iris_close": ("cyclops_iris_open.wav", True),
+class Cut(NamedTuple):
+    master: str
+    backwards: bool = False  # the cue is that master played end to end backwards
+    loops: bool = False  # ...and it is played on a loop, so its own tail is the gap between
+    # repeats and is left where it is. Trimming it would butt the mechanism against itself and
+    # turn a cue you are meant to ignore for several seconds into a drone in a small workshop.
+
+
+CUTS: dict[str, Cut] = {
+    "iris_open": Cut("cyclops_iris_open.wav"),
+    "iris_close": Cut("cyclops_iris_open.wav", backwards=True),
+    # Gears turning over while the socket comes up. This was two blips and a long gap for a long
+    # time; what it replaced them with is the same thing the iris says, which is what the box
+    # sounds like from the outside while something inside it is moving.
+    "connecting": Cut("cyclops_connecting.wav", loops=True),
     # The rising note under a finger on the button, started on the way down and cut dead on the
     # way up (cyclops.button). Not trimmed at the tail for the usual reason - a cue nobody hears
     # the end of has no end to tidy - but at the head for a sharper one: what is in front of the
     # first sample is the delay between pressing a button and hearing that you did.
-    "button_pressed": ("cyclops_button_pressed.wav", False),
+    "button_pressed": Cut("cyclops_button_pressed.wav"),
 }
 
 # The middle of the band tests/test_sfx.py holds the shipped cues to (0.05-0.25), and the same
@@ -79,13 +91,18 @@ def decode(path: Path) -> np.ndarray:
     return np.frombuffer(out, dtype="<f4").astype(np.float64)
 
 
-def trim(samples: np.ndarray, floor: float) -> np.ndarray:
-    """Drop the silence at both ends, which the reversal would otherwise put at the wrong one."""
+def trim(samples: np.ndarray, floor: float, *, tail: bool = True) -> np.ndarray:
+    """Drop the silence at both ends, which the reversal would otherwise put at the wrong one.
+
+    ``tail=False`` keeps whatever is after the last loud sample: on a looping cue that is not
+    silence to be tidied away, it is the rest between one turn of the mechanism and the next.
+    """
     loud = np.flatnonzero(np.abs(samples) > floor)
     if not len(loud):
         return samples
     pad = int(PAD_S * SAMPLE_HZ)
-    return samples[max(0, loud[0] - pad) : min(len(samples), loud[-1] + pad + 1)]
+    end = len(samples) if not tail else min(len(samples), loud[-1] + pad + 1)
+    return samples[max(0, loud[0] - pad) : end]
 
 
 def level(samples: np.ndarray) -> np.ndarray:
@@ -93,8 +110,17 @@ def level(samples: np.ndarray) -> np.ndarray:
 
     Both bands, in that order, because the RMS one is the one an ear actually compares - and the
     fade goes on before the measurement rather than after, so what is measured is what ships.
+
+    The peak is brought inside full scale *before* anything is measured, and that is not tidiness.
+    The measurement casts to int16 to be exactly what the test does, and a master that reaches
+    past full scale - the gears arrive at 1.46, being a hot recording read as floats - wraps in
+    that cast rather than clipping. Wrapped samples measure as noise, the scale comes out wrong,
+    and the cue lands off the bar with nothing to show for it. This is a pure gain: it changes
+    what the number is taken from, never what the cut sounds like.
     """
     samples = samples * _envelope(len(samples), SAMPLE_HZ)
+    if (hot := np.abs(samples).max()) > 1.0:
+        samples = samples / hot
     scale = TARGET_RMS / max(loudest_50ms((samples * 32767).astype(np.int16)), 1e-9)
     peak = np.abs(samples).max() * scale
     if peak > PEAK_CEILING:
@@ -128,11 +154,11 @@ def main() -> None:
     # The iris pair differ: a mechanism's noisiest moment is not in the same place going each
     # way, and matching one of them leaves the other off it.
     for name in wanted:
-        master, backwards = CUTS[name]
-        if not (src := MASTERS / master).is_file():
+        cut = CUTS[name]
+        if not (src := MASTERS / cut.master).is_file():
             sys.exit(f"no master at {src}")
-        samples = trim(decode(src), args.keep)
-        pcm = level(np.ascontiguousarray(samples[::-1] if backwards else samples))
+        samples = trim(decode(src), args.keep, tail=not cut.loops)
+        pcm = level(np.ascontiguousarray(samples[::-1] if cut.backwards else samples))
         path = SOUNDS / f"cyclops_{name}.wav"
         write(path, pcm)
         print(f"· {path.name} — {len(pcm) / SAMPLE_HZ:.2f}s, "
