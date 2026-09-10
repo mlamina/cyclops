@@ -24,6 +24,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+from PIL import Image
 
 from cyclops import eye, overlay, stats
 
@@ -1002,6 +1003,69 @@ def test_a_shut_cover_hides_the_whole_face() -> None:
         assert _colour_of_him(_face(bare, bare.render(phase=10.0, **asleep))) > 0.4, (
             "he is not there to be hidden - this test would pass over an empty bracket"
         )
+
+
+def _luma(crop: np.ndarray) -> np.ndarray:
+    """The lit face inside his rim as brightness, which is what "steel" is an argument about."""
+    r = crop.shape[0] // 2
+    ys, xs = np.ogrid[-r:r, -r:r]
+    px = crop[:, :, :3][(ys**2 + xs**2 <= (r * RING_BAND) ** 2) & (crop[:, :, 3] > 200)]
+    return px.astype(float) @ np.array([0.2126, 0.7152, 0.0722])
+
+
+def test_the_shut_steel_is_lit_metal_and_not_grey_card() -> None:
+    """It has a range: part of it is near white and part of it is near black.
+
+    The whole of what separates a piece of metal in a room with a light in it from a grey disc
+    with a spiral drawn on it, and it is not a matter of taste - a face with nothing bright on it
+    and nothing dark on it carries no evidence of a light source at all, so the eye reads it as a
+    paper cutout laid over a lit picture rather than as a lid in front of one. Measured at the
+    second and ninety-eighth percentile rather than at the extremes, so a stray pixel of chamfer
+    cannot satisfy it on its own.
+
+    This is the assertion that fails if the shading is ever flattened back towards one mid grey,
+    which is what it was for a round: 42% to 92% of full, which is a fifth of the range there is.
+    """
+    ov = _panel()
+    asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
+    _settle(ov, **asleep)
+    lit = _luma(_face(ov, ov.render(phase=10.0, **asleep)))
+    assert float(np.percentile(lit, 2)) < 0.22 * 255, "nothing on the steel is in shadow"
+    assert float(np.percentile(lit, 98)) > 0.82 * 255, "nothing on the steel catches the lamp"
+
+
+def test_the_face_outshines_the_lid_while_there_is_still_a_face() -> None:
+    """He is the brightest thing on the tile until the hole he is behind stops being one.
+
+    The constraint the cover is only allowed to exist under. The eye is a display and not a
+    machined object - metal inside his radius measurably killed the face the last time it was
+    tried - so a near-white specular on the steel while the core is still in shot would make the
+    lid the brightest part of a picture whose whole point is that the face is the lit part. See
+    :meth:`cyclops.eye.Pen._arrived`, which holds both of the cover's whites back until it is
+    home; this is what would notice if that were tuned away.
+
+    Below a tenth of him the aperture has no face in it - the pupil is not even drawn - and past
+    that the steel may be as bright as it needs to be.
+    """
+    r = 88  # his size on the panel, so this is the drawing that actually ships
+    engine = eye.EyeEngine(r, 2, overlay.SCREEN, overlay.MOODS[overlay.LISTENING])
+    engine.look(overlay.IDLE, overlay.MOODS[overlay.IDLE], 100.0)
+    ys, xs = np.ogrid[-r : r + 1, -r : r + 1]
+    far = ys**2 + xs**2
+    for i in range(1, 33):
+        phase = 100.04 + i * eye.COVER_SHUT_S / 32
+        mood = engine.look(overlay.IDLE, overlay.MOODS[overlay.IDLE], phase)
+        shut = engine.shut(mood, phase)
+        hole = r * (1.0 - 2.0 * math.sin(math.radians(eye.COVER_SHUT * shut) / 2.0))
+        under = (far <= r * r) & (far > (hole + 1) ** 2)
+        if hole < 0.1 * r or not under.any():
+            continue  # ...or there is no steel on the tile yet to out-shine anything
+        tile = Image.new("RGBA", (2 * r + 1,) * 2, (*overlay.SCREEN, 255))
+        engine.paint(tile, r, r, mood, phase, 0.0)
+        lit = np.asarray(tile).astype(float)[:, :, :3] @ np.array([0.2126, 0.7152, 0.0722])
+        him = lit[far <= (hole - 1) ** 2].max()
+        steel = lit[under].max()
+        assert him >= steel, f"the steel out-shines him at a hole {hole:.0f} px across"
 
 
 def test_only_the_sleeping_face_is_behind_steel() -> None:
