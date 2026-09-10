@@ -447,6 +447,9 @@ class Kiosk:
         )
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
+        self._covered: bool | None = None  # whether the iris was over his face last frame.
+        # None until the first one, so a kiosk that starts up idle does not announce a cover
+        # that was already shut before anybody was in the room to hear it.
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._framing = ""  # the framing just tapped to, and...
         self._framing_until = 0.0  # ...when its name comes off the middle of the screen
@@ -1805,6 +1808,15 @@ class Kiosk:
             job = tasks.line()
             state = working_over(state, bool(job))
             asleep = self._sleeping(state)
+
+            # The iris, said out loud. It is the one thing on this panel that moves for over a
+            # second, and a mechanism that size making no noise is the tell that it is a drawing.
+            # Driven off the same fact the cover is - whether he is idle - rather than off the
+            # eye's own wind, so the sound starts with the movement instead of chasing it.
+            covered = state == IDLE
+            if self._covered is not None and covered != self._covered:
+                self._cues.play("iris_close" if covered else "iris_open")
+            self._covered = covered
 
             # What the ring is saying. Handed over every frame because what it reflects is a
             # state rather than an event; it only reaches the pin when the answer changes.

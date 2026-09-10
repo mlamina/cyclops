@@ -168,6 +168,11 @@ SAMPLES: dict[str, str] = {
     # is exactly the kind a synthesized approximation of gets heard as wrong rather than as
     # stylised.
     "shutter": "cyclops_camera_shutter.wav",
+    # The steel cover over his face, winding open as he wakes and shut as he goes to sleep. One
+    # master, played both ways: the close is the open reversed (tools/iris_clips.py), which is
+    # what the same mechanism running backwards actually sounds like.
+    "iris_open": "cyclops_iris_open.wav",
+    "iris_close": "cyclops_iris_close.wav",
     # ...and the ten voices, one line each, played by the stepper on the settings screen so that
     # choosing between them is done by ear rather than off a list of names (cyclops.voice). Cut
     # by tools/voice_clips.py and loudness-matched to each other and to the four above, because

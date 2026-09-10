@@ -1,8 +1,8 @@
 # The shipped sound cues
 
-Four designed cues, played by `cyclops.sfx` for the moments an oscillator has nothing to say:
-the box booting, the panel coming up, his face being pressed, and something appearing on the
-glass. The synthesized cues beside them (`sfx.CUES`) are still numpy and still the default;
+Designed cues, played by `cyclops.sfx` for the moments an oscillator has nothing to say: the box
+booting, the panel coming up, his face being pressed, something appearing on the glass, and the
+steel cover winding across his face. The synthesized cues beside them (`sfx.CUES`) are still numpy and still the default;
 these are the exceptions, listed in `sfx.SAMPLES`.
 
 They are **converted**, not masters. The originals are 96 kHz / 24-bit / stereo and live in
@@ -36,6 +36,33 @@ Three of those flags are decisions rather than defaults:
 `sfx.load` insists on exactly `1ch / 16-bit / 48000 Hz` — a file re-cut at the wrong rate is
 turned into silence with a line on stderr rather than played at the wrong speed, and
 `tests/test_sfx.py` is what catches it before it ships.
+
+## The two iris cues
+
+`cyclops_iris_open.wav` and `cyclops_iris_close.wav` are one master played both ways. The cover
+opening and the cover closing are the same mechanism running two directions, and there is only
+one recording of it, so the close is the open reversed - which is what that mechanism would
+actually sound like and costs nothing to be certain of.
+
+The master is kept, at `sounds/cyclops_iris_open.wav`, and re-running the tool is the cut:
+
+```sh
+uv run python tools/iris_clips.py
+```
+
+It does not use the ffmpeg line above, for the same reason `voice_clips.py` does not: these
+have to land inside the two bands `tests/test_sfx.py` measures rather than on a fixed dB figure,
+and a uniform `-3dB` is for material that was mastered together, which this was not. It arrived
+on its own at 44.1 kHz, so ffmpeg still does the decode, the downmix and the resample - a
+resample is the one step here that numpy would alias - and everything after it is numpy.
+
+The silence at both ends is trimmed **before** the reversal, and that ordering is the point: a
+lead-in on the open is a tail on the close, and a cue that ends in a quarter-second of nothing is
+one the panel has moved past by the time it finishes. The master carried 0.22 s of it.
+
+Provenance is not recorded here - the master was handed over as a single file rather than
+sourced from the pack below, so if this repo ever gains a public remote it wants checking
+alongside those.
 
 ## The ten voice samples
 
