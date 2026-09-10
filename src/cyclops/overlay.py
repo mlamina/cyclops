@@ -5493,6 +5493,7 @@ class Overlay:
         turning: bool = False,
         framing: str = "",
         framing_fade: float = 0.0,
+        awake: bool | None = None,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -5558,6 +5559,14 @@ class Overlay:
         # up to full instead - which also holds for as long as the page behind him is loading,
         # so a slow browser looks like a box that heard you rather than one that ignored you.
         mood = self.engine.look(state, MOODS.get(state, MOODS[IDLE]), phase)
+        # The lid answers to one fact and it is not the state: it is open while a session is up
+        # and shut otherwise. Handed in rather than read off `state`, because by the time the
+        # state gets here a background job may have turned it into WORKING - and the two cases
+        # that hides are opposites. A box tidying up after a session must stay shut; a box making
+        # a picture in the middle of one must stay open. Left None, the state's own mood decides,
+        # which is what the preview harness and every test that renders a mood directly want.
+        if awake is not None:
+            mood = replace(mood, cover=0.0 if awake else 1.0)
         if held:
             # Wide, bright, steady - and looking straight at you, which is what `gaze` and
             # `dart` at zero are for: an acknowledgement that carried on glancing round the

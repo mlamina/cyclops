@@ -1018,24 +1018,30 @@ def _luma(crop: np.ndarray) -> np.ndarray:
 
 
 def test_the_shut_steel_is_lit_metal_and_not_grey_card() -> None:
-    """It has a range: part of it is near white and part of it is near black.
+    """It carries evidence of a light source: a shadowed end and a lit end, far apart.
 
     The whole of what separates a piece of metal in a room with a light in it from a grey disc
-    with a spiral drawn on it, and it is not a matter of taste - a face with nothing bright on it
-    and nothing dark on it carries no evidence of a light source at all, so the eye reads it as a
-    paper cutout laid over a lit picture rather than as a lid in front of one. Measured at the
-    second and ninety-eighth percentile rather than at the extremes, so a stray pixel of chamfer
-    cannot satisfy it on its own.
+    with a spiral drawn on it. A face with nothing bright on it and nothing dark on it carries no
+    evidence of a light at all, so the eye reads it as a paper cutout laid over a lit picture
+    rather than as a lid in front of one.
+
+    What is asserted is the SPREAD, not a near-black floor. That distinction is the whole history
+    of this test: it demanded a second percentile under 22% for a round, on a critic's advice,
+    and holding the metal to it is what made it look like glossy plastic - real polished steel is
+    high-key, and the reference this is built against measures a median of 133 with a tenth
+    percentile of 84, nowhere near black. The drawing sits at 131 and 104 against those.
 
     This is the assertion that fails if the shading is ever flattened back towards one mid grey,
-    which is what it was for a round: 42% to 92% of full, which is a fifth of the range there is.
+    which is what it was for a round: 42% to 92% of full, a fifth of the range there is.
     """
     ov = _panel()
     asleep = dict(state=overlay.IDLE, level=0.0, elapsed=None)
     _settle(ov, **asleep)
     lit = _luma(_face(ov, ov.render(phase=10.0, **asleep)))
-    assert float(np.percentile(lit, 2)) < 0.22 * 255, "nothing on the steel is in shadow"
-    assert float(np.percentile(lit, 98)) > 0.82 * 255, "nothing on the steel catches the lamp"
+    dark, bright = (float(np.percentile(lit, p)) for p in (2, 98))
+    assert bright > 0.82 * 255, "nothing on the steel catches the lamp"
+    assert bright - dark > 0.45 * 255, "the steel is one grey; there is no light in the room"
+    assert dark < 0.50 * 255, "nothing on the steel is turned away from the lamp"
 
 
 def test_the_face_outshines_the_lid_while_there_is_still_a_face() -> None:

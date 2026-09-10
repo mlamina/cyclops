@@ -447,9 +447,9 @@ class Kiosk:
         )
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
-        self._covered: bool | None = None  # whether the iris was over his face last frame.
-        # None until the first one, so a kiosk that starts up idle does not announce a cover
-        # that was already shut before anybody was in the room to hear it.
+        self._awake: bool | None = None  # whether a session was up last frame, which is the one
+        # fact the iris answers to. None until the first frame, so a kiosk that starts up idle
+        # does not announce a lid that was already shut before anybody was in the room to hear it.
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._framing = ""  # the framing just tapped to, and...
         self._framing_until = 0.0  # ...when its name comes off the middle of the screen
@@ -1827,17 +1827,24 @@ class Kiosk:
             # tidying up after a session that has already ended (cyclops.tasks). Read once here
             # and used twice: it picks the face, and it is the caption's last fallback below.
             job = tasks.line()
+            # Whether a session is up, read BEFORE the background job is allowed to colour the
+            # state, and the only thing the lid ever answers to. `working_over` turns IDLE into
+            # WORKING while the child files a session, and it turns DRAWING into WORKING while a
+            # picture is made inside a conversation - so a lid driven off the state afterwards
+            # would open on a sleeping box that was tidying up, and shut on a waking one that was
+            # drawing. It opens when a session starts and shuts when one ends, and nothing that
+            # runs in the background is either of those.
+            awake = session_up(state)
             state = working_over(state, bool(job))
             asleep = self._sleeping(state)
 
             # The iris, said out loud. It is the one thing on this panel that moves for over a
             # second, and a mechanism that size making no noise is the tell that it is a drawing.
-            # Driven off the same fact the cover is - whether he is idle - rather than off the
-            # eye's own wind, so the sound starts with the movement instead of chasing it.
-            covered = state == IDLE
-            if self._covered is not None and covered != self._covered:
-                self._cues.play("iris_close" if covered else "iris_open")
-            self._covered = covered
+            # Off the same fact the lid itself is, so the sound starts with the movement rather
+            # than chasing it.
+            if self._awake is not None and awake != self._awake:
+                self._cues.play("iris_open" if awake else "iris_close")
+            self._awake = awake
 
             # What the ring is saying. Handed over every frame because what it reflects is a
             # state rather than an event; it only reaches the pin when the answer changes.
@@ -1892,6 +1899,7 @@ class Kiosk:
                 elapsed = status["elapsed"]
                 chrome = self.overlay.render(
                     state=state,
+                    awake=awake,
                     level=float(status["level"]),
                     elapsed=None if elapsed is None else float(elapsed),
                     recording=self.controller.settings.record,
