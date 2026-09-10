@@ -44,7 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import captions, card, cut, recall
+from . import around, captions, card, cut, recall
 from .config import RECALL_FILE, RECALL_LOCK, ConfigError, Settings, load_settings
 
 # How long the card must be quiet before a burst of events is treated as finished. Filing one
@@ -121,7 +121,7 @@ def _known_captions(folders: list[Path]) -> dict[str, str]:
     return known
 
 
-async def caption_pass(settings: Settings) -> int:
+async def caption_pass(settings: Settings, *, again: bool = False) -> int:
     """Give every picture on the card that has none a caption. Returns how many were written.
 
     Runs before the embedding pass so that a photo captioned on this sweep is embedded on this
@@ -134,12 +134,21 @@ async def caption_pass(settings: Settings) -> int:
     folders = recall.image_folders(settings)
     if not folders:
         return 0
-    known = _known_captions(folders)
+    # Folders with a session behind them first. `image_folders` follows `corpus`, which walks
+    # projects before sessions - and the filing sweep copies a hero shot into its project about
+    # twenty seconds after a session ends, so on the first sweep after a conversation both copies
+    # of that photo are undescribed. `_known_captions` keys on content, so whichever is described
+    # first wins for both. Projects-first means the copy is described with no session behind it
+    # and the original inherits those words - silently losing the context on exactly the two or
+    # three pictures anybody kept.
+    folders.sort(key=lambda folder: around.session_of(folder) is None)
+    # A fresh map on a recaption run, or every picture would reuse the words it already has.
+    known: dict[str, str] = {} if again else _known_captions(folders)
     total = 0
     client = captions.client_for(settings) if settings.api_key else None
     try:
         for folder in folders:
-            made = await captions.fill(folder, settings, client, known=known)
+            made = await captions.fill(folder, settings, client, known=known, again=again)
             if made:
                 total += made
                 _say(f"captioned {made} in {folder}")
@@ -284,7 +293,12 @@ IN_MOVED_TO = 0x00000080
 IN_DELETE_SELF = 0x00000400
 IN_MOVE_SELF = 0x00000800
 WATCH_MASK = (
-    IN_CREATE | IN_DELETE | IN_CLOSE_WRITE | IN_MOVED_FROM | IN_MOVED_TO | IN_DELETE_SELF
+    IN_CREATE
+    | IN_DELETE
+    | IN_CLOSE_WRITE
+    | IN_MOVED_FROM
+    | IN_MOVED_TO
+    | IN_DELETE_SELF
     | IN_MOVE_SELF
 )
 
@@ -454,6 +468,20 @@ async def _search(settings: Settings, query: str, limit: int) -> int:
     return 0
 
 
+async def _recaption(settings: Settings) -> None:
+    """Describe every picture on the card again, then index what came back.
+
+    For a change to how pictures are described, which nothing else reaches: a caption is only
+    ever written for a picture that has none, so words already on the card stay there forever.
+
+    Over the top rather than by emptying the sidecars first. If the wifi drops halfway through a
+    run that began by deleting them, the card is left with no captions at all and every picture
+    falls back to its path - so each one is replaced only when a real answer comes back for it.
+    """
+    await caption_pass(settings, again=True)
+    await _guarded(settings)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="cyclops-index",
@@ -461,6 +489,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--once", action="store_true", help="reconcile once and exit")
     parser.add_argument("--rebuild", action="store_true", help="discard the index and start over")
+    parser.add_argument(
+        "--recaption",
+        action="store_true",
+        help="describe every picture again, with the words said around it",
+    )
     parser.add_argument("--search", metavar="QUERY", help="print what a recall would find")
     parser.add_argument("--limit", type=int, default=5, help="how many hits --search prints")
     args = parser.parse_args(argv)
@@ -485,6 +518,9 @@ def main(argv: list[str] | None = None) -> int:
         _say(str(exc), error=True)
         return 1
     try:
+        if args.recaption:
+            asyncio.run(_recaption(settings))
+            return 0
         if args.once or args.rebuild:
             asyncio.run(_guarded(settings, rebuild=args.rebuild))
             return 0

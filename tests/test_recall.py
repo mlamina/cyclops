@@ -14,13 +14,15 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import os
+import time
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
-from cyclops import captions, card, imagine, indexer, recall
+from cyclops import around, captions, card, imagine, indexer, recall
 from cyclops.config import Settings
 
 # ------------------------------------------------------------------ fixtures
@@ -71,6 +73,25 @@ def card_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     (session / card.PHOTOS / "16-22-00_you.jpg").write_bytes(jpeg())
+    (session / card.LOG_NAME).write_text(
+        "\n".join(
+            json.dumps(r)
+            for r in (
+                {"t": 0.0, "type": "session", "started": "2026-09-04T16:17:13-07:00"},
+                {"t": 4.0, "type": "you", "text": "Here is the front end, have a look."},
+                {"t": 12.0, "type": "photo", "by": "you", "file": "photos/16-22-00_you.jpg"},
+                {
+                    "t": 14.0,
+                    "type": "cyclops",
+                    "text": "That is the caliper hanging off its mount.",
+                },
+                {"t": 40.0, "type": "project", "action": "tracked", "name": "BMW R80RT"},
+                {"t": 900.0, "type": "you", "text": "Anyway, about the kitchen tap."},
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return tmp_path
 
 
@@ -539,3 +560,104 @@ def test_one_picture_gets_one_caption_however_many_copies_exist(card_dir, settin
 
     assert made == 1  # written without a model call, because the content was already described
     assert captions.read(session_photos)["16-22-00_you.jpg"] == "A torque table, 60-65 Nm"
+
+
+# ------------------------------------------------------------------ the words around a picture
+
+
+@pytest.fixture
+def photos(settings) -> Path:
+    return settings.sessions_dir / "2026-09-04_16-17-13_bmw-r80rt-build-status" / card.PHOTOS
+
+
+def test_the_words_around_a_picture_come_from_both_sides_of_it(photos) -> None:
+    """A photograph opens a topic more often than it closes one, so before is the emptier half."""
+    block = around.shots(photos)["16-22-00_you.jpg"]
+    assert "have a look" in block
+    assert "hanging off its mount" in block  # said two seconds after the shutter
+    assert "kitchen tap" not in block  # and fifteen minutes later is not "around" anything
+
+
+def test_a_picture_says_which_project_was_named_out_loud(photos) -> None:
+    """The cheapest line here and the one that turns "a blue motorcycle" into the trike."""
+    assert "BMW R80RT" in around.shots(photos)["16-22-00_you.jpg"]
+
+
+def test_a_picture_nobody_put_there_has_no_session_behind_it(settings) -> None:
+    """A project's own folders were never waiting on a conversation."""
+    assert around.shots(settings.projects_dir / "BMW R80RT" / "Photos") == {}
+    assert around.ready(settings.projects_dir / "BMW R80RT" / "Eye Designs") is True
+
+
+def test_a_live_session_is_not_ready_to_describe(photos) -> None:
+    """Its words are still arriving. The gate, and the only thing that pins it."""
+    handle = (photos.parent / card.LOG_NAME).open("a", encoding="utf-8")
+    try:
+        card.claim(handle)
+        assert around.ready(photos) is False
+    finally:
+        handle.close()
+    assert around.ready(photos) is True
+
+
+def test_a_session_that_was_never_described_is_given_up_on_in_the_end(photos) -> None:
+    """The naming child can die, or be offline. A picture must not stay silent because of it."""
+    (photos.parent / card.SUMMARY_NAME).unlink()
+    assert around.ready(photos) is False
+    old = time.time() - around.PATIENCE_S - 1
+    os.utime(photos.parent / card.LOG_NAME, (old, old))
+    assert around.ready(photos) is True
+
+
+def test_a_live_session_keeps_its_pictures_undescribed(settings, photos, monkeypatch) -> None:
+    """The gate, from the outside: no model is asked about a picture mid-conversation."""
+    asked: list[Path] = []
+
+    async def describe(path, client, words=""):
+        asked.append(path)
+        return "a caption"
+
+    monkeypatch.setattr(captions, "describe", describe)
+    handle = (photos.parent / card.LOG_NAME).open("a", encoding="utf-8")
+    try:
+        card.claim(handle)
+        asyncio.run(captions.fill(photos, settings, object()))
+        assert asked == []
+    finally:
+        handle.close()
+    asyncio.run(captions.fill(photos, settings, object()))
+    assert [p.name for p in asked] == ["16-22-00_you.jpg"]
+
+
+def test_a_hero_shot_is_described_where_its_words_are(settings, monkeypatch) -> None:
+    """Its copy in the project is the same bytes, so whichever is described first wins for both."""
+    seen: list[str] = []
+
+    async def describe(path, client, words=""):
+        seen.append(words)
+        return "a caption"
+
+    monkeypatch.setattr(captions, "describe", describe)
+    monkeypatch.setattr(captions, "client_for", lambda settings: object())
+    asyncio.run(indexer.caption_pass(settings))
+    assert seen and "BMW R80RT" in seen[0], "the copy with no session behind it was described first"
+
+
+def test_a_picture_nothing_was_said_about_gets_the_prompt_it_always_got(photos) -> None:
+    """Adding context must not quietly reword every caption on a card that has no logs."""
+    assert captions.prompt_for("") == captions.CAPTION_PROMPT
+    assert captions.prompt_for(around.shots(photos)["16-22-00_you.jpg"]) != captions.CAPTION_PROMPT
+
+
+def test_recaptioning_writes_over_words_that_are_already_there(settings, photos, monkeypatch):
+    """A caption is only ever written for a picture that has none, so nothing else reaches these."""
+
+    async def describe(path, client, words=""):
+        return "said again"
+
+    monkeypatch.setattr(captions, "describe", describe)
+    captions.write(photos, {"16-22-00_you.jpg": "said once"})
+    asyncio.run(captions.fill(photos, settings, object()))
+    assert captions.read(photos)["16-22-00_you.jpg"] == "said once"
+    asyncio.run(captions.fill(photos, settings, object(), again=True))
+    assert captions.read(photos)["16-22-00_you.jpg"] == "said again"

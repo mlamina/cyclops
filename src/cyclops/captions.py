@@ -32,7 +32,7 @@ from pathlib import Path
 
 from openai import APIError, AsyncOpenAI
 
-from . import card
+from . import around, card
 from .config import Settings
 
 CAPTION_MODEL = "gpt-5.4-nano"
@@ -70,6 +70,37 @@ So write down what is *visible and specific*, and nothing else:
 screws 60-65 Nm" is the whole job. If the picture is genuinely of nothing - a blurred frame, a
 dark room - say that plainly in a few words rather than inventing detail."""
 
+# What was going on at the bench, when the session log knows. Sent as its own block after the
+# prompt above rather than folded into it, so it stays obvious which half is instruction and
+# which half is data - and so a picture nobody said anything about is described by the exact
+# bytes that described every picture before this existed.
+#
+# The framing carries the whole risk here. A model handed a transcript will write down what it
+# was told rather than what it can see, which is the failure CAPTION_PROMPT spends four bullets
+# preventing, and a caption that invents a part number is worse than one that says "a blue
+# motorcycle". Hence: a glossary, not a source of facts; a worked example that is a partial view
+# named correctly, because that is the actual case - one corner of a trike, one caliper off a
+# bike; and one line settling the conflict a model would otherwise settle the wrong way.
+CONTEXT_PROMPT = """\
+Here is what was going on at the bench when this was taken. It is a glossary, not a source of
+facts. Use it only to call what you can see by its right name - the machine, the project, the
+part, the model - in the words they used for it, and to say which of them this belongs to.
+
+Everything you write must still be visible in the frame. Where the words name a whole thing and
+the frame holds one corner of it, write the corner and say whose it is: "the front hub motor on
+the Burning Man trike, wheel out and fork legs bare". Write down nothing that is only in the
+words - no plans, no numbers you cannot read here, no parts that are out of shot - and where the
+words and the picture disagree, the picture is right.
+
+{words}"""
+
+
+def prompt_for(words: str) -> str:
+    """What to send with one picture. The bare prompt, byte for byte, when nothing was said."""
+    if not words.strip():
+        return CAPTION_PROMPT
+    return f"{CAPTION_PROMPT}\n\n{CONTEXT_PROMPT.format(words=words.strip())}"
+
 
 def read(folder: Path) -> dict[str, str]:
     """Every caption written for one folder. A missing or damaged file is an empty answer.
@@ -103,18 +134,22 @@ def uncaptioned(folder: Path) -> list[Path]:
     ``summary.md`` is one still to name, a session with no ``project.md`` is one still to file -
     and it has the same property: a crash costs a retry and never a lost picture.
     """
+    known = read(folder)
+    return [p for p in images(folder) if p.name not in known and card.written(p)]
+
+
+def images(folder: Path) -> list[Path]:
+    """Every picture in one folder, described or not. What ``--recaption`` works through."""
     if not folder.is_dir():
         return []
-    known = read(folder)
     try:
-        found = sorted(
+        return sorted(
             p
             for p in folder.iterdir()
             if p.is_file() and p.suffix.lower() in SUFFIXES and not p.name.startswith(".")
         )
     except OSError:
         return []
-    return [p for p in found if p.name not in known and card.written(p)]
 
 
 def _mark(path: Path) -> str:
@@ -183,8 +218,8 @@ def _data_url(path: Path) -> str | None:
     return f"data:{media};base64," + base64.b64encode(blob).decode("ascii")
 
 
-async def describe(path: Path, client: AsyncOpenAI) -> str:
-    """One caption for one picture, or ``""``.
+async def describe(path: Path, client: AsyncOpenAI, words: str = "") -> str:
+    """One caption for one picture, or ``""``. ``words`` is what was being said around it.
 
     Takes the client rather than the settings, because the caller captions a run of pictures in
     one pass and a connection pool and TLS handshake per photo is the wrong shape on a Pi over
@@ -204,7 +239,7 @@ async def describe(path: Path, client: AsyncOpenAI) -> str:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_text", "text": CAPTION_PROMPT},
+                        {"type": "input_text", "text": prompt_for(words)},
                         {"type": "input_image", "image_url": url, "detail": "auto"},
                     ],
                 }
@@ -226,6 +261,7 @@ async def fill(
     client: AsyncOpenAI | None,
     *,
     known: dict[str, str] | None = None,
+    again: bool = False,
 ) -> int:
     """Caption everything in one folder that has none. Returns how many were written.
 
@@ -242,11 +278,18 @@ async def fill(
     captions = read(folder)
     stale = departed(folder, captions)
 
-    pending = uncaptioned(folder)
+    pending = images(folder) if again else uncaptioned(folder)
     if not settings.api_key and known is None:
+        pending = []
+    if not around.ready(folder):
+        # The conversation that produced these is still going, and the words that say what they
+        # are have not all arrived - most of them arrive *after* the shutter, because a photo
+        # opens a topic more often than it closes one. See cyclops.around. Pruning still runs:
+        # it costs nothing and owes nothing to the session.
         pending = []
     if not pending and not stale:
         return 0
+    words = around.shots(folder)
 
     made = 0
     for path in pending:
@@ -255,7 +298,7 @@ async def fill(
         # ``indexer._known_captions`` for what happens when they do not.
         text = (known or {}).get(_mark(path), "")
         if not text and client is not None:
-            text = await describe(path, client)
+            text = await describe(path, client, words.get(path.name, ""))
             if text and known is not None:
                 known[_mark(path)] = text
         if text:
