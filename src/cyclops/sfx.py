@@ -37,6 +37,7 @@ right way round - a recording of the conversation is worth more than a recording
 from __future__ import annotations
 
 import sys
+import time
 import wave
 from collections.abc import Callable
 from functools import cache
@@ -173,6 +174,11 @@ SAMPLES: dict[str, str] = {
     # what the same mechanism running backwards actually sounds like.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
+    # The rising note under a finger on the button, started on the way down and cut dead on the
+    # way up. It is the only cue here that answers a finger rather than an event, and the only
+    # one whose length nobody hears the end of: what it is for is the wait, so what matters is
+    # that it starts at the touch and stops at the lift.
+    "button_pressed": "cyclops_button_pressed.wav",
     # ...and the ten voices, one line each, played by the stepper on the settings screen so that
     # choosing between them is done by ear rather than off a list of names (cyclops.voice). Cut
     # by tools/voice_clips.py and loudness-matched to each other and to the four above, because
@@ -276,20 +282,48 @@ class Cues:
     **One cue sounds at a time.** A new one replaces whatever was playing, so snapping a photo
     while the connecting ping is still looping ends the ping early. With a single small speaker
     that is the better failure: two beeps at once sound like a fault, not like two events.
+
+    That rule is why this remembers which cue is sounding and until when. Two callers otherwise
+    tread on each other without either being wrong: the connecting ping starts the instant a
+    session does and cut the 1.45 s iris off forty milliseconds in, and a button whose sound
+    ends on the release would have stopped whatever had started under it in the meantime.
+    :meth:`waiting` lets a caller stand off until the speaker is free, and :meth:`stop_if` lets
+    one end its own sound without ending somebody else's.
     """
 
     def __init__(self, *, rate: int, device: int | str | None = None, enabled: bool = True):
         self._rate = rate
         self._device = device
         self.enabled = enabled
+        self._sounding: str | None = None
+        self._until = 0.0
 
     def play(self, name: str, *, loop: bool = False) -> float:
         """Sound a cue, and say how long it will sound. Zero when sounds are off, which is
         what lets a caller wait a cue out without asking whether there was one."""
         if not self.enabled:
             return 0.0
-        return play(name, rate=self._rate, device=self._device, loop=loop)
+        seconds = play(name, rate=self._rate, device=self._device, loop=loop)
+        self._sounding = name
+        # A loop has no end, so nothing may wait for one: it is stopped by whoever started it.
+        self._until = 0.0 if loop else time.monotonic() + seconds
+        return seconds
+
+    def waiting(self) -> float:
+        """How long the cue now sounding has left, in seconds. Zero if the speaker is free."""
+        return max(0.0, self._until - time.monotonic())
 
     def stop(self) -> None:
+        self._sounding, self._until = None, 0.0
         if self.enabled:
             stop()
+
+    def stop_if(self, name: str) -> None:
+        """End *name*, but only while it is still the cue sounding.
+
+        What a finger coming off a button means is "stop the sound my finger started", and by
+        then the sound may not be that one any more - the hold has landed, the session is up and
+        his iris is winding open over the top of it. A bare stop here would cut that off.
+        """
+        if self._sounding == name:
+            self.stop()

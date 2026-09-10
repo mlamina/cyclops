@@ -1067,7 +1067,7 @@ class VoiceAgent:
     # ---------------------------------------------------------------- lifecycle
 
     async def run(self) -> None:
-        self.cues.play("connecting", loop=True)
+        self._spawn(self._ping())
         # The try opens before the connect, not after it: a bad key or a dead network raises
         # from there, and that is precisely when the connecting cue is playing. Left outside,
         # the finally never runs and the kiosk pings on over a red border.
@@ -2381,6 +2381,24 @@ class VoiceAgent:
         await self._send_item(
             {"type": "function_call_output", "call_id": call_id, "output": json.dumps(output)}
         )
+
+    async def _ping(self) -> None:
+        """The connecting loop, once the speaker is free and only if it is still wanted.
+
+        It used to be the first line of :meth:`run`, which meant it started forty milliseconds
+        into his iris winding open and cut a second and a half of mechanism down to a click -
+        the one cue on this box that is *about* the session starting, silenced by the session
+        starting. Standing off costs nothing: what this says is "still going", and a ping that
+        has not begun says the same thing as one that has.
+
+        The `ready` check is what makes the wait safe rather than merely polite. A session that
+        connects inside the wait needs no ping at all, and one that fails inside it has already
+        had `cues.stop()` called on its behalf - so in both cases the right thing to sound here
+        is nothing.
+        """
+        await asyncio.sleep(self.cues.waiting())
+        if not self.ready.is_set():
+            self.cues.play("connecting", loop=True)
 
     def _spawn(self, coro: Coroutine[Any, Any, None]) -> None:
         task = asyncio.create_task(coro)

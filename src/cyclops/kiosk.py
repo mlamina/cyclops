@@ -540,6 +540,8 @@ class Kiosk:
             hold_s=LONG_PRESS_S,
             on_tap=self.shutter_pressed,
             on_hold=self.button_held,
+            on_press=self.button_down,
+            on_release=self.button_up,
         )
 
     # ---- window ----
@@ -949,6 +951,25 @@ class Kiosk:
         if self._asleep:
             self._wake()
         self._toggle_session()
+
+    def button_down(self) -> None:
+        """A finger has landed on the button: sound the rise under it.
+
+        Under the finger and not on the outcome, which is the whole point of it. The long press
+        that starts a session takes a second to land and until then the button gives nothing
+        back - a control you cannot tell you are using is one you let go of too early. This is
+        the sound of the box winding up to do what the hold is about to ask for.
+        """
+        self._cues.play("button_pressed")
+
+    def button_up(self) -> None:
+        """...and it stops with the finger, but only if it is still the sound playing.
+
+        By the time a long press comes off, the hold has landed, the session is starting and his
+        iris is winding open over the top of this - so a bare stop here would cut that off
+        instead. See :meth:`cyclops.sfx.Cues.stop_if`.
+        """
+        self._cues.stop_if("button_pressed")
 
     def _ring_state(self, state: str) -> str:
         """What the ring in the button should be saying: idle, listening, or a photo that failed.

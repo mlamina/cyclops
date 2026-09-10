@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
-"""Cut the two iris cues - the cover opening, and the same sound backwards for it closing.
+"""Cut the designed cues that arrive on their own, one master at a time.
 
-    uv run python tools/iris_clips.py            # both, into src/cyclops/assets/sounds/
-    uv run python tools/iris_clips.py --keep 0.004   # ...with a different silence floor
+    uv run python tools/cut_cues.py                  # all of CUTS, into src/cyclops/assets/sounds/
+    uv run python tools/cut_cues.py --only iris_open
+    uv run python tools/cut_cues.py --keep 0.004     # ...with a different silence floor
 
-One master, two cues. A diaphragm winding open and a diaphragm winding shut are the same
-mechanism running two directions, and the sample pack only has the one - so the close *is* the
-open reversed, which is what the machine itself would sound like and costs nothing to be sure of.
-The reversal is why the ends have to be trimmed first: a lead-in of silence on the open becomes a
-tail of silence on the close, and a cue that ends in a quarter-second of nothing is one the panel
-has already moved past by the time it finishes.
+The four cues from the sample pack were mastered together and are converted by the one ffmpeg
+line in ``assets/sounds/NOTICE.md``. These were not: each turned up by itself, at its own rate
+and its own level, so each has to be measured and placed rather than nudged by a fixed number of
+dB. :data:`CUTS` is the whole of what is per-cue - a master, and whether the cue is that master
+backwards.
+
+The iris is the reason the reverse is here. A diaphragm winding open and a diaphragm winding shut
+are the same mechanism running two directions and there is only one recording of it, so the close
+*is* the open reversed - which is what the machine itself would sound like and costs nothing to
+be certain of. The reversal is also why the ends are trimmed first: a lead-in of silence on the
+open becomes a tail of silence on the close, and a cue that ends in a quarter-second of nothing
+is one the panel has already moved past by the time it finishes.
 
 Two routes into one file, and the split is deliberate. ffmpeg decodes, downmixes and resamples -
 the master is 44.1 kHz and the sink runs at 48, and a resample is the one step here where doing
@@ -32,7 +39,18 @@ import numpy as np
 
 from cyclops.sfx import SAMPLE_HZ, SOUNDS, _envelope
 
-MASTER = Path(__file__).resolve().parent.parent / "sounds" / "cyclops_iris_open.wav"
+MASTERS = Path(__file__).resolve().parent.parent / "sounds"
+
+# cue name -> the master it comes from, and whether it is that master played backwards.
+CUTS: dict[str, tuple[str, bool]] = {
+    "iris_open": ("cyclops_iris_open.wav", False),
+    "iris_close": ("cyclops_iris_open.wav", True),
+    # The rising note under a finger on the button, started on the way down and cut dead on the
+    # way up (cyclops.button). Not trimmed at the tail for the usual reason - a cue nobody hears
+    # the end of has no end to tidy - but at the head for a sharper one: what is in front of the
+    # first sample is the delay between pressing a button and hearing that you did.
+    "button_pressed": ("cyclops_button_pressed.wav", False),
+}
 
 # The middle of the band tests/test_sfx.py holds the shipped cues to (0.05-0.25), and the same
 # figure tools/voice_clips.py aims at - which is what makes the iris sit beside the shutter and
@@ -96,21 +114,26 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--master", type=Path, default=MASTER)
+    ap.add_argument("--only", action="append", help="just these cues (repeatable)")
     ap.add_argument("--keep", type=float, default=SILENCE_FS,
                     help="the silence floor, as a fraction of full scale")
     args = ap.parse_args()
 
-    if not args.master.is_file():
-        sys.exit(f"no master at {args.master}")
-    opened = trim(decode(args.master), args.keep)
+    wanted = args.only or list(CUTS)
+    if unknown := [name for name in wanted if name not in CUTS]:
+        sys.exit(f"not cues: {', '.join(unknown)} (have {', '.join(CUTS)})")
+
     SOUNDS.mkdir(parents=True, exist_ok=True)
-    # Levelled separately rather than once and reversed, so each cue's own loudest 50 ms lands on
-    # the bar. The two differ: a mechanism's noisiest moment is not in the same place going each
+    # Levelled per cue rather than per master, so each one's own loudest 50 ms lands on the bar.
+    # The iris pair differ: a mechanism's noisiest moment is not in the same place going each
     # way, and matching one of them leaves the other off it.
-    for name, samples in (("open", opened), ("close", opened[::-1])):
-        pcm = level(np.ascontiguousarray(samples))
-        path = SOUNDS / f"cyclops_iris_{name}.wav"
+    for name in wanted:
+        master, backwards = CUTS[name]
+        if not (src := MASTERS / master).is_file():
+            sys.exit(f"no master at {src}")
+        samples = trim(decode(src), args.keep)
+        pcm = level(np.ascontiguousarray(samples[::-1] if backwards else samples))
+        path = SOUNDS / f"cyclops_{name}.wav"
         write(path, pcm)
         print(f"· {path.name} — {len(pcm) / SAMPLE_HZ:.2f}s, "
               f"loudest 50 ms {loudest_50ms(pcm):.3f}, peak {np.abs(pcm).max() / 32767:.3f}",

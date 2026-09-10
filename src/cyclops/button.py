@@ -70,9 +70,17 @@ class ShutterButton:
         hold_s: float,
         on_tap: Callable[[], None],
         on_hold: Callable[[], None],
+        on_press: Callable[[], None] | None = None,
+        on_release: Callable[[], None] | None = None,
     ) -> None:
         self._on_tap = on_tap
         self._on_hold = on_hold
+        # The edges themselves, as opposed to what the press turns out to have meant. A tap and
+        # a hold are both decided later - the first on the way up, the second on a clock - and
+        # neither can answer a finger at the moment it lands. These two are for what belongs to
+        # the finger rather than to the gesture, which so far is the sound under it.
+        self._on_press = on_press
+        self._on_release = on_release
         # Whether the hold on *this* press already fired. Cleared on the way down rather than on
         # the way up, so a release that never arrives - a wedged switch, a missed edge - cannot
         # leave the latch set and swallow the next tap.
@@ -116,6 +124,8 @@ class ShutterButton:
     def _down(self) -> None:
         """The switch closing. It decides nothing yet - only which press the latch is about."""
         self._landed = False
+        if self._on_press is not None:
+            self._fire(self._on_press)
 
     def _held(self) -> None:
         """The press has lasted. Fire the hold now, under the finger, not when it comes off.
@@ -128,7 +138,14 @@ class ShutterButton:
         self._fire(self._on_hold)
 
     def _up(self) -> None:
-        """The switch opening. A tap, unless the hold above already had this press."""
+        """The switch opening. A tap, unless the hold above already had this press.
+
+        The release goes first and unconditionally. It is the end of the finger being down,
+        which is true however the press is about to be read - and the sound it stops is one that
+        should not outlive the finger by the length of a tap handler.
+        """
+        if self._on_release is not None:
+            self._fire(self._on_release)
         if not self._landed:
             self._fire(self._on_tap)
 

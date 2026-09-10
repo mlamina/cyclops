@@ -37,17 +37,26 @@ Three of those flags are decisions rather than defaults:
 turned into silence with a line on stderr rather than played at the wrong speed, and
 `tests/test_sfx.py` is what catches it before it ships.
 
-## The two iris cues
+## The cues that arrived on their own
 
-`cyclops_iris_open.wav` and `cyclops_iris_close.wav` are one master played both ways. The cover
-opening and the cover closing are the same mechanism running two directions, and there is only
-one recording of it, so the close is the open reversed - which is what that mechanism would
-actually sound like and costs nothing to be certain of.
+`cyclops_iris_open.wav`, `cyclops_iris_close.wav` and `cyclops_button_pressed.wav` came one at a
+time rather than out of the pack above, and are cut by `tools/cut_cues.py`, whose `CUTS` table is
+the whole of what is per-cue - a master, and whether the cue is that master backwards.
 
-The master is kept, at `sounds/cyclops_iris_open.wav`, and re-running the tool is the cut:
+The two iris cues are one master played both ways. The cover opening and the cover closing are
+the same mechanism running two directions, and there is only one recording of it, so the close is
+the open reversed - which is what that mechanism would actually sound like and costs nothing to
+be certain of.
+
+`cyclops_button_pressed.wav` is the rising note under a finger on the shutter button, started on
+the press edge and stopped on the release (`cyclops.button`, `cyclops.kiosk.button_down`). It is
+the one cue here nobody hears the end of: it runs 8.25 s and a press is over long before that.
+
+The masters are kept, in `sounds/`, and re-running the tool is the cut:
 
 ```sh
-uv run python tools/iris_clips.py
+uv run python tools/cut_cues.py                  # all of them
+uv run python tools/cut_cues.py --only iris_open # just one
 ```
 
 It does not use the ffmpeg line above, for the same reason `voice_clips.py` does not: these
@@ -60,8 +69,8 @@ The silence at both ends is trimmed **before** the reversal, and that ordering i
 lead-in on the open is a tail on the close, and a cue that ends in a quarter-second of nothing is
 one the panel has moved past by the time it finishes. The master carried 0.22 s of it.
 
-Provenance is not recorded here - the master was handed over as a single file rather than
-sourced from the pack below, so if this repo ever gains a public remote it wants checking
+Provenance is not recorded here - these masters were handed over as single files rather than
+sourced from the pack below, so if this repo ever gains a public remote they want checking
 alongside those.
 
 ## The ten voice samples

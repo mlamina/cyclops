@@ -266,9 +266,10 @@ CAPTIONS = {
     # sentence is what the caption shows. Here because every state has a resting line and the one
     # that could get away without it is the one that would be blank on the day something changed.
     WORKING: "working…",
-    IDLE: "zzZzzzZ…",  # he snores. The microphone opposite still breathes towards the colour it
-    # will turn, which is the half of this that was ever load-bearing - so the line is free to
-    # stop being an instruction and go back to being him.
+    IDLE: "Press button to start",  # the one caption on this panel that is an instruction, and
+    # the one state that needs one: a shut steel lid is not a control, and nothing else in the
+    # corner beckons while he is asleep. He snored here for a while, which was him rather than a
+    # readout and read beautifully to anybody who already knew what to do.
     STARTING: "waking up…",
     STOPPING: "going to sleep…",
     CONNECTING: "waking up…",
