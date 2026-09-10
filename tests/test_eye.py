@@ -1097,11 +1097,13 @@ def test_the_cover_takes_its_time_and_gets_all_the_way_there() -> None:
             for i in range(steps + 1)]
     assert (walk[0], walk[-1]) == (0.0, 1.0), "it starts part way across, or never arrives"
     assert all(b >= a for a, b in zip(walk, walk[1:], strict=False)), "it backs up"
-    # A frame at 25 fps is 1/20 of this window, so nothing may cross more than that much of the
-    # travel in one: past that the close is a cut with a couple of frames on either side of it.
-    assert max(b - a for a, b in zip(walk, walk[1:], strict=False)) < 0.05, "it steps"
+    # The burst still has to be a movement rather than an arrival: at 25 fps this window is 40
+    # frames, and a frame that crossed a fifth of the travel would read as a cut with a held set
+    # on either side of it. The ends, meanwhile, have to be *held* and not merely slow - which is
+    # the whole of what an exponential is here for, and what a smoothstep could not do.
     step = [b - a for a, b in zip(walk, walk[1:], strict=False)]
-    assert step[len(step) // 2] > 4 * max(step[0], step[-1]), "the ends are as quick as the middle"
+    assert max(step) < 0.15, "the middle is a cut, not a burst"
+    assert sum(1 for v in step if v < 0.01) > steps // 3, "the ends are merely slow, not held"
     assert abs(walk[steps // 2] - 0.5) < 0.02, "it is faster at one end than the other"
     back = [engine.shut(overlay.MOODS[overlay.LISTENING],
                         eye.COVER_SHUT_S + i * eye.COVER_OPEN_S / steps)

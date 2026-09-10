@@ -250,23 +250,27 @@ COVER_SHUT_S = 1.60  # how long it takes to wind across, and the slower of the t
 COVER_OPEN_S = 1.00  # ...and how long to clear him again. Quicker, because waking is not a
 # deliberation - but not so much quicker that the same mechanism looks like two different ones.
 
-# Both ends of both directions are slow and the middle is where the travel is spent: a plain
-# smoothstep, symmetric, the same curve every other eased thing on this panel uses. The set
-# creeps off the rim, carries its speed through the middle of the throw and settles into the
-# seal, and neither direction is favoured over the other - what differs between them is only how
-# long they are given.
+COVER_RATE = 7.0  # how hard each end is held against the middle, as the exponent's span.
+# The curve is exponential in both halves - 2**(RATE*(2k-1)) mirrored about the middle - and this
+# is the whole of its shape. Contrast and violence are the same dial and cannot be set apart: the
+# burst is RATE * ln2 of the throw per unit of the window, so a harder hold is also a faster
+# middle. 13 was tried first and is a cut - 18% of the travel inside one frame at 25 fps, which
+# arrives rather than moves.
 #
-# It was biased towards the break for a round - three quarters of the throw in the first half of
-# the window - on the reasoning that a slow break wastes frames on an eye with nothing in front
-# of it. Marco watched it on the panel and asked for the ends slowed instead, which is the
-# instruction: a driven cover eases out of rest at both ends of its travel, and the frames the
-# break was buying are not worth a mechanism that lurches.
+# What this buys is worth stating in frames rather than in ratios, because the ratio between one
+# frame and another barely moves and is not what anybody sees. Over the 40 frames a close takes
+# at 25 fps: a smoothstep leaves 6 of them under a hundredth of the travel and peaks at 0.037,
+# and this leaves 20 of them - half the window - and peaks at 0.108. That is the difference
+# between a set that is *slow* and a set that is *held*: half of this window is a lump of steel
+# not moving, and the throw happens in the third of a second between the two halves of it. A
+# smoothstep read, in Marco's words, as one long slow movement, and smootherstep read the same.
 #
-# Smootherstep was the other way of obeying that and is measurably too much of it. Flat to two
-# derivatives at each end, it spends the first fifth of a second of a 1.6 s close on 1.6% of the
-# travel - a pixel and a half of steel after a third of a second, which does not read as a slow
-# start, it reads as nothing having happened yet. The same instant on a smoothstep is four
-# pixels and moving. Ease harder than this and the ends stop being slow and start being absent.
+# This curve and the two spans above are Marco's, arrived at by watching them on the panel. They
+# were twice re-argued from inside this file on the reasoning that a slow break wastes frames on
+# an eye with nothing in front of it. That reasoning is not wrong and it does not matter: it does
+# not outrank him, and a rationale found in the code is not a requirement. Change these when he
+# asks and not otherwise.
+
 
 # ---------------------------------------------------------------- how present each part is
 #
@@ -1490,10 +1494,11 @@ class EyeEngine:
         the cover is more than three times that going one way, because it is a lump of steel
         being driven and the two directions are not the same gesture - see COVER_SHUT_S.
 
-        Neither end is linear, and neither end is where the travel is spent: a smoothstep is flat
-        at both of them, so the set eases off the rim, runs through the middle of its throw and
-        settles into the seal. Both directions are the same curve - what differs between them is
-        only how long they are given.
+        Neither end is linear, and neither end is where the travel is spent. The curve is
+        exponential in each half and mirrored about the middle, so the set is *held* against the
+        rim, lets go through the middle of its throw and is caught again into the seal - see
+        COVER_RATE. Both directions are the same curve; what differs is only how long each is
+        given.
 
         Stateful, unlike :meth:`aperture`, and it has to be: what it needs to know is *when* the
         target last changed, and a mood does not carry that. It is the same three fields
@@ -1505,7 +1510,13 @@ class EyeEngine:
         shutting = want > self._was
         span = COVER_SHUT_S if shutting else COVER_OPEN_S
         k = 1.0 if span <= 0.0 else max(0.0, min(1.0, (phase - self._since) / span))
-        self._shut = self._was + (want - self._was) * k * k * (3.0 - 2.0 * k)
+        if k <= 0.0 or k >= 1.0:
+            eased = k  # an exponential reaches neither end; the ends themselves are exact
+        elif k < 0.5:
+            eased = 0.5 * 2.0 ** (COVER_RATE * (2.0 * k - 1.0))
+        else:
+            eased = 1.0 - 0.5 * 2.0 ** (COVER_RATE * (1.0 - 2.0 * k))
+        self._shut = self._was + (want - self._was) * eased
         return self._shut
 
     def paint(
