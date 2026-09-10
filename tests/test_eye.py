@@ -1087,8 +1087,9 @@ def test_the_cover_takes_its_time_and_gets_all_the_way_there() -> None:
     What this catches is a curve rather than a look. An ease that misses its end leaves a
     hairline of him showing under a cover that is meant to be shut; one that steps arrives in a
     frame and reads as a cut; and a linear one is a wipe, which is the whole thing this design is
-    not. The last assertion is the only one with an opinion in it - the shut is FRONT-loaded, so
-    a strip of it shows something closing rather than eight evenly spaced holes.
+    not. The last two assertions are the ones with an opinion in them, and it is Marco's: both
+    ends are slow and the travel is spent in the middle, so the set eases off the rim and settles
+    into the seal instead of breaking hard and creeping home.
     """
     engine = eye.EyeEngine(50, 2, overlay.SCREEN, overlay.MOODS[overlay.LISTENING])
     steps = 40
@@ -1099,7 +1100,9 @@ def test_the_cover_takes_its_time_and_gets_all_the_way_there() -> None:
     # A frame at 25 fps is 1/20 of this window, so nothing may cross more than that much of the
     # travel in one: past that the close is a cut with a couple of frames on either side of it.
     assert max(b - a for a, b in zip(walk, walk[1:], strict=False)) < 0.05, "it steps"
-    assert walk[steps // 2] > 0.55, "half the window, half the travel - the close is a wipe"
+    step = [b - a for a, b in zip(walk, walk[1:], strict=False)]
+    assert step[len(step) // 2] > 4 * max(step[0], step[-1]), "the ends are as quick as the middle"
+    assert abs(walk[steps // 2] - 0.5) < 0.02, "it is faster at one end than the other"
     back = [engine.shut(overlay.MOODS[overlay.LISTENING],
                         eye.COVER_SHUT_S + i * eye.COVER_OPEN_S / steps)
             for i in range(steps + 1)]

@@ -243,20 +243,24 @@ COVER_MUTED = 2.0  # how hard the specular is held back while any of him is stil
 # what a plate swinging into a light actually does, and by the time it is at full there is no eye
 # left to lose.
 
-COVER_SHUT_S = 0.80  # how long it takes to wind across, and the slower of the two on purpose.
+COVER_SHUT_S = 1.60  # how long it takes to wind across, and the slower of the two on purpose.
 # Shutting is the gesture - he is going to sleep - and a lid that falls in a fifth of a second is
-# a shutter rather than a cover.
-COVER_OPEN_S = 0.42  # ...and how long to clear him again. Waking is not a deliberation.
-COVER_HEFT = 0.80  # the shut's travel, pushed towards its own start before the ease. Under 1 the
-# set breaks hard and then settles into the seal: three quarters of the throw in the first half
-# of the window, and the last of it creeping home. That is a driven mechanism arriving at a stop
-# rather than a wipe, and it is the shape a strip of this actually shows - measured on eight
-# frames, the aperture goes 1.00, 0.82, 0.60, 0.40, 0.24, 0.12, 0.03, 0, which is a picture of
-# something *closing* rather than eight evenly spaced holes. Linear is a wipe, and pushing the
-# other way (a slow break and a slam) spends five of those eight frames on an eye with nothing
-# in front of it - which was tried, and reads as a lid that sticks.
-COVER_SPRING = 0.55  # ...and the open's, pushed harder the same way: a fifth of the steel is off
-# him in the first twentieth of the window. What you see of an open is its first three frames.
+# a shutter rather than a cover. It ran at half this for a round and read as a snap: a cover this
+# size is a lump of steel being driven, and what says so is how long it takes.
+COVER_OPEN_S = 1.00  # ...and how long to clear him again. Quicker, because waking is not a
+# deliberation - but not so much quicker that the same mechanism looks like two different ones.
+
+# Both ends of both directions are slow, and the middle is where the travel is spent. That is
+# smootherstep rather than the smoothstep every other eased thing on this panel uses: its first
+# *and* second derivatives are zero at each end, so the set creeps off the rim, carries its speed
+# through the middle of the throw and settles into the seal without ever arriving at one.
+#
+# It was biased towards the break for a round - three quarters of the throw in the first half of
+# the window - on the reasoning that a slow break wastes frames on an eye with nothing in front
+# of it. Marco watched it on the panel and asked for the ends slowed instead, which is the
+# instruction: a driven cover eases out of rest at both ends of its travel, and the frames the
+# break was buying are not worth a mechanism that lurches.
+
 
 # ---------------------------------------------------------------- how present each part is
 #
@@ -1480,10 +1484,10 @@ class EyeEngine:
         the cover is twice that going one way and half again the other, because it is a lump of
         steel being driven and the two directions are not the same gesture - see COVER_SHUT_S.
 
-        Neither end is linear. `k**bias` before the smoothstep pushes the speed to one end of the
-        travel: shutting breaks away slowly and arrives with the speed coming off it, and opening
-        breaks hard and spends the tail of its window creeping out of a picture it has already
-        left. Both start and end at rest, so nothing steps on the frame the state changes.
+        Neither end is linear, and neither end is where the travel is spent: smootherstep is
+        flat to two derivatives at both ends, so the set eases off the rim, runs through the
+        middle of its throw and settles into the seal. Both directions are the same curve - what
+        differs between them is only how long they are given.
 
         Stateful, unlike :meth:`aperture`, and it has to be: what it needs to know is *when* the
         target last changed, and a mood does not carry that. It is the same three fields
@@ -1495,8 +1499,7 @@ class EyeEngine:
         shutting = want > self._was
         span = COVER_SHUT_S if shutting else COVER_OPEN_S
         k = 1.0 if span <= 0.0 else max(0.0, min(1.0, (phase - self._since) / span))
-        k = k ** (COVER_HEFT if shutting else COVER_SPRING)
-        self._shut = self._was + (want - self._was) * k * k * (3.0 - 2.0 * k)
+        self._shut = self._was + (want - self._was) * k * k * k * (k * (k * 6.0 - 15.0) + 10.0)
         return self._shut
 
     def paint(
