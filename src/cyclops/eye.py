@@ -250,17 +250,23 @@ COVER_SHUT_S = 1.60  # how long it takes to wind across, and the slower of the t
 COVER_OPEN_S = 1.00  # ...and how long to clear him again. Quicker, because waking is not a
 # deliberation - but not so much quicker that the same mechanism looks like two different ones.
 
-# Both ends of both directions are slow, and the middle is where the travel is spent. That is
-# smootherstep rather than the smoothstep every other eased thing on this panel uses: its first
-# *and* second derivatives are zero at each end, so the set creeps off the rim, carries its speed
-# through the middle of the throw and settles into the seal without ever arriving at one.
+# Both ends of both directions are slow and the middle is where the travel is spent: a plain
+# smoothstep, symmetric, the same curve every other eased thing on this panel uses. The set
+# creeps off the rim, carries its speed through the middle of the throw and settles into the
+# seal, and neither direction is favoured over the other - what differs between them is only how
+# long they are given.
 #
 # It was biased towards the break for a round - three quarters of the throw in the first half of
 # the window - on the reasoning that a slow break wastes frames on an eye with nothing in front
 # of it. Marco watched it on the panel and asked for the ends slowed instead, which is the
 # instruction: a driven cover eases out of rest at both ends of its travel, and the frames the
 # break was buying are not worth a mechanism that lurches.
-
+#
+# Smootherstep was the other way of obeying that and is measurably too much of it. Flat to two
+# derivatives at each end, it spends the first fifth of a second of a 1.6 s close on 1.6% of the
+# travel - a pixel and a half of steel after a third of a second, which does not read as a slow
+# start, it reads as nothing having happened yet. The same instant on a smoothstep is four
+# pixels and moving. Ease harder than this and the ends stop being slow and start being absent.
 
 # ---------------------------------------------------------------- how present each part is
 #
@@ -1481,13 +1487,13 @@ class EyeEngine:
 
         On its own clock and not the mood crossfade's, which is the whole of why it reads as a
         mechanism. The colour fade is 0.45 s because a face changing its mind should not snap;
-        the cover is twice that going one way and half again the other, because it is a lump of
-        steel being driven and the two directions are not the same gesture - see COVER_SHUT_S.
+        the cover is more than three times that going one way, because it is a lump of steel
+        being driven and the two directions are not the same gesture - see COVER_SHUT_S.
 
-        Neither end is linear, and neither end is where the travel is spent: smootherstep is
-        flat to two derivatives at both ends, so the set eases off the rim, runs through the
-        middle of its throw and settles into the seal. Both directions are the same curve - what
-        differs between them is only how long they are given.
+        Neither end is linear, and neither end is where the travel is spent: a smoothstep is flat
+        at both of them, so the set eases off the rim, runs through the middle of its throw and
+        settles into the seal. Both directions are the same curve - what differs between them is
+        only how long they are given.
 
         Stateful, unlike :meth:`aperture`, and it has to be: what it needs to know is *when* the
         target last changed, and a mood does not carry that. It is the same three fields
@@ -1499,7 +1505,7 @@ class EyeEngine:
         shutting = want > self._was
         span = COVER_SHUT_S if shutting else COVER_OPEN_S
         k = 1.0 if span <= 0.0 else max(0.0, min(1.0, (phase - self._since) / span))
-        self._shut = self._was + (want - self._was) * k * k * k * (k * (k * 6.0 - 15.0) + 10.0)
+        self._shut = self._was + (want - self._was) * k * k * (3.0 - 2.0 * k)
         return self._shut
 
     def paint(
