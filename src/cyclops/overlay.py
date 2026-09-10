@@ -257,6 +257,11 @@ HEAT_LAMP = {"hot": AMBER, "throttled": RED}
 HEAT_INK = {"ok": GREEN, "warn": AMBER, "hot": RED}
 HEAT_WORD = "HOT"
 
+BUSY_MARK = "…"  # the last character of a caption that ends in a blinking cursor. Stripped
+# before the line is drawn - it marks the cursor rather than being punctuation - so a caption
+# carrying it reads on the glass as exactly the words in front of it. Declared here rather than
+# beside the drawing because CAPTIONS below is its first user.
+
 # ... and the resting line underneath: what is true about a state when nothing finer is known.
 # The controller sends a better sentence whenever it has one - what is being searched for, which
 # project is being opened, which step of the teardown is running - and that wins; this is what the
@@ -266,10 +271,16 @@ CAPTIONS = {
     # sentence is what the caption shows. Here because every state has a resting line and the one
     # that could get away without it is the one that would be blank on the day something changed.
     WORKING: "working…",
-    IDLE: "Press button to start",  # the one caption on this panel that is an instruction, and
-    # the one state that needs one: a shut steel lid is not a control, and nothing else in the
-    # corner beckons while he is asleep. He snored here for a while, which was him rather than a
-    # readout and read beautifully to anybody who already knew what to do.
+    IDLE: "Press button to start" + BUSY_MARK,  # the one caption on this panel that is an
+    # instruction, and the one state that needs one: a shut steel lid is not a control, and
+    # nothing else in the corner beckons while he is asleep. He snored here for a while, which
+    # was him rather than a readout and read beautifully to anybody who already knew what to do.
+    #
+    # The mark is not punctuation and is never drawn - it is what puts the blinking cursor after
+    # the line, and the line needs one for a reason the snore never did: with the lid down,
+    # nothing else on this panel moves at all. His breath is behind steel now. A cursor is the
+    # whole of what is left saying the box is running rather than stopped, and after an
+    # instruction it is the oldest convention there is for a machine waiting to be told.
     STARTING: "waking up…",
     STOPPING: "going to sleep…",
     CONNECTING: "waking up…",
@@ -495,7 +506,6 @@ MOODS = {
 # the controller publishes obeys the same rule, which is why none of them has to say twice whether
 # it is a job or a state. Nearly always that means work in flight; the exception is the snore,
 # which is not work but is just as much a thing going on.
-BUSY_MARK = "…"
 MARKER = "› "  # what every caption opens with, and the smallest thing that wears the accent
 CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead, and now also
 # how deep the terminal's screen is - the glass is cut to its text rather than the other way
