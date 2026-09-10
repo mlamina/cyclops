@@ -23,6 +23,7 @@ from PIL import Image
 
 from cyclops import agent, imagine, panel, tasks
 from cyclops.config import Settings
+from cyclops.webcam import Capture
 
 
 def jpeg(width: int, height: int) -> bytes:
@@ -359,7 +360,7 @@ class Called:
         self.arguments = arguments
 
 
-def edit_result(made) -> dict:
+def edit_result(made, arguments: str = '{"request": "paint the doors matt black"}') -> dict:
     """Drive `_run_edit_photo` and hand back the tool output it sent.
 
     `_spawn` is stubbed out rather than left to run: the handler answers the call and hands the
@@ -375,12 +376,99 @@ def edit_result(made) -> dict:
     made._send_tool_output = _send_tool_output
     made._request_response = _nothing
     made._spawn = lambda coro: coro.close()
-    asyncio.run(made._run_edit_photo(Called('{"request": "paint the doors matt black"}')))
+    asyncio.run(made._run_edit_photo(Called(arguments)))
     return sent[0]
+
+
+def edited(made, arguments: str) -> tuple[dict, list[Path]]:
+    """The tool output, and whichever picture it actually handed to the half minute of drawing.
+
+    `_edit` is replaced rather than left to run, for the reason `edit_result`'s docstring gives.
+    The path is captured as the coroutine is built, because `_spawn` only closes what it is
+    handed and the body never runs.
+    """
+    picked: list[Path] = []
+    made._edit = lambda task, source, request, turn, made_from="": (
+        picked.append(source) or _nothing()
+    )
+    return edit_result(made, arguments), picked
+
+
+def shot(name: str, kind: str = "photo") -> agent.Panel:
+    """A picture in play, named the way the shutter and `imagine.write` name their files."""
+    return agent.Panel(Path(f"/cyclops/photos/{name}.jpg"), kind, name)
 
 
 async def _nothing() -> None:
     return None
+
+
+def test_an_earlier_picture_is_edited_by_its_name(voice) -> None:
+    """The whole point: three photos in, "make the ball red" is the ball and not the desk."""
+    made, _ = voice
+    made._pictures = [shot("12-00-00_you"), shot("12-01-00_you"), shot("12-02-00_you")]
+    made._on_panel = made._pictures[-1]
+    output, picked = edited(made, '{"request": "make it red", "picture": "12-00-00_you"}')
+
+    assert output["ok"] is True
+    assert picked == [made._pictures[0].path]
+
+
+def test_naming_no_picture_still_means_the_one_in_play(voice) -> None:
+    """The ordinary call, which is nearly all of them: "change that" is what they can see."""
+    made, _ = voice
+    made._pictures = [shot("12-00-00_you"), shot("12-02-00_you")]
+    made._on_panel = made._pictures[-1]
+    _, picked = edited(made, '{"request": "make it red"}')
+
+    assert picked == [made._pictures[-1].path]
+
+
+def test_a_name_nobody_was_given_draws_nothing(voice) -> None:
+    """The half minute this saves. A name the model chose to send is a picture it meant, so it
+    must not fall through to whatever happens to be newest - that is a wrong photo redrawn, on
+    the panel, half a minute later, with nothing to say it went wrong."""
+    made, _ = voice
+    made._pictures = [shot("12-00-00_you")]
+    made._on_panel = made._pictures[-1]
+    output, picked = edited(made, '{"request": "make it red", "picture": "the ball one"}')
+
+    assert output["ok"] is False
+    assert picked == [], "nothing was spent"
+
+
+def test_a_refusal_hands_back_the_names_it_would_have_taken(voice) -> None:
+    """How it recovers inside one turn: the model can only ask again if it is told the names."""
+    made, _ = voice
+    made._pictures = [shot("12-00-00_you"), shot("12-01-00_drawn", "drawn")]
+    made._on_panel = made._pictures[-1]
+    output = edit_result(made, '{"request": "make it red", "picture": "nonsense"}')
+
+    assert [one["name"] for one in output["pictures"]] == ["12-01-00_drawn", "12-00-00_you"]
+
+
+def test_a_photo_arrives_with_the_name_it_can_be_edited_by(voice, tmp_path) -> None:
+    """The caption is the only place the model ever learns a name, so the name in the text and
+    the name on the record have to be the same one - and they are written either side of a send
+    that could fail between them."""
+    made, sent = voice
+    ball = Capture("data:image/jpeg;base64,x", tmp_path / "ball.jpg", 4, 3, 9, 0)
+    asyncio.run(made.add_photo(ball))
+    label = next(part for part in sent[0]["content"] if part["type"] == "input_text")["text"]
+
+    assert made._on_panel is not None
+    assert made._on_panel.name in label
+    assert made._picture_named(made._on_panel.name) is made._on_panel
+
+
+def test_two_pictures_with_one_stem_do_not_answer_to_one_name(voice) -> None:
+    """A recall can bring back another session's picture named exactly like today's."""
+    made, _ = voice
+    made._put_on_panel(Path("/cyclops/photos/12-00-00_you.jpg"), "photo")
+    made._put_on_panel(Path("/june/photos/12-00-00_you.jpg"), "found")
+
+    assert len({one.name for one in made._pictures}) == 2
+    assert made._picture_named(made._pictures[0].name) is made._pictures[0]
 
 
 def test_nothing_shown_yet_still_asks_for_the_shutter(voice) -> None:

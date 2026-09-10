@@ -83,6 +83,12 @@ RECALL_OFFERED = 3
 # these are labels in a result, not the answer, and the picture itself is going to the model.
 MAX_OTHER_CHARS = 90
 MAX_DATA_ENTRIES = 20  # one plate's worth of values, generously
+# A picture's name is a filename stem - "14-32-40_you" - so this is a cap on how floridly the
+# model can wrap one, not on the names themselves.
+MAX_PICTURE_NAME_CHARS = 40
+# How many names a refused edit hands back. The whole line would be a menu to guess from; the
+# newest few are what "the one before that" ever means.
+PICTURES_OFFERED = 8
 ACTIVITY_SUBJECT_CHARS = 40  # a subject on the caption, not a sentence
 # How long a finished job's sentence stays on the panel. A data tool is off the card and back in
 # five milliseconds - a tenth of one frame - so without a floor under it the caption would strobe
@@ -246,9 +252,13 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
         "touchscreen. Use it when the answer is 'like this' about the actual thing in front of "
         "them and saying it would take a paragraph: a colour or a finish, a part moved or taken "
         "away, a shelf on that wall, the half-built thing shown finished, that corner tidied. "
-        "It works on the last picture in play - the photo they most recently took, or one you "
-        "found for them, drew for them, or already edited, so a second change carries on from "
-        "the first. If they have not taken one yet, ask them to hit SNAP. "
+        "By default it changes the newest picture in play - the photo they most recently took, "
+        "or the one you found, drew or already edited, so a second change carries on from the "
+        "first, which is what 'now make it darker' means. But every picture you are shown "
+        "carries a name, and naming one changes that picture instead: they photograph a ball, "
+        "then a shelf, then a desk, and 'make the ball red' is the ball's picture and not what "
+        "is in front of them now. Any picture from this session still works - none of them "
+        "expire. If they have not taken one yet, ask them to hit SNAP. "
         "This call comes back straight away and the picture arrives about half a minute later, "
         "so say one short sentence out loud and then carry on - do not wait for it and do not "
         "call it a second time. You are told when it lands or if it fails. It fills the panel "
@@ -277,7 +287,21 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
                     "to leave alone. Whoever edits it sees the photo and this sentence and "
                     "nothing of your conversation, so it has to stand alone."
                 ),
-            }
+            },
+            "picture": {
+                "type": "string",
+                "description": (
+                    "Optional: which picture to change, by the name it arrived with - "
+                    "'14-32-40_you'. Leave it out for the newest one, which is what 'this', "
+                    "'that' and 'it' nearly always mean and is right most of the time. Give it "
+                    "when they plainly mean an earlier picture, and read the name off the line "
+                    "that picture came with rather than guessing at one: names are never reused "
+                    "and never move. If two pictures could both be the one they mean, ask them "
+                    "which - a question costs a sentence and redrawing the wrong picture costs "
+                    "half a minute of their time. A name you were not given is refused before "
+                    "anything is drawn, and you are told the real ones."
+                ),
+            },
         },
         "required": ["request"],
         "additionalProperties": False,
@@ -602,6 +626,10 @@ USING THE EYE
 - When they do speak, you have every photo they have taken. Answer off the pictures, going
   straight to what you actually see, briefly. No preamble: never open with "look at this",
   "let me see", or by narrating which photo you are looking at.
+- Every picture you are shown arrives with a name of its own, and that name is how you say which
+  one you mean when a tool asks. It is yours and not theirs: never say a name out loud and never
+  ask them for one, because nothing on their screen shows one. They say "the ball one" and you
+  are the one who knows which picture that was.
 - When they hold something up or ask what you can see, and no photo has arrived, ask them for
   one - once, in a few words. "Hit SNAP and I'll look." Only there. Not as a way to round off a
   turn, not in a greeting, and not tacked onto an answer that never needed the eye.
@@ -860,10 +888,18 @@ class Panel:
     diagram case - a drawing is a jpg in ``photos/`` with a path like everything else - but a
     picture that could not be written to the card still reaches the glass, and there is nothing
     for an edit to send when it does.
+
+    ``name`` is the file's own stem - ``14-32-40_you`` - and it is the picture's name to the
+    model as well as to the card, because the model has to be able to say which picture it means
+    when it means an earlier one. The stem rather than a number for one reason: a number the
+    model misremembers is still a picture, and redrawing the wrong one costs half a minute, an
+    image call and the panel; a name it misremembers is nothing, and refuses in a round trip.
+    Empty when the picture was never written down, which is the same thing as having no name.
     """
 
     path: Path | None
     what: str  # "photo" | "found" | "edit" | "drawn" - for the log and the tool's own error
+    name: str = ""  # the file's stem, and what the model calls it. "" when nothing was kept.
 
 
 class VoiceAgent:
@@ -899,10 +935,18 @@ class VoiceAgent:
         # nothing ever saw, and editing a picture the model cannot reason about is worse than
         # asking for another.
         self._on_panel: Panel | None = None
-        # The picture a recall just put on the panel, waiting to be handed to the model. Held on
-        # the agent rather than returned, because it has to be sent *after* the tool output that
-        # mentions it - see _run_recall.
+        # ...and every picture that came into play this session, oldest first. The slot above is
+        # what "change that" means; this is what "change the one with the ball, not the desk"
+        # means, three photos later. Only the model can tell those two apart - it has all of the
+        # pictures in context and we have none of them - so each one is named as it arrives and
+        # the model hands the name back. Nothing prunes it: a session's pictures are a few dozen.
+        self._pictures: list[Panel] = []
+        # The picture a recall just put on the panel, waiting to be handed to the model, and the
+        # name it was given. Held on the agent rather than returned, because it has to be sent
+        # *after* the tool output that mentions it - see _run_recall. The name rides along rather
+        # than being read back off `_on_panel`, which a drawing landing in that same window moves.
         self._found_image: bytes | None = None
+        self._found_name = ""
         # ...and, beside those three, the sentence the panel says underneath. The flags answer
         # "what mode is this?", which colours the border and picks the word on the strip, and
         # they stay a closed set of three. This answers "what is it doing?", which is open-ended
@@ -1011,6 +1055,53 @@ class VoiceAgent:
         instead, or it reaches the assert in :attr:`conn`.
         """
         return self._conn is not None
+
+    # ---------------------------------------------------------------- which picture they mean
+
+    def _put_on_panel(self, path: Path | None, what: str) -> str:
+        """Record a picture as in play, and hand back the name the model may ask for it by.
+
+        The one writer of both :attr:`_on_panel` and :attr:`_pictures`, because two things that
+        have to agree are two things that can disagree - and what they would disagree about is
+        which photograph gets redrawn. Every caller sends the name it gets back to the model in
+        the same breath as the picture, so the name in the conversation is always the name in
+        the list.
+
+        The name is the file's own stem, which is unique inside a session for free - the shutter
+        and ``imagine.write`` both see to that. Across sessions it is not: a picture recalled off
+        the card can arrive carrying the same ``14-32-40_you`` as this afternoon's photo, and two
+        pictures with one name is the silent wrong edit this whole scheme exists to avoid. So a
+        collision takes a suffix.
+
+        A picture with no path is still what they are looking at, so it still takes the slot -
+        but it cannot be named, because there is nothing to open again later.
+        """
+        name = path.stem if path is not None else ""
+        if name and any(shot.name == name for shot in self._pictures):
+            name = f"{name}-{len(self._pictures) + 1}"
+        shot = Panel(path, what, name)
+        self._on_panel = shot
+        if path is not None:
+            self._pictures.append(shot)
+        return name
+
+    def _picture_named(self, name: str) -> Panel | None:
+        """The picture the model asked for by name, or None when nothing answers to it.
+
+        Deliberately narrow. An exact name, newest first, then an unambiguous prefix so the time
+        alone reaches it; a stray "picture " or ".jpg" the model wrapped it in is forgiven. What
+        it will NOT do is guess: "the second one" and "the ball" resolve to nothing, and the
+        caller refuses rather than redrawing whatever happened to be last. A refusal costs a
+        round trip, and the alternative costs half a minute, an image call and the panel.
+        """
+        want = name.strip().strip("'\"").casefold().removeprefix("picture ").removesuffix(".jpg")
+        if not want:
+            return None
+        for shot in reversed(self._pictures):
+            if shot.name.casefold() == want:
+                return shot
+        hits = [shot for shot in self._pictures if shot.name.casefold().startswith(want)]
+        return hits[0] if len(hits) == 1 else None
 
     @property
     def conn(self) -> AsyncRealtimeConnection:
@@ -1146,11 +1237,21 @@ class VoiceAgent:
         they get then is about what they actually asked - not a description of a photo they are
         already looking at on the panel. Server VAD creates that response the moment they speak,
         with the image already in context, so nothing has to be re-sent.
+
+        The photo is recorded as in play *before* the send rather than after it, which is the one
+        thing here that used to be the other way round ("this means shown, not taken"). The
+        caption is the only place the model is ever told the picture's name, so the name has to
+        exist before the text that carries it. What that costs is a photo left in the line when a
+        send fails - and a send only fails on a socket that is going down, which ends the session
+        and the line with it.
         """
         if not self.connected:
             return
         self.tool_active = True
         job = self._start_doing("taking the photo in…")
+        # Named before it is sent, because the caption has to say the name: the picture and the
+        # only place the model will ever learn what to call it travel in one item.
+        name = self._put_on_panel(capture.path, "photo")
         try:
             await self._send_item(
                 {
@@ -1164,7 +1265,7 @@ class VoiceAgent:
                             "text": (
                                 "[Photo from their camera, taken just now. They have not "
                                 "asked anything about it - do not speak about it until they "
-                                "do, then answer off the picture.]"
+                                f"do, then answer off the picture. It is called {name}.]"
                             ),
                         },
                         {
@@ -1175,8 +1276,6 @@ class VoiceAgent:
                     ],
                 }
             )
-            # Only now: this means "shown", not "taken".
-            self._on_panel = Panel(capture.path, "photo")
         finally:
             self.tool_active = False
             self._done_doing(job)
@@ -1185,7 +1284,9 @@ class VoiceAgent:
             f"{capture.jpeg_bytes // 1024} KB → {capture.path}"
         )
 
-    async def add_edit(self, jpeg: bytes, request: str) -> None:
+    async def add_edit(
+        self, jpeg: bytes, request: str, name: str = "", made_from: str = ""
+    ) -> None:
         """Show the model the picture it just had made. No response is asked for here.
 
         Deliberately not :meth:`add_photo`, for two reasons that both still matter. It must not
@@ -1216,7 +1317,10 @@ class VoiceAgent:
                             f"{request}. Every pixel of it was drawn, including the parts that "
                             "look untouched, so nothing in it is a measurement or a fact about "
                             "their hardware. They are looking at it too, so do not narrate it "
-                            "unprompted - but answer what they ask about it.]"
+                            "unprompted - but answer what they ask about it."
+                            + (f" It is called {name}." if name else "")
+                            + (f" It was made from {made_from}." if made_from else "")
+                            + "]"
                         ),
                     },
                     {
@@ -1653,8 +1757,9 @@ class VoiceAgent:
         # The panel slot, set on the loop rather than in the thread that showed it, because
         # `edit_photo` reads it from here. A drawing now has a real path like every other
         # picture, so "make that clearer" edits the diagram instead of being refused.
+        drawn = ""
         if output.get("shown") and kept is not None and kept.path is not None:
-            self._on_panel = Panel(kept.path, "drawn")
+            drawn = self._put_on_panel(kept.path, "drawn")
 
         if not output.get("ok"):
             tasks.fail(task, str(output.get("error", "")))
@@ -1675,7 +1780,11 @@ class VoiceAgent:
             return
         await self.announce(
             "[The diagram you were drawing is now up on their screen. Say it is there, in a few "
-            "words. Do not describe it or read it back - they are looking at it.]"
+            "words. Do not describe it or read it back - they are looking at it."
+            # The one picture the model is told about and never shown, so this sentence is the
+            # only handle it will ever have on the diagram it just drew.
+            + (f" It is called {drawn}." if drawn else "")
+            + "]"
         )
 
     def _keep_and_show_drawing(
@@ -1762,8 +1871,9 @@ class VoiceAgent:
         # so it has to be an item of its own. One response.create covers both. The same sequence
         # `_run_edit_photo` uses, and for the same reasons.
         found, self._found_image = self._found_image, None
+        name, self._found_name = self._found_name, ""
         if found is not None:
-            await self.add_found(found)
+            await self.add_found(found, name)
         await self._request_response()
 
     def _recall_scopes(self, project: str) -> set[str] | None:
@@ -1853,7 +1963,7 @@ class VoiceAgent:
             # It is the picture in front of them now, so it is the one edit_photo works on. The
             # path is the file on the card, not the downscaled copy that went to the panel: an
             # edit should start from the best pixels there are, not from the panel's 800x480.
-            self._on_panel = Panel(Path(best.item.path), "found")
+            self._found_name = self._put_on_panel(Path(best.item.path), "found")
         session.note(
             "recall",
             query=query[:120],
@@ -1912,7 +2022,7 @@ class VoiceAgent:
         small = imagine.for_panel(blob)
         return bool(panel.offer_image(small, path.stem) and panel.show()), small
 
-    async def add_found(self, jpeg: bytes) -> None:
+    async def add_found(self, jpeg: bytes, name: str = "") -> None:
         """Show the model the picture it just put on the panel. No response is asked for here.
 
         The reason this exists rather than the caption being enough: the caption is *index text*,
@@ -1941,7 +2051,9 @@ class VoiceAgent:
                             "questions about what is in it - and prefer reading it to anything "
                             "the search said about it, which was written to find the picture "
                             "rather than to describe it accurately. They are looking at it too, "
-                            "so do not narrate it unprompted.]"
+                            "so do not narrate it unprompted."
+                            + (f" It is called {name}." if name else "")
+                            + "]"
                         ),
                     },
                     {
@@ -1986,21 +2098,46 @@ class VoiceAgent:
         The same lifecycle as :meth:`_run_draw_diagram` and split the same way and for the same
         reason: the picture takes half a minute, and a tool call held open for that long is a
         conversation with nothing in it. What is left here is the three questions that can be
-        answered without drawing anything - is there a request, is there a photo on the glass, and
-        was that photo ever written down. None of those is a task: they are answered in the moment
-        and there is nothing to watch.
+        answered without drawing anything - is there a request, is there a picture to change, and
+        was that picture ever written down. None of those is a task: they are answered in the
+        moment and there is nothing to watch.
+
+        Which picture is the second of those questions, and it has two answers. Nothing named
+        means the newest, which is what "change that" means and what nearly every call wants. A
+        name means that picture, anywhere in the session - and a name that answers to nothing is
+        refused here, with the real names, rather than falling through to the newest. That is the
+        whole reason the names are names and not numbers: every number would have been somebody's
+        picture, and redrawing the wrong one costs half a minute, an image call and the panel.
 
         :meth:`_edit` is the other half, and it carries the one thing the diagram does not need -
         the staleness check, because an edit is asked for about a photograph they are looking at
         and half a minute is long enough for them to have moved on.
         """
         request = _tool_string(call.arguments, "request", imagine.MAX_REQUEST_CHARS)
-        self._log(f"[tool] edit_photo {request!r}")
+        wanted = _tool_picture(call.arguments)
+        self._log(f"[tool] edit_photo {request!r}{f' on {wanted!r}' if wanted else ''}")
         if not request:
             await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing described"})
             await self._request_response()
             return
-        shot = self._on_panel
+        shot = self._picture_named(wanted) if wanted else self._on_panel
+        if wanted and shot is None:
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": "no picture by that name",
+                "pictures": [
+                    {"name": one.name, "kind": one.what}
+                    for one in reversed(self._pictures[-PICTURES_OFFERED:])
+                ],
+                "note": (
+                    "Nothing was drawn and nothing was spent. These are the pictures you have "
+                    "been shown, newest first. Call it again with one of these names if one is "
+                    "plainly the one they mean - and if two of them could be, ask them which "
+                    "rather than picking."
+                ),
+            })
+            await self._request_response()
+            return
         if shot is None:
             await self._send_tool_output(call.call_id, {
                 "ok": False,
@@ -2027,10 +2164,13 @@ class VoiceAgent:
 
         self.drawing_active = True
         task = tasks.start(_activity_line(call))
-        self._spawn(self._edit(task, shot.path, request, self._turn_serial))
+        self._spawn(self._edit(task, shot.path, request, self._turn_serial, shot.name))
         await self._send_tool_output(call.call_id, {
             "ok": True,
             "started": True,
+            # Which one it actually took, so a mis-pick is catchable before the picture lands
+            # rather than half a minute later, when it is on the glass.
+            "picture": shot.name,
             "note": (
                 "It is being redrawn now and takes about half a minute. Say in a few words that "
                 "you are working on it, then carry on - you will be told when it lands or if it "
@@ -2039,7 +2179,9 @@ class VoiceAgent:
         })
         await self._request_response()
 
-    async def _edit(self, task: str, source: Path, request: str, turn: int) -> None:
+    async def _edit(
+        self, task: str, source: Path, request: str, turn: int, made_from: str = ""
+    ) -> None:
         """The half minute. Runs on its own after :meth:`_run_edit_photo` has answered.
 
         ``turn`` is :attr:`_turn_serial` as it stood when the edit was asked for. If it has moved
@@ -2069,12 +2211,13 @@ class VoiceAgent:
         finally:
             self.drawing_active = False
 
+        made = ""
         if kept is not None:
             # The edit is the picture on the panel now, so it is what the next change starts
             # from: "now make it blue instead" means the one they are looking at. Set on the loop
             # from the path it was actually written to, and only when it was written - an edit
-            # that reached no card is not a file anything can open again.
-            self._on_panel = Panel(kept, "edit")
+            # that reached no card is not a file anything can open again, and cannot be named.
+            made = self._put_on_panel(kept, "edit")
 
         if not output.get("ok"):
             tasks.fail(task, str(output.get("error", "")))
@@ -2089,7 +2232,7 @@ class VoiceAgent:
         # asking for a response, so it goes down as an item of its own and `announce` issues the
         # one response.create that covers both.
         if seen is not None:
-            await self.add_edit(seen, request)
+            await self.add_edit(seen, request, made, made_from)
         if self._turn_serial != turn:
             await self.announce(
                 "[The change you were making is now on their screen, but they have spoken since "
@@ -2528,6 +2671,16 @@ def _tool_description(arguments: str | None) -> str:
 def _tool_query(arguments: str | None) -> str:
     """The search tool's required 'query' argument."""
     return _tool_string(arguments, "query", MAX_QUERY_CHARS)
+
+
+def _tool_picture(arguments: str | None) -> str:
+    """edit_photo's optional 'picture' argument - which picture to change, by name.
+
+    Empty means it named none, which is the documented default and the whole conversation's
+    ordinary case: "change that" is the picture in play. Anything else is a name to resolve,
+    and a name that resolves to nothing is refused rather than swapped for the newest.
+    """
+    return _tool_string(arguments, "picture", MAX_PICTURE_NAME_CHARS)
 
 
 def _tool_project(arguments: str | None) -> str:

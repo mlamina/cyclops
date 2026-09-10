@@ -76,10 +76,17 @@ it was. **Press it anywhere to put it away** — a drawing keeps its corner butt
 thing you read and point at while you talk; a picture of your own bench is a thing you look at and
 are then done with.
 
-`edit_photo` sends the last photo *you* were shown holding to `gpt-image-2` on OpenAI's image
-edits endpoint, along with one sentence saying what to change. It always works on the last real
-photo and never on a previous edit, so a second change — *"now make it darker"* — starts from
-what the camera actually saw rather than compounding the first.
+`edit_photo` sends one picture to `gpt-image-2` on OpenAI's image edits endpoint, along with one
+sentence saying what to change. By default that is the newest picture in play — including a
+previous edit, so *"now make it darker"* compounds the first change rather than starting over.
+
+**Any picture from the session can be named instead.** Every picture Cyclops is shown arrives
+carrying its own filename stem — `14-32-40_you`, `14-35-01_drawn` — and it hands that back to say
+which one it means, so *"make the ball red"* three photos later edits the ball and not the desk.
+The names are Cyclops' own: you never hear one, and it is told never to ask you for one. A name it
+was never given is refused before anything is drawn, and it is handed the real ones to try again
+with — a stem it invents costs a round trip, where an invented number would have been somebody
+else's photo, redrawn, on the panel, half a minute later.
 
 **What comes back is an illustration, and never evidence.** An edit with no mask redraws the
 whole frame, so every pixel in the result is the model's, including the ones that look untouched.
