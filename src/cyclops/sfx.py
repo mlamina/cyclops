@@ -166,11 +166,11 @@ SAMPLES: dict[str, str] = {
     # what the same mechanism running backwards actually sounds like.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
-    # Gears turning over while the socket comes up, looped until it is. This was two blips and a
-    # long gap for a long time - a cue you were meant to ignore, built to be ignorable - and what
-    # replaced them is the sound the rest of the box now makes: the same mechanism the iris is,
-    # still running because the thing you asked for has not arrived yet. Its own tail is the rest
-    # between turns and is why it can loop without droning; see tools/cut_cues.py.
+    # Gears turning over as the socket comes up, once. This was two blips and a long gap looped
+    # until the session arrived - a cue you were meant to ignore, built to be ignorable - and
+    # what replaced them is the sound the rest of the box now makes: the same mechanism the iris
+    # is. Sounded once and not repeated, because a mechanism you hear start and then stop has
+    # done its work, and one that keeps going is stuck.
     "connecting": "cyclops_connecting.wav",
     # The rising note under a finger on the button, started on the way down and cut dead on the
     # way up. It is the only cue here that answers a finger rather than an event, and the only
@@ -278,8 +278,8 @@ class Cues:
     a sound (the agent, for the link; the kiosk, for the shutter) have nothing else in common.
 
     **One cue sounds at a time.** A new one replaces whatever was playing, so snapping a photo
-    while the connecting ping is still looping ends the ping early. With a single small speaker
-    that is the better failure: two beeps at once sound like a fault, not like two events.
+    part way through a cue ends that cue early. With a single small speaker that is the better
+    failure: two sounds at once are heard as a fault, not as two events.
 
     That rule is why this remembers which cue is sounding and until when. Two callers otherwise
     tread on each other without either being wrong: the connecting ping starts the instant a

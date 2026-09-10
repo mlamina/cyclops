@@ -1306,7 +1306,7 @@ class VoiceAgent:
         # underneath them to hand the caption back to. From here the state's own resting line is
         # the true one, until a tool has something better to say.
         self._doing = ()
-        sounding = self.cues.play("ready")  # which also ends the connecting loop
+        sounding = self.cues.play("ready")
         if self.mic is not None:
             self._spawn(self._listen(after_s=sounding))
 
@@ -2383,22 +2383,27 @@ class VoiceAgent:
         )
 
     async def _ping(self) -> None:
-        """The connecting loop, once the speaker is free and only if it is still wanted.
+        """The gears turning over, once the speaker is free and only if they are still wanted.
+
+        Sounded once, not looped. It used to repeat until the session was up, which is the shape
+        a cue takes when it is a status light - "still going, still going". Gears are not that:
+        a mechanism you hear start and then stop reads as a thing that has done its work, and
+        one that keeps going reads as a thing that is stuck.
 
         It used to be the first line of :meth:`run`, which meant it started forty milliseconds
         into his iris winding open and cut a second and a half of mechanism down to a click -
         the one cue on this box that is *about* the session starting, silenced by the session
-        starting. Standing off costs nothing: what this says is "still going", and a ping that
-        has not begun says the same thing as one that has.
+        starting. Standing off costs nothing, and it is what puts the two in the right order:
+        the lid, and then what is behind the lid.
 
         The `ready` check is what makes the wait safe rather than merely polite. A session that
-        connects inside the wait needs no ping at all, and one that fails inside it has already
+        connects inside the wait needs no gears at all, and one that fails inside it has already
         had `cues.stop()` called on its behalf - so in both cases the right thing to sound here
         is nothing.
         """
         await asyncio.sleep(self.cues.waiting())
         if not self.ready.is_set():
-            self.cues.play("connecting", loop=True)
+            self.cues.play("connecting")
 
     def _spawn(self, coro: Coroutine[Any, Any, None]) -> None:
         task = asyncio.create_task(coro)

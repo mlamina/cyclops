@@ -42,18 +42,17 @@ turned into silence with a line on stderr rather than played at the wrong speed,
 `cyclops_iris_open.wav`, `cyclops_iris_close.wav`, `cyclops_connecting.wav` and
 `cyclops_button_pressed.wav` came one at a time rather than out of the pack above, and are cut by
 `tools/cut_cues.py`, whose `CUTS` table is the whole of what is per-cue: a master, whether the
-cue is that master backwards, and whether it is played on a loop.
+cue is that master backwards.
 
 The two iris cues are one master played both ways. The cover opening and the cover closing are
 the same mechanism running two directions, and there is only one recording of it, so the close is
 the open reversed - which is what that mechanism would actually sound like and costs nothing to
 be certain of.
 
-`cyclops_connecting.wav` is gears turning over while the socket comes up, played on a loop until
-it is. It replaced a synthesized pair of blips. Being looped is why its own tail is left alone
-where every other cue here has the silence trimmed off both ends: that rest is the gap between
-one turn of the mechanism and the next, and without it a cue you are meant to ignore for several
-seconds becomes a drone in a small workshop.
+`cyclops_connecting.wav` is gears turning over as the socket comes up, sounded once. It replaced
+a synthesized pair of blips that looped until the session arrived. It does not repeat: a
+mechanism you hear start and then stop has done its work, and one that keeps going is stuck - so
+a slow connect is quiet after the gears rather than ticking over behind them.
 
 `cyclops_button_pressed.wav` is the rising note under a finger on the shutter button, started on
 the press edge and stopped on the release (`cyclops.button`, `cyclops.kiosk.button_down`). It is

@@ -45,9 +45,6 @@ MASTERS = Path(__file__).resolve().parent.parent / "sounds"
 class Cut(NamedTuple):
     master: str
     backwards: bool = False  # the cue is that master played end to end backwards
-    loops: bool = False  # ...and it is played on a loop, so its own tail is the gap between
-    # repeats and is left where it is. Trimming it would butt the mechanism against itself and
-    # turn a cue you are meant to ignore for several seconds into a drone in a small workshop.
 
 
 CUTS: dict[str, Cut] = {
@@ -55,8 +52,9 @@ CUTS: dict[str, Cut] = {
     "iris_close": Cut("cyclops_iris_open.wav", backwards=True),
     # Gears turning over while the socket comes up. This was two blips and a long gap for a long
     # time; what it replaced them with is the same thing the iris says, which is what the box
-    # sounds like from the outside while something inside it is moving.
-    "connecting": Cut("cyclops_connecting.wav", loops=True),
+    # sounds like from the outside while something inside it is moving. Once, not looped - a
+    # mechanism you hear start and stop has done its work, and one that keeps going is stuck.
+    "connecting": Cut("cyclops_connecting.wav"),
     # The rising note under a finger on the button, started on the way down and cut dead on the
     # way up (cyclops.button). Not trimmed at the tail for the usual reason - a cue nobody hears
     # the end of has no end to tidy - but at the head for a sharper one: what is in front of the
@@ -91,18 +89,13 @@ def decode(path: Path) -> np.ndarray:
     return np.frombuffer(out, dtype="<f4").astype(np.float64)
 
 
-def trim(samples: np.ndarray, floor: float, *, tail: bool = True) -> np.ndarray:
-    """Drop the silence at both ends, which the reversal would otherwise put at the wrong one.
-
-    ``tail=False`` keeps whatever is after the last loud sample: on a looping cue that is not
-    silence to be tidied away, it is the rest between one turn of the mechanism and the next.
-    """
+def trim(samples: np.ndarray, floor: float) -> np.ndarray:
+    """Drop the silence at both ends, which the reversal would otherwise put at the wrong one."""
     loud = np.flatnonzero(np.abs(samples) > floor)
     if not len(loud):
         return samples
     pad = int(PAD_S * SAMPLE_HZ)
-    end = len(samples) if not tail else min(len(samples), loud[-1] + pad + 1)
-    return samples[max(0, loud[0] - pad) : end]
+    return samples[max(0, loud[0] - pad) : min(len(samples), loud[-1] + pad + 1)]
 
 
 def level(samples: np.ndarray) -> np.ndarray:
@@ -157,7 +150,7 @@ def main() -> None:
         cut = CUTS[name]
         if not (src := MASTERS / cut.master).is_file():
             sys.exit(f"no master at {src}")
-        samples = trim(decode(src), args.keep, tail=not cut.loops)
+        samples = trim(decode(src), args.keep)
         pcm = level(np.ascontiguousarray(samples[::-1] if cut.backwards else samples))
         path = SOUNDS / f"cyclops_{name}.wav"
         write(path, pcm)
