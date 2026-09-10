@@ -468,6 +468,23 @@ MOOD_EASE_S = 0.45  # how long the eye takes to become a different mood. Colour 
 # as a warning lamp; colour that travels reads as the same creature changing its mind
 
 
+def buried(shut: float) -> float:
+    """How far in the cover's floor plate reaches at *shut*, as a fraction of the eye's radius.
+
+    Everything outside it is under opaque steel. Shared rather than worked out twice, because a
+    floor drawn to one radius and trusted to another is a ring of him showing through: it is what
+    :meth:`Pen.cover` lays the plate to, and it is what lets :meth:`EyeEngine._draw` stop drawing
+    the socket part way through a close - by then the whole ring set is behind the metal, and
+    drawing it is a third of the eye's cost spent on pixels nobody will see.
+
+    The aperture is a curved polygon; this is the radius to its corners, which is the widest it
+    ever gets and so the only safe place for the plate to start.
+    """
+    out = 2.0 * COVER_PIVOT * math.sin(math.radians(COVER_SHUT * shut) / 2.0)
+    half = math.pi / COVER_N
+    return math.sqrt(max(0.0, 1.0 - (out * math.sin(half)) ** 2)) - out * math.cos(half)
+
+
 def mix(base: tuple[int, int, int], other: tuple[int, int, int], amount: float) -> tuple:
     """*amount* of *other* stirred into *base*, so a tinted fill can be one opaque colour.
 
@@ -1218,11 +1235,7 @@ class Pen:
         """
         turn = math.radians(COVER_SHUT * shut)
         piv = rad * COVER_PIVOT
-        out = 2.0 * piv * math.sin(turn / 2.0)  # how far a cutting arc's centre has swung out
-        half = math.pi / COVER_N
-        # What the n of them leave: `rad - out` across the aperture's flats, and this to its
-        # corners, which is where the floor has to start if it is never to intrude on the hole.
-        corner = math.sqrt(max(0.0, rad * rad - (out * math.sin(half)) ** 2)) - out * math.cos(half)
+        corner = rad * buried(shut)  # ...and the plate under them starts here
         floor = self.steel(COVER_FLOOR)
         if corner <= 0.0:
             self.d.ellipse(self.box(rad), fill=floor)
@@ -1281,9 +1294,11 @@ class Pen:
                     + (COVER_EDGE - COVER_EDGE_HELD) * self._arrived(shut))
         self._score(rim, hub, rim, near, lambda _: COVER_GAP)
         # ...and his own light on the plate below, brightest at the hub end and gone by the rim.
+        # The only one of the four drawn in pieces, because it is the only one that changes along
+        # its length - a constant line cut up is the same line and several more calls.
         self._score(rim, hub, rim - self.thin, near,
                     lambda t: COVER_SEAM * (COVER_SEAM_FADE + (1.0 - COVER_SEAM_FADE) * t),
-                    tint=True)
+                    parts=COVER_BLEED_N, tint=True)
 
     def _brushed(self, a: float, k: int, shut: float) -> float:
         """How bright the blade is at *a* along its own arc: diffuse, specular, and the grain.
@@ -1318,7 +1333,7 @@ class Pen:
         return shut**COVER_MUTED
 
     def _score(self, rim: float, hub: tuple, rad: float, near: tuple,
-               tone: Callable[[float], float], tint: bool = False) -> None:
+               tone: Callable[[float], float], parts: int = 1, tint: bool = False) -> None:
         """A line along the circle at *hub, rad*, over the part of it that is on this blade.
 
         Which is the part inside the rim - the neighbour's circle bounds the far end of it, and
@@ -1337,7 +1352,7 @@ class Pen:
         if len(run) < 2:
             return
         hair = max(1, round(self.thin))
-        step = max(1, len(run) // COVER_BLEED_N)
+        step = max(1, len(run) // parts)
         for k in range(0, len(run) - 1, step):
             piece = run[k:k + step + 1]
             at = tone(min(1.0, (k + step) / max(1, len(run) - 1)))
@@ -1521,7 +1536,12 @@ class EyeEngine:
             # The gaze first, because the socket is geared to it now - see RING_GEAR. It is still
             # one call: the shell is handed the answer rather than asking for its own.
             gx, gy = gaze_at(phase, mood, self.places)
-            self._shell(pen, mood, phase, gx)
+            # ...and the socket only while any of it is still in front of the cover's floor plate.
+            # Nothing in `_shell` is drawn inside KNURL_IN, so once the plate has reached that the
+            # whole ring set is behind steel - see :func:`buried`. A stroke of margin, because the
+            # plate's width is rounded to a whole sample on its way onto the tile.
+            if self._c * buried(shut) + self._stroke > self._c * KNURL_IN:
+                self._shell(pen, mood, phase, gx)
             self._optic(pen.shifted(gx * self._c * GAZE_SHIFT, gy * self._c * GAZE_SHIFT),
                         mood, phase, level, gx, gy)
             # The brow last, and on the *unshifted* pen. It is a highlight on the outer glass, and
