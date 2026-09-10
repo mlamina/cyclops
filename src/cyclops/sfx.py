@@ -184,6 +184,17 @@ SAMPLES: dict[str, str] = {
     **{voice.cue(name): f"voice_{name}.wav" for name in voice.VOICES},
 }
 
+# What a cue is allowed to be interrupted by. A cue is refused while something ABOVE it is still
+# sounding; everything at the same rank treads on whatever came before it, which is what one
+# small speaker has always done here and is right for events that are genuinely equals.
+#
+# One rank above the rest, and it is his lid. The iris is the only cue on this box tied to a
+# thing you can watch: a second and a half of steel is crossing his face whether or not anything
+# is said about it, and a sound that arrives for some of that movement and not the rest reads as
+# a fault in the box rather than as a cue being polite. Everything else here is an event that has
+# already happened and can wait to be mentioned.
+RANK: dict[str, int] = {"iris_open": 1, "iris_close": 1}
+
 SILENCE = np.zeros(0, dtype=np.int16)  # what a cue that would not load amounts to
 SILENCE.setflags(write=False)
 
@@ -298,8 +309,10 @@ class Cues:
 
     def play(self, name: str, *, loop: bool = False) -> float:
         """Sound a cue, and say how long it will sound. Zero when sounds are off, which is
-        what lets a caller wait a cue out without asking whether there was one."""
-        if not self.enabled:
+        what lets a caller wait a cue out without asking whether there was one - and zero, too,
+        when something that outranks it is still sounding. See :data:`RANK` and :meth:`blocked`.
+        """
+        if not self.enabled or self.blocked(name) > 0.0:
             return 0.0
         seconds = play(name, rate=self._rate, device=self._device, loop=loop)
         self._sounding = name
@@ -310,6 +323,20 @@ class Cues:
     def waiting(self) -> float:
         """How long the cue now sounding has left, in seconds. Zero if the speaker is free."""
         return max(0.0, self._until - time.monotonic())
+
+    def blocked(self, name: str) -> float:
+        """How long until *name* would be allowed to sound. Zero if it may sound now.
+
+        A rank rather than a timestamp read once, because reading once cannot hold the promise.
+        The gears used to check how long the speaker was busy for and sleep exactly that long,
+        which lost a race it could not see: the session starts on the button's thread and the
+        iris starts on the next painted frame, so there is a window of up to a frame where the
+        speaker is genuinely free, the gears are told so, and the lid starts crossing his face
+        a moment later - underneath them. Asking again is the whole fix, and asking is cheap.
+        """
+        if RANK.get(name, 0) >= RANK.get(self._sounding or "", 0):
+            return 0.0
+        return self.waiting()
 
     def stop(self) -> None:
         self._sounding, self._until = None, 0.0

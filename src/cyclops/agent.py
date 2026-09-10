@@ -2401,7 +2401,13 @@ class VoiceAgent:
         had `cues.stop()` called on its behalf - so in both cases the right thing to sound here
         is nothing.
         """
-        await asyncio.sleep(self.cues.waiting())
+        # Asked again after every wait rather than once at the top: what is sounding can change
+        # while this is asleep, and it does - the lid starts on the frame after the session does.
+        # noqa's reason, since the rule is usually right: this is not polling for an event. It
+        # is sleeping out a duration that is known each time it is asked for and that can only
+        # get shorter, and the thing it waits on - a speaker being free - has no event to offer.
+        while (wait := self.cues.blocked("connecting")) > 0.0:  # noqa: ASYNC110
+            await asyncio.sleep(wait)
         if not self.ready.is_set():
             self.cues.play("connecting")
 
