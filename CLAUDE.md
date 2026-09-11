@@ -12,6 +12,8 @@ No branching, all commits go straight to master.
 Don't over-engineer this. It's a proof-of-concept. What matters is speed of iteration.
 I don't care about details like pixels, alpha values, etc. Keep your responses simple,
 short and outcome-focused.
+Anytime you want to show me an image, don't leave it in your scratchpad. Copy it into 
+~/Downloads.
 
 Design principles that matter for this project:
 - Reduce cognitive load - Cyclops helps users focus on the task at hand, not the tool.
