@@ -162,7 +162,7 @@ def test_a_session_nobody_spoke_in_is_empty_whatever_it_recorded(tmp_path):
         '{"t": 1.0, "type": "transcript_failed", "item": "i", "error": "no"}',
         '{"t": 1.0, "type": "photo", "by": "you", "file": "photos/19-17-10_you.jpg"}',
         '{"t": 1.0, "type": "screen", "html": "<p>x</p>", "panel": true}',
-        '{"t": 1.0, "type": "recall", "query": "caliper", "title": "t", "what": "photo"}',
+        '{"t": 1.0, "type": "data", "project": "p", "tab": "t", "action": "saved"}',
         '{"t": 1.0, "type": "project", "action": "tracked", "key": "k", "name": "n"}',
     ],
 )

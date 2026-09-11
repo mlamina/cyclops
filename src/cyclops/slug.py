@@ -88,10 +88,18 @@ Conversation:
 {transcript}"""
 
 
-# What the model answers with when there was no session here to write down. Two words, because
-# every log already on the card was written against the first and a later change of mind should
-# not need a migration. This is the only answer in a reply that means "remove this folder"
-# rather than "call it that", which is why it leaves here as a flag and not as a slug.
+# What the model answers with when there was no session here to name. The only answer in a reply
+# that means "remove this folder" rather than "call it that", which is why it leaves here as a
+# flag and not as a slug.
+#
+# "nothing" is the word the prompt teaches and "chat" is the word it used to, and both are here
+# because the second is what is already written into the logs on the card.
+#
+# Read off LINE 1 alone, and nothing else in the reply is consulted, because the model will not
+# stop writing the other two. Measured, not guessed: asked to reply with one line for a mic check
+# it answers `slug: chat` and then a heading and a paragraph anyway, on every one of them - the
+# same refusal to change shape that the comment above DESCRIBE_PROMPT records. Nineteen of the 84
+# sessions on the card came back with this on LINE 1 and not one of them was work.
 DISCARD = frozenset({"chat", "nothing"})
 
 
@@ -196,18 +204,15 @@ def parse(answer: str) -> Description:
         (after if title else before).append(stripped)
     summary = _clean(" ".join(after if title else before), MAX_SUMMARY_CHARS)
     title = title or _first_sentence(summary)
-    # The escape hatch, and its two halves are not the same claim. A reply that is *only* the
-    # discard word is the model taking it, and that folder goes. A reply that also has a heading
-    # and a paragraph is a model that named a real conversation badly: it still leaves the folder
-    # dated, exactly as it always did, but it never removes one. Which is the whole point of
-    # carrying this as a flag - until now an answer of "there was nothing here" and no answer at
-    # all were the same empty string, and only one of them is a verdict.
+    # The escape hatch. Until now this answer and no answer at all were the same empty string,
+    # and only one of them is a verdict - a model that was never reached leaves a folder alone,
+    # and a model that read the transcript and found no session in it takes one away.
     discarded = slug in DISCARD
     return Description(
         slug="" if discarded else slug,
         title=title,
         summary=summary,
-        nothing=discarded and not title and not summary,
+        nothing=discarded,
     )
 
 

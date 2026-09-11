@@ -164,8 +164,8 @@ zero-byte page is something to repair rather than something to skip.
 
 An interrupted session keeps a `parts/` with a playable `video-raw.mp4` and the two WAVs, and a
 `session.jsonl` that ends wherever the power did — `read_log` drops the half-written last line
-and the page says so. `cyclops-sessions` lists it as `UNFINISHED`, or `EMPTY` if nothing at all
-survived.
+and the page says so. `cyclops-sessions` lists it as `UNFINISHED`, or `NOTHING IN IT` if nobody
+spoke and nothing was made.
 
 ```bash
 uv run cyclops-sessions                  # what's on the card
@@ -177,9 +177,17 @@ uv run python -m cyclops.after PATH      # what a session end spawns: name, reme
 ```
 
 `--recover` is what `cyclops-recover.service` runs at boot: the two verbs above, plus a folder
-**nothing** survived in (no records, no video, no photos, no `parts/`) being deleted and whatever
-was repaired being handed to the projects sweep. Anything with any salvage at all is kept. A
-folder holding a file cyclops did not write is never deleted. A folder a session is writing into
+**nothing happened in** being deleted and whatever was repaired being handed to the projects
+sweep. Nothing happened in it means its log holds no turn anybody spoke and nothing that was
+made — a picture, a drawing, a project, a number. A `video.mp4` is not salvage on its own: ten
+seconds of an empty room is what a button pressed by accident leaves behind. Where there is no
+log to judge by, whatever the folder has is kept. A folder holding a file cyclops did not write
+is never deleted.
+
+`--tidy` is the other half, and the half you run by hand. Some sessions are dialogue and still
+nothing — "hey, can you hear me?" — and no rule cheaper than reading them can tell those from a
+question answered in twenty seconds. So it reads each one back and asks, skipping anything that
+made something. It needs a key, costs one small call per session, and takes `--dry-run`. A folder a session is writing into
 right now is skipped entirely — a live session holds a `flock` on its own log, which is how a
 boot sweep can tell, and renaming one out from under a conversation is the one mistake here that
 would actually cost you something.

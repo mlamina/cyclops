@@ -116,8 +116,14 @@ KNOWN = frozenset(
 # whose transcription failed throughout has a real conversation and a real recording and not one
 # `you` record. Leaving it out would delete that video, and nothing downstream could have caught
 # it - `session.transcript_text` reads only `you` and `cyclops`, so the model is never even asked.
+#
+# `recall` and `search` are in neither, though both are things that happened. They are *reads*:
+# nothing survives them, and neither can occur in a session where nobody spoke - checked across
+# the whole card, and true of all 84 folders on it. So they would add nothing to the first
+# question and would blunt the second, where MADE is what outranks a model saying this was a mic
+# check.
 SPOKEN = frozenset({"you", "cyclops", "transcript_failed"})
-MADE = frozenset({"photo", "screen", "project", "data", "recall", "search"})
+MADE = frozenset({"photo", "screen", "project", "data"})
 
 
 # ------------------------------------------------------------------ writing
@@ -342,6 +348,17 @@ def locked(folder: Path) -> bool:
 # ------------------------------------------------------------------ what a folder amounts to
 
 
+def made_something(records: list[dict]) -> bool:
+    """Did this session leave anything behind? A picture, a drawing, a project, a number.
+
+    The narrower half of :func:`said_or_made`, asked on its own by the one place that overrules a
+    model: a conversation the model calls a mic check is deleted, unless something was made in it.
+    """
+    return any(
+        r.get("type") in MADE and (r.get("type") != "photo" or r.get("file")) for r in records
+    )
+
+
 def said_or_made(records: list[dict]) -> bool:
     """Did anything happen in this session, as opposed to a session merely having happened?
 
@@ -384,6 +401,7 @@ class State:
     filed: bool
     named: bool
     content: bool  # somebody spoke or something was made - see said_or_made
+    made: bool  # something in here was made rather than said, and outranks any later judgement
     salvage: bool  # is there anything here worth keeping? the only question deletion ever asks
 
 
@@ -402,7 +420,8 @@ def triage(folder: Path) -> State:
     video = written(folder / VIDEO)
     summary = written(folder / SUMMARY_NAME)
 
-    content = said_or_made(records)
+    made = made_something(records)
+    content = made or said_or_made(records)
     # Four ways to be worth keeping, and only the first is about the session. The other three are
     # this module's own doctrine applied to itself: judge a folder by its log, and when there is
     # no log to judge it by, keep whatever it has. A `video.mp4` beside a zero-byte log is one
@@ -438,6 +457,7 @@ def triage(folder: Path) -> State:
         filed=written(folder / RECEIPT_NAME),
         named=not STAMPED.match(folder.name),
         content=content,
+        made=made or bool(photos),
         salvage=salvage,
     )
 

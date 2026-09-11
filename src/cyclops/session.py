@@ -70,6 +70,7 @@ if TYPE_CHECKING:  # importing these for real would be a cycle - agent.py import
     from .agent import VoiceAgent
     from .audio import Microphone, Speaker
     from .record import FrameSource
+    from .slug import Description
 
 # Re-exported rather than redefined: cyclops.card owns what a session folder is called, so that
 # stats.py - which must not import this module, because it would drag OpenCV into a status page -
@@ -890,7 +891,7 @@ def _summarise(folder: Path, state: card.State | None = None) -> str:
     if state.parts:
         flags.append("parts/")
     if state.verdict == "empty":
-        flags.append("EMPTY")
+        flags.append("NOTHING IN IT")  # not "EMPTY": it may well hold a video of an empty room
     elif not state.page:
         flags.append("UNFINISHED")
     else:
@@ -994,6 +995,8 @@ def describe(
         # the card to the model to be told there was nothing in it.
         return folder, []
     described = describe_session(text, settings)
+    if _nothing_in_it(state, described):
+        return folder, [_remove(folder)]
     did = []
     # Summary first, then the rename: the folder moves with its contents either way, and this
     # ordering means a rename that fails still leaves the summary where it belongs.
@@ -1049,6 +1052,24 @@ def describe_pending(settings: Settings) -> int:
             print(f"· {folder.name}: {one}", flush=True)
             named += one.startswith("named")
     return named
+
+
+def _nothing_in_it(state: card.State, described: Description) -> bool:
+    """The model read the transcript, found no session in it, and nothing was made. Gate two.
+
+    The only thing in the program that can tell a mic check from a conversation, because by then
+    they look identical: both are dialogue, so :attr:`cyclops.card.State.salvage` keeps them both.
+    A judgement is all that is left, and this is where it is allowed to act.
+
+    ``state.made`` outranks it, always. A picture, a drawing, a project, a number - anything that
+    survives the conversation is worth more than an opinion about the conversation, and a photo in
+    particular is reachable from another session's transcript and cannot be rebuilt from anything.
+
+    Never reached for a folder the model was not actually sent: :func:`describe` returns above
+    this on an empty transcript, and :attr:`cyclops.slug.Description.nothing` is False on every
+    failure inside the call, so silence can never be mistaken for a verdict.
+    """
+    return described.nothing and not state.made
 
 
 def _remove(folder: Path, *, dry_run: bool = False) -> str:
@@ -1163,7 +1184,9 @@ def _recover(settings: Settings, *, offline: bool = False, dry_run: bool = False
             for one in did:
                 print(f"· {folder.name}: {one}", flush=True)
                 named += one.startswith("named")
-        print(_summarise(folder))
+                removed += one.endswith("removed")
+        if folder.is_dir():  # describe may have just taken it away - see _nothing_in_it
+            print(_summarise(folder))
 
     print(
         f"· {repaired} repaired, {removed} removed, {named} named, "
@@ -1193,6 +1216,49 @@ def _recover(settings: Settings, *, offline: bool = False, dry_run: bool = False
     return 0
 
 
+def _tidy(settings: Settings, *, dry_run: bool = False) -> int:
+    """Ask the model about every session that made nothing, and remove the ones that were nothing.
+
+    The second gate applied to a card written before there was one. A verb you run, never one
+    that runs at boot: a folder that already has a ``summary.md`` is one :func:`describe` will
+    never ask about again, so the only way to re-judge it is to pay for the answer a second time,
+    and doing that on every boot is the spend :func:`_wanting` exists to prevent.
+
+    What gate one can see is free and is taken here too, so that one verb is the whole policy and
+    ``--tidy`` never leaves behind something ``--recover`` would have removed anyway.
+
+    Composes with ``--dry-run``, which is not optional here in the way it is elsewhere: this is
+    the only path in the program that can remove a folder somebody spoke in.
+    """
+    from .slug import describe_session
+
+    looked = removed = 0
+    for folder in _folders(settings.sessions_dir):
+        if card.locked(folder):
+            continue  # a session is writing here
+        state = card.triage(folder)
+        if state.verdict == "empty":
+            print(f"· {folder.name}: {_remove(folder, dry_run=dry_run)}", flush=True)
+            removed += 1
+            continue
+        if state.made:
+            continue  # something in here outlives any opinion about the conversation
+        records, _ = read_log(folder / LOG_NAME)
+        text = transcript_text(records)
+        if not text:
+            continue  # nothing to send, and gate one already had its say above
+        looked += 1
+        if not _nothing_in_it(state, describe_session(text, settings)):
+            continue
+        # The size, because a dry run is the only review this gets and a video is most of it.
+        heft = sum(f.stat().st_size for f in folder.rglob("*") if f.is_file()) // 1_000_000
+        said = "would remove" if dry_run else _remove(folder)
+        print(f"· {folder.name}: nothing in it ({heft} MB) - {said}", flush=True)
+        removed += 1
+    print(f"· {removed} removed, {looked} asked about", flush=True)
+    return 0
+
+
 def _wanting(folder: Path) -> bool:
     """Is there anything left a later run could finish? What the exit code is built from.
 
@@ -1203,10 +1269,15 @@ def _wanting(folder: Path) -> bool:
 
     A session is "described" once it has a name **or** a summary: both come out of the single
     call in :func:`cyclops.slug.describe_session`, so either one means the model saw it. A
-    session with a summary and no name is the normal, correct outcome for a mic check or a
-    conversation that never got going - :func:`cyclops.slug.slugify` maps the model's ``chat``
-    answer to an empty slug, which *means* "leave this one dated". That is a decision, not a
+    session with a summary and no name is the normal, correct outcome for a conversation that
+    never quite settled on anything: the model answered with a slug that did not survive
+    :func:`cyclops.slug.slugify`, which *means* "leave this one dated". That is a decision, not a
     failure, and asking again next boot would only buy the same answer at the same price.
+
+    A session the model found nothing in at all does not reach here, because it is no longer on
+    the card - see :func:`_nothing_in_it`. Which closes a hole rather than opening one: a folder
+    that took the escape hatch got neither a name nor a summary, so this called it unfinished and
+    the boot unit came back for it on every boot, forever.
     """
     state = card.triage(folder)
     if state.verdict in {"live", "empty"}:
@@ -1264,6 +1335,7 @@ def _file_the_card(settings: Settings) -> None:
 USAGE = """\
 usage: cyclops-sessions [--fix] [--name]
        cyclops-sessions --recover [--offline] [--dry-run]
+       cyclops-sessions --tidy [--dry-run]
 
   (no flags)  list what is on the card
   --fix       finish anything left half-done: mux an interrupted recording, rebuild a
@@ -1272,26 +1344,32 @@ usage: cyclops-sessions [--fix] [--name]
   --recover   --fix and --name over the whole card, and then two things you should not get
               by accident: folders nothing survived in are deleted, and what was repaired is
               handed to the projects sweep. This is what runs at boot.
+  --tidy      remove the sessions nothing happened in - a mic check, a greeting, a wake that
+              ended before anybody spoke. Reads each one back and asks; anything that made a
+              picture, a drawing, a project or a number is never asked about. Needs a key, and
+              costs one small call per session it asks about. Run it with --dry-run first.
   --offline   with --recover: stop after the free half. No key, no network, no spend.
-  --dry-run   with --recover: say what it would do and touch nothing. Never calls a model."""
+  --dry-run   with --recover or --tidy: say what it would do and touch nothing."""
 
 
 def main() -> None:
     """``cyclops-sessions`` - list what is on the card, and finish anything left half-done."""
     args = sys.argv[1:]
-    known = {"--fix", "--name", "--recover", "--offline", "--dry-run", "--help", "-h"}
+    known = {"--fix", "--name", "--recover", "--tidy", "--offline", "--dry-run", "--help", "-h"}
     if unknown := [a for a in args if a not in known]:
         raise SystemExit(f"error: unknown argument {unknown[0]!r}\n{USAGE}")
     if "--help" in args or "-h" in args:
         print(USAGE)
         return
     fix, rename, recover = "--fix" in args, "--name" in args, "--recover" in args
-    offline, dry_run = "--offline" in args, "--dry-run" in args
-    if (offline or dry_run) and not recover:
-        # Silently doing nothing is how `cyclops-projects --again` came to be documented as
-        # something it does not do. Say so instead.
+    tidy, offline, dry_run = "--tidy" in args, "--offline" in args, "--dry-run" in args
+    # Silently doing nothing is how `cyclops-projects --again` came to be documented as something
+    # it does not do. Say so instead.
+    if offline and not recover:
+        raise SystemExit(f"error: --offline only means something with --recover\n{USAGE}")
+    if dry_run and not (recover or tidy):
         raise SystemExit(
-            f"error: --offline and --dry-run only mean something with --recover\n{USAGE}"
+            f"error: --dry-run only means something with --recover or --tidy\n{USAGE}"
         )
     try:
         settings = load_settings(require_api_key=False)
@@ -1301,6 +1379,10 @@ def main() -> None:
 
     if recover:
         raise SystemExit(_recover(settings, offline=offline, dry_run=dry_run))
+    if tidy:
+        if not settings.api_key:
+            raise SystemExit("error: --tidy needs an OPENAI_API_KEY: it reads each session back")
+        raise SystemExit(_tidy(settings, dry_run=dry_run))
 
     folders = _folders(settings.sessions_dir)
     if not folders:

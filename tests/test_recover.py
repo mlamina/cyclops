@@ -281,7 +281,7 @@ def described(root, name, *, summary=True, slug=""):
 
 
 def test_a_session_with_a_summary_and_no_name_is_never_asked_again(card_root, monkeypatch):
-    """slugify maps the model's "chat" to "", meaning leave this one dated. That is an answer.
+    """A summary is proof the model saw this one. An empty slug is its "leave this dated".
 
     Asking again buys the same answer at the same price - on every boot, forever, because the
     boot unit retries on a non-zero exit.
@@ -313,6 +313,62 @@ def test_a_session_that_was_never_described_still_gets_asked(card_root, monkeypa
 
     assert back.name == "2026-08-26_18-00-00_mic-test"
     assert f"wrote {card.SUMMARY_NAME}" in did
+
+
+def test_a_session_the_model_found_nothing_in_is_removed(card_root, monkeypatch):
+    """The mic check: dialogue, so nothing cheaper than a model could have told it from work."""
+    from cyclops.slug import Description
+
+    folder = described(card_root, "2026-08-26_18-00-00", summary=False)
+    monkeypatch.setattr("cyclops.slug.describe_session",
+                        lambda text, settings: Description(nothing=True))
+
+    session.describe(folder, settings_for(card_root, api_key="sk-test"))
+
+    assert not folder.exists()
+
+
+def test_a_photo_outranks_the_model(card_root, monkeypatch):
+    """Whatever it made of the conversation, a picture cannot be rebuilt from anything."""
+    from cyclops.slug import Description
+
+    folder = described(card_root, "2026-08-26_18-00-00", summary=False)
+    (folder / card.PHOTOS).mkdir()
+    (folder / card.PHOTOS / "18-00-10_you.jpg").write_bytes(b"jpeg bytes")
+    monkeypatch.setattr("cyclops.slug.describe_session",
+                        lambda text, settings: Description(nothing=True))
+
+    session.describe(folder, settings_for(card_root, api_key="sk-test"))
+
+    assert (folder / card.PHOTOS / "18-00-10_you.jpg").is_file()
+
+
+def test_tidy_dry_run_changes_nothing(card_root, monkeypatch):
+    """The only path that can remove a folder somebody spoke in, so the review has to be honest."""
+    from cyclops.slug import Description
+
+    folder = described(card_root, "2026-08-26_17-13-09")
+    monkeypatch.setattr("cyclops.slug.describe_session",
+                        lambda text, settings: Description(nothing=True))
+    before = sorted(p.name for p in folder.iterdir())
+
+    session._tidy(settings_for(card_root, api_key="sk-test"), dry_run=True)
+
+    assert folder.is_dir()
+    assert sorted(p.name for p in folder.iterdir()) == before
+
+
+def test_tidy_asks_about_a_session_that_already_has_a_summary(card_root, monkeypatch):
+    """What --recover cannot do: describe() never looks at a described folder twice."""
+    from cyclops.slug import Description
+
+    folder = described(card_root, "2026-08-26_17-13-09")
+    monkeypatch.setattr("cyclops.slug.describe_session",
+                        lambda text, settings: Description(nothing=True))
+
+    session._tidy(settings_for(card_root, api_key="sk-test"))
+
+    assert not folder.exists()
 
 
 # ------------------------------------------------------------------ naming, after the fact
