@@ -31,6 +31,20 @@ body.view-highlights .highlights { display: flex; }
 /* A drawing is Cyclops answering a question out loud. It outranks anything you were reading. */
 body.drawing .view, body.drawing .lightbox { display: none !important; }
 
+/* ---- the strip under a picture ---- */
+/* The bar and the gap over it, in one place because two screens wear the same one: the reel's
+   progress under a clip, and a recording's seeker under the video (both below). They are
+   custom properties so that .reel's and .video's "take the rest of the height" subtraction
+   cannot drift from the bar it is subtracting.
+
+   On `body` and not on `:root`: --u is redefined on body.kiosk, and a length built from var(--u)
+   resolves on the element that declares it - written at :root these would be built from the
+   LAN's --u and inherit that number onto the panel. */
+body {
+  --bar: calc(6 * var(--u));
+  --bargap: calc(6 * var(--u));
+}
+
 /* ---- the tabs ---- */
 /* The panel's, in practice: off the kiosk the nav holds one select instead and there is no .tab
    on the page at all (see dashboard.html and the menu block in lan.css). .nav still applies to
@@ -90,11 +104,7 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
    picture width (w = (305 - strip) * 5/3), which is what takes the panel's picture from 508 to
    488 - out of the black pillar that was there anyway, so nothing else has to move. */
 .reelstack {
-  /* Both numbers are read back by .reel's height below. They are custom properties so that
-     subtraction cannot drift from the bar it is subtracting. */
-  --reelbar: calc(6 * var(--u));
-  --reelgap: calc(6 * var(--u));
-  display: flex; flex-direction: column; gap: var(--reelgap);
+  display: flex; flex-direction: column; gap: var(--bargap);
   flex: 0 0 auto; height: 100%; min-width: 0;
 }
 /* .reelstack sets display, so the UA sheet's [hidden] loses to it unless this says otherwise -
@@ -104,7 +114,7 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
 .reel {
   position: relative; min-height: 0; background: #000; overflow: hidden;
   aspect-ratio: 5 / 3; flex: 0 0 auto; max-width: 100%;
-  height: calc(100% - var(--reelbar) - var(--reelgap));
+  height: calc(100% - var(--bar) - var(--bargap));
 }
 .reel[hidden] { display: none; }
 .reelvid {
@@ -131,7 +141,7 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
    the column it measured 1.16 px instead of 3 on a 844x390 phone. */
 .reelbar {
   position: relative; z-index: 11;
-  flex: 0 0 auto; height: var(--reelbar); background: var(--dim);
+  flex: 0 0 auto; height: var(--bar); background: var(--dim);
 }
 .reelfill { display: block; height: 100%; width: 0; background: var(--green); }
 /* The column the picture left. Centred against it rather than sitting at the top, because at this
@@ -309,92 +319,48 @@ body.solo header, body.solo .caption { display: none; }
    the first `auto` track and the 1fr below it quietly keeps the space - 18 px of picture that
    nothing was using and nothing was going to admit to. */
 body.solo { grid-template-rows: minmax(0, 1fr); }
-body.solo .playing { position: relative; grid-template-rows: minmax(0, 1fr); gap: 0; }
-
-/* Everything below is positioned from the script, which measures where the picture actually
-   landed inside the element - object-fit leaves letterboxing that CSS cannot see. */
-.vtitle, .scrub, .rig, .back { display: none; }
-
-.vtitle {
-  position: absolute; z-index: 11;
-  padding: calc(9 * var(--u)) calc(13 * var(--u));
-  background: linear-gradient(to bottom, rgba(0, 0, 0, .75), transparent);
-  color: var(--mid); font-size: calc(13 * var(--u)); letter-spacing: .06em;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  pointer-events: none;
+/* The picture, the gap, the bar - the reel's column exactly (see "the reel" above), as two grid
+   rows rather than two flex items because .playing is already a grid on the laptop and only the
+   track list changes here. The seeker is the second item in the markup order that survives solo:
+   the caption is display:none and a hidden child is not a grid item. */
+body.solo .playing {
+  position: relative;
+  grid-template-rows: minmax(0, 1fr) var(--bar); gap: var(--bargap);
 }
-body.solo .vtitle { display: block; }
 
-/* 40u of touch target for an 8u track: the bar you can hit is not the bar you can see, and on
-   a panel the first one has to be a thumb wide. */
+/* Nothing is written on the picture and nothing on this screen can be pressed. A press anywhere
+   on the frame closes the recording and gives the list back - the lightbox's gesture, and the
+   panel's gesture for a picture generally (system.css) - so a play button, a clock, a way-out
+   square, a Find clips button and the title plate across the top all came off it on 2026-09-11.
+   What is left is the recording and how far through it you are. The name is on the row you
+   pressed to get here and in the caption on a laptop, which is twice already.
+
+   The bar is the one thing that takes a press, which is why it is off the picture, and it is
+   placed from the script: object-fit leaves letterboxing that CSS cannot see. */
+.scrub { display: none; }
+
+/* .reelbar, with a finger on it. Same height, same colours, same gap over it, and the same
+   reason it is not painted on the picture: a clip is shot across a bench and the bottom of the
+   frame is where somebody's hands are. It is narrowed to the picture's own width by fit(), so on
+   a 4:3 recording it stops where the pillar starts instead of running out over the black.
+
+   `position: relative` for z-index only, exactly as .reelbar needs it: base.css's scanlines are
+   a fixed layer at z-index 9 and would otherwise be drawn over the bar. */
 .scrub {
-  position: absolute; z-index: 11; height: calc(40 * var(--u));
-  display: grid; align-items: center; padding: 0 calc(12 * var(--u));
-  background: linear-gradient(to top, rgba(0, 0, 0, .75), transparent);
-  touch-action: none;
+  position: relative; z-index: 11; height: var(--bar);
+  background: var(--dim); touch-action: none;
 }
-body.solo .scrub { display: grid; }
-.scrub-track {
-  height: calc(8 * var(--u)); background: #0d2418;
-  border: calc(1 * var(--u)) solid var(--dim);
-}
-.scrub-fill { height: 100%; width: 0; background: var(--green); }
+body.solo .scrub { display: block; }
+.scrub-fill { display: block; height: 100%; width: 0; background: var(--green); }
+/* The one piece of feedback left, and it earns its line: the bar is 6 px tall and a drag on it
+   has to say it took. */
 .scrub:active .scrub-fill { background: #fff; }
 
-body.solo .rig { display: grid; }
-.rig {
-  position: fixed; z-index: 11; justify-items: center; gap: calc(9 * var(--u));
-}
-.rig-play {
-  width: calc(76 * var(--u)); height: calc(76 * var(--u));
-  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
-  color: var(--green); padding: 0;
-}
-.rig-play:active { background: var(--green); color: var(--ink); }
-.pg { width: 60%; height: 60%; fill: currentColor; display: block; margin: 0 auto; }
-.rig-play .pg-pause, .rig-play[data-on] .pg-play { display: none; }
-.rig-play[data-on] .pg-pause { display: inline; }
-.rig-time {
-  font-size: calc(13 * var(--u)); text-align: center; line-height: 1.45;
-  font-variant-numeric: tabular-nums; color: var(--dim);
-}
-#vnow { display: block; color: var(--green); }
-
-/* Make a video, and what became of the last one asked for. In the rig rather than in the
-   caption beside the summary, because body.solo hides the caption - and solo is on for the
-   panel and for a phone held upright, which is two of the three screens this runs on. */
-.cutbtn {
-  font-size: calc(12 * var(--u)); letter-spacing: .1em; padding: calc(7 * var(--u)) calc(10 * var(--u));
-  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid); color: var(--green);
-  white-space: nowrap;
-}
-.cutbtn:active { background: var(--green); color: var(--ink); }
-/* Queued and cutting are the two states with nothing to press. Amber rather than dim: it is
-   working, not broken, and that is the same word .rowsub.live uses on the list. */
-.cutbtn:disabled { color: var(--amber); border-color: var(--amber); opacity: 1; }
-.cutbtn[data-state="failed"] { color: var(--red); border-color: var(--red); }
-
-/* Two ways out, at opposite ends of the same bar so neither is the other by accident: back up
-   one step to the list, and off the page entirely to the camera. */
-body.solo .back { display: block; }
-.back {
-  position: fixed; top: calc(22 * var(--u)); right: calc(22 * var(--u)); z-index: 11;
-  width: calc(58 * var(--u)); height: calc(58 * var(--u));
-  background: var(--screen); border: calc(1 * var(--u)) solid var(--mid);
-  color: var(--green); font: inherit; font-size: calc(30 * var(--u)); line-height: 1;
-}
-.back:active { background: var(--green); color: var(--ink); }
-/* Written with :not(.drawing) rather than left to the cascade. A picture arriving over a session
-   you were watching takes the whole panel, and this button is not part of that screen: it is
-   hidden there by `body.photo .close` in system.css, and pinning it to a corner as well would be
-   two files arguing about one element. */
-body.solo:not(.drawing) .close {
-  position: fixed; top: auto; left: auto;
-  bottom: calc(22 * var(--u)); right: calc(22 * var(--u)); z-index: 11;
-  width: calc(58 * var(--u)); height: calc(58 * var(--u));
-  margin: 0; font-size: calc(24 * var(--u)); letter-spacing: 0; background: var(--screen);
-}
-body.solo:not(.drawing) .close .word { display: none; }
+/* The way off the page entirely is not on this screen either - the press that closes the
+   recording lands on the list, which has the close bar across the bottom of it. Written with
+   :not(.drawing) rather than left to the cascade, because a picture arriving over a session you
+   were watching takes the whole panel and `body.photo .close` in system.css owns it there. */
+body.solo:not(.drawing) .close { display: none; }
 
 /* ---- one picture, full screen ---- */
 /* No caption row and no padding: the picture is the whole screen, and the whole screen is the

@@ -2046,29 +2046,6 @@
     }
    },
    {
-    "sel": ".close",
-    "i": 0,
-    "x": 720.03,
-    "y": 400.03,
-    "w": 57.98,
-    "h": 57.98,
-    "sw": 56,
-    "cw": 56,
-    "style": {
-     "display": "block",
-     "grid-template-columns": "none",
-     "grid-template-rows": "none",
-     "flex-wrap": "nowrap",
-     "font-size": "23.9962px",
-     "padding": "1px 6px",
-     "gap": "normal",
-     "align-content": "normal",
-     "overflow-x": "visible",
-     "overflow-y": "visible",
-     "position": "fixed"
-    }
-   },
-   {
     "sel": ".view",
     "i": 2,
     "x": 16.98,
@@ -2126,11 +2103,11 @@
     "style": {
      "display": "grid",
      "grid-template-columns": "766.031px",
-     "grid-template-rows": "446.031px",
+     "grid-template-rows": "434.062px 5.98438px",
      "flex-wrap": "nowrap",
      "font-size": "13.9978px",
      "padding": "0px",
-     "gap": "0px",
+     "gap": "5.99904px",
      "align-content": "normal",
      "overflow-x": "visible",
      "overflow-y": "visible",
@@ -2143,7 +2120,7 @@
     "x": 16.98,
     "y": 16.98,
     "w": 766.03,
-    "h": 446.03,
+    "h": 434.06,
     "sw": 766,
     "cw": 766,
     "style": {
@@ -2157,6 +2134,29 @@
      "align-content": "normal",
      "overflow-x": "clip",
      "overflow-y": "clip",
+     "position": "relative"
+    }
+   },
+   {
+    "sel": ".scrub",
+    "i": 0,
+    "x": 38.28,
+    "y": 457.03,
+    "w": 723.44,
+    "h": 5.98,
+    "sw": 723,
+    "cw": 723,
+    "style": {
+     "display": "block",
+     "grid-template-columns": "none",
+     "grid-template-rows": "none",
+     "flex-wrap": "nowrap",
+     "font-size": "13.9978px",
+     "padding": "0px",
+     "gap": "normal",
+     "align-content": "normal",
+     "overflow-x": "visible",
+     "overflow-y": "visible",
      "position": "relative"
     }
    }

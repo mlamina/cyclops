@@ -298,10 +298,10 @@ room for. That is the one question here answered by the stylesheet rather than b
   <main class="view watch" id="v-session">
     <div class="playing">
       <video class="video" id="video" controls playsinline preload="metadata"></video>
-      <!-- Over the picture, and only on the panel: the drawing already says its own name in the
-           top-left corner of the screen it took, and a recording should say it the same way. -->
-      <div class="vtitle" id="vtitle"></div>
-      <div class="scrub" id="scrub"><div class="scrub-track"><div class="scrub-fill" id="scrubfill"></div></div></div>
+      <!-- The seeker, and the only thing on this screen you can press. Off the picture and under
+           it, exactly the reel's bar (views.css): a press anywhere on the picture closes the
+           recording, so a finger reaching for the bar must not land on the way out. -->
+      <div class="scrub" id="scrub"><div class="scrub-fill" id="scrubfill"></div></div>
       <div class="caption">
         <div class="stitle" id="stitle"></div>
         <div class="smeta" id="smeta"></div>
@@ -309,22 +309,6 @@ room for. That is the one question here answered by the stylesheet rather than b
       </div>
     </div>
     <div class="talk" id="talk"></div>
-    <!-- The controls, out in the bar the aspect mismatch hands us for nothing. Drawn rather than
-         typed: DejaVu Sans Mono is what the panel has, and a pause glyph is not in it. -->
-    <div class="rig" id="rig">
-      <button class="rig-play" id="play" type="button" aria-label="Play">
-        <svg class="pg" viewBox="0 0 24 24" aria-hidden="true">
-          <path class="pg-play" d="M7 4 L20 12 L7 20 Z"/>
-          <path class="pg-pause" d="M7 4 h4 v16 h-4 z M13 4 h4 v16 h-4 z"/>
-        </svg>
-      </button>
-      <div class="rig-time"><span id="vnow">0:00</span><span id="vall"></span></div>
-{% if cut %}      <!-- Clips are found by themselves now, so this is not how work is started: it is the
-           "you judged that one wrong" button, and the rest of the time it just says what
-           cyclops.cut.progress found here - 2 clips, Nothing to clip, Clipping… -->
-      <button class="cutbtn" id="makecut" type="button"></button>
-{% endif %}    </div>
-    <button class="back" id="back" type="button" aria-label="Back to sessions">&#8249;</button>
   </main>
 
   <main class="view media" id="v-media"></main>

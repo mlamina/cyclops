@@ -51,9 +51,6 @@ const reelFill = document.getElementById('reelfill');
 const reelFlashEl = document.getElementById('reelflash');
 const reelTitle = document.getElementById('reeltitle');
 const reelWhen = document.getElementById('reelwhen');
-// Only on the page when CYCLOPS_CUT is on ({% if cut %} in the template), so everything
-// below null-checks it the way the controls in status.js do.
-const makecut = document.getElementById('makecut');
 const vProjects = document.getElementById('v-projects');
 const crumbTrail = document.getElementById('crumbtrail');
 const railName = document.getElementById('railname');
@@ -79,13 +76,8 @@ const tabs = [...document.querySelectorAll('.tab')];
 // Not `pick`: that id belongs to the Upload button down in the crumb bar, and an id claimed
 // twice is silently won by whichever element is earlier in the document.
 const menu = document.getElementById('menu');
-const rig = document.getElementById('rig');
-const play = document.getElementById('play');
-const vnow = document.getElementById('vnow');
-const vall = document.getElementById('vall');
-const vtitle = document.getElementById('vtitle');
+const playing = document.querySelector('.playing');
 const scrub = document.getElementById('scrub');
-const scrubTrack = scrub.querySelector('.scrub-track');
 const scrubFill = document.getElementById('scrubfill');
 
 const esc = (text) => String(text == null ? '' : text)
@@ -466,10 +458,13 @@ function line(record) {
 
 // ---------------------------------------------------------------- the player
 
-// Where the picture actually is. object-fit: contain letterboxes inside the element and leaves
-// nothing in the DOM to hang anything off, so the bars have to be measured. Everything that
-// sits over or beside the picture is placed from this - which is also what makes it correct on
-// a phone held upright, where the same arithmetic puts the bars top and bottom instead.
+// How wide the picture actually is. object-fit: contain letterboxes inside the element and
+// leaves nothing in the DOM to hang anything off, so the pillar has to be measured - and the
+// same arithmetic is right on a phone held upright, where it comes out as nothing to take off.
+//
+// The seeker is narrowed rather than offset: it is a grid row under the video now (views.css),
+// so what it needs is the pillar taken off each end, and the row it sits in already puts it the
+// reel's 6 px below the frame.
 function fit() {
   if (!document.body.classList.contains('solo')) return;
   const box = video.getBoundingClientRect();
@@ -478,15 +473,9 @@ function fit() {
   const wide = box.width / box.height > ratio;
   const w = wide ? box.height * ratio : box.width;
   const h = wide ? box.height : box.width / ratio;
-  const padX = (box.width - w) / 2, padY = (box.height - h) / 2;
-  for (const el of [vtitle, scrub]) { el.style.left = padX + 'px'; el.style.right = padX + 'px'; }
-  vtitle.style.top = padY + 'px';
-  scrub.style.bottom = padY + 'px';
-  // Centred in the gutter to the left of the picture, and never off the edge of a screen too
-  // narrow to have one - there it sits over the picture, as it does in every player.
-  const gutter = box.left + padX;
-  rig.style.left = Math.max(6, (gutter - rig.offsetWidth) / 2) + 'px';
-  rig.style.top = Math.round(box.top + box.height / 2 - rig.offsetHeight / 2) + 'px';
+  const padX = (box.width - w) / 2;
+  scrub.style.marginLeft = padX + 'px';
+  scrub.style.marginRight = padX + 'px';
 }
 
 function solo(on) {
@@ -496,26 +485,32 @@ function solo(on) {
 }
 
 const paint = () => {
-  vnow.textContent = clock(video.currentTime);
   scrubFill.style.width = (video.duration ? 100 * video.currentTime / video.duration : 0) + '%';
 };
 video.addEventListener('timeupdate', paint);
 video.addEventListener('loadedmetadata', () => {
-  vall.textContent = isFinite(video.duration) ? clock(video.duration) : '';
   fit();
   paint();
 });
-const mark = () => { if (video.paused) play.removeAttribute('data-on'); else play.dataset.on = '1'; };
-video.addEventListener('play', mark);
-video.addEventListener('pause', mark);
-const toggle = () => { if (video.paused) video.play().catch(() => {}); else video.pause(); };
-play.addEventListener('click', toggle);
-// The picture is the biggest target on the screen; on a panel it should do the commonest thing.
-video.addEventListener('click', () => { if (document.body.classList.contains('solo')) toggle(); });
 window.addEventListener('resize', fit);
 
+// A press puts the recording away, which is what a press on a picture means everywhere else on
+// this panel - the lightbox, and a drawing on the stage (system.css). Hung on .playing and not on
+// the video so that the black beside a 4:3 frame, and the name written across the top of it,
+// close it too: the target is the screen, and the seeker is the one thing cut out of it.
+//
+// It is the only way back now. The way out to the camera is not on this screen either, so a
+// press that landed on nothing would leave the panel with a video and no exit.
+if (playing) {
+  playing.addEventListener('click', (e) => {
+    if (!document.body.classList.contains('solo')) return;
+    if (e.target.closest('.scrub')) return;
+    location.hash = '#/sessions';
+  });
+}
+
 const seek = (e) => {
-  const box = scrubTrack.getBoundingClientRect();
+  const box = scrub.getBoundingClientRect();
   if (!video.duration || !box.width) return;
   video.currentTime = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width)) * video.duration;
   paint();
@@ -524,8 +519,6 @@ scrub.addEventListener('pointerdown', (e) => { scrub.setPointerCapture(e.pointer
 scrub.addEventListener('pointermove', (e) => {
   if (scrub.hasPointerCapture(e.pointerId)) seek(e);
 });
-
-document.getElementById('back').addEventListener('click', () => { location.hash = '#/sessions'; });
 
 // ---------------------------------------------------------------- one session
 
@@ -565,15 +558,23 @@ async function showSession(name) {
     if (one.filed) bits.push('filed under ' + one.filed);
     smeta.textContent = bits.join(' · ');
     ssum.textContent = one.summary;
-    vtitle.textContent = one.title;
-    paintCut(one);
     if (one.video) {
       video.src = '/media/' + encodeURIComponent(name) + '/video.mp4';
       video.hidden = false;
-      // You tapped a session to watch it, so watch it. The click that got you here is the
-      // gesture the autoplay policy wants; if a browser refuses anyway it stays paused, and
-      // the play button is now 76 u of thumb rather than something to aim at.
-      video.play().catch(() => {});
+      // Every recording asks for sound again. The muting below is about one refused attempt and
+      // never about the screen: the refusal is temporary and nothing tells us when it lifts, so
+      // a latched flag here is every session after the first one silent for the life of the page.
+      video.muted = false;
+      // You tapped a session to watch it, so watch it. On the panel kiosk.py's --autoplay-policy
+      // settles it; everywhere else the click that got you here is the gesture the policy wants,
+      // and it may well have been spent by the time this landed. There is no play button to fall
+      // back on any more - a press is the way *out* - so a refusal is asked again without the
+      // sound rather than left as a still frame nothing can start. Same move as the reel, and the
+      // same reason: a recording playing quiet beats a screen that looks broken.
+      video.play().catch(() => {
+        video.muted = true;
+        video.play().catch(() => {});
+      });
     } else {
       video.removeAttribute('src');
       video.load();
@@ -590,68 +591,11 @@ async function showSession(name) {
 
 function letGo() {
   openName = null;
-  clearTimeout(watchingCut);
   solo(false);
   video.pause();
   video.removeAttribute('src');
   video.load();   // without this the decoder keeps the last file open behind the panel
   talk.innerHTML = '';
-}
-
-// ---------------------------------------------------------------- making one
-
-// The one place that decides what the button says, so the four states cannot drift apart across
-// three call sites. A video takes about two minutes to make and nothing about that is visible on
-// this screen otherwise, which is how you end up pressing a button three times.
-let watchingCut = null;
-
-function paintCut(one) {
-  if (!makecut) return;
-  const state = one.cut || '';
-  const words = {
-    '': 'Find clips', asked: 'Queued…', clipping: 'Clipping…',
-    done: (one.cut_made || 0) + (one.cut_made === 1 ? ' clip' : ' clips'),
-    none: 'Nothing to clip', failed: 'Try again',
-  };
-  makecut.textContent = words[state] || 'Find clips';
-  makecut.disabled = state === 'asked' || state === 'clipping';
-  makecut.dataset.state = state;
-  clearTimeout(watchingCut);
-  if (state === 'asked' || state === 'clipping') {
-    const name = openName;
-    watchingCut = setTimeout(async () => {
-      if (openName !== name) return;   // you left; a poll for a screen nobody is on is a warm Pi
-      try {
-        const fresh = await grab('/api/session/' + encodeURIComponent(name));
-        if (openName === name) paintCut(fresh);
-      } catch (e) { /* the next press will find out; a failed poll is not worth a broken page */ }
-    }, 5000);
-  }
-}
-
-if (makecut) {
-  makecut.addEventListener('click', async () => {
-    if (makecut.disabled) return;
-    const name = openName;
-    if (!name) return;
-    const was = makecut.textContent;
-    makecut.disabled = true;
-    makecut.textContent = 'Asking…';
-    try {
-      const r = await fetch('/api/session/' + encodeURIComponent(name) + '/clips',
-                            { method: 'POST' });
-      if (!r.ok) throw new Error(await r.text().catch(() => '') || r.status);
-      const found = await r.json();
-      if (openName !== name) return;
-      paintCut(found);
-    } catch (e) {
-      if (openName === name) {
-        makecut.disabled = false;
-        makecut.textContent = was;
-        stitle.textContent = String(e.message || e).slice(0, 80);
-      }
-    }
-  });
 }
 
 talk.addEventListener('click', (e) => {
