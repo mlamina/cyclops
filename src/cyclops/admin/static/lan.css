@@ -613,16 +613,26 @@ body:not(.kiosk) .highlights {
   flex-direction: column; justify-content: center; align-items: center;
   gap: 0; padding: var(--pad);
 }
-/* min(), not the bare cap: this rule replaces the max-width: 100% in views.css rather than
-   adding to it, and without the 100% arm a 5:3 box on a tall phone sizes itself from the height
-   and runs 550 px off the right edge. layout_check.mjs found that at 390 and 820 wide.
+/* The cap is on the wrapper and not on the picture, because the bar is the picture's sibling now
+   and lines up under it only by sharing a capped parent. Left on the picture alone, the bar takes
+   the column's full width instead - measured 1348 px of bar under 1058 px of picture at 1512 wide.
 
-   height:auto undoes the panel's "fill the row and take your width from the ratio". Here the
-   width is the fixed dimension and the height follows, or a short viewport gives the box a height
-   it then turns into a width far past the cap. */
-body:not(.kiosk) .reel {
+   min(), not the bare cap: this rule replaces the max-width: 100% in views.css rather than
+   adding to it, and without the 100% arm a 5:3 box on a tall phone sizes itself from the height
+   and runs 550 px off the right edge. layout_check.mjs found that at 390 and 820 wide. */
+body:not(.kiosk) .reelstack {
   max-width: min(100%, calc(920 * var(--u)));
-  flex: 0 1 auto; max-height: 100%; height: auto; width: 100%; margin: 0 auto;
+  flex: 0 1 auto; min-height: 0; max-height: 100%; height: auto; width: 100%; margin: 0 auto;
+}
+/* height:auto undoes the panel's "take a fixed slice of the wrapper and your width from the
+   ratio". Here the width is the fixed dimension and the height follows, or a short viewport gives
+   the box a height it then turns into a width far past the cap.
+
+   `flex: 0 1 auto` and not the panel's `0 0 auto`: in a column that has to shrink, the shrink has
+   to land on the picture. Held rigid, it pushed the bar out of the wrapper and onto the caption
+   at 844x390. */
+body:not(.kiosk) .reel {
+  flex: 0 1 auto; min-height: 0; height: auto; width: 100%; max-width: 100%; margin: 0;
 }
 body:not(.kiosk) .reelcap {
   max-width: calc(920 * var(--u)); margin: 0 auto; width: 100%;

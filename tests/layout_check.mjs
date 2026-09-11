@@ -271,6 +271,12 @@ const WATCH = ['body', 'header', '.brand', '.nav', '.tab', '.menu', '.system', '
   '.view', '.row', '.shot', '.rowtext', '.rowtitle', '.rowsum', '.rowwhen', '.grid', '.cell',
   '.watch', '.playing', '.video', '.talk', '.line', '.caption', '.stitle', '.smeta', '.ssum',
   '.lightbox', '.crumbs', '.crumb', '.projects',
+  // The reel. Watched since the bar moved out from over the picture: the picture's width is
+  // derived from its own ratio against a height it gets from its parent, which is the shape of
+  // thing that has failed twice here (views.css:20-24, and a 0 px collapse measured on the way
+  // to this layout). Without these four the panel's picture could go to zero and this file
+  // would still go green - `.view` is the only thing on that screen it used to match.
+  '.reelstack', '.reel', '.reelbar', '.reelcap',
   '.project', '.rail', '.railback', '.railname', '.railtab', '.pane', '.pbody'];
 const PROPS = ['display', 'grid-template-columns', 'grid-template-rows', 'flex-wrap',
   'font-size', 'padding', 'gap', 'align-content', 'overflow-x', 'overflow-y', 'position'];

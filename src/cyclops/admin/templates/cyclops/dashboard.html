@@ -401,14 +401,25 @@ room for. That is the one question here answered by the stylesheet rather than b
     <!-- Two <video> and never a third. One is playing, one is holding the next clip, and they
          swap roles at every end - so one clip or four hundred, exactly two decoders are alive
          and at most two of gunicorn's four slots are ever inside a range request. -->
-    <div class="reel" id="reel">
-      <video class="reelvid" id="reel0" playsinline preload="auto"></video>
-      <video class="reelvid" id="reel1" playsinline preload="auto"></video>
+    <!-- The picture and the bar under it, as one column. The bar is a sibling of the picture and
+         not a child of it, which is the whole point of this wrapper: it is off the frame, and it
+         is outside the rect app.js measures the left/right-third step gesture against, so a
+         finger on the seeker does not skip the clip. -->
+    <div class="reelstack" id="reelstack">
+      <div class="reel" id="reel">
+        <video class="reelvid" id="reel0" playsinline preload="auto"></video>
+        <video class="reelvid" id="reel1" playsinline preload="auto"></video>
+        <!-- The edge between one clip and the next. Every clip is shot over the same bench in
+             the same room, so a hard cut between two of them often looks like nothing happened.
+             Empty, and painted only by app.js's reelFlash. -->
+        <div class="reelflash" id="reelflash"></div>
+      </div>
       <div class="reelbar"><span class="reelfill" id="reelfill"></span></div>
     </div>
     <!-- Beside the picture on the panel and under it on a laptop, but never on top of it either
          way. It was over the bottom of the frame until 2026-09-10, which is where a person's
-         hands are in a clip shot over a bench. -->
+         hands are in a clip shot over a bench. The seeker was the last thing still on the
+         picture and came off it the same way. -->
     <div class="reelcap" id="reelcap">
       <span class="reeltitle" id="reeltitle"></span>
       <span class="reelwhen" id="reelwhen"></span>

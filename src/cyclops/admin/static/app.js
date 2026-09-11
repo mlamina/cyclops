@@ -40,9 +40,15 @@ const vHighlights = document.getElementById('v-highlights');
 // The reel. Every identifier here is reel*-prefixed on purpose: status.js, stream.js and panel.js
 // share this global scope, and a second const of a name one of them already declares is a
 // SyntaxError that takes the whole page down.
+// reelBox is the picture alone and reelStack is the picture plus the bar under it. The split
+// matters twice: the tap gesture is measured against the picture (a finger on the seeker must not
+// skip the clip), and an empty reel hides the stack (hiding the picture alone would leave the bar
+// behind on its own).
 const reelBox = document.getElementById('reel');
+const reelStack = document.getElementById('reelstack');
 const reelPair = [document.getElementById('reel0'), document.getElementById('reel1')];
 const reelFill = document.getElementById('reelfill');
+const reelFlashEl = document.getElementById('reelflash');
 const reelTitle = document.getElementById('reeltitle');
 const reelWhen = document.getElementById('reelwhen');
 // Only on the page when CYCLOPS_CUT is on ({% if cut %} in the template), so everything
@@ -264,11 +270,36 @@ function reelShow(i) {
     front.play().catch(() => {});
   });
   reelPaint();
+  // Back to empty, and here rather than in the timeupdate handler because this is the one
+  // function every switch goes through. Nothing used to reset it: the bar just snapped back at
+  // the new clip's first timeupdate, which nobody could see on a 3 px hairline over the picture
+  // and everybody can see on a 6 px bar under it.
+  reelFill.style.width = '0%';
   reelInto(back, reelAt + 1);   // the next one buffers behind the one you are watching
 }
 
-function reelNext() { reelOn = 1 - reelOn; reelShow(reelAt + 1); }
-function reelPrev() { reelOn = 1 - reelOn; reelShow(reelAt - 1); }
+// The edge between two clips. Kept off reelShow on purpose: reelShow is the choke point but two
+// of its callers are not a switch - the first paint on arriving at the screen, and picking the
+// reel back up after a drawing has covered it (same clip, same position). Hung on next/prev it
+// catches every real one: the `ended` advance, the skip over a clip that will not decode, a tap
+// on either third, and the arrow keys.
+let reelFlashAt = null;
+// A white flash is exactly what this setting exists to refuse, so it is a check and not a
+// softening. It has to be asked here rather than in CSS because the animation is driven from
+// here; on the panel it never matches, so the panel always flashes.
+const reelStill = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)');
+function reelFlash() {
+  if (!reelFlashEl || (reelStill && reelStill.matches)) return;
+  // Mashing an arrow key must not stack animations on one element, each fading from wherever the
+  // last had got to.
+  if (reelFlashAt) reelFlashAt.cancel();
+  reelFlashAt = reelFlashEl.animate(
+    [{ opacity: 0 }, { opacity: .85, offset: .12 }, { opacity: 0 }],
+    { duration: 220, easing: 'ease-out' });
+}
+
+function reelNext() { reelFlash(); reelOn = 1 - reelOn; reelShow(reelAt + 1); }
+function reelPrev() { reelFlash(); reelOn = 1 - reelOn; reelShow(reelAt - 1); }
 
 for (const el of reelPair) {
   // Only the one on screen advances: the other's `ended` is the previous clip finishing behind
@@ -328,7 +359,7 @@ async function showHighlights() {
     const same = reelList.length === got.clips.length &&
                  reelList.every((c, i) => c.id === got.clips[i].id);
     reelList = got.clips;
-    reelBox.hidden = !reelList.length;
+    reelStack.hidden = !reelList.length;
     if (!reelList.length) {
       reelSay('nothing worth a clip yet');
       return;
@@ -338,7 +369,7 @@ async function showHighlights() {
     reelShow(0);
   } catch (e) {
     reelSay('could not read the card');
-    reelBox.hidden = true;
+    reelStack.hidden = true;
   }
 }
 

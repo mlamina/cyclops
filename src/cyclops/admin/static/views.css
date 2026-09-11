@@ -78,9 +78,33 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
    whatever shape the recording was, so the box can be the picture exactly and there is no black
    pillar inside it to explain. Height first and width from the ratio: the row is the fixed
    dimension here, and the column is auto-sized to whatever that comes to. */
+/* The picture and the bar, stacked. The wrapper is what takes the row's height now, and the
+   picture takes a definite fraction of it - and "definite" is the entire reason this is written
+   the way it is. The failure above is one level down here too: give the picture `flex: 1 1 auto`
+   and let the column hand it a height, and the wrapper's width waits for the picture while the
+   picture's ratio waits for the wrapper. That is not the 386 px of the grid version, it is
+   measured at **0** - the picture disappears and the caption takes the whole row.
+
+   So the height is a percentage of a wrapper whose own height is definite, and the ratio runs
+   against it exactly as it used to against the row. Every pixel of the strip costs 1.67 px of
+   picture width (w = (305 - strip) * 5/3), which is what takes the panel's picture from 508 to
+   488 - out of the black pillar that was there anyway, so nothing else has to move. */
+.reelstack {
+  /* Both numbers are read back by .reel's height below. They are custom properties so that
+     subtraction cannot drift from the bar it is subtracting. */
+  --reelbar: calc(6 * var(--u));
+  --reelgap: calc(6 * var(--u));
+  display: flex; flex-direction: column; gap: var(--reelgap);
+  flex: 0 0 auto; height: 100%; min-width: 0;
+}
+/* .reelstack sets display, so the UA sheet's [hidden] loses to it unless this says otherwise -
+   same reason .reel[hidden] has always been here. app.js hides the stack and not the picture,
+   or an empty reel would leave the bar behind on its own. */
+.reelstack[hidden] { display: none; }
 .reel {
   position: relative; min-height: 0; background: #000; overflow: hidden;
-  aspect-ratio: 5 / 3; flex: 0 0 auto; height: 100%; max-width: 100%;
+  aspect-ratio: 5 / 3; flex: 0 0 auto; max-width: 100%;
+  height: calc(100% - var(--reelbar) - var(--reelgap));
 }
 .reel[hidden] { display: none; }
 .reelvid {
@@ -88,12 +112,26 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
   object-fit: contain; background: #000; display: none;
 }
 .reelvid.on { display: block; }
-/* Where a reel puts it: a thin bar across the top, filled as the clip runs. It is the only
-   thing on this screen that says how long you have left, and it is deliberately not a scrubber -
-   there is nothing to seek to in fifteen seconds. */
+/* One clip ending and the next beginning, which is otherwise a class swap with nothing between
+   it - and between two clips shot over the same bench, frequently indistinguishable from the
+   video simply continuing. Opacity only, so it is composited and never lays the page out again
+   (the argument lan.css makes for the live sweep). Empty until app.js animates it; z-index above
+   the bar so it covers everything the picture box holds. */
+.reelflash {
+  position: absolute; inset: 0; z-index: 12; pointer-events: none;
+  background: var(--white); opacity: 0;
+}
+/* Under the picture, not across it: the title came off the frame on 2026-09-10 and this was the
+   last thing still painted on it. Still the only thing on the screen that says how long you have
+   left, and still deliberately not a scrubber - there is nothing to seek to in fifteen seconds.
+
+   `position: relative` rather than static, and not for placement: z-index only applies to a
+   positioned box, and base.css's scanlines are a fixed layer at z-index 9 that would otherwise
+   be drawn over the bar. `flex: 0 0 auto` because it is a flex item now - left to shrink with
+   the column it measured 1.16 px instead of 3 on a 844x390 phone. */
 .reelbar {
-  position: absolute; top: 0; left: 0; right: 0; z-index: 11;
-  height: calc(3 * var(--u)); background: var(--dim);
+  position: relative; z-index: 11;
+  flex: 0 0 auto; height: var(--reelbar); background: var(--dim);
 }
 .reelfill { display: block; height: 100%; width: 0; background: var(--green); }
 /* The column the picture left. Centred against it rather than sitting at the top, because at this

@@ -2420,6 +2420,98 @@
      "overflow-y": "auto",
      "position": "static"
     }
+   },
+   {
+    "sel": ".reelstack",
+    "i": 0,
+    "x": 288.5,
+    "y": 81.92,
+    "w": 488.53,
+    "h": 305.13,
+    "sw": 489,
+    "cw": 489,
+    "style": {
+     "display": "flex",
+     "grid-template-columns": "none",
+     "grid-template-rows": "none",
+     "flex-wrap": "nowrap",
+     "font-size": "13.9978px",
+     "padding": "0px",
+     "gap": "5.99904px",
+     "align-content": "normal",
+     "overflow-x": "visible",
+     "overflow-y": "visible",
+     "position": "static"
+    }
+   },
+   {
+    "sel": ".reel",
+    "i": 0,
+    "x": 288.5,
+    "y": 81.92,
+    "w": 488.53,
+    "h": 293.13,
+    "sw": 489,
+    "cw": 489,
+    "style": {
+     "display": "block",
+     "grid-template-columns": "none",
+     "grid-template-rows": "none",
+     "flex-wrap": "nowrap",
+     "font-size": "13.9978px",
+     "padding": "0px",
+     "gap": "normal",
+     "align-content": "normal",
+     "overflow-x": "hidden",
+     "overflow-y": "hidden",
+     "position": "relative"
+    }
+   },
+   {
+    "sel": ".reelbar",
+    "i": 0,
+    "x": 288.5,
+    "y": 381.03,
+    "w": 488.53,
+    "h": 5.98,
+    "sw": 489,
+    "cw": 489,
+    "style": {
+     "display": "block",
+     "grid-template-columns": "none",
+     "grid-template-rows": "none",
+     "flex-wrap": "nowrap",
+     "font-size": "13.9978px",
+     "padding": "0px",
+     "gap": "normal",
+     "align-content": "normal",
+     "overflow-x": "visible",
+     "overflow-y": "visible",
+     "position": "relative"
+    }
+   },
+   {
+    "sel": ".reelcap",
+    "i": 0,
+    "x": 32.97,
+    "y": 192.61,
+    "w": 243.55,
+    "h": 83.73,
+    "sw": 244,
+    "cw": 244,
+    "style": {
+     "display": "flex",
+     "grid-template-columns": "none",
+     "grid-template-rows": "none",
+     "flex-wrap": "nowrap",
+     "font-size": "13.9978px",
+     "padding": "0px",
+     "gap": "5.99904px",
+     "align-content": "normal",
+     "overflow-x": "visible",
+     "overflow-y": "visible",
+     "position": "static"
+    }
    }
   ]
  },
