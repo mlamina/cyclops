@@ -64,11 +64,23 @@ that knows. The lead is the quiet tail on `cyclops_iris_open.wav`: the mechanism
 runs out at 1.15 s and the file goes on to 1.4542 s, so a bolt at the true arrival lands after a
 third of a second of near-silence and is heard as a second event. It cuts that tail instead.
 
-It is cut at `speed=5.0`. The master is a 1.46 s clunk with a long ring under it, which is a
-vault door; this lid is a set of blades the size of a coin. 5x is a quarter of a second of hit,
-better than two octaves up. It was walked there on the panel - 1.25x read as a door swinging shut
-elsewhere in the building, and 2.5x and 3.5x were each still too low. Resampling this hard would
-normally alias; here there is nothing to fold, the master having 0.07% of its energy over 4 kHz.
+It is cut at `speed=8.0, hpf_hz=400, loud=0.10`, and it is the cue that put the last two of those
+knobs in `CUTS`.
+
+The master is a 1.46 s clunk with a long ring under it, which is a vault door; this lid is a set
+of blades the size of a coin. 8x is a sixth of a second of hit, three octaves up. It was walked
+there on the panel - 1.25x read as a door swinging shut elsewhere in the building, and 2.5x, 3.5x
+and 5x were each still too low. Resampling this hard would normally alias; here there is nothing
+to fold, the master having 0.07% of its energy over 4 kHz.
+
+`loud` is under the 0.18 the rest of the cues are cut to, because this one is the only cue here
+that lands on the end of another rather than on a moment of its own: it is punctuation, and
+punctuation at the same level as the sentence is a second sentence. `hpf_hz` is in the *cut's*
+Hz, not the master's - `decode` divides by `speed` to get to the master's, which is exact,
+`faster` being a pure resample. A third of this sat below 250 Hz, where a 28 mm cone on a plastic
+case makes no note and some buzz; above the corner the peak is at 314 Hz and 4.7% is left down
+there. The two knobs do not interact: loudness is matched after the filter, so moving the corner
+changes the tone and not the level.
 
 `cyclops_gears.wav` is gears turning over: a long press landing, sounded once and from the
 button's own thread (`cyclops.kiosk.Kiosk._toggle_session`). Both directions - starting a session

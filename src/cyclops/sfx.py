@@ -181,6 +181,11 @@ SAMPLES: dict[str, str] = {
     # agent's Cues and this is the kiosk's, and the rank below does not reach across two
     # instances. The rank still earns its line for the pair that do share one, where it is what
     # stops the close treading on this.
+    #
+    # Also the one cue cut under the loudness the rest sit on, and high-passed clear of the one
+    # speaker's bottom end (tools/cut_cues.py). Both follow from the same fact: it is the end of
+    # somebody else's sound rather than a sound of its own, and punctuation at the level of the
+    # sentence is a second sentence.
     "locked_in": "cyclops_locked_in.wav",
     # Gears turning over: the long press landing. Both directions - starting a session and
     # ending one are the same mechanism engaging, and what tells them apart is the lid that

@@ -52,6 +52,13 @@ class Cut(NamedTuple):
     backwards: bool = False  # the cue is that master played end to end backwards
     speed: float = 1.0  # played this much faster, pitch rising with it, as a wind-up does
     head_s: float = 0.0  # keep only this much of the front of it
+    hpf_hz: float = 0.0  # roll off everything under this, in the cut's own Hz rather than the
+    # master's - see `decode`, which divides by `speed` to get there. What it is for is the one
+    # speaker this box has: a 28 mm cone on a plastic case cannot make 200 Hz and tries anyway,
+    # so a cue with its body down there arrives as the case buzzing rather than as the cue.
+    loud: float = 0.0  # the loudest 50 ms this one is cut to; TARGET_RMS when left at zero. A
+    # per-cue number because "as loud as the others" is right for a cue that is an event and
+    # wrong for one that is punctuation on the end of another cue.
 
 
 CUTS: dict[str, Cut] = {
@@ -65,12 +72,18 @@ CUTS: dict[str, Cut] = {
     "gears": Cut("cyclops_gears.wav"),
     # The bolt going home: sounded as the cover arrives, not while it travels. The master is a
     # 1.46 s clunk with a long ring under it, which is a vault door - and this lid is a set of
-    # blades the size of a coin. Five times faster is a quarter of a second of hit and better
-    # than two octaves up, which is what puts it back at the size of the thing it comes off.
-    # Marco walked it up 1.25 -> 2.5 -> 3.5 on the panel and wanted it higher each time; the
-    # aliasing this would normally cost is not there to pay, the master having 0.07% of its
-    # energy over 4 kHz.
-    "locked_in": Cut("cyclops_locked_in.wav", speed=5.0),
+    # blades the size of a coin. Eight times faster is a sixth of a second of hit and three
+    # octaves up, which is what puts it back at the size of the thing it comes off. Marco walked
+    # it up 1.25 -> 2.5 -> 3.5 -> 5 -> 8 on the panel; the aliasing this would normally cost is
+    # not there to pay, the master having 0.07% of its energy over 4 kHz.
+    #
+    # The other two numbers are what it is *against*. It is the only cue here that lands on the
+    # end of another one rather than on a moment of its own, so it is cut under the bar the rest
+    # sit on - punctuation, not an event. And the high-pass takes the body out from under the
+    # hit: a third of this sat below 250 Hz, which on the one speaker this box has is the case
+    # buzzing rather than a bolt. Both are free of each other by construction - the loudness is
+    # matched after the filter, so moving the corner changes the tone and not the level.
+    "locked_in": Cut("cyclops_locked_in.wav", speed=8.0, hpf_hz=400.0, loud=0.10),
     # The rising note under a finger on the button. Unlike every other cue here its length is
     # not the master's: it has a window to fill and the window is LONG_PRESS_S - PRESS_GRACE_S,
     # the stretch between a finger settling and the hold landing.
@@ -104,11 +117,21 @@ def loudest_50ms(pcm: np.ndarray) -> float:
     return float(np.sqrt((blocks**2).mean(axis=1)).max())
 
 
-def decode(path: Path) -> np.ndarray:
-    """The master as float mono at the sink's rate. ffmpeg owns the resample; see the docstring."""
+def decode(path: Path, hpf_hz: float = 0.0) -> np.ndarray:
+    """The master as float mono at the sink's rate. ffmpeg owns the resample; see the docstring.
+
+    ...and the high-pass, for the same reason it owns the resample: a biquad hand-rolled here
+    would be one more thing to be right about, and ffmpeg is already the decoder. *hpf_hz* is
+    the corner in the master's Hz. :func:`main` is what turns a cue's corner into it, by
+    dividing by the speed: :func:`faster` is a pure resample, so filtering at ``f/speed`` before
+    it is exactly filtering at ``f`` after it, and the number in :data:`CUTS` can then mean the
+    frequency you actually hear rather than one you have to work out.
+    """
+    chain = ["-ac", "1", "-ar", str(SAMPLE_HZ)]
+    if hpf_hz:
+        chain = ["-af", f"highpass=f={hpf_hz:.4f}"] + chain
     out = subprocess.run(
-        ["ffmpeg", "-v", "error", "-i", str(path), "-ac", "1", "-ar", str(SAMPLE_HZ),
-         "-f", "f32le", "-"],
+        ["ffmpeg", "-v", "error", "-i", str(path), *chain, "-f", "f32le", "-"],
         check=True, capture_output=True,
     ).stdout
     return np.frombuffer(out, dtype="<f4").astype(np.float64)
@@ -136,7 +159,7 @@ def trim(samples: np.ndarray, floor: float) -> np.ndarray:
     return samples[max(0, loud[0] - pad) : min(len(samples), loud[-1] + pad + 1)]
 
 
-def level(samples: np.ndarray) -> np.ndarray:
+def level(samples: np.ndarray, target: float = TARGET_RMS) -> np.ndarray:
     """Fade the ends, match the loudness, then back off if that would slam a peak.
 
     Both bands, in that order, because the RMS one is the one an ear actually compares - and the
@@ -152,7 +175,7 @@ def level(samples: np.ndarray) -> np.ndarray:
     samples = samples * _envelope(len(samples), SAMPLE_HZ)
     if (hot := np.abs(samples).max()) > 1.0:
         samples = samples / hot
-    scale = TARGET_RMS / max(loudest_50ms((samples * 32767).astype(np.int16)), 1e-9)
+    scale = target / max(loudest_50ms((samples * 32767).astype(np.int16)), 1e-9)
     peak = np.abs(samples).max() * scale
     if peak > PEAK_CEILING:
         scale *= PEAK_CEILING / peak
@@ -188,10 +211,11 @@ def main() -> None:
         cut = CUTS[name]
         if not (src := MASTERS / cut.master).is_file():
             sys.exit(f"no master at {src}")
-        samples = trim(faster(decode(src), cut.speed), args.keep)
+        samples = trim(faster(decode(src, cut.hpf_hz / cut.speed), cut.speed), args.keep)
         if cut.head_s:
             samples = samples[: int(cut.head_s * SAMPLE_HZ)]
-        pcm = level(np.ascontiguousarray(samples[::-1] if cut.backwards else samples))
+        pcm = level(np.ascontiguousarray(samples[::-1] if cut.backwards else samples),
+                    cut.loud or TARGET_RMS)
         path = SOUNDS / f"cyclops_{name}.wav"
         write(path, pcm)
         print(f"· {path.name} — {len(pcm) / SAMPLE_HZ:.2f}s, "
