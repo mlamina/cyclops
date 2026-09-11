@@ -66,9 +66,10 @@ because what it counts off is the *cue* and not the picture: the two directions 
 played both ways, and `COVER_OPEN_S` is its length to the sample. The lead started as that file's
 measured quiet tail - the mechanism in it runs out at 1.15 s of 1.4542 s, so a bolt at the true
 arrival landed after a third of a second of near-silence and read as a second event - and has
-since been walked in well past it, so the bolt cuts the movement off around its middle rather
-than waiting for it. What the ear is timing is the hit, not the swing in front of it - and the
-eye is still watching the lid finish either way.
+since been walked in past it, so the bolt cuts the last third of the movement off rather than
+waiting behind it. What the ear is timing is the hit, not the swing in front of it - and the eye
+is still watching the lid finish either way. There is a far end to that: at 0.65 the sound stops
+nearer the middle of the picture than the end of it, and the two come apart again.
 
 It is cut at `speed=8.0, hpf_hz=1600, loud=0.015`, and it is the cue that put the last two of those
 knobs in `CUTS`.

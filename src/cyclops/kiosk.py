@@ -192,12 +192,14 @@ SESSIONS_SCREEN, SYSTEM_SCREEN = "/sessions", "/"
 PAGE_ROUTE_S = 0.5  # one poll of /api/panel, plus a little: how long the page has to route itself
 
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
-LOCK_LEAD_S = 0.65  # how far short of the end of the iris recording the bolt lands, and the
+LOCK_LEAD_S = 0.55  # how far short of the end of the iris recording the bolt lands, and the
 # whole of what makes the pair read as one event rather than two. It started as the measured
 # quiet tail on that file - the mechanism in it runs out at 1.15 s of 1.4542 s - and Marco has
-# since walked it in well past that, so the bolt now cuts the movement off around its middle
-# rather than waiting for it. Which is the right way round: what the ear is timing is the hit,
-# not the swing in front of it - and the eye is still watching the lid finish either way.
+# since walked it in past that, so the bolt cuts the last third of the movement off rather than
+# waiting behind it. Which is the right way round: what the ear is timing is the hit, not the
+# swing in front of it - and the eye is still watching the lid finish either way. It was at 0.65
+# for a round and that is too far: the sound stops nearer the middle of the picture than the end
+# of it, and the two come apart again.
 LOCK_GRACE_S = 0.25  # how late the bolt at the end of an opening lid may still be sounded. A
 # frame at TARGET_FPS is 33 ms and this loop is not the only thing that can hold it up: the admin
 # page takes the panel and parks the loop entirely, so a lid that arrives behind one would
