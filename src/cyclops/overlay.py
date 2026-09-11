@@ -62,10 +62,12 @@ nothing beckons - there is nothing left in that corner to press. That is what ma
 rest of it read as awake: the *mechanism* stopping, rather than the creature holding its breath.
 
 Everything that holds still while the state does - the halo, the brackets and their bolts, the
-reticle, the pod's tags, the switches at rest - is built once and cached, keyed on the state. A
-Pi rendering this at 25 fps has 40 ms for the whole loop and the camera wants most of them; what
-is left for a frame here is a signal meter, a clock, a caption, one ring, the border line and the
-eye. The terminal is baked with the rest of the chrome except for the line printed on it, whose
+reticle, the pod's heat lamp, the switches at rest - is built once and cached, keyed on the state.
+A Pi rendering this at 25 fps has 40 ms for the whole loop and the camera wants most of them; what
+is left for a frame here is a signal meter, a clock, the record light, a caption, one ring, the
+border line and the eye. The record light is the one tag that is not baked, because it is the one
+that blinks - it is a kept tile the frame composites, like the meter and the clock's own glyphs,
+so what a blink costs is a composite and not the blur behind it. The terminal is baked with the rest of the chrome except for the line printed on it, whose
 halation is 1.3 ms of that - measured on the Pi against the same frame drawn crisp-only, and
 worth having at the price because it is what makes the glass read as lit rather than printed.
 Every part of the eye moves, so none of it is cached at all; measured on the Pi, he is 10.5
@@ -539,6 +541,14 @@ CURSOR = "_"  # what a line about work in flight ends in: a cursor, blinking, ha
 CURSOR_PERIOD_S = 1.2  # one blink of it, half on and half off...
 BREATH_PERIOD_S = 2.4  # ...and one breath of the phosphor, at half that rate so the two never lock
 BREATH_DEPTH = 0.30  # how far the text sinks towards the glass at the bottom of a breath
+# The record light, which is the one thing on this panel that blinks. A square wave and not a
+# breath, by the argument caption_pulse makes about its cursor: a thing being *switched* rather
+# than a thing being dimmed, and a record light has been switched on every machine that ever had
+# one. One second, because that is the rate the clock beside it counts at and the two are the
+# same instrument saying the same thing - and because a whole second is what a camcorder does.
+REC_PERIOD_S = 1.0
+REC_DUTY = 0.65  # ...lit for rather more than half of it. Even would read as a warning; this
+# reads as a lamp that is on, interrupted, rather than as one that is missing half the time.
 TYPE_CHAR_S = 0.045  # the terminal's own rate, near enough a character every other frame at
 # 30 fps. It was 0.028 and read as a wipe: fast enough to be over before you had looked down at
 # it, which is a line that arrived whole with extra steps.
@@ -3534,6 +3544,11 @@ class Overlay:
         # characters by a handful of accents is a bounded cache; a tile per *string* would be
         # three thousand six hundred of them.
         self._digits: dict[tuple[str, tuple[int, int, int]], tuple[Image.Image, int]] = {}
+        # ...and the record light, for the same reason one step further on: it blinks, so it
+        # cannot be baked into the strip either. Keyed on the tag count alone, because that is
+        # the whole of what moves it - the word and the colour are constants and the x comes off
+        # _readouts - which makes this a cache of at most two small tiles.
+        self._rec: dict[int, tuple[Image.Image, tuple[int, int]]] = {}
         self.glow_r = max(1.0, LAMP_BLOOM_R * scale)
         self.halo_r = max(1.0, LAMP_HALO_R * scale)
         self._skirt = math.ceil(3 * self.halo_r)  # how far a lamp's light reaches past its edge
@@ -5554,7 +5569,8 @@ class Overlay:
         layer = self._base(state, recording, heat).copy()
         d = ImageDraw.Draw(layer)
 
-        self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat))
+        self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat),
+                            self._taping(state, recording), phase)
         self._draw_caption(layer, state, halo, detail, phase)
         held = pressed == "eye"
         # The pointers, over the faces the chrome laid down once. Neither inverts under a thumb
@@ -6139,6 +6155,24 @@ class Overlay:
         cached = self._digits[key] = (tile, pad)
         return cached
 
+    def _rec_tile(self, tags: int) -> tuple[Image.Image, tuple[int, int]]:
+        """The record light as a kept tile, for a pod showing *tags* of them.
+
+        The one tag that is not baked into the base. It blinks, and a thing that blinks cannot
+        live in a layer that is built once per state and copied - so it is built once here
+        instead and composited by the frame that wants it, which is what :meth:`_meter` and
+        :meth:`_digit` next to it already do with their own lamps.
+
+        Its x is :meth:`_readouts`' and not the caller's: REC is always the first tag, so the
+        count is the whole of what decides where it sits, and taking it from the same place the
+        layout does is what stops the lit tag and the gap it leaves being two different boxes.
+        """
+        cached = self._rec.get(tags)
+        if cached is None:
+            _, at, _ = self._readouts(tags)
+            cached = self._rec[tags] = self._tag_tile("REC", RED, tags, at, self.row)
+        return cached
+
     def _pocket(self, layer: Image.Image, tags: int) -> None:
         """The legend pocket milled into the rail under the window: empty, and lit as a socket.
 
@@ -6285,12 +6319,18 @@ class Overlay:
     def _bake_header(
         self, d: ImageDraw.ImageDraw, state: str, recording: bool, heat: str = ""
     ) -> None:
-        """The half of the pod that only moves when the state does: the two tags.
+        """The half of the pod that only moves when the state does: the heat lamp.
 
         One row, packed - the meter, whichever tags are lit, then the clock, with one stop
         between each (see :meth:`_readouts` for what that costs the clock and why it is worth
-        it). The tags go here and not in :meth:`_draw_readouts` because they change with the
-        state and the board and with nothing else, and the base is keyed on both.
+        it). The lamp goes here and not in :meth:`_draw_readouts` because it changes with the
+        board and with nothing else, and the base is keyed on that.
+
+        REC used to be baked here beside it and is not any more: it blinks, so it is a tile the
+        frame composites - :meth:`_rec_tile`. What is still its business here is the *slot*. The
+        tag's width is counted into the layout by :meth:`_tag_count` whether the light happens
+        to be on this frame or off it, so the lamp lands in second place for the whole of a
+        recording and does not slide left every time the red goes out.
 
         The legend pocket and the mark cut into it come along with them - see :meth:`_pocket`
         for why they are milled here rather than with the rest of the face - because this is the
@@ -6300,27 +6340,24 @@ class Overlay:
         already saying it better - the border's colour, the eye's mood, and the line under the
         picture, which can say "searching the web…" where a word could only say SEARCH.
         """
-        taping = self._taping(state, recording)
         count = self._tag_count(state, recording, heat)
         self._pocket(d._image, count)
         self._mark(d._image, count)
         _, at, _ = self._readouts(count)
-        if taping:
-            # Red, and a filled tag rather than a dot. Red is what a record light is on every
-            # other machine anybody has ever used, which is worth more here than the panel's
-            # preference for its own green - and filling it rather than outlining it is how this
-            # tube shouts. The one thing on screen that is red without being a fault, which is
-            # exactly why it is a tag with a word in it and not a lamp.
-            at += self._tag(d, at, self.row, "REC", RED, count) + self._tag_gap
+        if self._taping(state, recording):
+            at += self._tag_w + self._tag_gap  # REC's slot, kept whether it is lit or not
         colour = HEAT_LAMP.get(heat)
         if colour is not None:
             self._tag(d, at, self.row, HEAT_WORD, colour, count)
 
-    def _tag(
-        self, d: ImageDraw.ImageDraw, x: float, cy: float, word: str,
-        colour: tuple[int, int, int], tags: int,
-    ) -> float:
-        """A filled rounded slab with a word knocked out of it, left edge at *x*. Returns width.
+    def _tag_tile(
+        self, word: str, colour: tuple[int, int, int], tags: int, x: float, cy: float,
+    ) -> tuple[Image.Image, tuple[int, int]]:
+        """A tag as one finished tile: the slab, its glow, and the word knocked out of it.
+
+        The whole tag in a single image, and where on the panel it lands - the shape :meth:`_lamp`
+        hands back and :meth:`_meter` and :meth:`_digit` both keep. That is what lets REC blink:
+        the blur is paid once here, and a frame that wants the tag pays one composite for it.
 
         The panel's way of shouting, and there are two things that do it: REC and the heat lamp.
         They were one shape typed out twice for exactly as long as it took to add the second, so
@@ -6332,8 +6369,7 @@ class Overlay:
         # side are two slabs of the same size rather than two that nearly are.
         width = self._tag_w
         # A lamp behind the pod's glass, like the segments beside it: the slab drawn once into a
-        # tile, its glow laid under it, the pair composited. Baked with the base, so the blur
-        # is paid when the tape starts or the board warms and never per frame.
+        # tile and its glow laid under it. Never per frame - the caller keeps the tile.
         m, left, top = self._skirt, math.floor(x), cy - half
         slab = Image.new("RGBA", (math.ceil(width) + 1 + 2 * m, 2 * half + 1 + 2 * m), (0, 0, 0, 0))
         ImageDraw.Draw(slab).rounded_rectangle(
@@ -6341,12 +6377,31 @@ class Overlay:
             radius=max(1, round(3 * self.scale)),
             fill=(*colour, 255),
         )
-        layer: Image.Image = d._image
         shape = np.asarray(slab, np.float32)[:, :, 3] / 255.0
-        layer.alpha_composite(*self._lamp(slab, shape, colour, left - m, top - m, tags))
-        self._text(d, x + (width - self.font_micro.getlength(word)) / 2, cy, word,
-                   self.font_micro, (*INK, 255))
-        return width
+        tile, (px, py) = self._lamp(slab, shape, colour, left - m, top - m, tags)
+        # The word goes in after the glow rather than before it: ImageDraw writes where
+        # alpha_composite blends, so ink laid down first would simply be painted over by the
+        # lamp. Its place comes off where the tile *landed* and not off where it was asked for,
+        # because a skirt this wide runs off the top of the panel and _lamp crops what does -
+        # which for a tag on the top rail is always. Measured from the uncropped corner the word
+        # sits a skirt's height too high, inside the slab.
+        self._text(ImageDraw.Draw(tile), x + (width - self.font_micro.getlength(word)) / 2 - px,
+                   cy - py, word, self.font_micro, (*INK, 255))
+        return tile, (px, py)
+
+    def _tag(
+        self, d: ImageDraw.ImageDraw, x: float, cy: float, word: str,
+        colour: tuple[int, int, int], tags: int,
+    ) -> float:
+        """A filled rounded slab with a word knocked out of it, left edge at *x*. Returns width.
+
+        What the heat lamp uses, which is baked into the base like everything else that only
+        moves when the state does. REC goes through :meth:`_tag_tile` directly - see
+        :meth:`_rec_tile` - because it has to be able to go out and come back between frames.
+        """
+        layer: Image.Image = d._image
+        layer.alpha_composite(*self._tag_tile(word, colour, tags, x, cy))
+        return self._tag_w
 
     def _draw_readouts(
         self,
@@ -6355,9 +6410,27 @@ class Overlay:
         level: float,
         elapsed: float | None,
         tags: int,
+        taping: bool = False,
+        phase: float = 0.0,
     ) -> None:
-        """The half that moves: the signal bar, and the clock counting the session up."""
+        """The half that moves: the record light, the signal bar, and the clock counting up."""
         clock_right, _, meter_right = self._readouts(tags)
+        # Red, and a filled tag rather than a dot. Red is what a record light is on every other
+        # machine anybody has ever used, which is worth more here than the panel's preference for
+        # its own green - and filling it rather than outlining it is how this tube shouts. The one
+        # thing on screen that is red without being a fault, which is exactly why it is a tag with
+        # a word in it and not a lamp.
+        #
+        # And it blinks, which is the other half of what everybody already knows a record light
+        # does. A square wave rather than a breath, by the argument caption_pulse makes about its
+        # cursor: this is a thing being switched, not a thing being dimmed. Off the phase and not
+        # off a frame count, because the loop runs at 25 fps with the camera up and 5 behind the
+        # admin page, and a blink counted in frames would gallop and stall with it.
+        #
+        # The slot it sits in is held by _tag_count whether this frame draws it or not, so the
+        # lamp beside it and the clock after it do not shuffle left every second.
+        if taping and phase % REC_PERIOD_S < REC_PERIOD_S * REC_DUTY:
+            d._image.alpha_composite(*self._rec_tile(tags))
         whole = 0 if elapsed is None else int(elapsed)
         clock = "--:--" if elapsed is None else f"{whole // 60:02d}:{whole % 60:02d}"
         # Phosphor at rest with nothing to count, the state's accent the moment there is - the

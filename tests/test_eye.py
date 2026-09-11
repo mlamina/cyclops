@@ -1309,6 +1309,11 @@ def test_the_accent_belongs_to_the_same_tube_as_the_phosphor() -> None:
 def test_the_rec_tag_is_red() -> None:
     # Red is what a record light is on every machine anybody has ever used, and that is worth
     # more than the panel's preference for its own green.
+    #
+    # Phase 10.0 is a whole number of REC_PERIOD_S, so the light is at the top of its cycle and
+    # lit whatever the duty is. Said out loud because the tag blinks now and a phase that
+    # happened to land in the dark half would fail this for a reason that has nothing to do with
+    # what it is asking.
     ov = _panel()
     shown = dict(state=overlay.LISTENING, level=0.0, elapsed=12.0, recording=True)
     _settle(ov, **shown)
