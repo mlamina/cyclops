@@ -78,12 +78,13 @@ CUTS: dict[str, Cut] = {
     # not there to pay, the master having 0.07% of its energy over 4 kHz.
     #
     # The other two numbers are what it is *against*. It is the only cue here that lands on the
-    # end of another one rather than on a moment of its own, so it is cut under the bar the rest
-    # sit on - punctuation, not an event. And the high-pass takes the body out from under the
-    # hit: a third of this sat below 250 Hz, which on the one speaker this box has is the case
-    # buzzing rather than a bolt. Both are free of each other by construction - the loudness is
-    # matched after the filter, so moving the corner changes the tone and not the level.
-    "locked_in": Cut("cyclops_locked_in.wav", speed=8.0, hpf_hz=400.0, loud=0.10),
+    # end of another one rather than on a moment of its own, so it is cut far under the bar the
+    # rest sit on - punctuation, not an event, and punctuation at the level of the sentence is a
+    # second sentence. And the corner is above the body rather than under it: the whole low half
+    # of this was a door, and what is wanted off a lid the size of a coin is the click at the
+    # top of it. Both are free of each other by construction - the loudness is matched after the
+    # filter, so moving the corner changes the tone and not the level.
+    "locked_in": Cut("cyclops_locked_in.wav", speed=8.0, hpf_hz=1600.0, loud=0.025),
     # The rising note under a finger on the button. Unlike every other cue here its length is
     # not the master's: it has a window to fill and the window is LONG_PRESS_S - PRESS_GRACE_S,
     # the stretch between a finger settling and the hold landing.

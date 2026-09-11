@@ -27,16 +27,23 @@ SHIPPED = sorted(sfx.SAMPLES)
 EVERY = SYNTH + SHIPPED
 
 # The loudest 50 ms of the busiest synthesized cue measures 0.176 of full scale, and that is the
-# bar the shipped ones are cut to sit on. The window is the point: it is what "as loud as the
-# beep beside it" means for broadband material, where a peak is not.
+# bar most of the shipped ones are cut to sit on. The window is the point: it is what "as loud as
+# the beep beside it" means for broadband material, where a peak is not.
 #
-# Two bands rather than one, because the five files are two shapes. The four that sound for a
-# second or more land at 0.155-0.206 here; the shutter is a 0.53 s transient and reads 0.083,
-# not because it is quiet - it peaks higher than any of them - but because averaging a click
-# over 50 ms is what a short window does to it. So the RMS floor only has to catch a cue nobody
-# would hear at all, and the peak band catches both a cue with no presence and a slammed one.
-LOUD_FS = (0.05, 0.25)
-PEAK_FS = (0.25, 0.90)
+# What this checks is that a cut came out, not where it was placed. Both floors used to sit just
+# under where the cues of the day happened to land, which made this a mix decision wearing a
+# test's clothes - and the first cue that wanted to be quiet on purpose failed it. `locked_in` is
+# that cue: it is punctuation on the end of another cue rather than an event of its own, and it
+# is cut at 0.025 deliberately. Where a cue sits is `tools/cut_cues.py`'s call and it says so in
+# a table; a fixed band here cannot outrank it.
+#
+# So the floors are now only what a *dead* cut measures under - a file of silence, a conversion
+# that dropped its content, a normalisation that divided by the wrong thing - and the ceilings
+# are still what a slammed one measures over, which is the failure nothing else would catch.
+# Two bands rather than one because a peak and a 50 ms window fail differently: the shutter is a
+# 0.53 s transient reading 0.083 while peaking higher than any of the long cues.
+LOUD_FS = (0.01, 0.25)
+PEAK_FS = (0.05, 0.90)
 
 
 def pcm_of(name: str) -> np.ndarray:
@@ -86,8 +93,9 @@ def test_every_shipped_cue_is_the_file_the_speaker_expects(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", SHIPPED)
-def test_every_shipped_cue_sits_where_the_beeps_do(name: str) -> None:
-    """A sting mastered hot would shout over the voice it is meant to sit beside."""
+def test_every_shipped_cue_came_out_of_its_cut(name: str) -> None:
+    """Neither dead nor slammed: a cut that lost its content, and one that would shout over the
+    voice it is meant to sit beside. How loud it is *within* that is the cut table's to say."""
     pcm = sfx.load(name)
     loud = loudest_50ms(pcm)
     assert LOUD_FS[0] <= loud <= LOUD_FS[1], f"{name} is {loud:.3f} of full scale, off the bar"
