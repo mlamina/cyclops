@@ -168,19 +168,18 @@ SAMPLES: dict[str, str] = {
     # before it can hear.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
-    # The bolt going home, at the far end of the open: the blades reach the rim and stop, and a
-    # mechanism that size coming to rest in silence is the tell that nothing was ever driving
-    # it. The one cue here that is scheduled rather than fired - nothing on the box is told the
-    # cover has arrived, so the render loop deadlines it COVER_OPEN_S from the frame the travel
-    # starts on (cyclops.kiosk._render).
+    # The bolt going home, at the end of the lid - either way it is moving. A mechanism that
+    # size coming to rest in silence is the tell that nothing was ever driving it. The one cue
+    # here that is scheduled rather than fired: nothing on the box is told the cover has got
+    # there, so the render loop counts it off the frame the travel starts on
+    # (cyclops.kiosk._render, kiosk.LOCK_LEAD_S).
     #
-    # It lands on the last of that movement's *sound* rather than at the end of its file: the
-    # mechanism in "iris_open" runs out a third of a second before the recording does, and a
-    # bolt placed after that tail is heard as a second event rather than the end of the first.
-    # So this cuts the tail, deliberately - see kiosk.LOCK_LEAD_S. It can: the open is the
-    # agent's Cues and this is the kiosk's, and the rank below does not reach across two
-    # instances. The rank still earns its line for the pair that do share one, where it is what
-    # stops the close treading on this.
+    # What it counts off is the iris cue rather than the picture, which is why one number does
+    # both directions even though the shut takes longer to cross than the open: it lands short
+    # of the end of that recording, cutting the last of it. Doing that to the open means one
+    # Cues cutting another's sound - the open is the agent's and this is the kiosk's - which is
+    # allowed only because a rank does not reach across two instances. The rank below is for the
+    # pair that do share one, where it is what lets this cut the close.
     #
     # Also the one cue cut under the loudness the rest sit on, and high-passed clear of the one
     # speaker's bottom end (tools/cut_cues.py). Both follow from the same fact: it is the end of

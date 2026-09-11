@@ -56,13 +56,18 @@ be certain of.
 wind clear as the sound of it does. `tests/test_sfx.py` holds the two together - re-cut this and
 that constant has to move with it.
 
-`cyclops_locked_in.wav` is the bolt at the far end of the *open* - the blades reaching the rim
-and stopping, which is the one movement on this panel that arrives somewhere. Sounded
-`eye.COVER_OPEN_S - kiosk.LOCK_LEAD_S` after the wake begins rather than on any event, because
-nothing on the box is told the cover has arrived; `cyclops.kiosk.Kiosk._render` is the only clock
-that knows. The lead is the quiet tail on `cyclops_iris_open.wav`: the mechanism in that recording
-runs out at 1.15 s and the file goes on to 1.4542 s, so a bolt at the true arrival lands after a
-third of a second of near-silence and is heard as a second event. It cuts that tail instead.
+`cyclops_locked_in.wav` is the bolt at the end of the lid, either way it is moving. Sounded
+`eye.COVER_OPEN_S - kiosk.LOCK_LEAD_S` after the travel begins rather than on any event, because
+nothing on the box is told the cover has got there; `cyclops.kiosk.Kiosk._render` is the only
+clock that knows.
+
+One number does both directions even though the shut takes 1.60 s to cross and the open 1.45 s,
+because what it counts off is the *cue* and not the picture: the two directions are one recording
+played both ways, and `COVER_OPEN_S` is its length to the sample. The lead started as that file's
+measured quiet tail - the mechanism in it runs out at 1.15 s of 1.4542 s, so a bolt at the true
+arrival landed after a third of a second of near-silence and read as a second event - and has
+since been walked in past it, so the bolt cuts the last of the movement rather than waiting for
+it. What the ear is timing is the hit, not the decay in front of it.
 
 It is cut at `speed=8.0, hpf_hz=400, loud=0.10`, and it is the cue that put the last two of those
 knobs in `CUTS`.

@@ -192,12 +192,12 @@ SESSIONS_SCREEN, SYSTEM_SCREEN = "/sessions", "/"
 PAGE_ROUTE_S = 0.5  # one poll of /api/panel, plus a little: how long the page has to route itself
 
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
-LOCK_LEAD_S = 0.30  # how far before the lid is home the bolt lands. Not a feel: it is the quiet
-# tail on cyclops_iris_open.wav, measured. The mechanism in that recording runs out at 1.15 s and
-# the file goes on to 1.4542 s, so a bolt placed at the true arrival arrives after a third of a
-# second of near-silence and is heard as late - which it is, by the only clock that matters here,
-# the one the ear is keeping. Landing on the last of the mechanism cuts that tail instead, and
-# the tail is what was making the pair sound like two events.
+LOCK_LEAD_S = 0.45  # how far short of the end of the iris recording the bolt lands, and the
+# whole of what makes the pair read as one event rather than two. It started as the measured
+# quiet tail on that file - the mechanism in it runs out at 1.15 s of 1.4542 s - and Marco has
+# since walked it in past that, so the bolt now cuts the last of the movement rather than
+# waiting for it. Which is the right way round: what the ear is timing is the hit, not the decay
+# in front of it.
 LOCK_GRACE_S = 0.25  # how late the bolt at the end of an opening lid may still be sounded. A
 # frame at TARGET_FPS is 33 ms and this loop is not the only thing that can hold it up: the admin
 # page takes the panel and parks the loop entirely, so a lid that arrives behind one would
@@ -1933,18 +1933,19 @@ class Kiosk:
             # event that opens it, on the agent's own thread, where it lands with the movement
             # rather than a frame behind it - see VoiceAgent._on_session_ready.
             if self._awake is not None and awake != self._awake:
-                if awake:
-                    # Waking. The sound of the lid itself is the agent's, off the event that
-                    # opens it; what is left here is the far end of that movement - the blades
-                    # reaching the rim and stopping. Deadlined rather than fired, because
-                    # nothing on this box is told the cover has arrived: this loop is the only
-                    # clock that knows, and it starts the travel on this frame. Short of the
-                    # true arrival by LOCK_LEAD_S, which is where the sound of the lid stops
-                    # rather than where the file does.
-                    self._lock_at = started + COVER_OPEN_S - LOCK_LEAD_S
-                else:
+                if not awake:
                     self._cues.play("iris_close")
-                    self._lock_at = 0.0  # shutting mid-open: nothing is going to land now
+                # ...and the bolt at the end of it, either way he is moving. Deadlined rather
+                # than fired, because nothing on this box is told the cover has got there: this
+                # loop is the only clock that knows, and the travel starts on this frame.
+                #
+                # One deadline for both directions, though the two movements are different
+                # lengths. It is the end of the lid's *sound* and the two directions are one
+                # recording - COVER_OPEN_S is that file's length to the sample, and the close is
+                # it backwards - so what this counts off is the cue, not the picture. A wake
+                # that turns straight back into a sleep re-arms it rather than cancelling it,
+                # which is right: there is a lid moving either way.
+                self._lock_at = started + COVER_OPEN_S - LOCK_LEAD_S
             self._awake = awake
             if self._lock_at and started >= self._lock_at:
                 late, self._lock_at = started - self._lock_at, 0.0
