@@ -277,10 +277,6 @@ const WATCH = ['body', 'header', '.brand', '.nav', '.tab', '.menu', '.system', '
   // to this layout). Without these four the panel's picture could go to zero and this file
   // would still go green - `.view` is the only thing on that screen it used to match.
   '.reelstack', '.reel', '.reelbar', '.reelcap',
-  // ...and the seeker under a recording, which is the same shape of derived width: it is narrowed
-  // to the picture by fit(), so a wrong ratio or a missing measurement is a bar that does not
-  // line up with the frame over it - and nothing else on that screen would move to say so.
-  '.scrub',
   '.project', '.rail', '.railback', '.railname', '.railtab', '.pane', '.pbody'];
 const PROPS = ['display', 'grid-template-columns', 'grid-template-rows', 'flex-wrap',
   'font-size', 'padding', 'gap', 'align-content', 'overflow-x', 'overflow-y', 'position'];

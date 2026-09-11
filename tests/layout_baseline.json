@@ -2136,29 +2136,6 @@
      "overflow-y": "clip",
      "position": "relative"
     }
-   },
-   {
-    "sel": ".scrub",
-    "i": 0,
-    "x": 38.28,
-    "y": 457.03,
-    "w": 723.44,
-    "h": 5.98,
-    "sw": 723,
-    "cw": 723,
-    "style": {
-     "display": "block",
-     "grid-template-columns": "none",
-     "grid-template-rows": "none",
-     "flex-wrap": "nowrap",
-     "font-size": "13.9978px",
-     "padding": "0px",
-     "gap": "normal",
-     "align-content": "normal",
-     "overflow-x": "visible",
-     "overflow-y": "visible",
-     "position": "relative"
-    }
    }
   ]
  },
