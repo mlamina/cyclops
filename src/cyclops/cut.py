@@ -29,7 +29,6 @@ the holes around them closing.
 The queue is the filesystem, as everywhere else here::
 
     clips/plan.json   present means this session has been considered. That is the whole gate
-    clips/1.ass       one clip's captions
     clips/1.mp4       one clip. Existing means one ffmpeg run returned zero
 
 **Plan-present-means-considered is the entire retry story.** ``deploy/push.sh`` restarts the index
@@ -124,18 +123,10 @@ WORTH_CHARS = 300   # of transcript, both voices. Kills a mic storm: thirty turn
 MAX_TIMELINE_CHARS = 24000
 MAX_LINE_CHARS = 200  # a timeline line is trimmed rather than the timeline being elided
 MAX_TITLE_CHARS = 70
-MAX_SUB_CHARS = 42  # one readable line at Fontsize 30 in an 800-wide frame
-MAX_SUB_S = 6.0
-MIN_SUB_S = 1.2
-SUB_CPS = 18.0  # measured against the right channel: 16.0 ran every caption 13% long
 
 # The panel's own resolution, and the general scale/pad form rather than the literal numbers
 # because CYCLOPS_RECORD_SOURCE=camera makes the recording the sensor's shape and not 5:3.
 OUT_W, OUT_H = 800, 480
-
-# BBGGRR, not RGB. The green is the kiosk's own phosphor (--green in base.css), so the two voices
-# are told apart the same way on a clip as they are on the panel.
-GREEN_ASS = "&H008CFF56"
 
 # What this module calls its rows in the background ledger. Written once so that _drop_stale_rows
 # below can recognise its own work and nobody else's.
@@ -187,10 +178,6 @@ def plan_path(folder: Path) -> Path:
 
 def clip_path(folder: Path, n: int) -> Path:
     return folder / card.CLIPS / f"{n}.mp4"
-
-
-def subs_path(folder: Path, n: int) -> Path:
-    return folder / card.CLIPS / f"{n}.ass"
 
 
 def read_plan(folder: Path) -> Plan | None:
@@ -1080,150 +1067,6 @@ def shift(t: float, ranges: tuple[tuple[float, float], ...], lead: float = 0.0) 
     return None
 
 
-def _clip_into(a: float, b: float, ranges, lead: float = 0.0):
-    """A span of the recording, as the spans of the clip it survives into.
-
-    A caption straddling a join is clipped to the part that was kept rather than dropped whole;
-    a sliver left after clipping is dropped rather than flashed for two frames.
-    """
-    out, at = [], lead
-    for start, end in ranges:
-        if b > start and a < end:
-            piece_a = max(a, start) - start + at
-            piece_b = min(b, end) - start + at
-            if piece_b - piece_a >= 0.35:
-                out.append((piece_a, piece_b))
-        at += end - start
-    return out
-
-
-def _ass_time(t: float) -> str:
-    t = max(0.0, t)
-    hours, rest = divmod(t, 3600.0)
-    minutes, seconds = divmod(rest, 60.0)
-    return f"{int(hours)}:{int(minutes):02d}:{seconds:05.2f}"
-
-
-def _ass_text(text: str) -> str:
-    """Plain text, made safe for a subtitle line.
-
-    Three substitutions and that is the whole escaping surface, which is the argument for putting
-    the text in a file at all: ``drawtext`` would need this done against ffmpeg's filter grammar,
-    its own escaping and ``%`` expansion, on a string a model chose.
-    """
-    flat = " ".join(str(text or "").split())
-    return flat.replace("\\", "/").replace("{", "(").replace("}", ")")
-
-
-def _chunks(text: str, limit: int = MAX_SUB_CHARS) -> list[str]:
-    """One turn, split into caption-sized pieces on word boundaries."""
-    words, out, line = text.split(), [], ""
-    for word in words:
-        if line and len(line) + 1 + len(word) > limit:
-            out.append(line)
-            line = word
-        else:
-            line = f"{line} {word}".strip()
-    if line:
-        out.append(line)
-    return out or [""]
-
-
-def script(records: list[dict], clip: Clip, speech) -> str:
-    """The captions of one clip, as an ASS file. No cards - the reel draws the title in HTML.
-
-    One file rather than a filter per caption: libass wraps, centres and positions, and forty
-    ``drawtext`` filters would each evaluate an ``enable`` expression on every frame.
-
-    ``BorderStyle: 3`` - an opaque box rather than an outline - because the body of this clip is
-    a screen recording of a green-on-black interface, and outlined white text over it is
-    unreadable in exactly the places somebody would be trying to read it.
-
-    ``Alignment 8``, not 2: the recording already carries the panel's own live caption plate in
-    the lower left and the eye in the bottom-left corner, and a second caption system stacked on
-    top of them is the first thing anybody would see.
-    """
-    head = [
-        "[Script Info]",
-        "ScriptType: v4.00+",
-        f"PlayResX: {OUT_W}",
-        f"PlayResY: {OUT_H}",
-        "WrapStyle: 0",
-        "ScaledBorderAndShadow: yes",
-        "",
-        "[V4+ Styles]",
-        "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, "
-        "BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, "
-        "BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding",
-        "Style: You,DejaVu Sans,30,&H00FFFFFF,&H000000FF,&H00000000,&H78000000,"
-        "0,0,0,0,100,100,0,0,3,2,0,8,60,60,20,1",
-        f"Style: Cyc,DejaVu Sans,30,{GREEN_ASS},&H000000FF,&H00000000,&H78000000,"
-        "0,0,0,0,100,100,0,0,3,2,0,8,60,60,20,1",
-        "",
-        "[Events]",
-        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
-    ]
-    events: list[str] = []
-    total = clip.seconds
-
-    def say(start: float, end: float, style: str, text: str) -> None:
-        events.append(f"Dialogue: 0,{_ass_time(start)},{_ass_time(end)},{style},,0,0,0,,{text}")
-
-    order = [r for r in records if r.get("type") in {"you", "cyclops"}]
-    for index, record in enumerate(order):
-        text = _ass_text(record.get("text", ""))
-        if not text:
-            continue
-        at = float(record.get("t", 0.0) or 0.0)
-        ends = _turn_end(record, order, index, at, text, speech)
-        style = "You" if record.get("type") == "you" else "Cyc"
-        pieces = _chunks(text)
-        for piece, (piece_at, piece_ends) in zip(
-            pieces, _spread(at, ends, pieces), strict=False
-        ):
-            for from_t, to_t in _clip_into(piece_at, piece_ends, clip.ranges):
-                say(from_t, min(to_t, min(from_t + MAX_SUB_S, total)), style, piece)
-    return "\n".join([*head, *events]) + "\n"
-
-
-def _turn_end(record, order, index, at, text, speech) -> float:
-    """When a turn stopped. Measured where silencedetect knows, estimated where it does not.
-
-    Cyclops's records carry no duration - they are stamped when generation began - and the
-    character-rate estimate ran every caption about 13% long. The speech span containing the
-    record's own ``t`` is the file's own answer, and it is free once :func:`listen` has run.
-    """
-    if record.get("type") == "you" and record.get("dur"):
-        estimate = at + float(record.get("dur", 0.0) or 0.0)
-    else:
-        nxt = order[index + 1] if index + 1 < len(order) else None
-        ceiling = float(nxt.get("t", at)) if nxt else at + MAX_SUB_S
-        estimate = min(ceiling, at + len(text) / SUB_CPS)
-    for a, b in speech:
-        if a - 0.3 <= at <= b:
-            estimate = min(estimate, b) if record.get("type") == "you" else b
-            break
-    return max(at + MIN_SUB_S, estimate)
-
-
-def _spread(start: float, end: float, pieces: list[str]) -> list[tuple[float, float]]:
-    """One turn's span, shared between its caption chunks in proportion to their length.
-
-    In proportion, and not evenly. A turn that splits into a full line and the one word that
-    would not fit gave that word an equal share of the time, so the line flicked past and
-    "calipers." sat there for four seconds. Reading time is about how much there is to read.
-    """
-    if len(pieces) <= 1:
-        return [(start, end)]
-    total = sum(len(piece) for piece in pieces) or 1
-    out, at = [], start
-    for piece in pieces:
-        share = max(MIN_SUB_S, (end - start) * len(piece) / total)
-        out.append((at, at + share))
-        at += share
-    return out
-
-
 # ------------------------------------------------------------------ the render
 
 
@@ -1235,16 +1078,16 @@ class Cut:
     why: str = ""
 
 
-def clip_command(clip: Clip, subs: str, out_name: str) -> list[str]:
+def clip_command(clip: Clip, out_name: str) -> list[str]:
     """The one ffmpeg call that makes one clip. Run with ``cwd`` set to ``<session>/clips``.
 
-    **Relative names throughout, and that is a safety property rather than a convenience.**
-    ``subtitles=`` is the only argument here whose value ffmpeg parses as filter grammar, where
-    ``:`` ``'`` ``\\`` ``,`` ``[`` ``]`` all mean something - and a session folder's name comes
-    partly from a model. A bare ``1.ass`` in the process's own working directory has none of
-    those characters and cannot acquire one. That is slugify's argument in a different costume:
-    restrict rather than escape. The input is ``../video.mp4``, which is an argv element and
-    never reaches the filtergraph parser.
+    **Nothing a model wrote reaches the filtergraph.** There used to be a long argument here about
+    ``subtitles=`` - the one argument whose value ffmpeg parses as filter grammar, where ``:``
+    ``'`` ``\\`` ``,`` ``[`` ``]`` all mean something - and about keeping a session folder's
+    part-model-written name away from it by passing a bare ``1.ass`` and running in the folder.
+    Captions are not burned in any more, so that whole surface is gone rather than guarded: every
+    value in the graph below is a number this module computed. The input is ``../video.mp4``,
+    which is an argv element and never reaches the parser either.
 
     ``-ss`` before ``-i`` is input seeking, which is accurate when re-encoding - ffmpeg decodes
     from the preceding keyframe and discards - and it is what keeps the decode proportional to
@@ -1269,7 +1112,7 @@ def clip_command(clip: Clip, subs: str, out_name: str) -> list[str]:
     graph.append(
         f"[vb]scale={OUT_W}:{OUT_H}:force_original_aspect_ratio=decrease,"
         f"pad={OUT_W}:{OUT_H}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
-        f"subtitles={subs},format=yuv420p[v]"
+        f"format=yuv420p[v]"
     )
     graph.append(
         # The microphone is on the left and Cyclops on the right, which is right for an archive
@@ -1334,7 +1177,7 @@ def render(folder: Path, clip: Clip, n: int, sessions_dir: Path) -> Cut:
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         proc = subprocess.Popen(  # noqa: S603 - the command is ours, from clip_command
-            clip_command(clip, subs_path(folder, n).name, tmp.name),
+            clip_command(clip, tmp.name),
             cwd=out.parent, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
         )
@@ -1523,7 +1366,6 @@ def _render_one(folder: Path, n: int, sessions_dir: Path) -> str:
     if plan is None or n > len(plan.clips):
         return ""
     clip = plan.clips[n - 1]
-    records, _ = card.read_log(folder / card.LOG_NAME)
     ranges = sanitize([list(r) for r in clip.ranges], plan.seconds)
     if sum(b - a for a, b in ranges) < MIN_CLIP_S:
         _blame(folder, plan, n, "nothing left of that one after the pauses came out")
@@ -1531,8 +1373,6 @@ def _render_one(folder: Path, n: int, sessions_dir: Path) -> str:
     clip = replace(clip, ranges=ranges)
 
     task = tasks.start(f"{CUTTING} {clip.title}…")
-    with suppress(OSError, ValueError):
-        card.write_text(subs_path(folder, n), script(records, clip, plan.speech))
     done = render(folder, clip, n, sessions_dir)
     if not done.ok:
         tasks.fail(task, done.why)

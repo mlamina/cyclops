@@ -100,6 +100,12 @@ const SCRATCHPAD_HEAD = `<!doctype html><meta charset="utf-8">
 </style>
 `;
 const SCRATCHPAD_PAINT_MS = 500;  // long enough for a document with no subresources; see scratchpad() below
+// ...and how long its picture gets to be drawn before we stop waiting and let the kiosk uncover
+// onto a recording that stays black. This comes out of the same budget as the line above: the
+// kiosk allows PAINT_WAIT_S = 8 s for the poll, the paint and this together, so 0.7 s is a
+// ceiling nothing should reach rather than a wait anybody will feel. See raster() below.
+const SCRATCHPAD_STILL_MS = 700;
+const SCRATCHPAD_STILL_Q = 0.85;  // a sheet of flat white and black text; artefacts show early
 
 // One read on the server either way. The panel must not wait on a poll - the kiosk is holding a
 // window over this and uncovers on the strength of it - and a companion across the room can.
@@ -148,6 +154,52 @@ async function scratchpad(html) {
   stage.textContent = '';
   stage.appendChild(frame);
   await loaded;
+  return frame;
+}
+
+// The same scratchpad again, as a JPEG, for the recording. A session recording the screen samples
+// what the kiosk paints, and while this page has the glass the kiosk paints nothing - so
+// everything else on the panel reaches the video out of the offer file it arrived in. A scratchpad
+// arrives as markup and has no pixels there to reach it with, and the video went black for exactly
+// the minutes somebody spent reading what they had asked for.
+//
+// Drawn from the markup and not from the frame above, because the frame cannot be read: `sandbox`
+// with no tokens gives it an origin of its own, so even the page around it is another origin. What
+// goes in here is the identical string, so the two renderings cannot drift apart on anything but a
+// browser bug.
+//
+// Nothing external can load: SVG rendered as an image runs no script and fetches nothing, the
+// document's own CSP says the same, and [src] pointing anywhere but data: is dropped below. That is
+// what keeps the canvas untainted, and an untainted canvas is the whole reason toDataURL works.
+async function raster(frame, html) {
+  const box = frame.getBoundingClientRect();
+  const width = Math.round(box.width) || 800, height = Math.round(box.height) || 480;
+  // foreignObject is parsed as XML, and what the model wrote is HTML - `<br>`, an unclosed <li>,
+  // a bare `&`. Parsing it as HTML and serialising it as XML is what makes those legal: the
+  // forgiving parser fixes them and the strict serialiser writes them back closed and escaped.
+  const page = new DOMParser().parseFromString(SCRATCHPAD_HEAD + html, 'text/html');
+  page.querySelectorAll('script, [src]:not([src^="data:"])').forEach((n) => n.remove());
+  // documentElement, not body: SCRATCHPAD_HEAD styles `html, body` and does all its centring,
+  // sizing and padding there. Serialising the root keeps a real <body> for those rules to land on
+  // and declares the XHTML namespace itself. Wrapping the body's children in a bare <div> instead
+  // points every one of them at the SVG root, and the picture stops looking like the panel.
+  const xml = new XMLSerializer().serializeToString(page.documentElement);
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"` +
+              ` viewBox="0 0 ${width} ${height}">` +
+              `<foreignObject width="${width}" height="${height}">${xml}</foreignObject></svg>`;
+  const img = new Image(width, height);
+  // encodeURIComponent and not btoa: btoa throws on anything outside Latin-1, and a scratchpad is
+  // full of degree signs, plus-minus and emoji.
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  await img.decode();
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const pen = canvas.getContext('2d');
+  pen.fillStyle = '#fff';   // the sheet. A JPEG has no transparency, so unpainted would come out black
+  pen.fillRect(0, 0, width, height);
+  pen.drawImage(img, 0, 0, width, height);
+  return canvas.toDataURL('image/jpeg', SCRATCHPAD_STILL_Q);
 }
 
 async function show(id) {
@@ -172,8 +224,22 @@ async function show(id) {
   // are not standing in front of. Everything the panel shows is a picture now. What makes the
   // press work over a scratchpad is `pointer-events: none` on .scratchpad - see panel.css.
   document.body.classList.add('photo');
+  let kept = '';
   if (found.scratchpad) {
-    await scratchpad(found.scratchpad);
+    const frame = await scratchpad(found.scratchpad);
+    // Only the kiosk's page draws this. A companion across the room is showing the same markup on
+    // a phone, and a picture of a phone is not a picture of the panel.
+    //
+    // Raced rather than awaited outright: a scratchpad whose picture will not draw must cost a
+    // black stretch of recording and never the reveal. Every way this can fail - markup the XML
+    // parser still refuses, a canvas that came out tainted after all - ends in an empty body,
+    // which is exactly what the panel did before any of this existed.
+    if (KIOSK) {
+      kept = await Promise.race([
+        raster(frame, found.scratchpad).catch(() => ''),
+        new Promise((giveUp) => setTimeout(() => giveUp(''), SCRATCHPAD_STILL_MS)),
+      ]);
+    }
   } else if (found.image) {
     await shot(found.image);
   }
@@ -185,7 +251,11 @@ async function show(id) {
   // anything to uncover onto. views.picture_painted refuses anyone else anyway; this is the same
   // rule stated on the side that knows why.
   if (!KIOSK) return;
-  try { await fetch('/panel/painted', { method: 'POST', body: '' }); } catch (e) {}
+  // The picture rides in this request rather than one of its own, and that is what makes the
+  // ordering safe: the kiosk reads the still once, the moment this flag appears, so anything
+  // posted separately would be racing a reader that has already been. views.picture_painted
+  // writes it down before it touches the flag.
+  try { await fetch('/panel/painted', { method: 'POST', body: kept }); } catch (e) {}
 }
 
 // Nothing on the stage, and the page uncovered again. Let go of the image while we are here: on

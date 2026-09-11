@@ -202,7 +202,7 @@ const LIVE = { name: '2026-09-01_18-13-08', n: RECORDS.records.length, records: 
 // min-width, which on this screen is the one thing that could push the picture off the edge.
 // Every *.mp4 is aborted by the stub below, so what gets measured is the bar, the caption and the
 // footer over an empty box - which is the whole of this screen's layout.
-const VIDEOS = {
+const HIGHLIGHTS = {
   clips: [
     { id: '2026-09-01_18-13-08/1', name: '2026-09-01_18-13-08', n: 1,
       title: 'Swapped the USB webcam for a Raspberry Pi camera module',
@@ -223,7 +223,7 @@ const VIDEOS = {
 const STUBS = [
   ['**/api/status', STATUS], ['**/api/sessions', SESSIONS], ['**/api/media', MEDIA],
   ['**/api/projects', PROJECTS], ['**/api/session/*/records', RECORDS],
-  ['**/api/live*', LIVE], ['**/api/videos', VIDEOS], ['**/api/session/*', SESSION],
+  ['**/api/live*', LIVE], ['**/api/highlights', HIGHLIGHTS], ['**/api/session/*', SESSION],
   [/\/api\/project\/[^/]+\/files\?/, PROJECT_FILES],
   [/\/api\/project\/[^/]+\/pictures$/, PICTURES],
   [/\/api\/project\/[^/]+\/file\?path=README\.md$/, README],
@@ -368,7 +368,7 @@ const SCREENS = [
   ['session', '#/s/2026-09-01_18-13-08'],
   // The reel is on the panel run and not only the LAN one, which is what makes the fifth tab's
   // fit a measurement rather than a hope: the header had exactly four before this.
-  ['videos', '#/videos'],
+  ['highlights', '#/highlights'],
   ['media', '#/media'],
   ['projects', '#/projects'],
   // All five of a project's, because they are one shell wearing five things and the shell is what

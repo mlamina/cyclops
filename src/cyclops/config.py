@@ -40,6 +40,22 @@ PAGE_ALIVE_FLAG = Path.home() / ".cache" / "cyclops" / "page-alive"
 # dashboard".
 PANEL_FILE = Path.home() / ".cache" / "cyclops" / "panel.json"
 
+# And beside it, the page's own picture of the scratchpad it is showing - the one thing on the
+# panel that arrives as markup rather than as pixels, and so the one thing a recording cannot get
+# from the offer above. The page draws it a second time onto a canvas and posts the JPEG back; see
+# :func:`cyclops.panel.keep_still` and :mod:`cyclops.still`.
+#
+# Beside the offer and not inside it, deliberately. PANEL_FILE has exactly one writer, which
+# replaces it whole and mints a new id each time. A raster merged into it would make the admin
+# process a second writer doing a read-modify-write on the file that decides what is on the glass:
+# one landing after a withdraw would put a dismissed picture back up, and one landing after a
+# newer offer would revert its id - and the id is the whole repaint trigger, so the page would
+# never learn about the new picture at all. A picture *of* an offer is not an offer.
+#
+# The id says which offer it is a picture of. A stale one is ignored, which costs a black frame
+# in the recording and nothing on the glass. Removed with the offer, by ``panel.withdraw``.
+PANEL_STILL_FILE = Path.home() / ".cache" / "cyclops" / "panel-still.json"
+
 # And where the page says it has actually painted that picture. The kiosk waits for this before
 # uncovering the browser, exactly as it waits on PAGE_SERVED_FLAG at startup - without it the
 # panel would show the dashboard for as long as the picture takes to decode, which is the one

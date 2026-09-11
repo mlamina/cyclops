@@ -13,8 +13,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from cyclops import card, cut
 from cyclops.config import Settings
 
@@ -295,116 +293,40 @@ def test_time_moves_with_the_cut() -> None:
     assert cut.shift(30.0, ranges) is None, "a moment that was cut out is nowhere"
 
 
-def test_a_caption_that_straddles_a_join_is_clipped_rather_than_dropped() -> None:
-    found = cut._clip_into(18.0, 52.0, ((10.0, 20.0), (50.0, 60.0)))
-    assert len(found) == 2
-
-
-def test_a_sliver_left_after_clipping_is_dropped_rather_than_flashed() -> None:
-    assert cut._clip_into(19.9, 25.0, ((10.0, 20.0),)) == []
-
-
-# ------------------------------------------------------------------ the subtitle file
-
-
 def a_clip(ranges=((12.0, 24.0),), title="A bolt"):
     return cut.Clip(title=title, ranges=ranges)
-
-
-def test_the_script_carries_the_captions_and_no_cards() -> None:
-    """The reel draws the title in HTML, so four seconds of black cards is four seconds lost."""
-    text = cut.script(records_of(), a_clip(), ())
-    assert ",You," in text and ",Cyc," in text
-    assert ",Card," not in text and ",Foot," not in text
-
-
-def test_a_caption_never_outlives_the_clip_it_is_on() -> None:
-    clip = a_clip(((12.0, 24.0),))
-    for line in cut.script(records_of(), clip, ()).splitlines():
-        if not line.startswith("Dialogue:"):
-            continue
-        end = line.split(",")[2]
-        hours, minutes, seconds = end.split(":")
-        assert float(hours) * 3600 + float(minutes) * 60 + float(seconds) <= clip.seconds + 0.01
-
-
-def test_a_line_that_was_cut_out_gets_no_caption() -> None:
-    text = cut.script(records_of(), a_clip(((12.0, 24.0),)), ())
-    assert "vernier" not in text, "that turn is at 64s and this clip ends at 24s"
-
-
-def test_a_long_turn_becomes_several_captions() -> None:
-    long = [
-        {"t": 12.0, "type": "you", "dur": 20.0,
-         "text": "so the thing about the rear caliper is that the pads looked fine to me "
-                 "but the disc had a lip on it and I could not get the piston back in"},
-        {"t": 40.0, "type": "end", "seconds": 40.0},
-    ]
-    text = cut.script(long, a_clip(((12.0, 34.0),)), ())
-    assert text.count("Dialogue:") > 1
-
-
-def test_a_short_caption_does_not_get_as_long_as_a_long_one() -> None:
-    """A word that would not fit used to sit on screen for four seconds by itself."""
-    spread = cut._spread(0.0, 10.0, ["a much longer line of words than the other", "one"])
-    assert spread[0][1] - spread[0][0] > spread[1][1] - spread[1][0]
-
-
-def test_one_chunk_takes_the_whole_turn() -> None:
-    assert cut._spread(2.0, 6.0, ["just the one"]) == [(2.0, 6.0)]
-
-
-def test_a_turn_ends_where_the_audio_says_and_not_where_the_character_rate_guessed() -> None:
-    """SUB_CPS ran every caption 13% long. The measured span is the file's own answer."""
-    order = [{"t": 12.0, "type": "cyclops", "text": "x" * 200}]
-    loose = cut._turn_end(order[0], order, 0, 12.0, "x" * 200, ())
-    tight = cut._turn_end(order[0], order, 0, 12.0, "x" * 200, [(11.9, 14.0)])
-    assert tight < loose and tight == pytest.approx(14.0)
-
-
-def test_nothing_a_model_wrote_can_reach_the_subtitle_grammar() -> None:
-    nasty = [
-        {"t": 12.0, "type": "you", "dur": 4.0, "text": "a {brace} and a back\\slash"},
-        {"t": 40.0, "type": "end", "seconds": 40.0},
-    ]
-    said = [
-        line for line in cut.script(nasty, a_clip(((12.0, 24.0),)), ()).splitlines()
-        if line.startswith("Dialogue:")
-    ]
-    assert said and all("{" not in one.split(",,")[-1] for one in said)
-    assert all("\\" not in one.split(",,")[-1] for one in said)
 
 
 # ------------------------------------------------------------------ the command
 
 
 def test_the_command_is_one_encode_of_one_input() -> None:
-    argv = cut.clip_command(a_clip(), "1.ass", "1.mp4.tmp")
+    argv = cut.clip_command(a_clip(), "1.mp4.tmp")
     assert argv[0] == "ffmpeg" and argv.count("-i") == 1
     assert argv[-1] == "1.mp4.tmp"
 
 
 def test_the_command_seeks_to_the_clip_and_rebases_every_timestamp() -> None:
     """Input seeking is what keeps the decode proportional to the clip, not to the session."""
-    argv = cut.clip_command(a_clip(((80.0, 92.0),)), "1.ass", "1.mp4.tmp")
+    argv = cut.clip_command(a_clip(((80.0, 92.0),)), "1.mp4.tmp")
     assert argv[argv.index("-ss") + 1] == "80.000"
     graph = argv[argv.index("-filter_complex") + 1]
     assert "trim=start=0.000:end=12.000" in graph
 
 
-def test_the_command_uses_bare_filenames_so_nothing_in_it_needs_escaping() -> None:
-    """subtitles= is the only value ffmpeg parses as filter grammar. Restrict, never escape."""
-    graph = cut.clip_command(a_clip(), "1.ass", "1.mp4.tmp")[
-        cut.clip_command(a_clip(), "1.ass", "1.mp4.tmp").index("-filter_complex") + 1
+def test_nothing_a_model_wrote_reaches_the_filtergraph() -> None:
+    """The burn is gone, so the escaping surface is gone with it rather than being guarded."""
+    graph = cut.clip_command(a_clip(title="a/b:c'd,[e]"), "1.mp4.tmp")[
+        cut.clip_command(a_clip(), "1.mp4.tmp").index("-filter_complex") + 1
     ]
-    subs = graph.split("subtitles=")[1].split(",")[0]
-    assert subs == "1.ass"
-    assert not any(ch in subs for ch in "/:\\'")
+    assert "subtitles=" not in graph
+    # [v0]/[vb] are the graph's own pad labels; what must not be in there is the title.
+    assert "a/b" not in graph and "c'd" not in graph
 
 
 def test_the_command_folds_the_two_voices_together_and_pads_no_cards_on() -> None:
-    graph = cut.clip_command(a_clip(), "1.ass", "1.mp4.tmp")[
-        cut.clip_command(a_clip(), "1.ass", "1.mp4.tmp").index("-filter_complex") + 1
+    graph = cut.clip_command(a_clip(), "1.mp4.tmp")[
+        cut.clip_command(a_clip(), "1.mp4.tmp").index("-filter_complex") + 1
     ]
     assert "pan=stereo" in graph
     assert "tpad" not in graph and "loudnorm" not in graph
@@ -810,7 +732,7 @@ def test_the_counts_tell_an_empty_reel_from_an_unlooked_at_card(tmp_path) -> Non
 def test_a_folder_holding_clips_is_not_a_surprise(tmp_path) -> None:
     """Without this, surprises() calls them "not ours" and the folder can never be removed."""
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan(), made=(1,))
-    cut.subs_path(folder, 1).write_text("[Script Info]\n", encoding="utf-8")
+    (folder / card.CLIPS / "1.ass").write_text("[Script Info]\n", encoding="utf-8")
     assert card.surprises(folder) == []
 
 

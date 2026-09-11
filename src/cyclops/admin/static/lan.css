@@ -606,12 +606,25 @@ body:not(.kiosk) .livebar::after {
 
    Every selector carries body:not(.kiosk) - test_panel_css.py enforces that, and it is not
    optional: a rule here that reached the panel would undo the rule above it. */
-body:not(.kiosk) .videos { padding: var(--pad); }
-/* The shape and the height cap are in views.css, on both screens. All this adds is a ceiling on
-   how big it gets: a fifteen-second clip of an 800x480 recording blown across a 27-inch monitor
-   is a wall of soft pixels. */
+/* One column, not the panel's two. There is no leftover pillar to fill on a screen this wide -
+   the picture is capped well short of the viewport - so the words go under it instead of beside
+   it. Under it, and still never on it. */
+body:not(.kiosk) .highlights {
+  flex-direction: column; justify-content: center; align-items: center;
+  gap: 0; padding: var(--pad);
+}
 /* min(), not the bare cap: this rule replaces the max-width: 100% in views.css rather than
    adding to it, and without the 100% arm a 5:3 box on a tall phone sizes itself from the height
-   and runs 550 px off the right edge. layout_check.mjs found that at 390 and 820 wide. */
-body:not(.kiosk) .reel { max-width: min(100%, calc(920 * var(--u))); }
-body:not(.kiosk) .reelfoot { max-width: calc(920 * var(--u)); margin: 0 auto; width: 100%; }
+   and runs 550 px off the right edge. layout_check.mjs found that at 390 and 820 wide.
+
+   height:auto undoes the panel's "fill the row and take your width from the ratio". Here the
+   width is the fixed dimension and the height follows, or a short viewport gives the box a height
+   it then turns into a width far past the cap. */
+body:not(.kiosk) .reel {
+  max-width: min(100%, calc(920 * var(--u)));
+  flex: 0 1 auto; max-height: 100%; height: auto; width: 100%; margin: 0 auto;
+}
+body:not(.kiosk) .reelcap {
+  max-width: calc(920 * var(--u)); margin: 0 auto; width: 100%;
+  flex: 0 0 auto; align-self: auto; padding: calc(12 * var(--u)) 0 0;
+}

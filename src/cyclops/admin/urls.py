@@ -25,7 +25,7 @@ urlpatterns = [
     # clips/ inside the session folder, which views.MEDIA_DIRS allows, and
     # /media/<name>/clips/1.mp4 is already served by the byte-range file server below.
     path("api/session/<str:name>/clips", views.find_clips, name="find-clips"),
-    path("api/videos", views.videos, name="videos"),
+    path("api/highlights", views.highlights, name="highlights"),
     # The conversation as it happens, for a phone or an iPad open beside the bench. The one route
     # here that is polled while somebody watches it, which is why it takes `name` and `since` and
     # usually answers with nothing at all.

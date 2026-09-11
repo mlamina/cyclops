@@ -159,8 +159,15 @@ page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 let failed = 0;
 for (const item of CASES) {
   writeFileSync(PENDING, JSON.stringify({ id: item.name + '-' + Date.now(), ...item.payload }));
-  let posted = false;
-  const watch = (r) => { if (r.url().endsWith('/panel/painted')) posted = true; };
+  let posted = false, kept = '';
+  // The body of that request is the page's own picture of a scratchpad, which is the only way
+  // one reaches the recording - see cyclops/still.py. Empty for a photograph, which is already
+  // whole in the offer and needs no second copy.
+  const watch = (r) => {
+    if (!r.url().endsWith('/panel/painted')) return;
+    posted = true;
+    kept = r.postData() || '';
+  };
   page.on('request', watch);
   const seen = errors.length;
   try {
@@ -249,10 +256,20 @@ for (const item of CASES) {
     }
     if (got.overflow) bad.push('the page scrolls sideways behind the picture');
     if (!posted) bad.push('the page never told the kiosk it had painted; it would uncover late');
+    if (item.kind === 'scratchpad') {
+      if (!kept.startsWith('data:image/jpeg;base64,')) {
+        bad.push('no picture of the scratchpad came back, so the recording of it is black');
+      } else if (kept.length < 2000) {
+        bad.push(`the picture is ${kept.length} chars - a blank sheet, not what was on the glass`);
+      }
+    } else if (kept) {
+      bad.push('a photograph posted a second copy of itself; it is already in the offer');
+    }
     if (bad.length) { failed++; console.log(`FAIL ${item.name}: ${bad.join('; ')}`); }
     else {
       const what = item.kind === 'scratchpad'
-        ? 'painted in a frame of its own' : `${got.width}x${got.height} decoded`;
+        ? `painted in a frame of its own, ${Math.round(kept.length * 0.75 / 1024)} KB drawn back`
+        : `${got.width}x${got.height} decoded`;
       console.log(`ok   ${item.name}: ${what}, posted back`);
     }
   } finally {

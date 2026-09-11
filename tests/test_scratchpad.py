@@ -10,11 +10,11 @@ Three things worth failing over, and none of them is the happy path:
 * **The cue.** ``announces()`` is a module global rather than a read of the offer file, so it is
   the one piece of state in the panel handshake that can get out of step with the glass. A drawing
   arms it; nothing else may leave it armed behind them.
-* **What the recording says.** ``still.of_panel`` cannot rasterise a scratchpad and answers None,
-and
-  ``Kiosk._restill`` used to read None as "keep the frame you have" - which would put the previous
-  photograph in ``video.mp4`` for as long as the scratchpad was up. Black is the honest answer and
-  this pins it.
+* **What the recording says.** A scratchpad reaches the video as the picture the page drew of it
+  and posted back, and only if that picture names this offer. Until it lands the answer is black -
+  and black, not the frame we already had: ``Kiosk._restill`` used to read None as "keep the frame
+  you have", which would put the previous photograph in ``video.mp4`` for as long as the scratchpad
+  was up.
 * **The two strings in panel.js** that stop a runaway scratchpad, which are exactly the sort of
 thing
   that gets tidied out of a file nobody tests.
@@ -22,10 +22,12 @@ thing
 
 from __future__ import annotations
 
+import base64
 import json
 import threading
 from pathlib import Path
 
+import cv2
 import numpy as np
 import pytest
 
@@ -100,12 +102,66 @@ def test_a_card_that_will_not_write_is_false_and_not_a_traceback(tmp_path, monke
 # ---------------------------------------------------------------- what the recording is told
 
 
-def test_a_scratchpad_cannot_be_rasterised_and_says_so(tmp_path) -> None:
-    """Deliberate: rendering it would mean a headless browser per scratchpad on a Pi that
-    throttles."""
+def a_scratchpad(tmp_path, ident="abc"):
     payload = tmp_path / "panel.json"
-    payload.write_text(json.dumps({"id": "abc", "scratchpad": "<h1>25 Nm</h1>"}))
-    assert still.of_panel(800, 480, payload_path=payload) is None
+    payload.write_text(json.dumps({"id": ident, "scratchpad": "<h1>25 Nm</h1>"}))
+    return payload
+
+
+def a_still(tmp_path, ident="abc", colour=(9, 9, 240)):
+    """What the page posts back: its own picture of the scratchpad, as a JPEG data URL."""
+    ok, blob = cv2.imencode(".jpg", np.full((480, 800, 3), colour, dtype=np.uint8))
+    assert ok
+    kept = tmp_path / "panel-still.json"
+    kept.write_text(json.dumps({
+        "id": ident,
+        "image": panel.JPEG_URL + base64.b64encode(blob.tobytes()).decode("ascii"),
+    }))
+    return kept
+
+
+def test_a_scratchpad_reaches_the_recording_as_the_picture_the_page_drew(tmp_path) -> None:
+    frame = still.of_panel(
+        800, 480,
+        payload_path=a_scratchpad(tmp_path),
+        still_path=a_still(tmp_path),
+    )
+    assert frame is not None and frame.shape == (480, 800, 3)
+    assert frame.any(), "the page's picture, not black"
+
+
+def test_a_picture_of_an_older_scratchpad_is_black_rather_than_wrong(tmp_path) -> None:
+    """The id is the whole guard. Showing the previous screen is worse than showing none."""
+    assert still.of_panel(
+        800, 480,
+        payload_path=a_scratchpad(tmp_path, "def"),
+        still_path=a_still(tmp_path, "abc"),
+    ) is None
+
+
+def test_a_scratchpad_the_page_has_not_drawn_yet_is_black(tmp_path) -> None:
+    assert still.of_panel(
+        800, 480,
+        payload_path=a_scratchpad(tmp_path),
+        still_path=tmp_path / "nothing.json",
+    ) is None
+
+
+def test_withdrawing_takes_the_picture_with_the_offer(tmp_path, monkeypatch) -> None:
+    """A still outliving its offer is a picture of something nobody can see."""
+    payload, kept = a_scratchpad(tmp_path), a_still(tmp_path)
+    monkeypatch.setattr(panel, "PANEL_FILE", payload)
+    monkeypatch.setattr(panel, "PANEL_STILL_FILE", kept)
+    panel.withdraw()
+    assert not payload.exists() and not kept.exists()
+
+
+def test_a_still_that_is_not_a_jpeg_is_refused(tmp_path, monkeypatch) -> None:
+    """The page posts this; nothing downstream re-checks what kind of thing it is."""
+    kept = tmp_path / "panel-still.json"
+    monkeypatch.setattr(panel, "PANEL_STILL_FILE", kept)
+    assert panel.keep_still("https://example.invalid/x.jpg", "abc") is False
+    assert not kept.exists()
 
 
 def test_a_scratchpad_over_a_photo_blacks_the_recording(monkeypatch) -> None:
@@ -128,7 +184,9 @@ def test_a_scratchpad_over_a_photo_blacks_the_recording(monkeypatch) -> None:
             return 800, 480
 
         _restill = Kiosk._restill
+        _publish_still = Kiosk._publish_still
 
+    monkeypatch.setattr(kiosk, "STILL_WAIT_S", 0.0)  # nothing is coming; do not wait for it
     monkeypatch.setattr(kiosk.still, "of_panel", lambda *a, **k: None)
     stand_in = Panel()
     stand_in._panel_showing.set()
@@ -137,6 +195,41 @@ def test_a_scratchpad_over_a_photo_blacks_the_recording(monkeypatch) -> None:
     assert len(published) == 1
     assert not published[0].any(), "black, not the photograph that was up a moment ago"
     assert stand_in._page_still is published[0], "and the recorder samples it from here too"
+
+
+def test_a_scratchpad_swapped_over_a_photo_gets_its_picture_when_it_lands(monkeypatch) -> None:
+    """The swap path has no flag to wait on, so it looks again.
+
+    ``show_picture`` fires ``_restill`` the moment a second thing is offered - before the page has
+    polled, let alone drawn and posted. On a scratchpad the first look therefore always comes back
+    empty. Without the wait the recording would hold black for the whole time it was up.
+    """
+    published: list[np.ndarray] = []
+    drawn = np.full((480, 800, 3), 90, dtype=np.uint8)
+    looks = iter([None, None, drawn])
+
+    class Panel:
+        _panel_showing = threading.Event()
+        _page_still = np.full((480, 800, 3), 200, dtype=np.uint8)
+        panel = type("Sink", (), {"publish": staticmethod(published.append)})()
+
+        def _panel_size(self):
+            return 800, 480
+
+        _restill = Kiosk._restill
+        _publish_still = Kiosk._publish_still
+
+    monkeypatch.setattr(kiosk, "ADMIN_POLL_S", 0.0)
+    monkeypatch.setattr(kiosk, "STILL_WAIT_S", 5.0)
+    monkeypatch.setattr(kiosk.still, "of_panel", lambda *a, **k: next(looks))
+    stand_in = Panel()
+    stand_in._panel_showing.set()
+    stand_in._restill()
+
+    assert len(published) == 2
+    assert not published[0].any(), "black first, and never the photograph underneath"
+    assert published[1] is drawn
+    assert stand_in._page_still is drawn
 
 
 # ---------------------------------------------------------------- the tool
@@ -214,6 +307,19 @@ def test_the_scratchpads_stylesheet_is_still_a_string() -> None:
     assert "`" not in body[: body.index("`")], "no backtick may appear inside it"
     assert body[: body.index("`")].count("${") == 0, "and nothing may interpolate into it"
 
+
+
+def test_the_page_still_posts_its_picture_with_the_paint() -> None:
+    """The whole ordering rests on these being one request.
+
+    The kiosk reads the still once, the instant ``/panel/painted`` lands. If the body were ever
+    emptied back out, or the raster moved to a fetch of its own, the recording would go black
+    again for every scratchpad - silently, on a screen nobody watches, which is why this is pinned
+    here rather than left to the browser check.
+    """
+    source = PANEL_JS.read_text(encoding="utf-8")
+    assert "'/panel/painted', { method: 'POST', body: kept }" in source
+    assert "serializeToString" in source, "the raster is what fills that body"
 
 
 def _jpeg() -> bytes:

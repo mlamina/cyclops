@@ -61,7 +61,7 @@ room for. That is the one question here answered by the stylesheet rather than b
            overflow is caught rather than guessed at - layout_check.mjs measures this screen at
            800x480 for exactly that reason. -->
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
-      <button class="tab" type="button" data-go="/videos">Videos</button>
+      <button class="tab" type="button" data-go="/highlights">Highlights</button>
       <button class="tab" type="button" data-go="/projects">Projects</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
@@ -84,7 +84,7 @@ room for. That is the one question here answered by the stylesheet rather than b
            step: data-go and option value are both read straight into location.hash. -->
       <button class="tab" type="button" data-go="/live">Live</button>
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
-      <button class="tab" type="button" data-go="/videos">Videos</button>
+      <button class="tab" type="button" data-go="/highlights">Highlights</button>
       <button class="tab" type="button" data-go="/projects">Projects</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
@@ -107,7 +107,7 @@ room for. That is the one question here answered by the stylesheet rather than b
              four tabs' worth of room and this is a fifth screen. It is no loss. This screen
              exists to hand a title and a description to whatever you are uploading from,
              which is this device and never the one bolted to the bench. -->
-        <option value="/videos">VIDEOS</option>
+        <option value="/highlights">HIGHLIGHTS</option>
         <option value="/projects">PROJECTS</option>
         <option value="/media">MEDIA</option>
         <option value="/">SYSTEM</option>
@@ -397,20 +397,22 @@ room for. That is the one question here answered by the stylesheet rather than b
 
   <!-- Last of the views, and only because of that: adding one anywhere else shifts every
        .view index after it and turns one new screen into a page of baseline diff. -->
-  <main class="view videos" id="v-videos">
+  <main class="view highlights" id="v-highlights">
     <!-- Two <video> and never a third. One is playing, one is holding the next clip, and they
          swap roles at every end - so one clip or four hundred, exactly two decoders are alive
          and at most two of gunicorn's four slots are ever inside a range request. -->
     <div class="reel" id="reel">
-      <video class="reelvid" id="reel0" muted playsinline preload="auto"></video>
-      <video class="reelvid" id="reel1" muted playsinline preload="auto"></video>
+      <video class="reelvid" id="reel0" playsinline preload="auto"></video>
+      <video class="reelvid" id="reel1" playsinline preload="auto"></video>
       <div class="reelbar"><span class="reelfill" id="reelfill"></span></div>
-      <div class="reelcap">
-        <span class="reeltitle" id="reeltitle"></span>
-        <span class="reelwhen" id="reelwhen"></span>
-      </div>
     </div>
-    <div class="reelfoot" id="reelfoot"></div>
+    <!-- Beside the picture on the panel and under it on a laptop, but never on top of it either
+         way. It was over the bottom of the frame until 2026-09-10, which is where a person's
+         hands are in a clip shot over a bench. -->
+    <div class="reelcap" id="reelcap">
+      <span class="reeltitle" id="reeltitle"></span>
+      <span class="reelwhen" id="reelwhen"></span>
+    </div>
   </main>
 
   <!-- The picture, and nothing else. Outside the views on purpose: it covers whichever one

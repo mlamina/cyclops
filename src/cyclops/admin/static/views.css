@@ -16,8 +16,12 @@ body.view-sessions .sessions,
 body.view-session  .watch,
 body.view-projects .projects,
 body.view-project  .project,
-body.view-media    .media,
-body.view-videos   .videos { display: grid; }
+body.view-media    .media { display: grid; }
+/* The one that is not a grid. See "the reel" below: a picture sized by its own ratio beside a
+   column that takes whatever is left is what flex does in one line, and what a grid `auto` track
+   cannot do at all - the track wants the item's width, the item wants the row's height, and the
+   two wait for each other. Measured: the picture came out 386 px wide instead of 508. */
+body.view-highlights .highlights { display: flex; }
 /* #v-live by id and not `.live` like its six neighbours: `.rowsub.live` is the word "recording"
    on a session row, and `body.view-live .live` would claim that too. */
 
@@ -47,19 +51,38 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
 
 /* ---- the reel ----
 
-   The whole screen, edge to edge, because a highlights reel is the one screen here that is not a
-   list. Two <video> stacked in the same box and only the one with .on is displayed, so the swap
-   at the end of a clip is a class change and never a reflow.
+   Two <video> stacked in the same box and only the one with .on is displayed, so the swap at the
+   end of a clip is a class change and never a reflow.
+
+   **The picture is never written on.** The title sat over the bottom of the frame until
+   2026-09-10, with a gradient under it to stay readable - which is a plate over exactly the part
+   of a clip shot across a bench where somebody's hands are. So the words moved off it: beside the
+   picture here, under it on a laptop (lan.css), and over it nowhere.
+
+   That works on the panel because of an arithmetic accident worth naming. A clip is 5:3 and the
+   panel is 800x480, but the reel does not get all 480 - the tab row and the close bar take theirs
+   first, leaving about 305. A 5:3 picture 305 tall is about 508 wide, so a quarter of the screen
+   was black pillar either side of it. Pushing the picture hard right spends that on the words
+   instead, and nothing has to shrink to make room.
 
    z-index 10 on the picture for base.css's reason: below that, the scanline layer draws over it. */
-.videos { grid-template-rows: minmax(0, 1fr) auto; padding: 0; align-content: stretch; }
+.highlights {
+  /* row-reverse, so the picture is hard against the right edge and the words fall into the space
+     it left - while the markup keeps the picture first, which is the order a laptop reads it in
+     (lan.css) and the order it should be in for anything that ignores CSS entirely. */
+  flex-direction: row-reverse; align-items: stretch;
+  gap: calc(12 * var(--u));
+  padding: 0 calc(6 * var(--u)) 0 calc(16 * var(--u));
+}
 /* 5:3 because that is what a clip *is*: clip_command scales and pads every one to 800x480,
-   whatever shape the recording was, so the box can be the picture exactly. That is what keeps
-   the caption on the picture instead of spilling onto a black pillar beside it. */
+   whatever shape the recording was, so the box can be the picture exactly and there is no black
+   pillar inside it to explain. Height first and width from the ratio: the row is the fixed
+   dimension here, and the column is auto-sized to whatever that comes to. */
 .reel {
   position: relative; min-height: 0; background: #000; overflow: hidden;
-  aspect-ratio: 5 / 3; max-height: 100%; max-width: 100%; margin: 0 auto;
+  aspect-ratio: 5 / 3; flex: 0 0 auto; height: 100%; max-width: 100%;
 }
+.reel[hidden] { display: none; }
 .reelvid {
   position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10;
   object-fit: contain; background: #000; display: none;
@@ -73,23 +96,18 @@ body.drawing .view, body.drawing .lightbox { display: none !important; }
   height: calc(3 * var(--u)); background: var(--dim);
 }
 .reelfill { display: block; height: 100%; width: 0; background: var(--green); }
-/* Over the picture rather than under it, because the picture is the whole screen. The gradient
-   is what keeps the title readable over a bright frame without a plate around it. */
+/* The column the picture left. Centred against it rather than sitting at the top, because at this
+   width the title is two or three lines and a block of text hanging off the top edge beside a
+   full-height picture reads as something that failed to load. */
 .reelcap {
-  position: absolute; left: 0; right: 0; bottom: 0; z-index: 11; pointer-events: none;
-  padding: calc(30 * var(--u)) calc(14 * var(--u)) calc(12 * var(--u));
-  background: linear-gradient(to top, rgba(0, 0, 0, .78), transparent);
+  flex: 1 1 0; min-width: 0; align-self: center;
+  display: flex; flex-direction: column; gap: calc(6 * var(--u));
 }
-.reeltitle { display: block; color: var(--green); font-size: calc(17 * var(--u)); }
+/* Wraps, and must: "Make the charger output into specs" is not going to fit one line in 250px. */
+.reeltitle { color: var(--green); font-size: calc(17 * var(--u)); line-height: 1.25; }
 .reelwhen {
-  display: block; color: var(--dim); font-size: calc(12 * var(--u));
+  color: var(--dim); font-size: calc(12 * var(--u));
   letter-spacing: .1em; text-transform: uppercase;
-}
-/* What has been looked at, under the picture. An empty reel is otherwise indistinguishable from
-   a broken one. */
-.reelfoot {
-  color: var(--dim); font-size: calc(12 * var(--u)); letter-spacing: .12em;
-  text-transform: uppercase; padding: calc(10 * var(--u)) calc(14 * var(--u));
 }
 
 /* ---- the session list ---- */

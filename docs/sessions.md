@@ -13,7 +13,7 @@ sessions/
     video.mp4         the recording - the panel, or the camera (kiosk only)
     clips/
       plan.json       what was decided about this session, and when
-      1.mp4  1.ass    the moments worth watching, best first - see "Clips" below
+      1.mp4           the moments worth watching, best first - see "Clips" below
     photos/
       14-33-12_you.jpg
       14-33-05_edit.jpg      one redrawn with a change - see tools.md
@@ -123,7 +123,7 @@ pruned; delete what you don't want.
 A recording is an archive, not something anybody watches. So the index service looks at each
 finished session once and asks what — if anything — in it is worth showing to somebody who was
 not there, and writes what it finds to `clips/`: between **zero and three** clips of about
-fifteen seconds each, every one a single moment. They are what the **VIDEOS** screen plays.
+fifteen seconds each, every one a single moment. They are what the **HIGHLIGHTS** screen plays.
 
 **Zero is the ordinary answer.** Two filters stand between a session and an encode, and both are
 meant to say no:

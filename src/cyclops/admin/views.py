@@ -40,6 +40,10 @@ from ..config import (
     Settings,
     load_settings,
 )
+
+# The function and not the module: there is a view called panel() below, and the /api/panel
+# route is the name worth keeping.
+from ..panel import keep_still
 from ..projects import store
 
 LOOPBACK = {"127.0.0.1", "::1"}
@@ -111,6 +115,11 @@ ASSET_VERSION = _asset_version()
 # kilobytes and a phone photo is single-digit megabytes; this is a ceiling, not a budget, and it
 # is here so that a mis-drag of something enormous is refused rather than written to the card.
 MAX_UPLOAD_BYTES = 128 * 1024 * 1024
+# And for the page's own picture of a scratchpad, posted back so the recording is not blind while
+# one is up (see picture_painted). An 800x480 sheet of mostly-white JPEG measures about 30 KB, so
+# this is a ceiling and not a budget: it is here so a bug on the page cannot post a megabyte a
+# second at the card, not because anything is expected to come near it.
+MAX_STILL_BYTES = 1024 * 1024
 # What may come out of a session folder, and as what. An allow-list by suffix for the same reason
 # STATIC_FILES is one: the set of legal answers is short enough to write down, and writing it down
 # is the end of every argument about what some other name might resolve to.
@@ -381,21 +390,36 @@ def picture(request: HttpRequest, ident: str) -> JsonResponse:
 
 @require_POST
 def picture_painted(request: HttpRequest) -> HttpResponse:
-    """The page has painted the picture: tell the kiosk it may uncover.
+    """The page has painted the picture: tell the kiosk it may uncover, and keep what it drew.
 
     The kiosk is waiting on ``PANEL_PAINTED_FLAG`` before it drops its window, and this is the
-    page saying it has something to uncover onto. An empty body and one touched file.
+    page saying it has something to uncover onto.
 
-    It used to do two more jobs. When a diagram was a JointJS scene laid out in the browser, the
-    page was the only thing that knew what it looked like, so it posted the rendered SVG back
-    here to be kept beside the session and copied where the recording could read it. A diagram
-    is a jpg now, made before it is ever offered, so there is nothing to hand back: the picture
-    reached the card and the video by the same route a photograph does.
+    A scratchpad also arrives with a body: the JPEG the page drew of it, for the recording. That
+    rides in *this* request rather than one of its own, and the ordering is the reason. The kiosk
+    reads ``still.of_panel`` exactly once, the instant this flag appears (``_picture_session``),
+    and never again while the picture is up - so a still posted separately would be a race against
+    a reader that has already been and gone. Written here before the touch below, it cannot be.
+
+    This is the job it used to do for diagrams and lost. When a diagram was a JointJS scene laid
+    out in the browser, the page was the only thing that knew what it looked like, so it posted
+    the rendered SVG back here. A diagram is a jpg now, made before it is ever offered - but a
+    scratchpad is markup to the last moment, and the page is again the only thing that has seen it.
+
+    A body that is not a JPEG data URL, or that names nothing, is dropped by ``panel.keep_still``
+    rather than refused: the picture is on the glass either way, and the cost is a black stretch
+    of recording. Nothing here may fail a paint.
     """
     if not _is_local(request):
         return HttpResponseForbidden("only the kiosk's own browser paints the panel")
-    if _pending() is None:
+    found = _pending()
+    if found is None:
         return HttpResponseBadRequest("nothing is waiting for the panel")
+    # The id is this side's, never the request's. The page says what it drew; what it drew it for
+    # is whatever is actually waiting, and a still that names the wrong one is simply ignored.
+    kept = request.body[:MAX_STILL_BYTES].decode("ascii", "ignore")
+    if kept:
+        keep_still(kept, str(found.get("id", "")))
     try:
         PANEL_PAINTED_FLAG.parent.mkdir(parents=True, exist_ok=True)
         PANEL_PAINTED_FLAG.touch()
@@ -544,7 +568,7 @@ def session(request: HttpRequest, name: str) -> JsonResponse:
     return JsonResponse(asdict(found) | extra)
 
 
-def videos(request: HttpRequest) -> JsonResponse:
+def highlights(request: HttpRequest) -> JsonResponse:
     """Every finished clip, newest first, and one line about what has been looked at.
 
     Finished only, unlike the listing this replaced: nobody arrives here having just pressed a

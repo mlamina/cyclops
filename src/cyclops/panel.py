@@ -11,6 +11,10 @@ carries a JPEG, and :func:`offer_scratchpad` carries markup. The page branches o
 there and on nothing else; nothing between here and there - not ``_leave``, not ``/api/picture``,
 not the kiosk - looks inside the payload at all. Whatever is up, a press anywhere puts it away.
 
+The scratchpad door has a way back through it, and only that one needs one. What travels out as
+markup has to come home as pixels for a recording to see it, so the page posts its own picture
+of what it painted and :func:`keep_still` writes it down beside the offer.
+
 The picture travels *in* the file rather than as a path to one, and that is deliberate. The page
 is served by the admin process, which shares no memory with whoever made the picture, and a
 picture made with no session running was never written to the card at all - there would be
@@ -36,7 +40,11 @@ import uuid
 from typing import Any
 
 from . import card
-from .config import PANEL_FILE
+from .config import PANEL_FILE, PANEL_STILL_FILE
+
+# What a picture looks like on the way through here and in the still beside it. One spelling,
+# because :func:`keep_still` has to recognise what :func:`offer_image` writes.
+JPEG_URL = "data:image/jpeg;base64,"
 
 _kiosk: object | None = None  # a cyclops.kiosk.Kiosk while one is running; see set_kiosk
 
@@ -113,7 +121,7 @@ def offer_image(jpeg: bytes, title: str, *, announce: bool = False) -> bool:
     Downscale it first. The caller does that, because the caller knows what the full-size copy is
     for - see :func:`cyclops.imagine.for_panel`.
     """
-    url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode("ascii")
+    url = JPEG_URL + base64.b64encode(jpeg).decode("ascii")
     global _announce
     _announce = announce
     return _leave({"title": title, "image": url})
@@ -145,6 +153,35 @@ def offer_scratchpad(html: str) -> bool:
     return _leave({"scratchpad": html})
 
 
+def keep_still(url: str, ident: str) -> bool:
+    """Keep the page's own picture of the scratchpad it just painted. False if it could not.
+
+    The way back for the one thing on the panel that is markup rather than pixels. A recording of
+    the screen samples what the kiosk paints, and the kiosk paints nothing while the browser has
+    the glass - so everything else on the panel reaches the video out of the offer file, and a
+    scratchpad had nothing there to reach it with. The page draws it a second time onto a canvas
+    and posts the result here on its way past; :mod:`cyclops.still` is the reader.
+
+    Nothing here rasterises anything, and nothing here can. An ``<iframe sandbox="">`` has an
+    origin of its own, so the page around it cannot read what it drew either - what it re-renders
+    is the same markup it was handed. This end only writes it down.
+
+    ``ident`` is the offer this is a picture of, and it is read back before the picture is used.
+    A still that names a different offer is one the page drew for something already put away.
+
+    Never raises. A still that cannot be written costs a black stretch of recording, which is
+    exactly where this started.
+    """
+    if not url.startswith(JPEG_URL):
+        return False
+    try:
+        card.write_text(PANEL_STILL_FILE, json.dumps({"id": ident, "image": url}))
+    except OSError as exc:
+        print(f"· could not keep the panel's own picture ({exc})", file=sys.stderr, flush=True)
+        return False
+    return True
+
+
 def withdraw() -> None:
     """Take back whatever was last offered, so the page falls back to the dashboard.
 
@@ -157,14 +194,18 @@ def withdraw() -> None:
 
     Never raises. A payload that cannot be removed is not a reason to refuse a tap.
     """
-    try:
-        PANEL_FILE.unlink(missing_ok=True)
-    except OSError as exc:
-        print(
-            f"· could not take the panel's last picture back ({exc})",
-            file=sys.stderr,
-            flush=True,
-        )
+    # The offer first and its still second: the still is only ever read against an offer, so an
+    # offer that is gone already makes it unreachable. The reverse order would leave a window in
+    # which a live offer has no picture of itself.
+    for path in (PANEL_FILE, PANEL_STILL_FILE):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            print(
+                f"· could not take the panel's last picture back ({exc})",
+                file=sys.stderr,
+                flush=True,
+            )
 
 
 def _leave(payload: dict[str, Any]) -> bool:

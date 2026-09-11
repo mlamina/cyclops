@@ -225,6 +225,11 @@ BROWSER_SETTLE_S = 2.0
 # ~400 ms poll plus a JointJS layout, because the cost of being wrong is asymmetric: uncovering
 # early shows the dashboard for a moment, and never uncovering loses the picture entirely.
 PAINT_WAIT_S = 8.0
+# And how long a *swap* waits for the page's own picture of what it swapped to. Only a
+# scratchpad has one and only a scratchpad needs one: everything else is already whole in the
+# offer file, so _restill answers from that on its first look and never reaches this. A poll,
+# a paint and a canvas draw is the better part of a second, and this is the ceiling on it.
+STILL_WAIT_S = 2.0
 VOLUME_POLL_S = 0.4  # how often we look for a volume, or a barge-in switch, the page left us
 # ...and how often we check that the window still fills the panel. See _keep_fullscreen: this is
 # a compositor's answer being verified rather than a value being read, so it can be lazy.
@@ -246,6 +251,12 @@ CHROME_FLAGS = (
     "--disable-component-update",
     "--password-store=basic",  # never block waiting on a keyring
     "--force-device-scale-factor=1",  # 1 CSS px == 1 panel px, so the page's layout maths holds
+    # The highlights reel plays with sound, and on this box nothing can ask for it. Chrome allows
+    # unmuted autoplay only after a gesture inside the page, and the tap that wakes this panel
+    # lands on the kiosk's own window - the page never sees it. Without this the reel would take
+    # the browser's refusal, fall back to muted (see reelShow in app.js) and stay that way, so
+    # "sound on" would be true on a laptop and quietly false on the one screen that has a speaker.
+    "--autoplay-policy=no-user-gesture-required",
     # What a mapped-but-unpainted window is filled with. Chromium's own default is white, and
     # the page is #000, so without this every browser start is a white flash. It costs nothing
     # at boot, where the panel is dark anyway, and everything on the one start somebody watches:
@@ -1300,22 +1311,40 @@ class Kiosk:
         """Rebuild the panel's stand-in frame after a picture was swapped for another.
 
         Reads the offer file, which the caller has already written, so it does not have to wait
-        for the page to repaint to know what the page is about to show.
+        for the page to repaint to know what the page is about to show. That holds for everything
+        whose pixels travel in the offer - which is everything except a scratchpad, whose picture
+        the page has to draw and post before there is anything here to read (:mod:`cyclops.still`).
+        A swap happens before the page has even polled, so on the first look that picture is never
+        there yet; hence the wait below.
 
-        Checks the latch again on the way out: a picture that came down while this was rendering
-        would otherwise republish itself over the black that replaced it.
+        **Black first, and then the picture.** Not black-after-two-seconds: keeping the frame we
+        already had would put the *previous* picture in the recording for as long as the new thing
+        is up, and a frozen picture over a running timer watches back as a hung encoder rather than
+        as what happened. So the honest answer goes out immediately and is replaced if a better one
+        arrives.
 
-        Nothing to rebuild means black, and not the frame we already had. ``still.of_panel``
-        answers None for whatever it cannot turn back into pixels - today that is a scratchpad of
-        HTML, which nothing on this side of the glass can rasterise - and keeping the last frame
-        there would put the *previous* picture in the recording for as long as the new thing is
-        up. That is a worse answer than black for the reason the reveal already gives: a frozen
-        picture over a running timer watches back as a hung encoder rather than as what happened.
+        The wait is also spent in full whenever there is genuinely nothing coming - an offer with
+        no picture in it either way. That is ten stats on a daemon thread and no reason to
+        complicate this; the thread exists in the first place because this was allowed to be slow.
+
+        Checks the latch each time: a picture that came down while this was waiting would otherwise
+        republish itself over the black that replaced it.
         """
         width, height = self._panel_size()
         frame = still.of_panel(width, height)
-        if frame is None:
-            frame = _black(width, height)
+        self._publish_still(frame if frame is not None else _black(width, height))
+        if frame is not None:
+            return
+        deadline = time.monotonic() + STILL_WAIT_S
+        while time.monotonic() < deadline and self._panel_showing.is_set():
+            time.sleep(ADMIN_POLL_S)
+            frame = still.of_panel(width, height)
+            if frame is not None:
+                self._publish_still(frame)
+                return
+
+    def _publish_still(self, frame: np.ndarray) -> None:
+        """Hand one stand-in frame to the recording, if a picture is still up to stand in for."""
         if self._panel_showing.is_set():
             self._page_still = frame
             self.panel.publish(frame)
@@ -1343,10 +1372,11 @@ class Kiosk:
                 # Uncover anyway. The page polls, so it is probably a slow layout rather than a
                 # dead browser, and a picture arriving a moment late beats one that never comes.
                 print("· panel: the page was slow to paint; showing anyway", flush=True)
-            # Before the reveal and on this thread, not the render loop's: rasterising a drawing
-            # costs a third of a second on this box, which is a frame the panel would drop and a
-            # third of a second nobody notices at the end of the ten this drawing already took.
-            # By now the page has posted what it painted, which is the whole reason we waited.
+            # Before the reveal and on this thread, not the render loop's. By now the page has
+            # posted what it painted - for a scratchpad, literally: the JPEG it drew of itself
+            # rode in the request that touched the flag we just waited on, so it is on the card
+            # before this line runs and there is no race to lose. That is the whole reason we
+            # waited, and why the swap path in _restill is the one that has to poll.
             self._page_still = still.of_panel(*self._panel_size())
             shown_at = time.time()
             shown = True

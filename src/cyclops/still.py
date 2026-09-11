@@ -14,11 +14,18 @@ cost more than the recording is worth. The handshake in :mod:`cyclops.panel`
 already carries the picture, and this is the reader of it: whatever is on the glass rides in
 ``PANEL_FILE`` as a data URL, and it is the same JPEG the page decodes.
 
-There used to be a second case. A diagram was laid out by the page and by nothing else, so only
-the page could say what it looked like: it handed an SVG back and this shelled out to ffmpeg to
-rasterise it. Diagrams are drawn as images now and arrive down the same path as a photograph, so
-that whole branch is gone - one fewer subprocess per picture on a Pi already short of thermal
-headroom.
+There is a second case, and it is the same shape wearing the opposite trade. A scratchpad is
+markup the model wrote, so the offer file holds no pixels for it and there is nothing here to
+decode. It used to be black for that reason and this module used to argue for it: turning one back
+into pixels sounded like a headless browser per scratchpad on a box that throttles at 85 C. But the
+browser that has to be asked is already running and has already drawn it - so it draws it once more
+onto a canvas and posts the JPEG back (:func:`cyclops.panel.keep_still`), and this reads it out of
+``PANEL_STILL_FILE``. No new process, no ffmpeg, one canvas draw per scratchpad and none per frame.
+
+Which is what the diagram branch that used to live here did too, before diagrams became images: the
+page was the only thing that knew what it looked like, so the page said. An ``<iframe sandbox="">``
+has an origin of its own and cannot be read even by the page around it, so that is true of a
+scratchpad in the strongest possible way.
 
 The result is fitted the way the page fits it - ``object-fit: contain`` on the screen's own
 green-black - so the frame in the video is the picture that was on the glass, letterbox and all.
@@ -37,7 +44,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from .config import PANEL_FILE
+from .config import PANEL_FILE, PANEL_STILL_FILE
 
 # The green-black the page draws on: --screen in admin/static/base.css, in BGR. The letterbox
 # either side of a contained picture is the screen's own colour there rather than a second one,
@@ -54,27 +61,46 @@ def of_panel(
     height: int,
     *,
     payload_path: Path = PANEL_FILE,
+    still_path: Path = PANEL_STILL_FILE,
 ) -> np.ndarray | None:
     """The picture the page is showing, as a ``width`` x ``height`` BGR frame, or None.
 
     None means there is nothing to draw and the caller should go on publishing black: nobody has
     offered the panel anything (the admin page uncovers with the offer withdrawn, so tapping the
-    eye lands here), or what was offered cannot be turned back into pixels.
+    eye lands here), what was offered cannot be turned back into pixels, or it is a scratchpad
+    the page has not posted its picture of yet.
 
-    The scratchpad (``cyclops.panel.offer_scratchpad``) is the second of those, deliberately.
-    Turning one back into pixels means a headless browser per scratchpad on a box that throttles at
-    85 C, for a feature whose entire promise is that it costs nothing - and it is the same trade
-    that took the SVG rasteriser out above. The recording is black while a scratchpad is up, the way
-    it is black while the dashboard is.
+    A scratchpad (``cyclops.panel.offer_scratchpad``) has no pixels in the offer, so it comes from
+    the still the page left beside it instead - and only if that still names this same offer. A
+    still for some earlier one is ignored: black is where this started, and the previous scratchpad
+    is a worse answer than black for the reason ``kiosk._restill`` gives.
     """
-    offered = _offered(payload_path)
+    offered = _read(payload_path)
     if offered is None:
         return None
     url = offered.get("image")
+    if not isinstance(url, str):
+        url = _kept(still_path, offered)
     picture = _decode(url) if isinstance(url, str) else None
     if picture is None:
         return None
     return contain(picture, width, height)
+
+
+def _kept(path: Path, offered: dict) -> str | None:
+    """The page's own picture of the scratchpad in ``offered``, or None.
+
+    None for everything except a scratchpad whose still is on the card and names it: an offer that
+    is not a scratchpad has no business here, and a still that names another one is a picture of
+    something already put away.
+    """
+    if not isinstance(offered.get("scratchpad"), str):
+        return None
+    kept = _read(path)
+    if kept is None or kept.get("id") != offered.get("id"):
+        return None
+    url = kept.get("image")
+    return url if isinstance(url, str) else None
 
 
 def contain(picture: np.ndarray, width: int, height: int) -> np.ndarray:
@@ -103,10 +129,11 @@ def contain(picture: np.ndarray, width: int, height: int) -> np.ndarray:
     return canvas
 
 
-def _offered(path: Path) -> dict | None:
-    """What is waiting for the panel, or None - the same file the page reads.
+def _read(path: Path) -> dict | None:
+    """One of this module's two JSON files as a dict, or None for every way that can fail.
 
-    See :func:`cyclops.panel.offer_image`, which writes it.
+    The offer (:func:`cyclops.panel.offer_image`) and the still beside it
+    (:func:`cyclops.panel.keep_still`) are read the same way and fail the same way.
     """
     try:
         found = json.loads(path.read_text(encoding="utf-8"))

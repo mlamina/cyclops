@@ -28,7 +28,7 @@ const WIDE = window.matchMedia(
   getComputedStyle(document.documentElement).getPropertyValue('--wide-q').trim().slice(1, -1));
 
 const VIEWS = ['view-status', 'view-live', 'view-sessions', 'view-session', 'view-media',
-               'view-videos', 'view-projects', 'view-project'];
+               'view-highlights', 'view-projects', 'view-project'];
 // The five things a project is, in the rail's order. The first is where a project opens, and an
 // address naming none of them - or one this list has never heard of - lands there too.
 const SECTIONS = ['overview', 'log', 'sheets', 'photos', 'files'];
@@ -36,7 +36,7 @@ const FRESH = 20000;   // a listing is worth re-using for as long as nothing new
 
 const vSessions = document.getElementById('v-sessions');
 const vMedia = document.getElementById('v-media');
-const vVideos = document.getElementById('v-videos');
+const vHighlights = document.getElementById('v-highlights');
 // The reel. Every identifier here is reel*-prefixed on purpose: status.js, stream.js and panel.js
 // share this global scope, and a second const of a name one of them already declares is a
 // SyntaxError that takes the whole page down.
@@ -45,7 +45,6 @@ const reelPair = [document.getElementById('reel0'), document.getElementById('ree
 const reelFill = document.getElementById('reelfill');
 const reelTitle = document.getElementById('reeltitle');
 const reelWhen = document.getElementById('reelwhen');
-const reelFoot = document.getElementById('reelfoot');
 // Only on the page when CYCLOPS_CUT is on ({% if cut %} in the template), so everything
 // below null-checks it the way the controls in status.js do.
 const makecut = document.getElementById('makecut');
@@ -209,9 +208,11 @@ async function showSessions() {
 // not modules, so a second const of that name is a SyntaxError that takes the page down.
 const ON_PANEL = document.body.classList.contains('kiosk');
 
-// The whole state of the screen: what there is, which one is playing, which of the two elements
-// is showing it, and whether anybody has asked for sound.
-let reelList = [], reelAt = 0, reelOn = 0, reelSound = false;
+// The whole state of the screen: what there is, which one is playing, and which of the two
+// elements is showing it. Sound is not in here, because it is not a setting: a clip of somebody
+// talking with the talking taken out is a silent film of a bench, so the reel always wants sound.
+// The only thing that ever takes it away is the browser refusing, which reelShow handles.
+let reelList = [], reelAt = 0, reelOn = 0;
 
 function reelSrcOf(i) {
   const one = reelList[((i % reelList.length) + reelList.length) % reelList.length];
@@ -241,11 +242,27 @@ function reelShow(i) {
   back.pause();
   back.classList.remove('on');
   front.classList.add('on');
-  front.muted = !reelSound;
+  front.muted = false;
   try { front.currentTime = 0; } catch (e) { /* not seekable yet; it starts at 0 anyway */ }
-  // Muted, so the autoplay policy allows this with no gesture at all - which matters because on
-  // the panel the tap that woke the screen landed on the kiosk and not inside this page.
-  front.play().catch(() => {});
+  // Unmuted autoplay is the browser's to refuse, and a refusal must not be swallowed. Nothing
+  // recovers a rejected play(): `ended` never fires, so the reel would sit frozen on a black
+  // rectangle and not even step on. So take the sound off and go again - one clip arriving quiet
+  // beats a screen that looks broken.
+  //
+  // **Muting here is about this attempt and never about the reel.** There is no mute control on
+  // this screen and no flag behind one - every clip asks for sound again, because the refusal is
+  // temporary and nothing tells us when it lifts. Open the page straight on #/highlights, where
+  // the browser has had no gesture yet, and the first clip is silent; step or let it run on and
+  // the next one has sound, because by then you have touched the page. An earlier version latched
+  // a flag here instead and every clip after the first was silent for the life of the page.
+  //
+  // The cost of asking is one refused play() per clip, which is a rejected promise and nothing a
+  // viewer can see. On the panel it is never refused at all: kiosk.py's CHROME_FLAGS carries
+  // --autoplay-policy, because the tap that wakes the screen lands on the kiosk and not in here.
+  front.play().catch(() => {
+    front.muted = true;
+    front.play().catch(() => {});
+  });
   reelPaint();
   reelInto(back, reelAt + 1);   // the next one buffers behind the one you are watching
 }
@@ -266,58 +283,61 @@ for (const el of reelPair) {
   });
 }
 
-// Instagram's gesture, because everybody already has it: the sides step, the middle toggles
-// sound. It starts muted and stays muted until somebody asks - there is a speaker on this thing
-// and a reel talking at you while you work at the bench is hostile.
+// Instagram's gesture, because everybody already has it: the sides step, the middle is the
+// picture itself. The middle used to toggle sound and now it pauses, which is what a tap on a
+// playing video means everywhere else - and the thing you actually want when somebody walks up to
+// the bench mid-clip. Pausing silences it too, so nothing was lost by dropping the mute.
 if (reelBox) {
   reelBox.addEventListener('click', (e) => {
     const where = (e.clientX - reelBox.getBoundingClientRect().left) / reelBox.clientWidth;
     if (where < 0.3) return reelPrev();
     if (where > 0.7) return reelNext();
-    reelSound = !reelSound;
-    reelPair[reelOn].muted = !reelSound;
-    reelBox.classList.toggle('loud', reelSound);
+    reelPause();
   });
 }
 
+// One name for it, because the tap and the spacebar must not drift apart.
+function reelPause() {
+  const front = reelPair[reelOn];
+  if (front.paused) front.play().catch(() => {}); else front.pause();
+}
+
 document.addEventListener('keydown', (e) => {
-  if (at !== '/videos') return;
+  if (at !== '/highlights') return;
   if (e.key === 'ArrowRight') reelNext();
   else if (e.key === 'ArrowLeft') reelPrev();
   else if (e.key === ' ') {
     e.preventDefault();
-    const front = reelPair[reelOn];
-    if (front.paused) front.play().catch(() => {}); else front.pause();
+    reelPause();
   }
 });
 
-// An empty reel is never a blank screen with no explanation: this says whether it is empty
-// because nothing has been looked at yet or because everything has and none of it was worth a
-// clip. Those are different sentences and only one of them is worth waiting on.
-function reelWords(seen) {
-  if (!seen) return '';
-  if (seen.waiting) return 'looking at ' + seen.waiting + ' more ' +
-    (seen.waiting === 1 ? 'session' : 'sessions') + '…';
-  return seen.looked + ' sessions looked at · ' + seen.found + ' had something in them';
+// Whatever the caption block has to say when there is no clip to name. An empty reel is never a
+// blank screen with no explanation - but the explanation is one sentence now. The counts that used
+// to sit under the picture ("89 sessions looked at · 18 had something in them") are gone: they
+// answered a question about the indexer on a screen for watching, and they were the last thing on
+// it that was not the clip. /api/highlights still returns them for anything that wants them.
+function reelSay(words) {
+  reelTitle.textContent = words;
+  reelWhen.textContent = '';
 }
 
-async function showVideos() {
+async function showHighlights() {
   try {
-    const got = await grab('/api/videos');
+    const got = await grab('/api/highlights');
     const same = reelList.length === got.clips.length &&
                  reelList.every((c, i) => c.id === got.clips[i].id);
     reelList = got.clips;
-    reelFoot.textContent = reelWords(got.seen);
     reelBox.hidden = !reelList.length;
     if (!reelList.length) {
-      reelFoot.textContent = 'nothing worth a clip yet — ' + reelFoot.textContent;
+      reelSay('nothing worth a clip yet');
       return;
     }
     if (same && reelPair[reelOn].dataset.src) return;   // a repoll must not restart the reel
     reelOn = 0;
     reelShow(0);
   } catch (e) {
-    reelFoot.textContent = 'could not read the card';
+    reelSay('could not read the card');
     reelBox.hidden = true;
   }
 }
@@ -1342,7 +1362,7 @@ function route() {
   if (path === at) return;
   if (at.startsWith('/s/')) letGo();
   if (at === '/live') stopLive();   // a poll for a screen nobody is on is a warm Pi
-  if (at === '/videos') stopReel();   // and two decoders for a screen nobody is on is a warm Pi
+  if (at === '/highlights') stopReel();   // and two decoders for a screen nobody is on is a warm Pi
   if (document.body.classList.contains('lit')) douse();
   at = path;
 
@@ -1350,7 +1370,7 @@ function route() {
   if (path === '/live') { view = 'view-live'; tab = '/live'; showLive(); }
   else if (path === '/sessions') { view = 'view-sessions'; tab = '/sessions'; showSessions(); }
   else if (path === '/media') { view = 'view-media'; tab = '/media'; showMedia(); }
-  else if (path === '/videos') { view = 'view-videos'; tab = '/videos'; showVideos(); }
+  else if (path === '/highlights') { view = 'view-highlights'; tab = '/highlights'; showHighlights(); }
   else if (path.startsWith('/s/')) {
     view = 'view-session'; tab = '/sessions';
     showSession(decodeURIComponent(path.slice(3)));
@@ -1415,7 +1435,7 @@ window.__drawing = (on) => {
   // body.drawing .view hides a <video> with display:none, which does not stop it decoding - so
   // both players are stopped by hand, and the reel is picked back up where it was afterwards.
   if (on) { video.pause(); for (const el of reelPair) el.pause(); }
-  else if (at === '/videos') reelShow(reelAt);
+  else if (at === '/highlights') reelShow(reelAt);
   // A stream into a covered <img> is a stream still arriving, and the picture is the one thing
   // on this screen that costs the Pi something to send. His voice is deliberately not cut: a
   // drawing is what he is talking about. See stream.js.
