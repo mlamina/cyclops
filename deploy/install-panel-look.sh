@@ -8,31 +8,60 @@
 # the wallpaper decoded, a grey band under a wallpaper that does not reach the bottom, and a
 # taskbar with a Raspberry menu and a wifi icon. That is what "a white screen appears" was.
 #
-# The wallpaper is already the same splash.png plymouth shows, so making the fill black and
-# taking the furniture off is the whole of it: the splash simply stays up from ten seconds in
-# until the camera preview replaces it. Run it once per Pi, like the other install-*.sh. The
+# Hanging the same splash.png plymouth shows on the desktop, making the fill black and taking
+# the furniture off is the whole of it: the splash simply stays up from ten seconds in until the
+# camera preview replaces it. Run it once per Pi, like the other install-*.sh. The
 # desktop half is user config; the taskbar half edits one line of a session file under /etc and
 # keeps the original beside it, so both are reversible by hand.
 set -eu
 
-DESKTOP="$HOME/.config/pcmanfm/LXDE-pi/desktop-items-DSI-1.conf"
-
-# --- the desktop: black behind the splash, and nothing on top of it -----------------------
+# --- the desktop: the splash, black behind it, and nothing on top -------------------------
+# pcmanfm keeps one config file per output, named after the DRM connector it found:
+# desktop-items-DSI-1.conf. That name is not stable. Fitting the Camera Module renumbered the
+# panel from DSI-1 to DSI-2, pcmanfm looked for a file that was not there, and the desktop went
+# back to the stock Pi wallpaper for the whole stretch before the kiosk maps. So the file is
+# written for whatever output is actually connected right now, rather than patched at a name
+# baked in here - and written whole, so the wallpaper is part of what this script guarantees
+# instead of something someone once set by hand.
+#
 # desktop_bg is what pcmanfm paints before it has decoded the wallpaper, and what shows wherever
 # a cropped wallpaper does not reach. Black is the only value that cannot be seen against
 # splash.png, which is black to its edges.
-if [ -f "$DESKTOP" ]; then
-  sed -i \
-    -e 's/^desktop_bg=.*/desktop_bg=#000000/' \
-    -e 's/^desktop_shadow=.*/desktop_shadow=#000000/' \
-    -e 's/^show_documents=.*/show_documents=0/' \
-    -e 's/^show_trash=.*/show_trash=0/' \
-    -e 's/^show_mounts=.*/show_mounts=0/' \
-    "$DESKTOP"
-  echo "· desktop: black behind the splash, no icons ($DESKTOP)"
-else
-  echo "· no $DESKTOP - is this the LXDE-pi labwc session on the DSI panel?" >&2
-fi
+SPLASH="$HOME/cyclops/src/cyclops/assets/splash.png"
+DESKTOP_DIR="$HOME/.config/pcmanfm/LXDE-pi"
+mkdir -p "$DESKTOP_DIR"
+
+[ -f "$SPLASH" ] || echo "· no $SPLASH - push the repo first" >&2
+
+wrote=
+for conn in /sys/class/drm/card*-*; do
+  [ "$(cat "$conn/status" 2>/dev/null)" = connected ] || continue
+  name=${conn##*/}
+  name=${name#card*-}
+  cat > "$DESKTOP_DIR/desktop-items-$name.conf" <<EOF
+[*]
+wallpaper_mode=crop
+wallpaper_common=1
+wallpaper=$SPLASH
+desktop_bg=#000000
+desktop_fg=#e8e8e8
+desktop_shadow=#000000
+desktop_font=PibotoLt 12
+show_wm_menu=0
+sort=mtime;ascending;
+show_documents=0
+show_trash=0
+show_mounts=0
+EOF
+  echo "· desktop: splash on $name, black behind it, no icons"
+  wrote=1
+done
+[ -n "$wrote" ] || echo "· no connected DRM output - is the panel plugged in?" >&2
+
+# pcmanfm reads the file at start and not again. lwrespawn puts it straight back, so killing it
+# is how the new desktop appears without a reboot. -x matches the process name, not the command
+# line, so this cannot match the shell running the script.
+pkill -x pcmanfm 2>/dev/null || true
 
 # --- the taskbar: not launched at all ------------------------------------------------------
 # wf-panel-pi draws the Raspberry menu, the launchers, the wifi and update icons and their
