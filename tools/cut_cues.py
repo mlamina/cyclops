@@ -84,7 +84,7 @@ CUTS: dict[str, Cut] = {
     # of this was a door, and what is wanted off a lid the size of a coin is the click at the
     # top of it. Both are free of each other by construction - the loudness is matched after the
     # filter, so moving the corner changes the tone and not the level.
-    "locked_in": Cut("cyclops_locked_in.wav", speed=8.0, hpf_hz=1600.0, loud=0.025),
+    "locked_in": Cut("cyclops_locked_in.wav", speed=8.0, hpf_hz=1600.0, loud=0.015),
     # The rising note under a finger on the button. Unlike every other cue here its length is
     # not the master's: it has a window to fill and the window is LONG_PRESS_S - PRESS_GRACE_S,
     # the stretch between a finger settling and the hold landing.
@@ -98,12 +98,17 @@ CUTS: dict[str, Cut] = {
     # the rise runs 0.62 s, so 0.6 s of it at its own rate is still climbing when the gears take
     # over. A shorter window needs the arc resampled into it or it is cut off part way up - at
     # 0.5 s it took 1.25x.
-    "button_pressed": Cut("cyclops_button_pressed.wav", head_s=0.6),
+    #
+    # Cut under the bar as well, though not as far under as the bolt. It is not an event either:
+    # it is a bed held under a finger for six tenths of a second while something else is being
+    # decided, and the thing it hands over to - the gears, at full - is the event. A rise that
+    # arrives at the top of its window as loud as what follows it has nowhere left to go.
+    "button_pressed": Cut("cyclops_button_pressed.wav", head_s=0.6, loud=0.12),
 }
 
-# The middle of the band tests/test_sfx.py holds the shipped cues to (0.05-0.25), and the same
-# figure tools/voice_clips.py aims at - which is what makes the iris sit beside the shutter and
-# the beeps rather than over them.
+# What a cue is cut to unless its own line says otherwise: the figure tools/voice_clips.py aims
+# at, which is what makes the iris sit beside the shutter and the beeps rather than over them.
+# The two that say otherwise are the two that are not events - see `loud` on Cut.
 TARGET_RMS = 0.18
 PEAK_CEILING = 0.85  # inside PEAK_FS's 0.90, with room for the int16 rounding
 SILENCE_FS = 0.005  # below this the mechanism has not started, or has stopped

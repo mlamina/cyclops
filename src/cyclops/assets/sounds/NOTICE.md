@@ -66,10 +66,11 @@ because what it counts off is the *cue* and not the picture: the two directions 
 played both ways, and `COVER_OPEN_S` is its length to the sample. The lead started as that file's
 measured quiet tail - the mechanism in it runs out at 1.15 s of 1.4542 s, so a bolt at the true
 arrival landed after a third of a second of near-silence and read as a second event - and has
-since been walked in past it, so the bolt cuts the last of the movement rather than waiting for
-it. What the ear is timing is the hit, not the decay in front of it.
+since been walked in well past it, so the bolt cuts the movement off around its middle rather
+than waiting for it. What the ear is timing is the hit, not the swing in front of it - and the
+eye is still watching the lid finish either way.
 
-It is cut at `speed=8.0, hpf_hz=400, loud=0.10`, and it is the cue that put the last two of those
+It is cut at `speed=8.0, hpf_hz=1600, loud=0.015`, and it is the cue that put the last two of those
 knobs in `CUTS`.
 
 The master is a 1.46 s clunk with a long ring under it, which is a vault door; this lid is a set
@@ -78,14 +79,17 @@ there on the panel - 1.25x read as a door swinging shut elsewhere in the buildin
 and 5x were each still too low. Resampling this hard would normally alias; here there is nothing
 to fold, the master having 0.07% of its energy over 4 kHz.
 
-`loud` is under the 0.18 the rest of the cues are cut to, because this one is the only cue here
-that lands on the end of another rather than on a moment of its own: it is punctuation, and
-punctuation at the same level as the sentence is a second sentence. `hpf_hz` is in the *cut's*
-Hz, not the master's - `decode` divides by `speed` to get to the master's, which is exact,
-`faster` being a pure resample. A third of this sat below 250 Hz, where a 28 mm cone on a plastic
-case makes no note and some buzz; above the corner the peak is at 314 Hz and 4.7% is left down
-there. The two knobs do not interact: loudness is matched after the filter, so moving the corner
-changes the tone and not the level.
+`loud` is far under the 0.18 the rest of the cues are cut to, because this one lands on the end
+of another cue rather than on a moment of its own: it is punctuation, and punctuation at the level
+of the sentence is a second sentence. `hpf_hz` is in the *cut's* Hz, not the master's - `decode`
+divides by `speed` to get to the master's, which is exact, `faster` being a pure resample. At
+1600 Hz the whole low half of the master is gone, which is the point: that half was a door, and
+what is wanted off a lid the size of a coin is the click at the top of it. The two knobs do not
+interact - loudness is matched after the filter, so moving the corner changes the tone and not
+the level.
+
+`cyclops_button_pressed.wav` is cut under the bar for the same kind of reason, though not as far
+under: see below.
 
 `cyclops_gears.wav` is gears turning over: a long press landing, sounded once and from the
 button's own thread (`cyclops.kiosk.Kiosk._toggle_session`). Both directions - starting a session
@@ -103,10 +107,15 @@ either constant and this has to be cut again, or the rise stops arriving where t
 Its master is not the eight-second swell it looks like. All of the rise is in the first 0.75 s -
 20 dB, and a spectral centroid climbing from 1.5 kHz to 9 - and the seven seconds after that are
 a flat bright bed, so a window taken from anywhere but the front is a drone rather than a rise.
-The cut is `head_s=0.6` and nothing else: after the head trim the rise runs 0.62 s, so 0.6 s of
+The cut is `head_s=0.6` and `loud=0.12`: after the head trim the rise runs 0.62 s, so 0.6 s of
 it at its own rate is still climbing when the gears take over. A shorter window has to have the
 arc resampled into it - `speed` is that knob, and at the 0.5 s window this cue had first it took
 1.25x. What ships rises 20 dB across its 0.6 s.
+
+The level is under the bar because this is not an event either: it is a bed held under a finger
+while something else is being decided, and the thing it hands over to - the gears, at full - is
+the event. A rise that arrives at the top of its window as loud as what follows it has nowhere
+left to go.
 
 The masters are kept, in `sounds/`, and re-running the tool is the cut:
 
