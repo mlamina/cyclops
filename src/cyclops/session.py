@@ -775,6 +775,8 @@ def _render_record(record: dict) -> str:
         return f"*Looked up its notes on* ({at}) — **{name}**"
     if kind == "screen":
         return f"*Wrote on the scratchpad* ({at}) — {_scratchpad_gist(record.get('html', ''))}"
+    if kind == "sketch":
+        return f"*Drew on the scratchpad* ({at}) — {_sketch_gist(record.get('code', ''))}"
     if kind == "data":
         return _render_data(record, at)
     if kind == "transcript_failed":
@@ -785,6 +787,26 @@ def _render_record(record: dict) -> str:
 
 
 SCRATCHPAD_GIST_CHARS = 70  # a line in a transcript, not the markup
+
+
+def _sketch_gist(code: str) -> str:
+    """What a sketch said, in a few words - the quoted strings out of the program he wrote.
+
+    Same argument as :func:`_scratchpad_gist` and a different haystack. A sketch is Prefab
+    Python, so its words are its string literals: the heading, the labels, the number. Taking
+    them in order gives a line that reads like what was on the glass, and taking anything else
+    gives a line of component names.
+
+    Not a parser, and it does not need to be: a literal with a quote inside it costs this one
+    entry and nothing else.
+    """
+    words = " ".join(re.findall(r"['\"]([^'\"]{1,60})['\"]", code))
+    words = " ".join(words.split())
+    if not words:
+        return f"{len(code)} characters of Prefab, and no words in it"
+    if len(words) > SCRATCHPAD_GIST_CHARS:
+        return words[: SCRATCHPAD_GIST_CHARS - 1].rstrip() + "…"
+    return words
 
 
 def _scratchpad_gist(html: str) -> str:

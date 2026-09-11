@@ -6,10 +6,12 @@ one small file plus a flag. What is to be shown is written to :data:`cyclops.con
 the panel's page polls ``/api/panel`` every 400 ms, sees an id it has not drawn, fetches the
 payload and paints it; :func:`show` asks the kiosk to uncover the browser once it has.
 
-There are two doors, and they differ only in what they leave in the file. :func:`offer_image`
-carries a JPEG, and :func:`offer_scratchpad` carries markup. The page branches on which key is
-there and on nothing else; nothing between here and there - not ``_leave``, not ``/api/picture``,
-not the kiosk - looks inside the payload at all. Whatever is up, a press anywhere puts it away.
+There are three doors, and they differ only in what they leave in the file. :func:`offer_image`
+carries a JPEG, :func:`offer_scratchpad` carries markup, and :func:`offer_sketch` carries nothing
+at all - its content arrives over the companion stream instead, because it is still being written
+when the offer is made. The page branches on which key is there and on nothing else; nothing
+between here and there - not ``_leave``, not ``/api/picture``, not the kiosk - looks inside the
+payload at all. Whatever is up, a press anywhere puts it away.
 
 The scratchpad door has a way back through it, and only that one needs one. What travels out as
 markup has to come home as pixels for a recording to see it, so the page posts its own picture
@@ -151,6 +153,28 @@ def offer_scratchpad(html: str) -> bool:
     global _announce
     _announce = False
     return _leave({"scratchpad": html})
+
+
+def offer_sketch() -> bool:
+    """Tell the panel's page a sketch is coming. False if it could not be left.
+
+    The third door, and the only one that carries nothing. A picture travels in the file and a
+    scratchpad travels in the file, because both are one finished thing and the page's 400 ms
+    poll is the cheapest way to hand it over. A sketch is not finished when it is offered - it is
+    a program the model is still typing - so what travels here is a marker, and the frames
+    themselves go straight from :mod:`cyclops.sketch` to the page over the companion stream,
+    arriving every hundred milliseconds instead of every four hundred.
+
+    Which means the poll is doing the one job it is good at: getting the browser uncovered. By
+    the time the page has seen this and posted that it painted, several frames have already
+    landed in the renderer sitting behind our window, so what appears is a half-built interface
+    rather than a spinner.
+
+    Silent, for the same reason a scratchpad is: the model is still talking when it lands.
+    """
+    global _announce
+    _announce = False
+    return _leave({"sketch": True})
 
 
 def keep_still(url: str, ident: str) -> bool:

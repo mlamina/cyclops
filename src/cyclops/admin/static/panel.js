@@ -4,6 +4,8 @@
    off the shutter, one recalled from the card, an edit, a diagram - is a JPEG data URL in the
    offer file, fetched by id and dropped into #stage as an <img>. A scratchpad is markup the model
    wrote itself, and goes into #stage as an <iframe> with a document of its own; see SCRATCHPAD_HEAD.
+   A sketch is neither: it is already on screen in a renderer that has been running since page
+   load, and all that arrives here is permission to stop covering it. See sketch.js.
 
    This file used to be four times longer and carried a symbol library: what a "resistor" or a
    "header" looked like, laid out on the page by JointJS from a JSON scene graph. Diagrams are
@@ -214,7 +216,7 @@ async function show(id) {
   const found = await r.json();
   // Cleared before it is decided, so a drawing arriving after a photo gets its button back -
   // and so a photograph landing on top of a drawing gets the bezel back with it.
-  document.body.classList.remove('photo', 'paper');
+  document.body.classList.remove('photo', 'paper', 'sketching');
   // The class before the picture: a stage that is still display:none has no size, and an image
   // fitted to a box of zero by zero paints nowhere at all.
   window.__drawing(true);
@@ -240,6 +242,19 @@ async function show(id) {
         new Promise((giveUp) => setTimeout(() => giveUp(''), SCRATCHPAD_STILL_MS)),
       ]);
     }
+  } else if (found.sketch) {
+    // Nothing to paint. The renderer in #sketchframe has been running since page load and has
+    // been drawing frames off the companion stream for a few hundred milliseconds already - see
+    // sketch.js. All this does is stop covering it up, which is why there is no await here and
+    // why the kiosk is told it may uncover on the very next line.
+    //
+    // The recording gets nothing, and that is a known hole rather than an oversight: raster()
+    // redraws a scratchpad from the markup it was handed, and there is no equivalent here - the
+    // renderer paints into a shadow root from a stylesheet foreignObject cannot see. So a session
+    // that sketches has a stretch of black video for as long as it is up, exactly as a scratchpad
+    // did before raster() existed. A single grim capture from the kiosk once it settles is the
+    // cheap fix if it turns out to matter.
+    document.body.classList.add('sketching');
   } else if (found.image) {
     await shot(found.image);
   }
@@ -263,7 +278,7 @@ async function show(id) {
 // ever want this memory back.
 function drop() {
   window.__drawing(false);
-  document.body.classList.remove('photo', 'paper');
+  document.body.classList.remove('photo', 'paper', 'sketching');
   stage.textContent = '';
 }
 

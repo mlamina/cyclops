@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import base64
 import json
+import subprocess
 from pathlib import Path
 
 import cv2
@@ -152,3 +153,46 @@ def _decode(url: str) -> np.ndarray | None:
         return None
     picture = cv2.imdecode(np.frombuffer(blob, dtype=np.uint8), cv2.IMREAD_COLOR)
     return picture if picture is not None and picture.size else None
+
+
+# One screen capture, and a ceiling on it. `grim -t ppm` is 15-40 ms on the Pi where `-t png` is
+# 210 - all of that difference is zlib, and nothing here wants a small file.
+GRAB_TIMEOUT_S = 2.0
+
+
+def of_screen(width: int, height: int) -> np.ndarray | None:
+    """Photograph the panel itself. None if it cannot be done.
+
+    The exception to everything this module says at the top, and it earns it by being the only
+    thing that can work. A scratchpad could be rebuilt from the markup it was made of, because
+    the page was handed that markup and could draw it twice. A sketch cannot: it is a component
+    tree rendered by React into an iframe, its charts and diagrams are laid out asynchronously by
+    libraries with their own idea of the size of things, and the only faithful copy of it is the
+    one on the glass. Serialising that back out through a canvas was tried on paper and comes
+    apart on the first chart.
+
+    So this asks the compositor, which already has the answer. It is not the per-frame poll this
+    module argued against - a sketch changes a handful of times and then sits there, and the
+    caller only asks while one is actually being drawn.
+
+    Requires the Wayland session's own environment, which the kiosk process has because the
+    desktop started it (``deploy/start-kiosk.sh``). Anywhere else this returns None, which is
+    the same answer as every other failure here.
+    """
+    try:
+        shot = subprocess.run(
+            ["grim", "-t", "ppm", "-"],
+            capture_output=True,
+            timeout=GRAB_TIMEOUT_S,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if shot.returncode != 0 or not shot.stdout:
+        return None
+    frame = cv2.imdecode(np.frombuffer(shot.stdout, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        return None
+    if frame.shape[1] != width or frame.shape[0] != height:
+        frame = cv2.resize(frame, (width, height), interpolation=cv2.INTER_AREA)
+    return frame

@@ -59,6 +59,9 @@ urlpatterns = [
     path("api/picture/<str:ident>", views.picture, name="picture"),
     path("panel/painted", views.picture_painted, name="panel-painted"),
     path("static/<str:name>", views.static_file, name="static"),
+    # At the top level rather than under static/ because it is not one of ours: it is the
+    # prefab-ui package's own bundle, and the page references it as a frame src.
+    path("renderer.html", views.renderer, name="renderer"),
     path("volume", views.set_volume, name="volume"),
     path("barge-in", views.set_barge_in, name="barge-in"),
     path("record-source", views.set_record_source, name="record-source"),

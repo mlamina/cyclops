@@ -27,7 +27,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import imagine, panel, point, recall, session, sfx, tasks
+from . import arguments, imagine, panel, point, recall, session, sfx, sketch, tasks
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -368,6 +368,135 @@ POINT_AT_TOOL: RealtimeFunctionToolParam = {
             },
         },
         "required": ["marks"],
+        "additionalProperties": False,
+    },
+}
+
+SKETCH_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "sketch",
+    "description": (
+        "Your SCRATCHPAD: the screen in front of them, 800x480, which you draw on by writing a "
+        "few lines of Python. That is the name you both use for it - expect 'put that on your "
+        "scratchpad', 'scratchpad it', 'what's on the scratchpad', and call it that yourself. "
+        "It draws AS YOU WRITE IT: every line you finish is on the glass before you have typed "
+        "the next one, so they watch it fill in while you talk. Nothing is spent and nothing is "
+        "waited for. "
+        "Use it on your own initiative, without being asked, whenever the answer has something "
+        "in it worth looking at rather than hearing: a torque figure or a temperature set large, "
+        "the steps of a job as a list they can work down, a part number, a size, a setting, a "
+        "few numbers worth a chart. A number you say once over a running compressor is a number "
+        "they will ask you for again; one on the screen is one they work to. "
+        "SAY THE HEADLINE BEFORE YOU CALL THIS, in the same turn: one short clause with the one "
+        "number or word that answers them - 'sixty to sixty-five' - and then call sketch. "
+        "Writing the program takes you about a second and a half, and you cannot talk while you "
+        "are writing it. A turn that calls this first is a turn that goes quiet, puts a screen "
+        "up and only then says anything, which is a hole in the conversation and the thing they "
+        "notice. Say the number, then fill the screen in behind it. "
+        "Afterwards, add the caveat if there is one - and nothing else. Do not announce that it "
+        "is on the screen and do not read it back. They can see it. "
+        "Write the most important line FIRST. It is on the glass a beat later, and anything you "
+        "add after it lands under something they are already reading. "
+        "IT IS NOT ONLY WORDS AND NUMBERS. A handful of readings is a chart. A circuit, a "
+        "sequence, anything with boxes and arrows, is a Mermaid diagram - drawn here in a few "
+        "seconds, and drawn correctly, because you write what connects to what and the layout "
+        "is done for you. Reach for those as readily as for a heading. "
+        "This is the tool to reach for by default, diagrams included. draw_diagram is now the "
+        "narrow exception: it costs a minute and it is for a picture of a PHYSICAL thing - what "
+        "a part looks like, where a fitting sits on an engine, something you would photograph if "
+        "it were in front of you. Anything structural - wiring, a flow, an order of operations, "
+        "what plugs into what - belongs here, in Mermaid, now rather than in a minute. "
+        "It is read at arm's length across a bench and it does not scroll, so whatever does not "
+        "fit is not seen: one idea at a time, set big, a handful of elements. "
+        "It holds the whole screen until they touch it - a press anywhere wipes it and gives "
+        "them your eye back - so it is for the answer, not a caption on every sentence. And it "
+        "replaces whatever picture was there, so do not cover a photo they are still asking you "
+        "about; edit_photo will have nothing left to work on."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "code": {
+                "type": "string",
+                "description": (
+                    "Prefab Python. Open with `with PrefabApp() as app:` and nest everything "
+                    "under it with `with`. Every name is already imported - write no import "
+                    "lines, they cost you a line of silence and nothing else.\n"
+                    "LAYOUT - THE PANEL IS WIDE. 800x480, landscape, and it does not scroll: "
+                    "what runs off the bottom is not seen. A Column of more than three things "
+                    "runs off the bottom while two thirds of the glass sits empty, and that is "
+                    "the most common way to waste this screen. So: one or two things, Column. "
+                    "Four to six, Grid(columns=2). Seven or more, Grid(columns=3) - or a Table, "
+                    "which is better still for rows that share the same columns. A single number "
+                    "is a bare Metric with nothing around it, as big as the screen will allow.\n"
+                    "Containers: Column(gap=N), Row(gap=N), Grid(columns=N, gap=N), Card / "
+                    "CardHeader / CardTitle / CardContent.\n"
+                    "Content: Heading, Text, Badge(label, variant='success'|'warning'|"
+                    "'destructive'|'secondary'), Metric(label, value), Progress(value), "
+                    "Ring(value), Separator, Code, Markdown, Icon(name), Svg(markup), "
+                    "Image(src), Table(data=[{...}]), Kbd.\n"
+                    "Diagrams: Mermaid(text) - a whole mermaid document, usually 'graph LR' or "
+                    "'graph TD', one connection per line. It takes a few seconds to lay out; "
+                    "everything else here is instant. PUT QUOTES ROUND ANY LABEL THAT IS NOT "
+                    "just letters, digits and spaces - A[\"Battery (12V)\"], -->|\"Black "
+                    "(ground)\"|. A bracket or a bracketed aside in a bare label is a parse "
+                    "error, and a mermaid parse error is not a blank screen, it is your source "
+                    "code printed on the panel.\n"
+                    "Charts: BarChart / LineChart / AreaChart / ScatterChart / Histogram, each "
+                    "taking data=[{...}], series=[ChartSeries(data_key='x', label='X')] and "
+                    "x_axis='key'. PieChart is different: data=[{...}], data_key='value', "
+                    "name_key='label'. Sparkline takes a bare list of numbers. DataTable takes "
+                    "rows= and columns=, not data= - plain Table is easier and is what you want "
+                    "on a screen this size.\n"
+                    "ONE COMPONENT PER LINE, and the most important one FIRST. Each finished "
+                    "line is on the glass before you have typed the next, so a heading written "
+                    "first is read while you are still writing the rest. A `for` loop over a "
+                    "list of rows is the one thing that undoes that: nothing inside it can be "
+                    "drawn until the whole loop closes, so five rows arrive at once at the end "
+                    "instead of one at a time. Write the five lines out. Loops and f-strings are "
+                    "worth it only for something genuinely long or computed.\n"
+                    "Good - a number they will work to:\n"
+                    "  with PrefabApp() as app:\n"
+                    "      with Column(gap=2):\n"
+                    "          Metric(label='M8 bolt', value='25 Nm')\n"
+                    "          Text('dry thread, +15% if oiled')\n"
+                    "Good - five figures across the panel instead of off the bottom of it:\n"
+                    "  with PrefabApp() as app:\n"
+                    "      with Column(gap=3):\n"
+                    "          Heading('R80RT torques')\n"
+                    "          with Grid(columns=3, gap=4):\n"
+                    "              Metric(label='Caliper', value='60-65 Nm')\n"
+                    "              Metric(label='Drain plug', value='30 Nm')\n"
+                    "              Metric(label='Strainer', value='9 Nm')\n"
+                    "              Metric(label='Oil pan', value='10 Nm')\n"
+                    "              Metric(label='Filler', value='28-31 Nm')\n"
+                    "Good - steps, written out so they appear one at a time:\n"
+                    "  with PrefabApp() as app:\n"
+                    "      with Column(gap=3):\n"
+                    "          Heading('Bleeding the line')\n"
+                    "          Text('1. Open the far bleeder')\n"
+                    "          Text('2. Pump twice')\n"
+                    "          Text('3. Close it')\n"
+                    "Good - what connects to what, drawn rather than described:\n"
+                    "  with PrefabApp() as app:\n"
+                    "      Mermaid('graph LR\\n  B[Battery] --> F[Fuse 10A]\\n"
+                    "                  S[Switch] --> M[Motor]')\n"
+                    "Good - a few readings, as a shape instead of five spoken numbers:\n"
+                    "  with PrefabApp() as app:\n"
+                    "      with Column(gap=2):\n"
+                    "          Heading('Head temp')\n"
+                    "          LineChart(data=[{'t': '0m', 'c': 42}, {'t': '10m', 'c': 91}],\n"
+                    "                    series=[ChartSeries(data_key='c', label='deg C')],\n"
+                    "                    x_axis='t')\n"
+                    "Bad - imports, and a wall of text nobody reads at arm's length:\n"
+                    "  from prefab_ui.components import Text\n"
+                    "  Text('Torque depends on a number of factors, including...')\n"
+                    "Keep it under 2000 characters. Past that it is a document, and a document "
+                    "on this screen is a paragraph nobody finishes."
+                ),
+            },
+        },
+        "required": ["code"],
         "additionalProperties": False,
     },
 }
@@ -1045,6 +1174,13 @@ class VoiceAgent:
         self._current_item_id: str | None = None  # assistant item whose audio is being played
         self._dead_item_ids: set[str] = set()  # interrupted items: drop their in-flight output
         self._assistant_line_open = False
+        # A sketch being typed. The only tool here whose arguments are acted on before they
+        # have finished arriving, so it needs somewhere to accumulate them; see
+        # ``_on_sketch_delta``. One at a time, because there is one screen.
+        self._sketch_call: str | None = None
+        self._sketch_text = ""
+        self._sketch_timer: asyncio.TimerHandle | None = None  # a compile on its way
+        self._sketch_shown = False  # whether the panel has been asked for this one yet
         self._background: set[asyncio.Task[None]] = set()
         # Cues sound on their own stream (see cyclops.sfx), but on the same device as the voice
         # rather than whatever the system calls default - those are not always the same speaker.
@@ -1217,6 +1353,7 @@ class VoiceAgent:
                 WEB_SEARCH_TOOL,
                 *_diagram_tools(self.settings),
                 *_scratchpad_tools(self.settings),
+                *_sketch_tools(self.settings),
                 *_point_tools(self.settings),
                 *_imagine_tools(self.settings),
                 *_project_tools(self.settings),
@@ -1472,10 +1609,85 @@ class VoiceAgent:
                     self._print_assistant(event.delta)
             case "response.output_audio_transcript.done":
                 self._end_assistant_line()
+            case "response.output_item.added":
+                self._on_output_item(event.item)
+            case "response.function_call_arguments.delta":
+                self._on_sketch_delta(event.call_id, event.delta)
             case "response.done":
                 await self._on_response_done(event.response)
         if self.on_event is not None:
             self.on_event(event)
+
+    # ---- a sketch, while it is being typed ----
+    #
+    # Every other tool here waits for ``response.done`` and then acts on finished arguments,
+    # which is the right shape for work that takes a file or a minute. It is the wrong shape for
+    # a screen: the model has written the number by the time it has typed ten characters, and
+    # waiting for the closing brace throws away most of the sentence it was said in.
+    #
+    # So these two run on the way past. They are the local half of what MCP Apps does with
+    # ``tool-input-partial``: the renderer is already mounted, so a prefix that compiles is a
+    # frame, and a prefix that does not is nothing at all. Neither of them answers the model -
+    # ``_run_sketch`` still does that when the call lands, off ``response.done``, like the rest.
+
+    def _on_output_item(self, item: object) -> None:
+        """Notice a sketch starting, so its argument deltas have somewhere to go."""
+        if getattr(item, "type", None) != "function_call" or getattr(item, "name", "") != "sketch":
+            return
+        call_id = getattr(item, "call_id", None)
+        if not call_id:
+            return
+        self._sketch_call = call_id
+        self._sketch_text = ""
+        self._sketch_shown = False
+
+    def _on_sketch_delta(self, call_id: str, delta: str) -> None:
+        """Take a piece of the sketch, and make sure a compile is coming.
+
+        This does not compile. It cannot: deltas do not trickle in at reading speed, they arrive
+        in a burst - 52 of them inside 386 ms, measured against gpt-realtime-2.1 - and the first
+        one carries two characters of JSON. A throttle that compiles the delta in front of it and
+        drops the rest therefore compiles exactly one prefix per burst, and that prefix is ``{"``.
+        Which is what shipped on 2026-09-10, and why the first session with this on drew nothing
+        until the call landed.
+
+        So the throttle defers instead of dropping. Every delta makes sure a timer is pending;
+        the timer compiles whatever has arrived by the time it fires and then clears itself. A
+        burst costs one compile, the last delta always leaves a timer behind it, and nothing is
+        lost at the end of the stream. It is the same trailing-edge shape Prefab's own renderer
+        uses on this exact event, which should have been the hint.
+        """
+        if call_id != self._sketch_call:
+            return
+        self._sketch_text += delta
+        if self._sketch_timer is None:
+            loop = asyncio.get_running_loop()
+            self._sketch_timer = loop.call_later(sketch.THROTTLE_S, self._draw_sketch)
+
+    def _draw_sketch(self) -> None:
+        """Compile everything that has arrived and put it up if it changed anything.
+
+        The panel is asked for on the first frame that compiles rather than on the first delta.
+        Uncovering the browser is most of a second, and starting it before there is anything to
+        uncover onto buys a spinner where the eye used to be.
+        """
+        self._sketch_timer = None
+        code, _ = arguments.value(self._sketch_text, "code")
+        if not sketch.offer(code):
+            return
+        if not self._sketch_shown:
+            self._sketch_shown = True
+            self._spawn(asyncio.to_thread(self._take_the_glass))
+
+    def _take_the_glass(self) -> None:
+        """Ask the panel to uncover the browser. Blocking; runs off the loop's thread.
+
+        Off the loop for :meth:`_write_scratchpad`'s reason: ``panel.offer_sketch`` goes through
+        ``card.write_text``, which fsyncs an SD card, and the loop it would block is the one
+        carrying his voice. What it writes is a marker and not a payload - the frames themselves
+        went out over the companion stream a moment ago and are already drawn.
+        """
+        panel.offer_sketch() and panel.show()
 
     def _on_session_ready(self) -> None:
         if self.ready.is_set():
@@ -1501,6 +1713,10 @@ class VoiceAgent:
         sounding = self.cues.play("iris_open")
         if self.mic is not None:
             self._spawn(self._listen(after_s=sounding))
+        # The UI framework's import, bought now rather than on the first delta of the first
+        # sketch - which is the one moment in that path where somebody is watching nothing.
+        if self.settings.sketch:
+            self._spawn(asyncio.to_thread(sketch.warm))
 
     def _on_error(self, err: RealtimeError) -> None:
         if err.code == "conversation_already_has_active_response":
@@ -1654,6 +1870,9 @@ class VoiceAgent:
         if call.name == "write_on_scratchpad":
             await self._run_scratchpad(call)
             return
+        if call.name == "sketch":
+            await self._run_sketch(call)
+            return
         if call.name == "point_at":
             await self._run_point(call)
             return
@@ -1778,6 +1997,72 @@ class VoiceAgent:
         shown = panel.offer_scratchpad(html) and panel.show()
         session.note("screen", html=html[:MAX_SCRATCHPAD_CHARS], panel=shown)
         return shown
+
+    async def _run_sketch(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Answer the model about the sketch that has mostly already happened.
+
+        By the time this runs, the panel is usually showing the thing: the deltas drew it while
+        the arguments were arriving (:meth:`_on_sketch_delta`). What is left is the last compile
+        - on the complete code, so a program whose final line never got a chance to run still
+        finishes - the session note, and telling the model where it stands.
+
+        It also has to work when none of that happened. A response can carry a sketch whose
+        arguments never streamed, and then this is the only compile there is.
+        """
+        code = _tool_code(call.arguments)
+        drew = self._sketch_shown
+        self._log(f"[tool] sketch {len(code)} chars, {'drawn while typed' if drew else 'whole'}")
+        self._sketch_call = None
+        self._sketch_text = ""
+        if self._sketch_timer is not None:
+            # A compile scheduled by the last delta, which this call has now overtaken. It
+            # would only redraw a prefix of what we are about to draw in full.
+            self._sketch_timer.cancel()
+            self._sketch_timer = None
+        if not code:
+            await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing to draw"})
+            await self._request_response()
+            return
+
+        drawn = sketch.offer(code) or sketch.current() is not None
+        if not drawn:
+            # Every prefix failed and so did the whole thing. The model wrote Python that does
+            # not run, and the useful answer says so rather than pretending: it can write it
+            # again, and it is the only one that knows what it meant.
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": "that code did not run",
+                "note": (
+                    "Nothing is on the screen. Open with `with PrefabApp() as app:` and write "
+                    "no import lines. Say the answer out loud, and try once more if it is worth "
+                    "seeing."
+                ),
+            })
+            await self._request_response()
+            return
+
+        shown = self._sketch_shown
+        if not shown:
+            shown = await asyncio.to_thread(self._take_the_glass_now)
+        session.note("sketch", code=code[: sketch.MAX_SKETCH_CHARS], panel=shown)
+        output = (
+            {"ok": True, "shown": True, "note": "It is on the screen. Do not read it out."}
+            if shown
+            else {
+                "ok": True,
+                "shown": False,
+                "note": (
+                    "There is no panel to show it on. Say so plainly rather than describing it."
+                ),
+            }
+        )
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    def _take_the_glass_now(self) -> bool:
+        """:meth:`_take_the_glass`, for the case where the deltas never ran, and it reports back."""
+        self._sketch_shown = True
+        return panel.offer_sketch() and panel.show()
 
     async def _run_point(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Mark their picture. The only tool here that reaches the glass without touching a file.
@@ -2742,7 +3027,21 @@ def _scratchpad_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     without being asked, and ``CYCLOPS_SCRATCHPAD=0`` is a way to find out what that is like that is
     not a revert.
     """
-    return [SCRATCHPAD_TOOL] if settings.scratchpad else []
+    return [SCRATCHPAD_TOOL] if settings.scratchpad and not settings.sketch else []
+
+
+def _sketch_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The tool that draws on the panel while it is being written, or nothing.
+
+    It is the scratchpad, done the other way round, which is why turning it on turns that one
+    off (see :func:`_scratchpad_tools`). Two tools that both put a screenful in front of the
+    same person is not twice the feature: it is a choice the model has to make mid-sentence,
+    every time, on a distinction only we can see. One door onto the glass, and ``CYCLOPS_SKETCH``
+    picks which.
+
+    Off by default, because it is the newer of the two and the older one has been used in anger.
+    """
+    return [SKETCH_TOOL] if settings.sketch else []
 
 
 def _point_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
@@ -2822,6 +3121,11 @@ def _tool_picture(arguments: str | None) -> str:
     and a name that resolves to nothing is refused rather than swapped for the newest.
     """
     return _tool_string(arguments, "picture", MAX_PICTURE_NAME_CHARS)
+
+
+def _tool_code(arguments: str | None) -> str:
+    """sketch's required 'code' argument: the Prefab program he wants on the glass."""
+    return _tool_string(arguments, "code", sketch.MAX_SKETCH_CHARS)
 
 
 def _tool_marks(arguments: str | None) -> str:
@@ -2933,6 +3237,11 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
     # line has finished typing, and the mark is the answer.
     if call.name == "point_at":
         return "pointing…"
+    # Up for a fraction of a second: by the time a sketch has two lines in it the browser is
+    # already over this strip. It is here for the recording and for the seconds before the
+    # first line compiles.
+    if call.name == "sketch":
+        return "drawing that…"
     if call.name == "edit_photo":
         return _phrase(
             "editing the picture to", _tool_string(args, "request", MAX_QUERY_CHARS),

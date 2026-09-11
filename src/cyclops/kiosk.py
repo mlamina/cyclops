@@ -46,6 +46,7 @@ from . import (  # noqa: E402
     power,
     session,
     sfx,
+    sketch,
     stats,
     still,
     tasks,
@@ -252,6 +253,11 @@ PAINT_WAIT_S = 8.0
 # offer file, so _restill answers from that on its first look and never reaches this. A poll,
 # a paint and a canvas draw is the better part of a second, and this is the ceiling on it.
 STILL_WAIT_S = 2.0
+# How long after a sketch changes the screen is still worth photographing for the recording.
+# Mermaid lays itself out in about five seconds and is the slowest thing on the panel; every
+# other component is painted by the next frame. See Kiosk._keep_sketch_still.
+SKETCH_SETTLE_S = 8.0
+SKETCH_STILL_EVERY_S = 0.7  # ...and how often inside that window. grim is ~25 ms at -t ppm.
 VOLUME_POLL_S = 0.4  # how often we look for a volume, or a barge-in switch, the page left us
 # ...and how often we check that the window still fills the panel. See _keep_fullscreen: this is
 # a compositor's answer being verified rather than a value being read, so it can be lazy.
@@ -553,6 +559,7 @@ class Kiosk:
         # sample - see cyclops.still. None whenever there is nothing to say, which is the
         # dashboard and every failure; the render loop publishes black for it as it always did.
         self._page_still: np.ndarray | None = None
+        self._sketch_shot_at = 0.0  # monotonic; paces _keep_sketch_still's captures
         self._window_up = False  # whether highgui currently has a window for us
         # Whether the panel's light has been turned on for this run. It comes on with the first
         # fully drawn frame rather than at startup, because everything before that - the browser
@@ -1339,10 +1346,50 @@ class Kiosk:
         """
         proc = self._browser
         deadline = time.monotonic() + ADMIN_MAX_S
+        drawn: object = object()  # the sketch frame we last photographed; never equal to a wire
+        settle = 0.0
         while proc is not None and proc.poll() is None:
             if _noted_since(BROWSER_CLOSE_FLAG, shown_at) or time.monotonic() > deadline:
                 break
+            drawn, settle = self._keep_sketch_still(drawn, settle)
             time.sleep(ADMIN_POLL_S)
+
+    def _keep_sketch_still(self, drawn: object, settle: float) -> tuple[object, float]:
+        """Photograph a sketch for the recording while it is still moving.
+
+        The capture itself is :func:`cyclops.still.of_screen`.
+
+        A picture and a scratchpad both reach the video out of what the page was handed, because
+        both are one finished thing somebody sent. A sketch is neither: it arrives a frame at a
+        time and then its charts and diagrams lay themselves out on their own clock - Mermaid
+        takes about five seconds - so there is no moment on this side that means "it is done".
+
+        The rule is therefore time, not completion: every change starts a window, and while the
+        window is open the screen is photographed a few times a second. Outside one this costs a
+        comparison of two object identities per poll. It also means the recording shows the thing
+        assembling rather than one frozen frame of it, which is what it looked like to be there.
+        """
+        if not self._panel_showing.is_set():
+            return drawn, settle
+        wire = sketch.current()
+        if wire is None:
+            return drawn, settle
+        now = time.monotonic()
+        started = wire is drawn
+        if not started:
+            drawn, settle = wire, now + SKETCH_SETTLE_S
+        if now > settle or now - self._sketch_shot_at < SKETCH_STILL_EVERY_S:
+            return drawn, settle
+        self._sketch_shot_at = now
+        frame = still.of_screen(*self._panel_size())
+        if frame is None:
+            return drawn, settle
+        self._publish_still(frame)
+        if not started:
+            # Once per sketch, not once per capture. It is the one line that says the recording
+            # can see what is on the glass - the thing that was silently black before.
+            print("· sketch: photographing the panel for the recording", flush=True)
+        return drawn, settle
 
     # ---- pictures on the panel ----
 

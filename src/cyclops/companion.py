@@ -25,13 +25,16 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import queue
 import socket
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 import cv2
 
+from . import panel, sketch
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE
 from .camera import STALE_AFTER_S
 from .config import COMPANION_PORT
@@ -53,6 +56,7 @@ PACE_S = 0.05  # how often a listener's socket is written: smaller chunks are a 
 VOICE_LAG_MAX = SAMPLE_RATE * BYTES_PER_FRAME  # a second; past this a slow reader is skipped on
 MAX_VIEWERS = 4  # per stream. A page left open in ten tabs is not a reason to cook the Pi
 SEND_TIMEOUT_S = 10.0  # a phone that walks out of range is dropped, not left holding a thread
+IDLE_PING_S = 20.0  # a comment line down the sketch stream, so a quiet hour does not look dead
 # How long a device's claim on his voice stands without being renewed, and how often the page
 # renews it. An open socket is *not* the claim - see listening(), which is where the reasoning is.
 LISTEN_FRESH_S = 8.0
@@ -324,6 +328,18 @@ class _Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming
         self._open("text/plain", 204)
 
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming
+        """The one thing anybody may change through this port, and only from the box itself."""
+        if self.path.split("?", 1)[0] != "/sketch.type":
+            self._refuse(404, "try /sketch.type")
+            return
+        try:
+            self._type_a_sketch()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            pass
+        except Exception as exc:  # noqa: BLE001 - one bad request must not end the server
+            print(f"· companion /sketch.type: {exc}", flush=True)
+
     def do_GET(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler's naming
         route = self.path.split("?", 1)[0]
         try:
@@ -337,8 +353,11 @@ class _Handler(BaseHTTPRequestHandler):
                 self._voice()
             elif route == "/listening":
                 self._still_listening()
+            elif route == "/sketch.sse":
+                self._sketch()
             else:
-                self._refuse(404, "try /, /camera.jpg, /camera.mjpg, /voice.pcm or /listening")
+                self._refuse(404, "try /, /camera.jpg, /camera.mjpg, /voice.pcm, /listening"
+                             " or /sketch.sse")
         except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
             pass  # somebody closed a tab, or wifi went. Not news.
         except Exception as exc:  # noqa: BLE001 - one bad request must not end the server
@@ -363,6 +382,76 @@ class _Handler(BaseHTTPRequestHandler):
         global _heard_at
         _heard_at = time.monotonic()
         self._open("text/plain", 204)
+
+    def _type_a_sketch(self) -> None:
+        """Type a Prefab program onto the panel, at the pace a model writes one. Loopback only.
+
+        The one way to audition this surface without talking to it. A sketch never touches the
+        card - its frames go from the agent's thread straight to :mod:`cyclops.sketch` and out of
+        this port, which is what makes it quick and also what puts it out of reach of every other
+        process on the Pi. So a picture can be offered to a panel from a throwaway script
+        (``panel.offer_image``) and a sketch cannot, and without this there is no way to look at
+        one, change a font size and look again.
+
+        It runs code this process was handed over a socket, which is why it is nailed to the
+        loopback: ``_is_local`` in the admin views draws the same line for the same reason, and
+        the answer either side of it is the same one - somebody who can reach 127.0.0.1 on this
+        box can already run anything as ``cyclops``. It is not a smaller door than ssh.
+
+        ``?ms=`` is the pace and ``?step=`` how many characters arrive at a time; the defaults are
+        about what a realtime model does. Send the program as the body.
+        """
+        host = self.client_address[0]
+        if host not in ("127.0.0.1", "::1", "::ffff:127.0.0.1"):
+            self._refuse(403, "loopback only")
+            return
+        options = parse_qs(urlparse(self.path).query)
+        pace = float(options.get("ms", ["60"])[0]) / 1000
+        step = max(1, int(options.get("step", ["4"])[0]))
+        length = int(self.headers.get("Content-Length") or 0)
+        code = self.rfile.read(length).decode("utf-8", "replace")
+        # The panel first, unconditionally. The agent asks for it on its first compiled frame
+        # (``VoiceAgent._take_the_glass``) because it has a conversation to not interrupt; this
+        # has no such worry, and gating on a frame made re-sending a program that is already on
+        # the glass silently do nothing - which is the exact thing you do while auditioning one.
+        panel.offer_sketch() and panel.show()
+        drawn = 0
+        for i in range(step, len(code) + step, step):
+            if sketch.offer(code[:i]):
+                drawn += 1
+            time.sleep(pace)
+        body = f"{drawn} frames from {len(code)} characters\n".encode()
+        self._open("text/plain; charset=utf-8", 200, len(body))
+        self.wfile.write(body)
+
+    def _sketch(self) -> None:
+        """Frames of whatever the model is drawing, as they compile. See :mod:`cyclops.sketch`.
+
+        The panel's own page opens this once at load and leaves it open, which is why it is here
+        and not on the admin port: that one is gunicorn with two workers of two threads, and
+        parking one of the four on a connection that is idle all day to save 300 ms twice an hour
+        is a bad trade. This server is threaded, already holds ``/camera.mjpg`` and ``/voice.pcm``
+        open for as long as anyone watches, and - the part that actually matters - runs inside the
+        kiosk process, which is where the model's code was compiled. The frame goes from the
+        agent's thread to this socket without touching the card.
+
+        A comment line every :data:`IDLE_PING_S` keeps the socket and anything NATting it awake
+        through a long quiet stretch, and gives a dead browser somewhere to fail.
+        """
+        self.connection.settimeout(SEND_TIMEOUT_S)
+        _keepalive(self.connection)
+        self._open("text/event-stream")
+        with sketch.listening() as box:
+            while True:
+                try:
+                    wire = box.get(timeout=IDLE_PING_S)
+                except queue.Empty:
+                    self.wfile.write(b": still here\n\n")
+                    self.wfile.flush()
+                    continue
+                payload = json.dumps({"wire": wire}, separators=(",", ":"))
+                self.wfile.write(f"data: {payload}\n\n".encode())
+                self.wfile.flush()
 
     def _still(self) -> None:
         """One frame. The insurance policy: every browser can show this, whatever it makes of

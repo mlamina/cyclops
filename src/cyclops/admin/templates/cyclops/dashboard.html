@@ -438,6 +438,22 @@ room for. That is the one question here answered by the stylesheet rather than b
   collapse the page around body.drawing without asking who is looking.
   {% endcomment %}
   <main class="stage" id="stage"></main>
+
+  {% comment %}
+  The renderer for a sketch, and the reason it is in the document at page load rather than made
+  when one arrives. It is a React app in a frame of its own, and mounting it costs a beat - which
+  is the whole beat this feature exists to remove. Loaded once at boot with the rest of the page,
+  it sits here doing nothing at all until frames start arriving over the companion stream, and
+  then it is already running. That is the trick MCP Apps plays with its iframe, and it is worth
+  playing with ours.
+
+  Outside #stage on purpose: shot() and scratchpad() both empty that element, and this one has to
+  survive a photograph landing on top of it. It takes no pointer events, so the press that puts a
+  picture away falls through to the #stage listener behind it - the same arrangement .scratchpad
+  has, and for the same reason.
+  {% endcomment %}
+  <iframe class="sketch" id="sketchframe" src="/renderer.html"
+          data-port="{{ companion_port }}" title="" tabindex="-1"></iframe>
   {% if local %}
   <button class="close" id="close" type="button"><span class="glyph">&#10005;</span><span
     class="word" id="closeword">&nbsp;Close</span></button>
@@ -465,5 +481,12 @@ JointJS was already parsed when a diagram arrived. Diagrams are images now, so t
 to lay out and nothing to pre-parse.
 {% endcomment %}
 <script src="/static/panel.js?v={{ v }}"></script>
+
+{% comment %}
+The host half of the MCP Apps handshake, against the renderer above, plus the stream the
+frames arrive on. After panel.js because panel.js owns the stage and decides when a sketch is
+the thing on it; this file only ever feeds the frame.
+{% endcomment %}
+<script src="/static/sketch.js?v={{ v }}"></script>
 </body>
 </html>

@@ -75,6 +75,9 @@ OURS = {
     # The companion's two streams - the picture and the voice - which are not this service's to
     # serve and are only this service's to point at. See cyclops.companion.
     "stream.js": "text/javascript; charset=utf-8",
+    # The host half of the MCP Apps handshake with the sketch renderer, which this service
+    # does serve (see :func:`renderer`) but whose frames it never sees. See cyclops.sketch.
+    "sketch.js": "text/javascript; charset=utf-8",
     # The boot mark, for the one screen that has nothing else to show: a companion waiting for a
     # session to start. Derived from assets/eye.png, which is the same mark drawn white on black -
     # its luminance moved into the alpha channel, so CSS can use it as a mask and paint it in the
@@ -426,6 +429,36 @@ def picture_painted(request: HttpRequest) -> HttpResponse:
     except OSError as exc:
         print(f"· could not leave the panel-painted note ({exc})", flush=True)
     return HttpResponse(status=204)
+
+
+def renderer(request: HttpRequest) -> HttpResponse:
+    """Prefab's renderer, as one self-contained page. The frame a sketch is drawn in.
+
+    Served from here rather than from jsDelivr, which is Prefab's default. Six megabytes off the
+    card on the first load of a warm browser that then keeps it for the life of the profile beats
+    a network round trip at the one moment somebody is waiting - and a panel in a workshop should
+    not need the internet to draw a number on itself.
+
+    ``mode="bundled"`` is what makes that true: the CDN stub would still fetch the renderer, and
+    its lazy chunks - charts, mermaid, icons - would each come down the first time a program used
+    one, mid-sentence. Bundled inlines the lot.
+
+    It is read on every request rather than held in memory. This is asked for once per browser
+    profile, and six megabytes of resident set in each of two gunicorn workers, for ever, to save
+    a read that the page cache has already made free, is the wrong way round.
+    """
+    from prefab_ui import renderer as prefab_renderer
+
+    response = HttpResponse(
+        prefab_renderer.get_renderer_html(mode="bundled"),
+        content_type="text/html; charset=utf-8",
+    )
+    # Versioned by the package and not by our digest, so it is not in OURS and cannot ride
+    # ASSET_VERSION. A deploy that upgrades prefab-ui has to clear the kiosk profile or bump
+    # this URL -
+    # which is the trade for not parsing six megabytes of JavaScript on every reveal.
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
 
 
 def static_file(request: HttpRequest, name: str) -> HttpResponse:

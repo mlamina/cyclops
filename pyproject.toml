@@ -28,6 +28,7 @@ dependencies = [
     "gpiozero>=2.0; sys_platform == 'linux'",
     "lgpio>=0.2.2.0; sys_platform == 'linux'",  # the Pi 5's RP1 factory; RPi.GPIO cannot drive it
     "websockets>=13,<16",
+    "prefab-ui>=0.20.2",
 ]
 
 [project.scripts]
