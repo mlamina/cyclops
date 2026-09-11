@@ -68,3 +68,36 @@ deploy/push.sh                       # deploy, restart both, verify the kiosk ca
 SKIP_KIOSK=1 deploy/push.sh          # leave the running kiosk alone
 ssh cyclops@cyclops.local cyclops/deploy/start-kiosk.sh   # just restart it
 ```
+
+## Tethering to a phone
+
+Away from the home network there is no session at all — the realtime API is the whole
+conversation — so the box carries a second saved wifi network: a phone's Personal Hotspot.
+
+```bash
+ssh cyclops@cyclops.local cyclops/deploy/install-tether.sh   # once per box, asks for SSID + password
+```
+
+It is ordinary NetworkManager, no cyclops code. Every other saved network is set to autoconnect
+priority 100 and the hotspot to 10, so the hotspot is reached for only when nothing better is on
+the air. `autoconnect-retries` is 0 (unlimited) on it, because the stock four give up on a
+network that is absent far more often than present and leave the profile blocked.
+
+**Turn the hotspot on before running it.** iOS only broadcasts the SSID while Personal Hotspot
+is enabled, and the script picks the SSID out of a live scan for a reason: an iPhone's name is
+`Marco’s iPhone` with a curly apostrophe (U+2019), not the `'` you would type. Taking it off
+the air rather than from the keyboard is what makes the profile actually match.
+
+**Going out is automatic; coming home is a gesture.** NM reconsiders priorities when a link
+drops, not while one is working — so arriving home does not pull the box off the phone. Turning
+the hotspot off does: the link drops, NM rescans, home wins. That asymmetry is worth keeping,
+since it is also what stops cellular data being spent by accident.
+
+While tethered, `cyclops.local` resolves only from a machine on the same hotspot — join it from
+the laptop too and ssh works as usual.
+
+**Over a cable.** `ipheth` is already in the Pi kernel, so a USB-connected iPhone with Personal
+Hotspot on appears as a plain ethernet device and NM DHCPs it with no profile of ours. The one
+missing piece was `usbmuxd`, which answers the phone's "Trust this computer?" and holds the
+pairing afterwards; the script installs it. Note that a wired device outranks wifi on route
+metric, so a phone left plugged in wins over home wifi — unplug it when you are back.
