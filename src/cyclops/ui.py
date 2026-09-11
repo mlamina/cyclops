@@ -17,10 +17,9 @@ import threading
 import time
 from dataclasses import replace
 
-from . import barge, companion, sfx, voice
+from . import barge, companion, voice
 from .agent import VoiceAgent
 from .audio import (
-    SAMPLE_RATE,
     EchoGuard,
     Microphone,
     Speaker,
@@ -83,14 +82,6 @@ class SessionController:
         # have always made. See :meth:`_detail`.
         self._phase = ""
         self._closing = False  # a teardown is under way; see the property below
-        # This controller is the only thing that knows when a session is *finished* rather than
-        # merely cancelled - the socket, the audio devices and the recording all outlive the
-        # agent - so the sound that says so is sounded from here.
-        self._cues = sfx.Cues(
-            rate=SAMPLE_RATE,
-            device=resolve_device(settings.output_device),
-            enabled=settings.sounds,
-        )
 
     @property
     def _running(self) -> bool:
@@ -111,7 +102,7 @@ class SessionController:
             loop, task = self._loop, self._task
         if loop is None or task is None:
             return
-        # On the tap, like the closing cue in the kiosk, and for a reason beyond symmetry: for
+        # On the tap, like the gears in the kiosk, and for a reason beyond symmetry: for
         # the couple of seconds it takes the task to notice it was cancelled this controller
         # still honestly reports LISTENING, so without a phrase here the caption would sit
         # saying "listening - talk to me" underneath a strip that already says SLEEPING.
@@ -315,10 +306,12 @@ class SessionController:
             self._phase = ""  # the folder is written; there is nothing left to report
             self._closing = False
             loop.close()
-            # Now it is over: the folder is written and the panel is about to go back to
-            # ASLEEP. This cuts off the closing ticks the kiosk started on the tap, however
-            # long or short the teardown turned out to be.
-            self._cues.play("ended")
+            # Nothing sounded here. This controller is the only thing that knows when a session
+            # is *finished* rather than merely cancelled - the socket, the devices and the
+            # recording all outlive the agent - and it used to say so with a low note. But the
+            # panel says it too, with his lid, off the same fact a frame later: two cues for one
+            # moment, of which only one is also a picture, and on one speaker the later simply
+            # clipped the earlier to a click. The CLI still sounds "ended", having no lid.
 
     async def _session(self, loop: asyncio.AbstractEventLoop) -> None:
         self._phase = "opening the audio devices…"

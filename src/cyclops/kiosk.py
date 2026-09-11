@@ -949,7 +949,7 @@ class Kiosk:
         The switch that starts and ends a conversation is a 12 mm target you have to look at,
         and the moment you want to start talking to him is the moment both hands are full. This
         is the same :meth:`_toggle_session` the switch itself calls - the record source, the
-        printed line, the closing cue and the optimistic ``_pending`` all come with it - so
+        printed line, the gears and the optimistic ``_pending`` all come with it - so
         there is no second way for a session to begin.
 
         Unlike the tap, a hold on a dark panel is not spent waking it: the tap is ambiguous
@@ -988,7 +988,14 @@ class Kiosk:
         Not on the press edge: :data:`PRESS_GRACE_S` stands this off until a click would already
         have come and gone, so a photo is a shutter and nothing else. Between that and
         :meth:`button_held` the rise has exactly the window it is cut to fill.
+
+        And only when the hold that is coming would *start* something. With a session already up
+        this same gesture ends one, and there is nothing winding up to say: what a rise promises
+        is a machine about to run, so putting one under the press that stops it is the box
+        getting more eager as you switch it off. That press is silent until it lands.
         """
+        if session_up(str(self.controller.status()["state"])):
+            return
         self._cues.play("button_pressed")
 
     def button_up(self) -> None:
@@ -1460,10 +1467,8 @@ class Kiosk:
             # This used to be sounded by the session's own thread once its audio devices were
             # open - half a second to two seconds later, and never the same twice - so the one
             # cue on this box that is *about* a long press landing was the only thing that did
-            # not land with it. It belongs in this branch rather than in the caller for the same
-            # reason the closing pair below does: a hold that ends a session would otherwise
-            # sound the gears and have "closing" cut them off a millisecond later.
-            self._cues.play("connecting")
+            # not land with it.
+            self._cues.play("gears")
             # What this session's video will be of, settled here because here is the last moment
             # it is free: the encoder is opened at a fixed frame size a second or two from now.
             # A switch flipped after this lands on the next session, which is what the settings
@@ -1475,10 +1480,16 @@ class Kiosk:
             print(f"· recording the {wanted}", flush=True)
             self.controller.start()
         else:
-            # On the tap, not on the teardown. Everything after this point waits on a task
-            # that has to notice it was cancelled, and the panel already shows CLOSING from
-            # here - the sound belongs to the press, the same way the shutter does.
-            self._cues.play("closing")
+            # The same gears, on the same edge, for the same reason: ending a session and
+            # starting one are one mechanism engaging, and what tells them apart is the lid that
+            # follows. On the tap and not on the teardown - everything after this point waits on
+            # a task that has to notice it was cancelled, and the panel already shows CLOSING
+            # from here, so the sound belongs to the press the way the shutter does.
+            #
+            # It replaces a falling pair and then soft ticks for the length of the teardown. The
+            # ticks were a status light for a wait that the caption already narrates in words,
+            # and the pair was a second answer to a press this now answers once.
+            self._cues.play("gears")
             self.controller.stop()
 
     def _effective(self, raw: str) -> str:

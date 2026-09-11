@@ -57,11 +57,12 @@ class Cut(NamedTuple):
 CUTS: dict[str, Cut] = {
     "iris_open": Cut("cyclops_iris_open.wav"),
     "iris_close": Cut("cyclops_iris_open.wav", backwards=True),
-    # Gears turning over while the socket comes up. This was two blips and a long gap for a long
-    # time; what it replaced them with is the same thing the iris says, which is what the box
-    # sounds like from the outside while something inside it is moving. Once, not looped - a
-    # mechanism you hear start and stop has done its work, and one that keeps going is stuck.
-    "connecting": Cut("cyclops_connecting.wav"),
+    # Gears turning over: a long press landing, either direction. This was two blips and a long
+    # gap for a long time; what it replaced them with is the same thing the iris says, which is
+    # what the box sounds like from the outside while something inside it is moving. Once, not
+    # looped - a mechanism you hear start and stop has done its work, one that keeps going is
+    # stuck.
+    "gears": Cut("cyclops_gears.wav"),
     # The rising note under a finger on the button. Unlike every other cue here its length is
     # not the master's: it has a window to fill and the window is LONG_PRESS_S - PRESS_GRACE_S,
     # the stretch between a finger settling and the hold landing.

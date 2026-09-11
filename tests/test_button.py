@@ -263,7 +263,7 @@ def test_a_hold_ends_the_rise_and_sounds_the_gears(monkeypatch: pytest.MonkeyPat
     kiosk = _panel(monkeypatch, real_toggle=True)
     kiosk.button_down()
     kiosk.button_held()
-    assert kiosk._cues.heard == ["button_pressed", "connecting"]
+    assert kiosk._cues.heard == ["button_pressed", "gears"]
     assert kiosk._cues.stopped == 1, "the rise ended on the boundary"
     assert kiosk.controller.started == 1
 
@@ -271,6 +271,23 @@ def test_a_hold_ends_the_rise_and_sounds_the_gears(monkeypatch: pytest.MonkeyPat
     # is conditional: by now the gears are what is sounding and they are not the finger's.
     kiosk.button_up()
     assert kiosk._cues.stopped == 1
+
+
+def test_the_press_that_ends_a_session_is_silent_until_it_lands(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rise promises a machine about to run, and this gesture stops one.
+
+    Same button, same hold, and the same gears on the boundary - what tells the two apart is the
+    lid that follows, not the sound under the finger. Putting a rise here would be the box
+    getting more eager as you switch it off.
+    """
+    kiosk = _panel(monkeypatch, real_toggle=True)
+    kiosk.controller.state = "listening"
+    kiosk.button_down()
+    assert kiosk._cues.heard == [], "nothing is winding up"
+    kiosk.button_held()
+    assert kiosk._cues.heard == ["gears"]
 
 
 # ---------------------------------------------------------------- the ring

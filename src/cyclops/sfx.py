@@ -95,21 +95,14 @@ CUES: dict[str, Callable[[int], np.ndarray]] = {
     # the moment it was for is the moment his lid opens, and that moment now sounds like a lid.
     # Kept because it costs a line and it is the shape the next cue that needs one starts from.
     "ready": lambda rate: join(tone(740, 130, rate=rate), tone(1110, 130, rate=rate)),
-    # Ending a session is three things heard as one gesture, and this cue is the first two of
-    # them: a falling pair the instant you press stop, then soft ticks while the link winds
-    # down. The ticks run far longer than the ~2.3 s teardown usually takes, because they are a
-    # budget rather than a duration - "ended" cuts them off the moment the session is really
-    # over (one cue at a time; see Cues), so the length only decides how long a slow teardown
-    # keeps saying something rather than falling silent.
-    "closing": lambda rate: join(
-        tone(740, 90, rate=rate),
-        tone(494, 110, rate=rate),
-        silence(120, rate=rate),
-        repeat(join(tone(392, 40, rate=rate, amp=PEAK * 0.5), silence(360, rate=rate)), 15),
-    ),
-    # ...and the third: one low note, the lowest thing here, with a slow release. The machine
-    # has gone quiet. Distinct in register from both the falling pair and the ticks above it,
-    # because its whole job is to be recognised as the end rather than as more of the middle.
+    # One low note, the lowest thing here, with a slow release: the machine has gone quiet.
+    # The CLI's whole teardown is this (cyclops.app); the kiosk's is its lid, which says the
+    # same thing and is also a picture, so nothing on the panel plays this.
+    #
+    # It used to be the third of three - a falling pair on the tap, then soft ticks while the
+    # link wound down, then this. The gears took the first of those: ending a session is the
+    # same mechanism engaging as starting one, and the ticks were a status light for a wait the
+    # panel already narrates in words.
     "ended": lambda rate: join(tone(247, 300, rate=rate, amp=PEAK * 0.7, fade_ms=90)),
     # The long press landing on his face, and the only cue here that answers a finger rather
     # than the session. It has to exist because of where the gesture happens: the power menu
@@ -175,14 +168,17 @@ SAMPLES: dict[str, str] = {
     # before it can hear.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
-    # Gears turning over: the long press landing, and a session asked for. Sounded once and
-    # not repeated, because a mechanism you hear start and then stop has done its work and one
-    # that keeps going is stuck - and sounded from the button's own thread, on the hold edge
-    # itself (Kiosk._toggle_session). It used to come off the session's thread once that had
-    # imported an agent and opened PortAudio both ways, which is half a second to two seconds
-    # later and never twice the same: the one cue on this box that is *about* a gesture landing
-    # was the only one that did not land with it.
-    "connecting": "cyclops_connecting.wav",
+    # Gears turning over: the long press landing. Both directions - starting a session and
+    # ending one are the same mechanism engaging, and what tells them apart is the lid that
+    # follows, which is the half you can watch. Sounded once and not repeated, because a
+    # mechanism you hear start and then stop has done its work and one that keeps going is
+    # stuck, and sounded from the button's own thread on the hold edge itself
+    # (Kiosk._toggle_session). It was called "connecting" while it only marked one of the two,
+    # and it came off the session's thread once that had imported an agent and opened PortAudio
+    # both ways - half a second to two seconds later and never twice the same, which made the
+    # one cue on this box that is *about* a gesture landing the only one that did not land
+    # with it.
+    "gears": "cyclops_gears.wav",
     # The rising note under a finger on the button, filling the wait for the hold. It is the
     # only cue here that answers a finger rather than an event, and the only one bounded at both
     # ends by something other than itself: it starts PRESS_GRACE_S in, so a click is a shutter
@@ -312,11 +308,10 @@ class Cues:
     speaker is free, and :meth:`stop_if` lets one end its own sound without ending somebody
     else's.
 
-    The record is per instance and the speaker is not. There are three of these - the kiosk's,
-    the agent's and the controller's - so none of this reaches across them, and what keeps the
-    three from treading on each other is that each cue is sounded off the moment it describes
-    and those moments are seconds apart. Worth making module-level the first time that stops
-    being true.
+    The record is per instance and the speaker is not. There are two of these - the kiosk's and
+    the agent's - so none of this reaches across them, and what keeps them from treading on each
+    other is that each cue is sounded off the moment it describes and those moments are seconds
+    apart. Worth making module-level the first time that stops being true.
     """
 
     def __init__(self, *, rate: int, device: int | str | None = None, enabled: bool = True):
