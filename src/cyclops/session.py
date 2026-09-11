@@ -252,7 +252,9 @@ class SessionLog:
         # end record - `_live` was cleared at the top, so note() is already a no-op - which is
         # what makes it safe to have kept the handle open this long.
         self._close_handle()
-        self._after()  # named, remembered and filed in another process, on its own time
+        # Nothing happened in it, so there is nothing for the child to name, remember or file.
+        if not self._discard():
+            self._after()  # named, remembered and filed in another process, on its own time
 
     def _start_recorder(self) -> None:
         """Tap the mic and the speaker for this session's video, if there is a camera for one."""
@@ -294,6 +296,43 @@ class SessionLog:
             card.write_text(self.dir / PAGE_NAME, render_markdown(self._records))
         except OSError as exc:
             self._give_up(f"{type(exc).__name__}: {exc}")
+
+    def _discard(self) -> bool:
+        """Remove this folder when nothing happened in it. Whether it went.
+
+        The cheap gate, at the only moment it is free. ``session``, ``video`` and ``end`` are
+        records *about* a session; ``video.mp4`` and ``session.md`` are made *from* one. A folder
+        holding nothing but those held a button press - there is nothing in it for a model to be
+        asked about, for a sweep to file, or for anybody to come back to - so it goes here rather
+        than being listed forever as a session that happened.
+
+        Asked through :func:`cyclops.card.triage` rather than off ``self._records``, though both
+        are to hand: two answers to "what is in this folder" is how they start to disagree. Which
+        is also why this runs after :meth:`_close_handle` - a folder still holding the flock on
+        its own log reads as ``live``, and triage refuses to judge one of those.
+
+        Here and not in :mod:`cyclops.after` because that child is behind
+        :func:`cyclops.after.wanted`: a box with no key never starts one, and this costs nothing
+        and must not be something a missing key switches off. Nor inside :meth:`_after`, whose
+        blanket ``except`` would swallow a deletion that failed.
+
+        One race, not worth a lock but worth knowing: :func:`photo_target` hands the shutter
+        thread ``photos_dir`` before ``_live`` is cleared, and a write lands its parent
+        directories. A tap resolving its target just before that and landing its bytes just after
+        the ``rmdir`` here would leave a folder with one picture and no log. It would be reported
+        as unfinished forever - as any photos-only folder already is - rather than losing
+        anything, which is the right direction for the accident to fall in.
+        """
+        if self.failed:
+            return False  # a log we could not write is not one to judge a folder by
+        try:
+            if card.triage(self.dir).verdict != "empty":
+                return False
+            said = _remove(self.dir)
+        except OSError as exc:  # noqa: BLE001 - a folder we could not read is a folder we keep
+            said = f"could not tell whether anything survived ({exc})"
+        print(f"· {self.dir.name}: {said}", flush=True)
+        return said.endswith("removed")
 
     def _after(self) -> None:
         """Hand the folder to a detached child and let go of it - see :mod:`cyclops.after`.
@@ -1036,16 +1075,30 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
             card.CUT_REQUEST, card.CUT_PLAN, card.CUT_SUBS, card.CUT,
         ):
             (folder / name).unlink(missing_ok=True)
-        # clips/ holds generated names rather than a fixed set, so it empties itself first.
-        # Reached only after surprises() cleared the folder, so everything in here is ours.
-        clips = folder / card.CLIPS
-        if clips.is_dir():
-            for made in clips.iterdir():
-                made.unlink(missing_ok=True)
-            clips.rmdir()
-        for sub in (PHOTOS, PARTS):
-            if (folder / sub).is_dir():
-                (folder / sub).rmdir()  # empty by definition; refuses if triage was wrong
+        # clips/ and parts/ hold generated names rather than a fixed set, so they empty
+        # themselves first. Reached only after surprises() cleared the folder, so everything in
+        # here is ours.
+        #
+        # parts/ joined clips/ here when "empty" stopped meaning "no files on disk": a session
+        # nobody spoke in whose mux died leaves the raw video and two WAVs in there, and it now
+        # reaches this function instead of being repaired. An rmdir on that raises, which left
+        # the folder stuck forever - never deleted, and never muxed either, because _recover
+        # takes the removal branch and steps over _fix.
+        for generated in (card.CLIPS, PARTS):
+            made = folder / generated
+            if made.is_dir():
+                for one in made.iterdir():
+                    one.unlink(missing_ok=True)
+                made.rmdir()
+        if (folder / PHOTOS).is_dir():
+            # No such list for photos/, deliberately: a folder with a picture in it is never
+            # empty, so this is empty by definition and refusing is how we hear that triage was
+            # wrong about the one thing in here that cannot be regenerated. Our own scratch
+            # files are the exception - a photo killed mid-write leaves one, triage does not
+            # count it as a picture, and it would otherwise wedge the folder the way parts/ did.
+            for stray in card.strays(folder / PHOTOS):
+                stray.unlink(missing_ok=True)
+            (folder / PHOTOS).rmdir()
         folder.rmdir()
     except OSError as exc:
         return f"nothing survived, but could not remove it ({exc})"

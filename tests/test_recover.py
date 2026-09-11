@@ -112,6 +112,23 @@ def test_the_husk_is_removed(card_root):
     assert not folder.exists()
 
 
+def test_a_husk_whose_mux_died_is_removed_parts_and_all(card_root):
+    """A session nobody spoke in whose mux never returned zero.
+
+    parts/ holds generated names, so an rmdir on it raises - which used to leave the folder
+    stuck forever, because _recover takes the removal branch and steps over the repair.
+    """
+    folder = card_root / HUSK
+    folder.mkdir()
+    (folder / card.LOG_NAME).write_text(log_lines(talk=False))
+    (folder / card.PARTS).mkdir()
+    (folder / card.PARTS / "video-raw.mp4").write_bytes(b"raw")
+    (folder / card.PARTS / "you.wav").write_bytes(b"wav")
+
+    assert session._remove(folder) == "nothing survived - removed"
+    assert not folder.exists()
+
+
 def test_a_husk_with_a_strangers_file_is_kept(card_root):
     folder = card_root / HUSK
     folder.mkdir()

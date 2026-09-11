@@ -103,6 +103,22 @@ KNOWN = frozenset(
     }
 )
 
+# What a record has to be for something to have happened here. Two sets rather than one, because
+# they are two different arguments for keeping a folder and whoever adds the next record type
+# needs to know which one they are adding to: somebody spoke, or something was made.
+#
+# Everything not in either - `session`, `video`, `end`, `error` - is bookkeeping *about* a
+# session rather than anything that happened *in* one. So is every file the folder holds except
+# its photos: `video.mp4`, `session.md` and `summary.md` are all made from the log.
+#
+# `transcript_failed` is in SPOKEN and that is the whole reason this comment is long. It is what
+# the log gets when the realtime API cannot transcribe a turn (`session._observe`), so a session
+# whose transcription failed throughout has a real conversation and a real recording and not one
+# `you` record. Leaving it out would delete that video, and nothing downstream could have caught
+# it - `session.transcript_text` reads only `you` and `cyclops`, so the model is never even asked.
+SPOKEN = frozenset({"you", "cyclops", "transcript_failed"})
+MADE = frozenset({"photo", "screen", "project", "data", "recall", "search"})
+
 
 # ------------------------------------------------------------------ writing
 
@@ -326,6 +342,25 @@ def locked(folder: Path) -> bool:
 # ------------------------------------------------------------------ what a folder amounts to
 
 
+def said_or_made(records: list[dict]) -> bool:
+    """Did anything happen in this session, as opposed to a session merely having happened?
+
+    The cheap half of the question deletion asks. It reads the log and nothing else - no stat, no
+    ffprobe, no network - which is what lets it run on the teardown path.
+
+    A ``photo`` record has to carry a ``file``: an edit that failed leaves the record and no
+    picture, and :meth:`cyclops.session.SessionLog.__exit__` already counts photos that way, so
+    counting them differently here is how the two start to disagree.
+    """
+    for record in records:
+        kind = record.get("type")
+        if kind in SPOKEN:
+            return True
+        if kind in MADE and (kind != "photo" or record.get("file")):
+            return True
+    return False
+
+
 @dataclass(frozen=True)
 class State:
     """What one session folder on the card actually amounts to.
@@ -348,17 +383,8 @@ class State:
     summary: bool
     filed: bool
     named: bool
-    @property
-    def salvage(self) -> bool:
-        """Is there anything here worth keeping? The only question deletion ever asks."""
-        return bool(
-            self.records
-            or self.photos
-            or self.video
-            or self.parts
-            or self.page
-            or self.summary
-        )
+    content: bool  # somebody spoke or something was made - see said_or_made
+    salvage: bool  # is there anything here worth keeping? the only question deletion ever asks
 
 
 def triage(folder: Path) -> State:
@@ -376,9 +402,23 @@ def triage(folder: Path) -> State:
     video = written(folder / VIDEO)
     summary = written(folder / SUMMARY_NAME)
 
+    content = said_or_made(records)
+    # Four ways to be worth keeping, and only the first is about the session. The other three are
+    # this module's own doctrine applied to itself: judge a folder by its log, and when there is
+    # no log to judge it by, keep whatever it has. A `video.mp4` beside a zero-byte log is one
+    # where the recording is now the only surviving copy of the session - which is the incident
+    # at the top of this file - and a torn log is one where the line we lost is the line that
+    # could have been a `you` turn. A guess is never a reason to delete.
+    salvage = bool(
+        content
+        or photos
+        or dropped
+        or (not records and (video or parts or page or summary))
+    )
+
     if locked(folder):
         verdict = "live"  # asked first: a folder being written to is not judged at all
-    elif not (records or photos or video or parts or page or summary):
+    elif not salvage:
         verdict = "empty"
     elif parts or not page:
         verdict = "unfinished"  # parts/ means the mux never finished, whatever else is here
@@ -397,6 +437,8 @@ def triage(folder: Path) -> State:
         summary=summary,
         filed=written(folder / RECEIPT_NAME),
         named=not STAMPED.match(folder.name),
+        content=content,
+        salvage=salvage,
     )
 
 

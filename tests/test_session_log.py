@@ -207,6 +207,36 @@ def test_the_flock_is_dropped_before_the_child_is_spawned(talkative, monkeypatch
     assert locked_at_spawn == [False]
 
 
+def test_a_session_nobody_spoke_in_leaves_nothing_behind(talkative, monkeypatch):
+    """Wake it, say nothing, stop. There is no session here to name, remember or file."""
+    from cyclops import after
+
+    handed = []
+    monkeypatch.setattr(after, "spawn", lambda folder, settings: handed.append(folder))
+
+    with talkative:
+        pass
+    folder = talkative.dir
+
+    assert not folder.exists(), "a button press is not a session"
+    assert handed == [], "and nothing that costs a model call is spent on one"
+
+
+def test_a_photo_alone_keeps_the_session(talkative, monkeypatch):
+    """Nothing was said, but a picture was taken. Pixels are the one thing nothing can rebuild."""
+    from cyclops import after
+
+    monkeypatch.setattr(after, "spawn", lambda folder, settings: None)
+
+    with talkative:
+        photos = talkative.photos_dir
+        photos.mkdir(parents=True, exist_ok=True)
+        (photos / "19-17-10_you.jpg").write_bytes(b"jpeg bytes")
+        talkative.event("photo", by="you", file="photos/19-17-10_you.jpg")
+
+    assert talkative.dir.is_dir()
+
+
 def test_a_session_that_could_not_be_logged_is_never_handed_over(talkative, monkeypatch):
     from cyclops import after
 

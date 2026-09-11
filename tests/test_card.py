@@ -42,7 +42,11 @@ def make(root, name, *, log=None, page=None, summary=None, receipt=None, video=N
     return folder
 
 
-ONE_RECORD = '{"t": 0.0, "type": "session", "uuid": "u"}\n'
+# The two shapes a log can have, and the difference between them is the difference between a
+# session and a button press. BOOKKEEPING is what a folder holds when nobody spoke: records about
+# a session, and nothing that happened in one.
+BOOKKEEPING = '{"t": 0.0, "type": "session", "uuid": "u"}\n'
+TALK = BOOKKEEPING + '{"t": 1.0, "type": "you", "text": "the shelf is 1980mm"}\n'
 
 
 # ------------------------------------------------------------------ written()
@@ -71,12 +75,12 @@ def test_the_incident_reads_as_unfinished(tmp_path):
     The regression that matters. Under the old `.is_file()` rule this folder read as *finished*,
     which is why --fix and --name both skipped it and it stayed broken.
     """
-    folder = make(tmp_path, "2026-08-28_18-34-03", log=ONE_RECORD, page="", summary="",
+    folder = make(tmp_path, "2026-08-28_18-34-03", log=TALK, page="", summary="",
                   receipt="---\n", video=b"mp4 bytes")
     state = card.triage(folder)
     assert state.verdict == "unfinished"
     assert not state.page and not state.summary
-    assert state.records == 1
+    assert state.records == 2
     assert state.video
     assert not state.named
     assert state.salvage
@@ -92,7 +96,7 @@ def test_the_husk_reads_as_empty(tmp_path):
 
 
 def test_a_complete_session_reads_as_finished(tmp_path):
-    folder = make(tmp_path, "2026-08-26_16-48-20_pelican", log=ONE_RECORD, page="# p",
+    folder = make(tmp_path, "2026-08-26_16-48-20_pelican", log=TALK, page="# p",
                   summary="# s", receipt="---\n", video=b"mp4", photos=2)
     state = card.triage(folder)
     assert state.verdict == "finished"
@@ -102,22 +106,22 @@ def test_a_complete_session_reads_as_finished(tmp_path):
 
 def test_leftover_parts_is_unfinished_even_with_a_page_and_a_video(tmp_path):
     """parts/ surviving means the mux never returned zero - the video may be truncated."""
-    folder = make(tmp_path, "2026-08-26_14-53-06", log=ONE_RECORD, page="# p", video=b"trunc",
+    folder = make(tmp_path, "2026-08-26_14-53-06", log=TALK, page="# p", video=b"trunc",
                   parts=True)
     assert card.triage(folder).verdict == "unfinished"
 
 
 def test_an_unnamed_but_complete_session_is_finished_and_unnamed(tmp_path):
-    folder = make(tmp_path, "2026-08-26_17-13-09", log=ONE_RECORD, page="# p", summary="# s")
+    folder = make(tmp_path, "2026-08-26_17-13-09", log=TALK, page="# p", summary="# s")
     state = card.triage(folder)
     assert state.verdict == "finished"
     assert not state.named
 
 
 def test_a_torn_last_line_is_counted_not_swallowed(tmp_path):
-    folder = make(tmp_path, "2026-08-26_10-00-00", log=ONE_RECORD + '{"t": 1.0, "type": "en')
+    folder = make(tmp_path, "2026-08-26_10-00-00", log=TALK + '{"t": 1.0, "type": "en')
     state = card.triage(folder)
-    assert state.records == 1
+    assert state.records == 2
     assert state.dropped == 1
     assert state.verdict == "unfinished"
 
@@ -130,13 +134,65 @@ def test_photos_alone_are_salvage(tmp_path):
     assert state.salvage
 
 
+def test_a_session_nobody_spoke_in_is_empty_whatever_it_recorded(tmp_path):
+    """The mic check: a button press, ten seconds of an empty room, and no conversation.
+
+    A `video` record and a `video.mp4` are a session having been recorded, not anything having
+    happened in one, so neither keeps the folder.
+    """
+    log = BOOKKEEPING + (
+        '{"t": 9.0, "type": "video", "file": "video.mp4", "seconds": 9.0}\n'
+        '{"t": 9.0, "type": "end", "reason": "stopped", "seconds": 9.0, "photos": 0}\n'
+    )
+    folder = make(tmp_path, "2026-09-09_19-17-05", log=log, page="# p", video=b"mp4 bytes")
+    state = card.triage(folder)
+    assert state.verdict == "empty"
+    assert not state.salvage
+
+
+@pytest.mark.parametrize(
+    "record",
+    [
+        '{"t": 1.0, "type": "you", "text": "hand me the 10mm"}',
+        '{"t": 1.0, "type": "cyclops", "text": "that is the brake line"}',
+        # Proof somebody spoke when the realtime API could not transcribe them. A session whose
+        # transcription failed throughout has a real conversation and a real recording and not
+        # one `you` record, and nothing downstream could catch it: transcript_text reads only
+        # `you` and `cyclops`, so the model is never even asked about this folder.
+        '{"t": 1.0, "type": "transcript_failed", "item": "i", "error": "no"}',
+        '{"t": 1.0, "type": "photo", "by": "you", "file": "photos/19-17-10_you.jpg"}',
+        '{"t": 1.0, "type": "screen", "html": "<p>x</p>", "panel": true}',
+        '{"t": 1.0, "type": "recall", "query": "caliper", "title": "t", "what": "photo"}',
+        '{"t": 1.0, "type": "project", "action": "tracked", "key": "k", "name": "n"}',
+    ],
+)
+def test_one_record_of_something_happening_keeps_the_folder(tmp_path, record):
+    folder = make(tmp_path, "2026-09-09_19-17-05", log=BOOKKEEPING + record + "\n")
+    assert card.triage(folder).verdict != "empty"
+
+
+def test_a_picture_that_never_landed_is_not_a_picture(tmp_path):
+    """An edit the model refused leaves a photo record with no file. Nothing was made."""
+    refused = '{"t": 1.0, "type": "photo", "by": "edit", "request": "r", "error": "no"}\n'
+    folder = make(tmp_path, "2026-09-09_19-17-05", log=BOOKKEEPING + refused)
+    assert card.triage(folder).verdict == "empty"
+
+
+def test_a_log_we_cannot_read_is_never_deleted(tmp_path):
+    """A torn line is the one that could have been a `you` turn. A guess is not a reason."""
+    folder = make(tmp_path, "2026-09-09_19-17-05", log=BOOKKEEPING + '{"t": 1.0, "type": "yo')
+    state = card.triage(folder)
+    assert state.dropped == 1
+    assert state.verdict != "empty"
+
+
 # ------------------------------------------------------------------ what may be deleted
 
 
 @pytest.mark.parametrize(
     "kwargs",
     [
-        {"log": ONE_RECORD},
+        {"log": TALK},
         {"photos": 1},
         {"video": b"mp4"},
         {"parts": True},
@@ -223,12 +279,12 @@ def test_the_scratch_name_is_hidden_from_every_scan(tmp_path):
 
 
 def test_a_folder_nobody_holds_is_not_locked(tmp_path):
-    folder = make(tmp_path, "2026-08-26_15-00-00", log=ONE_RECORD)
+    folder = make(tmp_path, "2026-08-26_15-00-00", log=TALK)
     assert not card.locked(folder)
 
 
 def test_a_held_folder_reads_as_live(tmp_path):
-    folder = make(tmp_path, "2026-08-26_15-00-00", log=ONE_RECORD)
+    folder = make(tmp_path, "2026-08-26_15-00-00", log=TALK)
     handle = (folder / card.LOG_NAME).open("a")
     try:
         assert card.claim(handle)
