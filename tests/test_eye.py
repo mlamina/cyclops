@@ -97,6 +97,22 @@ def test_the_state_still_has_somewhere_to_be_read(state: str) -> None:
     assert overlay.session_up(state) == (state not in (overlay.IDLE, overlay.ERROR))
 
 
+def test_the_lid_waits_for_the_far_end() -> None:
+    """What session_live is stricter about, and why there are two of these.
+
+    The ring, the caption and the halo go optimistic the instant you ask, because what they
+    report is that the box heard you. A lid cannot: it is a claim about the *far* end, and one
+    that winds open over a socket still dialling is the box saying he is listening before he can
+    hear. Shutting is the other way round - STOPPING is what you just asked for - so the lid
+    still comes down on the press.
+    """
+    assert not overlay.session_live(overlay.STARTING), "asked for is not the same as up"
+    assert not overlay.session_live(overlay.CONNECTING)
+    assert overlay.session_live(overlay.LISTENING)
+    assert overlay.session_live(overlay.STOPPING), "shutting is about this box, not the far end"
+    assert not overlay.session_live(overlay.IDLE)
+
+
 def test_no_caption_names_a_button_that_is_not_there() -> None:
     """A caption may name a control, and then the control has to be on the panel.
 

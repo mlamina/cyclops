@@ -145,6 +145,19 @@ def session_up(state: str) -> bool:
     return state not in (IDLE, ERROR, WORKING)
 
 
+def session_live(state: str) -> bool:
+    """Is there somebody on the other end - as opposed to a session being attempted?
+
+    Stricter than :func:`session_up` by exactly the wait for the socket, the way :func:`awake`
+    below is stricter by exactly the teardown. It exists for the lid and for nothing else. The
+    caption, the halo and the ring in the button all go optimistic the instant you ask, because
+    what they are reporting is that the box heard you - but a lid is a claim about the far end,
+    and one that winds open over a socket that has not connected yet is a box telling you it is
+    listening before it can hear.
+    """
+    return session_up(state) and state not in (STARTING, CONNECTING)
+
+
 def working_over(state: str, busy: bool) -> str:
     """*state*, or WORKING when something is running in the background that it does not cover.
 

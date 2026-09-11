@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import threading
+import time
 
 import pytest
 
@@ -22,9 +23,12 @@ class FakeAgent:
 
     def __init__(self, *, ready: bool = True, connected: bool = True) -> None:
         self.ready = asyncio.Event()
+        self.ready_at: float | None = None
         if ready:
+            self.ready_at = time.monotonic()
             self.ready.set()
         self.connected = connected
+        self.activity = ""  # the detail line asks every agent this, including a fake one
         self.photos: list[object] = []
 
     def queue_photo(self, capture: object) -> None:
@@ -55,6 +59,23 @@ def running_loop():
     loop.call_soon_threadsafe(loop.stop)
     thread.join(5)
     loop.close()
+
+
+def test_the_clock_does_not_start_before_the_session_does(controller, running_loop):
+    """What the panel counts is a conversation, not the wait for one.
+
+    It used to start on the tap and run through the connect, so the clock beside REC was already
+    seconds into a session by the time his lid finished opening - and the lid is now the thing
+    that says the session began. The recording's own clock still starts on the tap, because what
+    that measures really does.
+    """
+    assert controller.status()["elapsed"] is None, "nothing running, nothing to count"
+
+    controller._loop, controller._agent = running_loop, FakeAgent(ready=False)
+    assert controller.status()["elapsed"] is None, "asked for, not yet arrived"
+
+    controller._agent = FakeAgent()
+    assert controller.status()["elapsed"] is not None
 
 
 def test_no_session_means_no_handoff(controller):

@@ -8,8 +8,13 @@
 The four cues from the sample pack were mastered together and are converted by the one ffmpeg
 line in ``assets/sounds/NOTICE.md``. These were not: each turned up by itself, at its own rate
 and its own level, so each has to be measured and placed rather than nudged by a fixed number of
-dB. :data:`CUTS` is the whole of what is per-cue - a master, and whether the cue is that master
-backwards.
+dB. :data:`CUTS` is the whole of what is per-cue - a master, whether the cue is that master
+backwards, how much faster it is played, and how much of the front of it is kept.
+
+The last two are for the one cue with a window to fill rather than a length of its own. The rise
+under the button runs from the moment a finger settles to the moment the hold lands, and a cue
+that has to arrive at the end of a window has to be *fitted* to it: taken from the front, where
+the rise actually is, and sped up until the arc finishes inside it.
 
 The iris is the reason the reverse is here. A diaphragm winding open and a diaphragm winding shut
 are the same mechanism running two directions and there is only one recording of it, so the close
@@ -45,6 +50,8 @@ MASTERS = Path(__file__).resolve().parent.parent / "sounds"
 class Cut(NamedTuple):
     master: str
     backwards: bool = False  # the cue is that master played end to end backwards
+    speed: float = 1.0  # played this much faster, pitch rising with it, as a wind-up does
+    head_s: float = 0.0  # keep only this much of the front of it
 
 
 CUTS: dict[str, Cut] = {
@@ -55,11 +62,16 @@ CUTS: dict[str, Cut] = {
     # sounds like from the outside while something inside it is moving. Once, not looped - a
     # mechanism you hear start and stop has done its work, and one that keeps going is stuck.
     "connecting": Cut("cyclops_connecting.wav"),
-    # The rising note under a finger on the button, started on the way down and cut dead on the
-    # way up (cyclops.button). Not trimmed at the tail for the usual reason - a cue nobody hears
-    # the end of has no end to tidy - but at the head for a sharper one: what is in front of the
-    # first sample is the delay between pressing a button and hearing that you did.
-    "button_pressed": Cut("cyclops_button_pressed.wav"),
+    # The rising note under a finger on the button. Unlike every other cue here its length is
+    # not the master's: it has a window to fill and the window is LONG_PRESS_S - PRESS_GRACE_S,
+    # the stretch between a finger settling and the hold landing.
+    #
+    # The master is not the eight-second swell it looks like. All of the rise is in its first
+    # 0.75 s - 18 dB and a centroid climbing 1.5 kHz to 9 - and the seven seconds after it are a
+    # flat bright bed, so a window taken from anywhere but the front is a drone. The whole cue
+    # is therefore the front of it, sped up just enough that the arc finishes inside the window
+    # instead of being cut off part way up.
+    "button_pressed": Cut("cyclops_button_pressed.wav", speed=1.25, head_s=0.5),
 }
 
 # The middle of the band tests/test_sfx.py holds the shipped cues to (0.05-0.25), and the same
@@ -87,6 +99,19 @@ def decode(path: Path) -> np.ndarray:
         check=True, capture_output=True,
     ).stdout
     return np.frombuffer(out, dtype="<f4").astype(np.float64)
+
+
+def faster(samples: np.ndarray, factor: float) -> np.ndarray:
+    """The same recording played *factor* times faster, pitch going up with it.
+
+    Resampling rather than a time stretch, because a mechanism winding up faster is a real
+    thing and a pitch-preserved one is not: what the ear reads off a rising note is the rate it
+    is rising at, and holding the pitch while squeezing the clock takes that away.
+    """
+    if factor == 1.0:
+        return samples
+    want = int(len(samples) / factor)
+    return np.interp(np.linspace(0, len(samples) - 1, want), np.arange(len(samples)), samples)
 
 
 def trim(samples: np.ndarray, floor: float) -> np.ndarray:
@@ -150,7 +175,9 @@ def main() -> None:
         cut = CUTS[name]
         if not (src := MASTERS / cut.master).is_file():
             sys.exit(f"no master at {src}")
-        samples = trim(decode(src), args.keep)
+        samples = trim(faster(decode(src), cut.speed), args.keep)
+        if cut.head_s:
+            samples = samples[: int(cut.head_s * SAMPLE_HZ)]
         pcm = level(np.ascontiguousarray(samples[::-1] if cut.backwards else samples))
         path = SOUNDS / f"cyclops_{name}.wav"
         write(path, pcm)

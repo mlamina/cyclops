@@ -80,6 +80,7 @@ from .overlay import (  # noqa: E402
     fit_to_window,
     message,
     platform_font_note,
+    session_live,
     session_up,
     working_over,
 )
@@ -156,6 +157,12 @@ PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 # before anybody concludes it is broken. Phones use half a second; this asks for a little more
 # because there is no way back from one of the two things it offers.
 LONG_PRESS_S = 0.7
+# ...and how long a finger has to be on the *button* before it is answered with a sound at all.
+# A click is over in about a tenth of a second and should be a shutter and nothing else, so the
+# rise that says "this is going somewhere" cannot start on the press edge: half of every photo
+# you take would have a smear of it in front. What is left - 0.2 to LONG_PRESS_S - is the whole
+# of what the rise has to fill, which is what cyclops_button_pressed.wav is now cut to.
+PRESS_GRACE_S = 0.2
 MENU_TIMEOUT_S = 20.0  # a menu nobody chose from gives the panel back rather than holding it
 # What the panel says while it finishes the session and goes. Not a caption: this is the last
 # thing the screen does, and everything else on it has stopped being true.
@@ -553,6 +560,7 @@ class Kiosk:
             on_hold=self.button_held,
             on_press=self.button_down,
             on_release=self.button_up,
+            press_after_s=PRESS_GRACE_S,
         )
 
     # ---- window ----
@@ -949,14 +957,19 @@ class Kiosk:
         never clears :attr:`_asleep`, so a session started on a dark panel would otherwise run
         its whole length behind one.
 
-        No cue of its own, and no ring state of its own, and nothing on the glass to invert:
-        the two switches that used to answer this button are a knob and a gauge now. ``_pending``
-        makes :meth:`_effective` report STARTING at once, which is a session as far as
-        :meth:`_ring_state` is concerned, so the ring lights as the hold lands - and after it the
-        connecting ping and the closing pair say the rest, which is the half of this a head under
-        a bench can hear.
+        No ring state of its own and nothing on the glass to invert: the two switches that used
+        to answer this button are a knob and a gauge now. ``_pending`` makes :meth:`_effective`
+        report STARTING at once, which is a session as far as :meth:`_ring_state` is concerned,
+        so the ring lights as the hold lands - and the gears in :meth:`_toggle_session` say the
+        same thing out loud, which is the half of this a head under a bench can hear.
+
+        The rise ends here and unconditionally, ahead of every branch below. What it was
+        counting is over: the boundary decides when it stops, not the length of the file and not
+        how much longer the finger stays down. Unconditional because the press was answered
+        whatever this hold turns out to do - including the modal case, which does nothing else.
         """
         self._touched_at = time.monotonic()
+        self._cues.stop_if("button_pressed")
         if self._menu:
             return  # modal, exactly as it is for the tap above
         if self._asleep:
@@ -964,21 +977,26 @@ class Kiosk:
         self._toggle_session()
 
     def button_down(self) -> None:
-        """A finger has landed on the button: sound the rise under it.
+        """A finger has settled on the button: sound the rise under it.
 
         Under the finger and not on the outcome, which is the whole point of it. The long press
-        that starts a session takes a second to land and until then the button gives nothing
-        back - a control you cannot tell you are using is one you let go of too early. This is
-        the sound of the box winding up to do what the hold is about to ask for.
+        that starts a session takes most of a second to land and until then the button gives
+        nothing back - a control you cannot tell you are using is one you let go of too early.
+        This is the sound of the box winding up to do what the hold is about to ask for.
+
+        Not on the press edge: :data:`PRESS_GRACE_S` stands this off until a click would already
+        have come and gone, so a photo is a shutter and nothing else. Between that and
+        :meth:`button_held` the rise has exactly the window it is cut to fill.
         """
         self._cues.play("button_pressed")
 
     def button_up(self) -> None:
-        """...and it stops with the finger, but only if it is still the sound playing.
+        """...and it stops with the finger, if the hold has not already ended it.
 
-        By the time a long press comes off, the hold has landed, the session is starting and his
-        iris is winding open over the top of this - so a bare stop here would cut that off
-        instead. See :meth:`cyclops.sfx.Cues.stop_if`.
+        Normally the hold got there first - it ends the rise on the boundary rather than on the
+        lift - so on a long press this finds the gears sounding and leaves them alone. What is
+        left for it is the press that was neither: past the grace, short of the hold. See
+        :meth:`cyclops.sfx.Cues.stop_if`.
         """
         self._cues.stop_if("button_pressed")
 
@@ -1437,6 +1455,14 @@ class Kiosk:
         self._pending = "start" if starting else "stop"
         self._pending_at = time.monotonic()
         if starting:
+            # The mechanism engaging, on the edge the hold landed on and before anything slow.
+            # This used to be sounded by the session's own thread once its audio devices were
+            # open - half a second to two seconds later, and never the same twice - so the one
+            # cue on this box that is *about* a long press landing was the only thing that did
+            # not land with it. It belongs in this branch rather than in the caller for the same
+            # reason the closing pair below does: a hold that ends a session would otherwise
+            # sound the gears and have "closing" cut them off a millisecond later.
+            self._cues.play("connecting")
             # What this session's video will be of, settled here because here is the last moment
             # it is free: the encoder is opened at a fixed frame size a second or two from now.
             # A switch flipped after this lands on the next session, which is what the settings
@@ -1857,23 +1883,30 @@ class Kiosk:
             # tidying up after a session that has already ended (cyclops.tasks). Read once here
             # and used twice: it picks the face, and it is the caption's last fallback below.
             job = tasks.line()
-            # Whether a session is up, read BEFORE the background job is allowed to colour the
-            # state, and the only thing the lid ever answers to. `working_over` turns IDLE into
-            # WORKING while the child files a session, and it turns DRAWING into WORKING while a
-            # picture is made inside a conversation - so a lid driven off the state afterwards
-            # would open on a sleeping box that was tidying up, and shut on a waking one that was
-            # drawing. It opens when a session starts and shuts when one ends, and nothing that
-            # runs in the background is either of those.
-            awake = session_up(state)
+            # Whether there is somebody on the other end, read BEFORE the background job is
+            # allowed to colour the state, and the only thing the lid ever answers to.
+            # `working_over` turns IDLE into WORKING while the child files a session, and it
+            # turns DRAWING into WORKING while a picture is made inside a conversation - so a lid
+            # driven off the state afterwards would open on a sleeping box that was tidying up,
+            # and shut on a waking one that was drawing.
+            #
+            # `session_live` rather than `session_up`, which is the difference between a session
+            # asked for and a session there is. The optimistic STARTING that lights the ring and
+            # the caption the instant you ask is right for them and wrong for this: a lid is a
+            # claim about the far end, and one that winds open over a socket still dialling says
+            # he is listening before he can hear. It shuts on the tap, though - STOPPING is live
+            # - because that half *is* about the near end, and it is what you just asked for.
+            awake = session_live(state)
             state = working_over(state, bool(job))
             asleep = self._sleeping(state)
 
-            # The iris, said out loud. It is the one thing on this panel that moves for over a
-            # second, and a mechanism that size making no noise is the tell that it is a drawing.
-            # Off the same fact the lid itself is, so the sound starts with the movement rather
-            # than chasing it.
-            if self._awake is not None and awake != self._awake:
-                self._cues.play("iris_open" if awake else "iris_close")
+            # The lid shutting, said out loud. It is the one thing on this panel that moves for
+            # over a second, and a mechanism that size making no noise is the tell that it is a
+            # drawing. Only the shut half is sounded from here: the open half now comes off the
+            # event that opens it, on the agent's own thread, where it lands with the movement
+            # rather than a frame behind it - see VoiceAgent._on_session_ready.
+            if self._awake is not None and awake != self._awake and not awake:
+                self._cues.play("iris_close")
             self._awake = awake
 
             # What the ring is saying. Handed over every frame because what it reflects is a

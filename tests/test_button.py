@@ -8,7 +8,13 @@ arrives on a thread of its own instead. The one place the two deliberately part 
 dark panel, and that has a test to itself.
 
 Then the latch, which is the only real logic the module gained: a press that became a hold must
-not also arrive as a tap when the finger finally comes off.
+not also arrive as a tap when the finger finally comes off. Beside it now, the grace: a press
+answers a finger only once that finger has been down long enough to mean something, so a click
+is a shutter and nothing else.
+
+And the three sounds of a long press, which the module and the kiosk own one edge of each: the
+rise starts at the grace, ends at the hold boundary rather than at the lift, and the gears take
+over on that same edge.
 
 And the object itself has to survive having no hardware under it, because that is the normal
 case everywhere except the Pi: no gpiozero on a Mac, no free pin on a box where the kiosk is
@@ -28,7 +34,55 @@ from cyclops import overlay
 from cyclops.button import RING_ACTIVE, RING_ERROR, RING_IDLE, ShutterButton
 
 
-def _panel(monkeypatch: pytest.MonkeyPatch) -> kiosk_module.Kiosk:
+class Cues:
+    """The speaker, written down instead of made. `stop_if` has to be the real rule rather than
+    a counter: what it is for is a stop that lands only while its own cue is still the one
+    sounding, and a fake that always stops cannot fail the way the real one can."""
+
+    def __init__(self) -> None:
+        self.played: list[str] = []
+        self.stopped = 0
+
+    def play(self, name: str, *, loop: bool = False) -> float:
+        self.played.append(name)
+        return 0.0
+
+    def stop(self) -> None:
+        self.played.append(None)  # nothing is sounding now, which stop_if has to be able to see
+        self.stopped += 1
+
+    def stop_if(self, name: str) -> None:
+        if self.played and self.played[-1] == name:
+            self.stop()
+
+    @property
+    def heard(self) -> list[str]:
+        return [name for name in self.played if name is not None]
+
+
+class Controller:
+    """Just enough session controller for _toggle_session to get through it."""
+
+    settings = None
+
+    def __init__(self, state: str = "idle") -> None:
+        self.state = state
+        self.started = 0
+
+    def status(self) -> dict[str, object]:
+        return {"state": self.state}
+
+    def set_record_source(self, frames: object) -> None:
+        pass
+
+    def start(self) -> None:
+        self.started += 1
+
+    def stop(self) -> None:
+        pass
+
+
+def _panel(monkeypatch: pytest.MonkeyPatch, *, real_toggle: bool = False) -> kiosk_module.Kiosk:
     """A kiosk with just enough of itself to answer a press. No pin, no camera, no window."""
     kiosk = object.__new__(kiosk_module.Kiosk)
     kiosk._menu = False
@@ -37,16 +91,33 @@ def _panel(monkeypatch: pytest.MonkeyPatch) -> kiosk_module.Kiosk:
     kiosk._pressed = None
     kiosk._press_until = 0.0
     kiosk._shutter_error_until = 0.0
+    kiosk._pending = None
+    kiosk._pending_at = 0.0
+    kiosk._cues = Cues()
     kiosk.did: list[str] = []
     monkeypatch.setattr(kiosk, "_snap", lambda: kiosk.did.append("snap"))
     monkeypatch.setattr(kiosk, "_wake", lambda: kiosk.did.append("wake"))
-    monkeypatch.setattr(kiosk, "_toggle_session", lambda: kiosk.did.append("toggle"))
+    if real_toggle:
+        # The gears live inside _toggle_session, in the branch that knows a session is starting,
+        # so the one test about them has to let the real thing run.
+        kiosk.controller = Controller()
+        kiosk.camera = kiosk.panel = None
+        monkeypatch.setattr(kiosk_module.filming, "chosen", lambda settings: "camera")
+    else:
+        monkeypatch.setattr(kiosk, "_toggle_session", lambda: kiosk.did.append("toggle"))
     return kiosk
 
 
 def _pinless(**handlers: object) -> ShutterButton:
     """A ShutterButton with no pin under it, so its callbacks can be driven by hand."""
     return ShutterButton(pin=None, led_pin=None, hold_s=0.7, **handlers)
+
+
+GRACE_S = 0.01  # the real one is 0.2; this test only cares that there is one
+
+
+def _graced(**handlers: object) -> ShutterButton:
+    return ShutterButton(pin=None, led_pin=None, hold_s=0.7, press_after_s=GRACE_S, **handlers)
 
 
 # ------------------------------------------------------------------ the tap
@@ -152,6 +223,54 @@ def test_a_hold_does_not_also_arrive_as_a_tap() -> None:
     button._down()
     button._up()
     assert did == ["hold", "tap"]
+
+
+# ---------------------------------------------------------------- the grace, and the rise
+
+
+def test_a_click_never_reaches_the_press_handler() -> None:
+    """What the grace is for. A photo should be a shutter and nothing else, and the rise that
+    fills the wait for a hold cannot start on the press edge without putting a smear of itself
+    in front of every picture anybody takes."""
+    did: list[str] = []
+    button = _graced(on_tap=lambda: None, on_hold=lambda: None,
+                     on_press=lambda: did.append("press"))
+    button._down()
+    button._up()
+    time.sleep(4 * GRACE_S)
+    assert did == []
+
+
+def test_a_finger_that_settles_does_reach_it() -> None:
+    did: list[str] = []
+    button = _graced(on_tap=lambda: None, on_hold=lambda: None,
+                     on_press=lambda: did.append("press"))
+    button._down()
+    time.sleep(4 * GRACE_S)
+    assert did == ["press"]
+    button._up()
+
+
+def test_a_hold_ends_the_rise_and_sounds_the_gears(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The three sounds of a long press, and the two edges between them.
+
+    The rise stops because the boundary arrived, not because the finger came off: it used to
+    run until the lift, which is a cue outliving the thing it was counting. And the gears are
+    sounded from this thread, on this edge - they used to come off the session's own thread once
+    that had imported an agent and opened PortAudio both ways, half a second to two seconds
+    later and never twice the same.
+    """
+    kiosk = _panel(monkeypatch, real_toggle=True)
+    kiosk.button_down()
+    kiosk.button_held()
+    assert kiosk._cues.heard == ["button_pressed", "connecting"]
+    assert kiosk._cues.stopped == 1, "the rise ended on the boundary"
+    assert kiosk.controller.started == 1
+
+    # ...and the lift that follows has nothing left to stop, which is the whole of why the stop
+    # is conditional: by now the gears are what is sounding and they are not the finger's.
+    kiosk.button_up()
+    assert kiosk._cues.stopped == 1
 
 
 # ---------------------------------------------------------------- the ring

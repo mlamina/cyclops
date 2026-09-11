@@ -960,6 +960,11 @@ class VoiceAgent:
         self._turn_serial = 0  # bumped when the user speaks; lets a late search spot staleness
         self._barge_in_timer: asyncio.TimerHandle | None = None
         self.ready = asyncio.Event()  # set once the server accepted our session config
+        # ...and when, on the same clock the kiosk's render loop reads. The session's own log
+        # times itself from the tap, because what it is measuring is a recording and a recording
+        # starts then; the panel's clock is measuring a conversation, and there is no
+        # conversation to count until there is somebody on the other end of it.
+        self.ready_at: float | None = None
         self.on_event: Callable[[RealtimeServerEvent], None] | None = None  # observer hook
         self._conn: AsyncRealtimeConnection | None = None
         self._user_speaking = False
@@ -1158,10 +1163,9 @@ class VoiceAgent:
     # ---------------------------------------------------------------- lifecycle
 
     async def run(self) -> None:
-        self._spawn(self._ping())
         # The try opens before the connect, not after it: a bad key or a dead network raises
-        # from there, and that is precisely when the connecting cue is playing. Left outside,
-        # the finally never runs and the kiosk pings on over a red border.
+        # from there, and that is precisely when the gears the button sounded may still be
+        # going. Left outside, the finally never runs and the kiosk grinds on over a red border.
         try:
             # Narrated in two steps because they fail in two different places and take
             # noticeably different amounts of time: the socket, and then the round trip that
@@ -1184,12 +1188,13 @@ class VoiceAgent:
                 async for event in conn:
                     await self._handle_event(event)
         except Exception:
-            # A connect that never landed: the ping is ours to stop, because nothing else is
-            # going to - the panel just goes red. A *cancel* is the other thing entirely, and
-            # deliberately not caught here: someone pressed stop, and the sound of stopping
-            # belongs to them. Ending a session is sounded by whoever owns its lifecycle (the
-            # kiosk on the tap, the CLI on its way out), never from here, because this runs
-            # long before it is over - the socket, the devices and the recording outlive it.
+            # A connect that never landed: the gears are ours to stop, because nothing else is
+            # going to - the panel just goes red, and the lid stays shut over a socket that was
+            # never there. A *cancel* is the other thing entirely, and deliberately not caught
+            # here: someone pressed stop, and the sound of stopping belongs to them. Ending a
+            # session is sounded by whoever owns its lifecycle (the kiosk on the tap, the CLI on
+            # its way out), never from here, because this runs long before it is over - the
+            # socket, the devices and the recording outlive it.
             if not self.ready.is_set():
                 self.cues.stop()
             raise
@@ -1404,13 +1409,25 @@ class VoiceAgent:
     def _on_session_ready(self) -> None:
         if self.ready.is_set():
             return
+        self.ready_at = time.monotonic()
         self.ready.set()  # set first: the panel and show_photo() both gate on it
         # Both handshake lines go at once rather than expiring: nothing else can be in flight
         # this early - a tool needs a response and a response needs this - so there is nothing
         # underneath them to hand the caption back to. From here the state's own resting line is
         # the true one, until a tool has something better to say.
         self._doing = ()
-        sounding = self.cues.play("ready")
+        # His lid, on the event that opens it. Setting `ready` above is what turns the
+        # controller's CONNECTING into LISTENING, which is what the panel's lid answers to
+        # (cyclops.overlay.session_live), so the sound and the steel come off one fact and are
+        # never more than a frame apart. Sounded from here rather than from the render loop that
+        # notices afterwards, for the same reason the gears are sounded from the button's own
+        # thread: a cue that has to arrive with a movement cannot be quantised to a frame that
+        # drops to four a second behind a dark panel.
+        #
+        # It replaces the rising fifth that used to be here. Both said the same thing at the
+        # same instant - the session is up, talk now - and with one speaker the later of the two
+        # simply clipped the other; only one of them is also a picture.
+        sounding = self.cues.play("iris_open")
         if self.mic is not None:
             self._spawn(self._listen(after_s=sounding))
 
@@ -2524,35 +2541,6 @@ class VoiceAgent:
         await self._send_item(
             {"type": "function_call_output", "call_id": call_id, "output": json.dumps(output)}
         )
-
-    async def _ping(self) -> None:
-        """The gears turning over, once the speaker is free and only if they are still wanted.
-
-        Sounded once, not looped. It used to repeat until the session was up, which is the shape
-        a cue takes when it is a status light - "still going, still going". Gears are not that:
-        a mechanism you hear start and then stop reads as a thing that has done its work, and
-        one that keeps going reads as a thing that is stuck.
-
-        It used to be the first line of :meth:`run`, which meant it started forty milliseconds
-        into his iris winding open and cut a second and a half of mechanism down to a click -
-        the one cue on this box that is *about* the session starting, silenced by the session
-        starting. Standing off costs nothing, and it is what puts the two in the right order:
-        the lid, and then what is behind the lid.
-
-        The `ready` check is what makes the wait safe rather than merely polite. A session that
-        connects inside the wait needs no gears at all, and one that fails inside it has already
-        had `cues.stop()` called on its behalf - so in both cases the right thing to sound here
-        is nothing.
-        """
-        # Asked again after every wait rather than once at the top: what is sounding can change
-        # while this is asleep, and it does - the lid starts on the frame after the session does.
-        # noqa's reason, since the rule is usually right: this is not polling for an event. It
-        # is sleeping out a duration that is known each time it is asked for and that can only
-        # get shorter, and the thing it waits on - a speaker being free - has no event to offer.
-        while (wait := self.cues.blocked("connecting")) > 0.0:  # noqa: ASYNC110
-            await asyncio.sleep(wait)
-        if not self.ready.is_set():
-            self.cues.play("connecting")
 
     def _spawn(self, coro: Coroutine[Any, Any, None]) -> None:
         task = asyncio.create_task(coro)

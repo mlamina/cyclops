@@ -83,7 +83,6 @@ class SessionController:
         # have always made. See :meth:`_detail`.
         self._phase = ""
         self._closing = False  # a teardown is under way; see the property below
-        self._started_at: float | None = None  # monotonic, for the kiosk's session timer
         # This controller is the only thing that knows when a session is *finished* rather than
         # merely cancelled - the socket, the audio devices and the recording all outlive the
         # agent - so the sound that says so is sounded from here.
@@ -104,7 +103,6 @@ class SessionController:
             self._error = ""
             self._phase = "waking up…"  # said on the tap; the thread does not exist yet
             self._closing = False
-            self._started_at = time.monotonic()  # the clock starts on the tap, not on connect
             self._thread = threading.Thread(target=self._run, name="cyclops-session", daemon=True)
             self._thread.start()
 
@@ -223,7 +221,13 @@ class SessionController:
 
     def status(self) -> dict[str, object]:
         state, level = self._state_and_level()
-        started = self._started_at
+        # The clock is the agent's, and it starts where the agent does - the moment the server
+        # accepted the session, not the moment somebody asked for one. It used to start on the
+        # tap and count through the connect, so the panel was already three seconds into a
+        # conversation by the time his lid finished opening. The recording is timed from the tap
+        # and still is (cyclops.session.SessionLog); this counts the other thing.
+        agent = self._agent
+        started = None if agent is None else agent.ready_at
         return {
             "state": state,
             "level": round(level, 3),
@@ -308,7 +312,6 @@ class SessionController:
             with self._lock:
                 self._loop = self._task = self._agent = self._speaker = self._mic = None
                 self._guard = None
-                self._started_at = None  # the timer disappears with the session
             self._phase = ""  # the folder is written; there is nothing left to report
             self._closing = False
             loop.close()

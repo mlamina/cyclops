@@ -19,6 +19,12 @@ somebody lets go, so the photo now fires on the *release* - it is delayed by how
 lean on the button. That is the bargain the panel already makes for his eye, which is a tap and a
 hold on one target for the same reason, and it is the bargain every phone makes.
 
+There is a third edge, and it is the only thing in here that is not a switch position: ``on_press``
+fires once the finger has been down for ``press_after_s``, not when the contact closes. What it
+is for is the sound under a long press, and a sound that starts on contact is a sound in front of
+every photograph anybody takes - a click is over in a tenth of a second and should be a shutter
+and nothing else. A press that comes off inside that grace never fires at all.
+
 Where there is no GPIO to talk to - a Mac, a Pi without the library, a pin something else got to
 first - every call here does nothing and the kiosk runs exactly as it did before. That is the
 bargain :class:`cyclops.backlight.Backlight` already makes with a panel it cannot dim, and it is
@@ -34,6 +40,7 @@ stay live after a halt, so a ring wired there would go on glowing on a box you h
 from __future__ import annotations
 
 import sys
+import threading
 from collections.abc import Callable
 
 # How long the switch is given to stop chattering. Cheap metal buttons bounce enough to
@@ -72,6 +79,7 @@ class ShutterButton:
         on_hold: Callable[[], None],
         on_press: Callable[[], None] | None = None,
         on_release: Callable[[], None] | None = None,
+        press_after_s: float = 0.0,
     ) -> None:
         self._on_tap = on_tap
         self._on_hold = on_hold
@@ -81,6 +89,14 @@ class ShutterButton:
         # the finger rather than to the gesture, which so far is the sound under it.
         self._on_press = on_press
         self._on_release = on_release
+        # How long the finger has to stay down before the press counts as one. Not debounce -
+        # the switch has stopped chattering long before this - but the difference between a
+        # click and the beginning of a gesture. A click is over in a tenth of a second and
+        # should sound like a shutter and nothing else; what `on_press` answers is a finger
+        # that has settled and is on its way to the hold. At zero it fires on the edge, which
+        # is what every caller that does not care gets.
+        self._press_after_s = press_after_s
+        self._timer: threading.Timer | None = None
         # Whether the hold on *this* press already fired. Cleared on the way down rather than on
         # the way up, so a release that never arrives - a wedged switch, a missed edge - cannot
         # leave the latch set and swallow the next tap.
@@ -124,8 +140,31 @@ class ShutterButton:
     def _down(self) -> None:
         """The switch closing. It decides nothing yet - only which press the latch is about."""
         self._landed = False
-        if self._on_press is not None:
+        self._arm_press()
+
+    def _arm_press(self) -> None:
+        """Start the clock on `on_press`, or fire it now if there is no grace to wait out."""
+        if self._on_press is None:
+            return
+        if self._press_after_s <= 0.0:
             self._fire(self._on_press)
+            return
+        # A thread per press, which is one more than gpiozero keeps and still nothing: it lives
+        # for a fifth of a second and is cancelled outright by most presses. Daemon, so a switch
+        # held down as the kiosk exits cannot hold the process open.
+        self._timer = threading.Timer(self._press_after_s, self._fire, (self._on_press,))
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _cancel_press(self) -> None:
+        """Take back a press that never lasted long enough to mean anything.
+
+        Cancelling a Timer that has already started running does nothing, which is the right
+        failure here: the press then sounds, and the release that follows a beat later stops it.
+        """
+        timer, self._timer = self._timer, None
+        if timer is not None:
+            timer.cancel()
 
     def _held(self) -> None:
         """The press has lasted. Fire the hold now, under the finger, not when it comes off.
@@ -142,8 +181,11 @@ class ShutterButton:
 
         The release goes first and unconditionally. It is the end of the finger being down,
         which is true however the press is about to be read - and the sound it stops is one that
-        should not outlive the finger by the length of a tap handler.
+        should not outlive the finger by the length of a tap handler. Ahead of even that is the
+        pending press: a click that comes off inside the grace must never sound at all, and
+        `on_release` stopping a sound that started a millisecond ago is not the same thing.
         """
+        self._cancel_press()
         if self._on_release is not None:
             self._fire(self._on_release)
         if not self._landed:
@@ -190,6 +232,7 @@ class ShutterButton:
         there is nothing left here that could drive the pin either way. A known state on a clean
         shutdown is asked for, and this is the only moment there is one to set.
         """
+        self._cancel_press()  # nothing left to answer a press with once the pins are gone
         for device in (self._led, self._button):
             if device is None:
                 continue

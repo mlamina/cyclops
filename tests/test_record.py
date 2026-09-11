@@ -11,6 +11,7 @@ handed it, and a microphone track with holes cut in it.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -176,6 +177,7 @@ def tap(settings: Settings, note: Path, monkeypatch):
     kiosk.controller = FakeController(settings)
     kiosk.panel, kiosk.camera = PanelSource(), CameraStandIn()
     kiosk._pending = kiosk._pending_at = None
+    kiosk._cues = SimpleNamespace(play=lambda name: None)  # the gears sound on this edge now
     # The kiosk calls `chosen` with the settings alone and takes the default for the path, so
     # to point it at this test's note rather than at ~/.cache the whole function is replaced.
     def chosen(settings, path=note):

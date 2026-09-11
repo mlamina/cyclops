@@ -91,7 +91,9 @@ def repeat(part: np.ndarray, times: int) -> np.ndarray:
 #
 # Add a cue by adding a line. It is a function of the sample rate and nothing else.
 CUES: dict[str, Callable[[int], np.ndarray]] = {
-    # A rising fifth: the resolution the pinging was asking for.
+    # A rising fifth: the resolution the pinging was asking for. Nothing plays it any more -
+    # the moment it was for is the moment his lid opens, and that moment now sounds like a lid.
+    # Kept because it costs a line and it is the shape the next cue that needs one starts from.
     "ready": lambda rate: join(tone(740, 130, rate=rate), tone(1110, 130, rate=rate)),
     # Ending a session is three things heard as one gesture, and this cue is the first two of
     # them: a falling pair the instant you press stop, then soft ticks while the link winds
@@ -162,20 +164,31 @@ SAMPLES: dict[str, str] = {
     # stylised.
     "shutter": "cyclops_camera_shutter.wav",
     # The steel cover over his face, winding open as he wakes and shut as he goes to sleep. One
-    # master, played both ways: the close is the open reversed (tools/iris_clips.py), which is
+    # master, played both ways: the close is the open reversed (tools/cut_cues.py), which is
     # what the same mechanism running backwards actually sounds like.
+    #
+    # Each half is sounded by whoever owns the movement it belongs to, and they are not the same
+    # thing. The open is a fact about the far end and is sounded on the event that establishes
+    # it (VoiceAgent._on_session_ready); the close is a fact about this box and is sounded by the
+    # render loop off the lid it draws. Neither is sounded by the press: a session asked for is
+    # not a session, and a lid that opens on the tap is the box telling you it is listening
+    # before it can hear.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
-    # Gears turning over as the socket comes up, once. This was two blips and a long gap looped
-    # until the session arrived - a cue you were meant to ignore, built to be ignorable - and
-    # what replaced them is the sound the rest of the box now makes: the same mechanism the iris
-    # is. Sounded once and not repeated, because a mechanism you hear start and then stop has
-    # done its work, and one that keeps going is stuck.
+    # Gears turning over: the long press landing, and a session asked for. Sounded once and
+    # not repeated, because a mechanism you hear start and then stop has done its work and one
+    # that keeps going is stuck - and sounded from the button's own thread, on the hold edge
+    # itself (Kiosk._toggle_session). It used to come off the session's thread once that had
+    # imported an agent and opened PortAudio both ways, which is half a second to two seconds
+    # later and never twice the same: the one cue on this box that is *about* a gesture landing
+    # was the only one that did not land with it.
     "connecting": "cyclops_connecting.wav",
-    # The rising note under a finger on the button, started on the way down and cut dead on the
-    # way up. It is the only cue here that answers a finger rather than an event, and the only
-    # one whose length nobody hears the end of: what it is for is the wait, so what matters is
-    # that it starts at the touch and stops at the lift.
+    # The rising note under a finger on the button, filling the wait for the hold. It is the
+    # only cue here that answers a finger rather than an event, and the only one bounded at both
+    # ends by something other than itself: it starts PRESS_GRACE_S in, so a click is a shutter
+    # and nothing else, and it ends on the LONG_PRESS_S boundary whatever the file has left.
+    # Cut to exactly that window (tools/cut_cues.py), so the rise arrives at its top as the
+    # gears take over.
     "button_pressed": "cyclops_button_pressed.wav",
     # ...and the ten voices, one line each, played by the stepper on the settings screen so that
     # choosing between them is done by ear rather than off a list of names (cyclops.voice). Cut
@@ -293,11 +306,17 @@ class Cues:
     failure: two sounds at once are heard as a fault, not as two events.
 
     That rule is why this remembers which cue is sounding and until when. Two callers otherwise
-    tread on each other without either being wrong: the connecting ping starts the instant a
-    session does and cut the 1.45 s iris off forty milliseconds in, and a button whose sound
-    ends on the release would have stopped whatever had started under it in the meantime.
-    :meth:`waiting` lets a caller stand off until the speaker is free, and :meth:`stop_if` lets
-    one end its own sound without ending somebody else's.
+    tread on each other without either being wrong: a button whose sound ends on the release
+    would stop whatever had started under it in the meantime, and a cue that outranks another
+    has to know what it is about to cut. :meth:`waiting` lets a caller stand off until the
+    speaker is free, and :meth:`stop_if` lets one end its own sound without ending somebody
+    else's.
+
+    The record is per instance and the speaker is not. There are three of these - the kiosk's,
+    the agent's and the controller's - so none of this reaches across them, and what keeps the
+    three from treading on each other is that each cue is sounded off the moment it describes
+    and those moments are seconds apart. Worth making module-level the first time that stops
+    being true.
     """
 
     def __init__(self, *, rate: int, device: int | str | None = None, enabled: bool = True):
