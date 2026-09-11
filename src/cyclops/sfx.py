@@ -174,11 +174,13 @@ SAMPLES: dict[str, str] = {
     # cover has arrived, so the render loop deadlines it COVER_OPEN_S from the frame the travel
     # starts on (cyclops.kiosk._render).
     #
-    # It lands exactly where "iris_open" runs out, because COVER_OPEN_S *is* that cue's length
-    # to the sample - which is also why the rank below cannot be what keeps the two apart: the
-    # open is the agent's Cues and this is the kiosk's, and a rank does not reach across two
-    # instances. What keeps them off each other is the arithmetic. The rank still earns its
-    # line for the pair that do share an instance: it is what stops the close treading on this.
+    # It lands on the last of that movement's *sound* rather than at the end of its file: the
+    # mechanism in "iris_open" runs out a third of a second before the recording does, and a
+    # bolt placed after that tail is heard as a second event rather than the end of the first.
+    # So this cuts the tail, deliberately - see kiosk.LOCK_LEAD_S. It can: the open is the
+    # agent's Cues and this is the kiosk's, and the rank below does not reach across two
+    # instances. The rank still earns its line for the pair that do share one, where it is what
+    # stops the close treading on this.
     "locked_in": "cyclops_locked_in.wav",
     # Gears turning over: the long press landing. Both directions - starting a session and
     # ending one are the same mechanism engaging, and what tells them apart is the lid that

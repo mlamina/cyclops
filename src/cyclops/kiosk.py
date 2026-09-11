@@ -192,7 +192,13 @@ SESSIONS_SCREEN, SYSTEM_SCREEN = "/sessions", "/"
 PAGE_ROUTE_S = 0.5  # one poll of /api/panel, plus a little: how long the page has to route itself
 
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
-LOCK_GRACE_S = 0.25  # how late the bolt at the end of a shutting lid may still be sounded. A
+LOCK_LEAD_S = 0.30  # how far before the lid is home the bolt lands. Not a feel: it is the quiet
+# tail on cyclops_iris_open.wav, measured. The mechanism in that recording runs out at 1.15 s and
+# the file goes on to 1.4542 s, so a bolt placed at the true arrival arrives after a third of a
+# second of near-silence and is heard as late - which it is, by the only clock that matters here,
+# the one the ear is keeping. Landing on the last of the mechanism cuts that tail instead, and
+# the tail is what was making the pair sound like two events.
+LOCK_GRACE_S = 0.25  # how late the bolt at the end of an opening lid may still be sounded. A
 # frame at TARGET_FPS is 33 ms and this loop is not the only thing that can hold it up: the admin
 # page takes the panel and parks the loop entirely, so a lid that arrives behind one would
 # otherwise be heard landing whenever that page is closed, minutes later and from nowhere.
@@ -1932,8 +1938,10 @@ class Kiosk:
                     # opens it; what is left here is the far end of that movement - the blades
                     # reaching the rim and stopping. Deadlined rather than fired, because
                     # nothing on this box is told the cover has arrived: this loop is the only
-                    # clock that knows, and it starts the travel on this frame.
-                    self._lock_at = started + COVER_OPEN_S
+                    # clock that knows, and it starts the travel on this frame. Short of the
+                    # true arrival by LOCK_LEAD_S, which is where the sound of the lid stops
+                    # rather than where the file does.
+                    self._lock_at = started + COVER_OPEN_S - LOCK_LEAD_S
                 else:
                     self._cues.play("iris_close")
                     self._lock_at = 0.0  # shutting mid-open: nothing is going to land now

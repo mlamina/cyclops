@@ -58,16 +58,17 @@ that constant has to move with it.
 
 `cyclops_locked_in.wav` is the bolt at the far end of the *open* - the blades reaching the rim
 and stopping, which is the one movement on this panel that arrives somewhere. Sounded
-`eye.COVER_OPEN_S` after the wake begins rather than on any event, because nothing on the box is
-told the cover has arrived; `cyclops.kiosk.Kiosk._render` is the only clock that knows. That puts
-it exactly where `cyclops_iris_open.wav` runs out, since `COVER_OPEN_S` is that file's length to
-the sample - so re-cutting the open moves this too, and the two are held together by the same
-test.
+`eye.COVER_OPEN_S - kiosk.LOCK_LEAD_S` after the wake begins rather than on any event, because
+nothing on the box is told the cover has arrived; `cyclops.kiosk.Kiosk._render` is the only clock
+that knows. The lead is the quiet tail on `cyclops_iris_open.wav`: the mechanism in that recording
+runs out at 1.15 s and the file goes on to 1.4542 s, so a bolt at the true arrival lands after a
+third of a second of near-silence and is heard as a second event. It cuts that tail instead.
 
-It is cut at `speed=2.5`. The master is a 1.46 s clunk with a long ring under it, which is a
-vault door; this lid is a set of blades the size of a coin. 2.5x is a third of a second of hit,
-1.3 octaves up - 1.25x was tried first and still read as a door swinging shut somewhere else in
-the building.
+It is cut at `speed=5.0`. The master is a 1.46 s clunk with a long ring under it, which is a
+vault door; this lid is a set of blades the size of a coin. 5x is a quarter of a second of hit,
+better than two octaves up. It was walked there on the panel - 1.25x read as a door swinging shut
+elsewhere in the building, and 2.5x and 3.5x were each still too low. Resampling this hard would
+normally alias; here there is nothing to fold, the master having 0.07% of its energy over 4 kHz.
 
 `cyclops_gears.wav` is gears turning over: a long press landing, sounded once and from the
 button's own thread (`cyclops.kiosk.Kiosk._toggle_session`). Both directions - starting a session

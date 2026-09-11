@@ -65,9 +65,12 @@ CUTS: dict[str, Cut] = {
     "gears": Cut("cyclops_gears.wav"),
     # The bolt going home: sounded as the cover arrives, not while it travels. The master is a
     # 1.46 s clunk with a long ring under it, which is a vault door - and this lid is a set of
-    # blades the size of a coin. Two and a half times faster is a third of a second of hit and
-    # 1.3 octaves up, which is what puts it back at the size of the thing it is coming off.
-    "locked_in": Cut("cyclops_locked_in.wav", speed=2.5),
+    # blades the size of a coin. Five times faster is a quarter of a second of hit and better
+    # than two octaves up, which is what puts it back at the size of the thing it comes off.
+    # Marco walked it up 1.25 -> 2.5 -> 3.5 on the panel and wanted it higher each time; the
+    # aliasing this would normally cost is not there to pay, the master having 0.07% of its
+    # energy over 4 kHz.
+    "locked_in": Cut("cyclops_locked_in.wav", speed=5.0),
     # The rising note under a finger on the button. Unlike every other cue here its length is
     # not the master's: it has a window to fill and the window is LONG_PRESS_S - PRESS_GRACE_S,
     # the stretch between a finger settling and the hold landing.
