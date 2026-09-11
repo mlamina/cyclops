@@ -451,6 +451,12 @@ WORDS = "words"  # the line of text under it, where his own caption is printed
 DIALS = "dials"  # the readouts along the top
 WORK = "work"    # down at his own hands. Nothing on the panel is there, and that is the point
 AWAY = "away"    # off past the edge of the thing entirely
+POINT = "point"  # whatever he has just marked on the picture (:mod:`cyclops.point`)
+# The one place here that moves. Every other name is a fixture of the panel and has an answer in
+# LANDMARKS below; this one is wherever the mark went, so the overlay writes it into `places` for
+# as long as a gesture is up and there is nothing to put in the table. A creature looking at what
+# it is pointing at is the whole of why it exists - and note which way round that is: the eye
+# follows the hand here, it does not meter the room.
 
 # The reference layout's answers, so the preview harness renders the eye the panel actually has
 # rather than a plausible one. The overlay recomputes the three geometric ones for its own window

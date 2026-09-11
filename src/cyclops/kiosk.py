@@ -42,6 +42,7 @@ from . import (  # noqa: E402
     filming,
     mixer,
     panel,
+    point,
     power,
     session,
     sfx,
@@ -489,6 +490,10 @@ class Kiosk:
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._framing = ""  # the framing just tapped to, and...
         self._framing_until = 0.0  # ...when its name comes off the middle of the screen
+        # The photo a gesture is being drawn on, decoded once and kept for as long as it is up.
+        # Read off the card rather than borrowed from the agent, which is in another thread and
+        # holds the picture as a base64 data URL it built for the model rather than as pixels.
+        self._still: tuple[Path, np.ndarray] | None = None
         self._heat = ""  # stats.heat_alarm(), re-read on TEMP_POLL_S; drives the lamp on the strip
         self._heat_at = 0.0
         # The reading the lamp is derived from, kept now that the panel has a gauge to put it on.
@@ -789,6 +794,13 @@ class Kiosk:
             # numbers on it. The tap opens that screen rather than the recordings his face opens.
             self._press(HEAT)
             self._open_admin(SYSTEM_SCREEN)
+        elif point.current() is not None:
+            # Something is being pointed at, and a press anywhere puts it away - the scratchpad's
+            # gesture, for the same reason: what is up is covering their camera and they should
+            # never have to ask for it back. Above the reticle's branch on purpose. The reticle's
+            # hitbox is fixed at the middle of the panel while the reticle itself has travelled
+            # off to the mark, so a tap on the empty centre would otherwise restart the camera.
+            point.clear()
         elif boxes.framing.contains(x, y):
             # The reticle: how far in the module is looking. Its own branch above the picture's
             # so a tap on the mark that says where the frame is can never be read as "stop
@@ -802,6 +814,22 @@ class Kiosk:
             # settled question is one more rule to carry. Nothing sounds and nothing lights:
             # what this does is make the room quiet, which no cue could say more plainly.
             self.controller.interrupt()
+
+    def _still_for(self, gesture: point.Gesture) -> np.ndarray | None:
+        """The photo a gesture is drawn on, decoded once and kept. None means draw on the live
+        picture - which is what a gesture with no picture asks for, and what a photo that will
+        not read falls back to rather than losing the marks entirely.
+        """
+        if gesture.picture is None:
+            return None
+        if self._still is not None and self._still[0] == gesture.picture:
+            return self._still[1]
+        frame = cv2.imread(str(gesture.picture))
+        if frame is None:
+            print(f"· could not read {gesture.picture} to point at", file=sys.stderr, flush=True)
+            return None
+        self._still = (gesture.picture, frame)
+        return frame
 
     def _reframe(self) -> None:
         """The reticle, tapped: the module's next framing of the three.
@@ -1986,6 +2014,22 @@ class Kiosk:
                     else:
                         stalled = True
 
+            # What he is pointing at, if anything (cyclops.point). A gesture that has faded out
+            # is taken down here rather than by whoever put it up: the tool call that made it
+            # returned seconds ago, and this loop is the only clock that knows.
+            gesture = point.current()
+            if gesture is not None and point.expired(gesture, started):
+                point.clear()
+                gesture = None
+            # A mark belongs to the photo the model was shown, so that photo is what the panel
+            # holds while the mark is up. The camera has moved since the shutter - it is in
+            # somebody's hand - and drawing a ring at those coordinates on the live picture
+            # would circle whatever has drifted under them.
+            if gesture is not None:
+                still = self._still_for(gesture)
+                if still is not None:
+                    frame, stalled = still, False
+
             fallback = self._size if frame is None else (frame.shape[1], frame.shape[0])
             width, height = self._window_size(fallback)
             if (width, height) != self._size or self.overlay is None:
@@ -2056,6 +2100,17 @@ class Kiosk:
                     framing=self._framing,
                     framing_fade=min(
                         1.0, max(0.0, (self._framing_until - started) / FRAMING_FADE_S)
+                    ),
+                    # The marks, the reticle's place and where he is looking, all off one call -
+                    # the same one tools/panel_shot.py makes, so a picture rendered on a laptop
+                    # is this panel and not a second implementation of it. Skipped when there is
+                    # no frame at all: with nothing to point at, the "no camera" card is not
+                    # something to draw a ring on.
+                    **(
+                        point.frame_args(gesture, started, frame.shape[1], frame.shape[0],
+                                         width, height)
+                        if gesture is not None and frame is not None
+                        else {}
                     ),
                 )
                 self._paint(composite(canvas, chrome), width, height)

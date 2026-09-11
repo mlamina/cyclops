@@ -21,22 +21,37 @@ from __future__ import annotations
 
 import argparse
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
-from cyclops import eye, overlay
+from cyclops import eye, overlay, point
 
 WIDTH, HEIGHT = 800, 480
 STRIP_PAD = 12  # picture kept around the eye in each strip cell, so the bezel's shadow is in it
 AWAKE_ELAPSED = 12.0  # a session twelve seconds old, which is what the clock readouts show
 
 
-def shown(args: argparse.Namespace) -> dict:
-    """The render() kwargs for the state asked for. Asleep has no session, so no elapsed."""
+def gesture(args: argparse.Namespace) -> point.Gesture | None:
+    """The marks asked for on the command line, born at zero. None if none were."""
+    if not args.point:
+        return None
+    return point.Gesture(tuple(point.parse(args.point.encode().decode("unicode_escape"))),
+                         None, born=0.0)
+
+
+def shown(args: argparse.Namespace, src: tuple[int, int] = (WIDTH, HEIGHT)) -> dict:
+    """The render() kwargs for the state asked for. Asleep has no session, so no elapsed.
+
+    ``--point`` goes through :func:`cyclops.point.frame_args`, which is the same call the kiosk's
+    loop makes - so a gesture rendered here is the one the panel would draw, and not a second
+    implementation of it that happens to look similar. *src* is the background photo's own size,
+    because marks are fractions of the picture the model was shown rather than of the panel.
+    """
     asleep = args.state == overlay.IDLE
-    return dict(
+    kw = dict(
         state=args.state,
         level=args.level,
         elapsed=None if asleep else AWAKE_ELAPSED,
@@ -45,14 +60,24 @@ def shown(args: argparse.Namespace) -> dict:
         volume=args.volume,
         temp_c=args.temp,
     )
+    shape = gesture(args)
+    if shape is not None:
+        kw.update(point.frame_args(shape, args.point_age, *src, WIDTH, HEIGHT))
+    return kw
 
 
-def background(path: Path | None) -> np.ndarray:
-    """The picture behind the chrome as a BGR frame the panel's size, or a dark plate if none."""
+def background(path: Path | None) -> tuple[np.ndarray, tuple[int, int]]:
+    """The picture behind the chrome, panel-sized, and the size it came in at.
+
+    The second half is what a mark is measured against: the model is shown a 1024-wide photo and
+    the panel is 800 wide, so a fraction only lands in the right place if the crop is undone
+    against the source's own shape.
+    """
     if path is None:
-        return np.full((HEIGHT, WIDTH, 3), 24, np.uint8)
+        return np.full((HEIGHT, WIDTH, 3), 24, np.uint8), (WIDTH, HEIGHT)
     rgb = np.asarray(Image.open(path).convert("RGB"))
-    return overlay.fit_to_window(np.ascontiguousarray(rgb[..., ::-1]), WIDTH, HEIGHT)
+    bgr = np.ascontiguousarray(rgb[..., ::-1])
+    return overlay.fit_to_window(bgr, WIDTH, HEIGHT), (bgr.shape[1], bgr.shape[0])
 
 
 def settle(ov: overlay.Overlay, kw: dict) -> None:
@@ -74,13 +99,20 @@ def eye_box(ov: overlay.Overlay) -> tuple[int, int, int, int]:
 
 
 def strip(ov: overlay.Overlay, frame: np.ndarray, kw: dict, frames: int, seconds: float,
-          start: float) -> Image.Image:
+          start: float, marks_at: Callable[[float], dict] | None = None) -> Image.Image:
+    """N frames of the eye across a row, so motion can be looked at in a still.
+
+    *marks_at* gives the gesture's kwargs that far into the strip. Without it a pointed-at strip
+    would be six copies of one instant; with it the row is the eye actually turning to what was
+    marked and letting it go again, which is the whole of what there is to judge.
+    """
     box = eye_box(ov)
     cell = (box[2] - box[0], box[3] - box[1])
     out = Image.new("RGB", (cell[0] * frames, cell[1]), (0, 0, 0))
     for i in range(frames):
-        phase = start + i * seconds / max(1, frames)
-        out.paste(shot(ov, frame, kw, phase).crop(box), (i * cell[0], 0))
+        step = i * seconds / max(1, frames)
+        cell_kw = kw if marks_at is None else {**kw, **marks_at(step)}
+        out.paste(shot(ov, frame, cell_kw, start + step).crop(box), (i * cell[0], 0))
     return out
 
 
@@ -110,12 +142,16 @@ def main() -> None:
     ap.add_argument("--strip", type=int, default=0, help="crop the eye and lay N frames in a row")
     ap.add_argument("--seconds", type=float, default=4.0, help="how much time a strip covers")
     ap.add_argument("--bench", action="store_true", help="print ms per frame and exit")
+    ap.add_argument("--point", default="", help="marks to point with, one per line: "
+                    r"'ring X Y label\nn N X Y\ntag X Y label\narrow X1 Y1 X2 Y2 label'")
+    ap.add_argument("--point-age", type=float, default=1.0,
+                    help="seconds since the gesture was made; past the hold it is fading")
     ap.add_argument("--out", type=Path, default=Path("panel.png"))
     args = ap.parse_args()
 
     ov = overlay.Overlay(WIDTH, HEIGHT)
-    frame = background(args.bg)
-    kw = shown(args)
+    frame, src = background(args.bg)
+    kw = shown(args, src)
     if args.bench:
         for state in (overlay.IDLE, overlay.LISTENING, overlay.SPEAKING):
             ov = overlay.Overlay(WIDTH, HEIGHT)
@@ -125,7 +161,11 @@ def main() -> None:
         return
     settle(ov, kw)
     if args.strip:
-        image = strip(ov, frame, kw, args.strip, args.seconds, args.phase)
+        shape = gesture(args)
+        marks_at = None if shape is None else (
+            lambda step: point.frame_args(shape, args.point_age + step, *src, WIDTH, HEIGHT)
+        )
+        image = strip(ov, frame, kw, args.strip, args.seconds, args.phase, marks_at)
     else:
         image = shot(ov, frame, kw, args.phase)
     image.save(args.out)

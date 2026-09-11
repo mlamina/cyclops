@@ -180,6 +180,7 @@ class Settings:
     imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
     scratchpad: bool = True  # offer write_on_scratchpad, so he can write on the panel himself
     cut: bool = True  # offer the Make a video button, and render what it asks for (cyclops.cut)
+    pointing: bool = True  # offer point_at, so he can mark their photo instead of describing it
     project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the session to its folder (needs a camera, or a panel)
     record_source: str = "screen"  # "screen": the panel, UI and all; "camera": the raw picture
@@ -377,6 +378,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         imagine=_flag("CYCLOPS_IMAGINE", Settings.imagine),
         scratchpad=_flag("CYCLOPS_SCRATCHPAD", Settings.scratchpad),
         cut=_flag("CYCLOPS_CUT", Settings.cut),
+        pointing=_flag("CYCLOPS_POINTING", Settings.pointing),
         project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_source=_record_source("CYCLOPS_RECORD_SOURCE"),

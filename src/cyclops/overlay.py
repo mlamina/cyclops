@@ -102,6 +102,7 @@ from .eye import (
     DIALS,
     FRAME,
     LANDMARKS,
+    POINT,
     WORDS,
     WORK,
     EyeEngine,
@@ -113,6 +114,7 @@ from .eye import (
     smoothed,
     wide,
 )
+from .point import PanelMark
 from .stats import HOT_C, WARN_C, temp_band, temp_percent
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
@@ -2283,6 +2285,18 @@ _DIAL_FONT: dict[int, ImageFont.FreeTypeFont] = {}  # the reading's face, one pe
 RETICLE_R = 0.112  # 54 px at 480, from the middle out to any edge of the box
 RETICLE_LEG = 0.5  # of that reach, per leg; the rest of the edge is the gap on the axis
 RETICLE_W = 1.4  # of a hairline: marks this short need the weight back to read as drawn
+RETICLE_ALPHA = 195
+
+# What the model points with (cyclops.point). A ring is the reticle's own four corners at this
+# fraction of its size - the same instrument, smaller - rather than a circle, because a circle
+# round a component on a live picture is the gun sight the reticle stopped being.
+MARK_R = 0.6
+MARK_N_R = 0.024  # the disc a numbered marker is set in, of the panel's height
+MARK_ALPHA = 215  # brighter than the resting reticle: this is being shown to somebody, now
+MARK_GAP = 0.014  # of the width, between a mark and the label beside it
+LABELS_KEPT = 24  # rendered labels held before the lot is dropped; see _label_tile
+MARK_HEAD_R = 0.022  # an arrow's head, of the panel's height
+MARK_HEAD_SPREAD = 0.45  # radians each side of the shaft; ~26 degrees, an arrow and not a dart
 
 RIM_PERIOD_S = 3.7  # one breath of the border, slower than the caption's and not a multiple of it
 RIM_DEPTH = 0.14  # how far it sinks towards SCREEN - a mix, not an alpha, and a quarter of what
@@ -3436,6 +3450,19 @@ class Overlay:
             self.pod_boxes[tags] = Rect(left + self._pod_pad, 0, content, depth)
         self.pod = self.pod_boxes[0]  # its resting size, and every one of them is this deep
         self.reticle_r = max(8, round(RETICLE_R * height))
+        # Built once and composited wherever it is pointing; see _corners. Per instance rather
+        # than through _by_size because it is about a hundred pixels square and an Overlay is
+        # only rebuilt when the window changes size.
+        self._reticle = self._corners(self.reticle_r, RETICLE_ALPHA)
+        # A mark's two fixed shapes, kept at full and faded by scaling alpha at composite time.
+        # Measured on the Pi: rebuilding these per frame as the gesture faded cost ~2 ms a mark
+        # on a loop that has 33 ms for everything, because each one is a supersampled draw. A
+        # kept tile and a LUT over its alpha channel is the same picture for a tenth of that -
+        # the same bargain _meter() and _digit() strike, and the same one that let REC blink.
+        self._mark_r = max(6, round(RETICLE_R * MARK_R * height))
+        self._mark_ring = self._corners(self._mark_r, MARK_ALPHA)
+        self._mark_disc = self._disc_tile(max(6, round(MARK_N_R * height)), MARK_ALPHA)
+        self._labels: dict[str, tuple[Image.Image, int]] = {}  # see _label_tile
 
         # Him, riding the big bracket's ramp. Everything about where he is comes off that ramp,
         # so moving the bracket moves him and the rail still goes round him.
@@ -3586,6 +3613,15 @@ class Overlay:
         self._needles: dict[tuple[int | None, str, bool], Image.Image] = {}
         self._cursor_w = self.font_caption.getlength(CURSOR)
         self.hitboxes = self._layout()
+        # What a pointed-at label has to stay off; see _label_anchor. Everything opaque on this
+        # panel and nothing else - the brackets and their plates are the tube filter over the
+        # live picture, and rimmed text reads over those.
+        self._label_clear = (
+            self.term,
+            self._disc(self.switches[VOLUME], self.btn_r),
+            self._disc(self.switches[HEAT], self.btn_r),
+            self._disc(self.eye, self.eye_r),
+        )
         self.menu_card, self.menu_cells = self._menu_layout()
         self._scrim: Image.Image | None = None  # built on the first long press, then kept
 
@@ -4310,7 +4346,6 @@ class Overlay:
         # first, the corner's own webbing and the rail's cast shadow simply write over the top of
         # them - ImageDraw writes rather than composites - and the cables vanish.
         self._draw_loom(layer)
-        self._draw_reticle(layer)
         # The two dial faces, which used to be baked once per state with the switches they
         # replace. Neither wears the state's accent - a volume and a board temperature are true
         # whether or not anybody is talking to him - so neither has any business being rebuilt
@@ -5325,8 +5360,8 @@ class Overlay:
                                align="c", tracking=tracking)
         self._text(d, cx, cy, name, self.font_mode, (*GREEN, alpha), align="c", tracking=tracking)
 
-    def _draw_reticle(self, layer: Image.Image) -> None:
-        """Four right-angled corners on the lens axis, and nothing in the middle of them.
+    def _corners(self, half: int, alpha: int) -> Image.Image:
+        """Four right-angled corners around a point, as a tile. Nothing in the middle of them.
 
         What a camera shows you when it is looking rather than aiming. This was a gapped cross
         with graduations for exactly as long as it took somebody to look at it and say it read as
@@ -5336,11 +5371,17 @@ class Overlay:
         Each corner is one three-point stroke rather than two, so the bend is a joint PIL closes
         for us instead of a notch two separate legs leave at the outside of the turn. Still
         supersampled, for the ends rather than the lines: a mark this short is mostly its ends.
+
+        A tile rather than a stroke onto the layer, and built about its own centre rather than
+        the panel's, because the reticle travels now: it leaves the lens axis for whatever the
+        model is pointing at (:mod:`cyclops.point`). Composited per frame at wherever that is,
+        which costs one paste of about a hundred pixels square - against the supersampled draw
+        this is, which is why it is built once and kept. The same shape at ``MARK_R`` of the
+        size is what a ``ring`` mark is drawn with, so the thing pointing and the thing pointed
+        at are visibly the same instrument.
         """
-        half = max(8, round(RETICLE_R * self.height))
         leg = max(3, round(half * RETICLE_LEG))
         stroke = max(1.0, self.line * RETICLE_W)
-        cx, cy = self.width // 2, self.height // 2
         span = half + round(stroke) * 2
 
         def paint(t: ImageDraw.ImageDraw) -> None:
@@ -5349,10 +5390,179 @@ class Overlay:
                     x, y = span + sx * half, span + sy * half
                     t.line(
                         [(at(x - sx * leg), at(y)), (at(x), at(y)), (at(x), at(y - sy * leg))],
-                        fill=linear(GREEN_MID, 195), width=round(wide(stroke)), joint="curve",
+                        fill=linear(GREEN_MID, alpha), width=round(wide(stroke)), joint="curve",
                     )
 
-        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
+        return smoothed(2 * span + 1, paint)
+
+    def _disc_tile(self, r: int, alpha: int) -> Image.Image:
+        """The well a numbered marker's digit sits in: dark, rimmed, and its own size."""
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            box = [at(0.5), at(0.5), at(2 * r - 0.5), at(2 * r - 0.5)]
+            t.ellipse(box, fill=linear(SCREEN, alpha), outline=linear(GREEN, alpha),
+                      width=round(wide(max(1.0, self.line))))
+
+        return smoothed(2 * r + 1, paint)
+
+    @staticmethod
+    def _faded(tile: Image.Image, fade: float) -> Image.Image:
+        """A kept tile at a fraction of its alpha, for a shape that is going out.
+
+        One 256-entry lookup over one channel, against redrawing the thing supersampled: the
+        difference between a mark costing a tenth of a millisecond and costing two. Nothing else
+        about the tile changes as a gesture fades, which is what makes this sound.
+        """
+        if fade >= 1.0:
+            return tile
+        out = tile.copy()
+        out.putalpha(tile.getchannel("A").point(lambda a: round(a * fade)))
+        return out
+
+    def _draw_reticle(self, layer: Image.Image, cx: int, cy: int) -> None:
+        """The reticle, wherever it is this frame. One composite of a tile built at startup."""
+        span = self._reticle.width // 2
+        layer.alpha_composite(self._reticle, (cx - span, cy - span))
+
+    def _label_tile(self, text: str) -> tuple[Image.Image, int]:
+        """A word with its near-black rim, drawn once and kept. Also how far in the word starts.
+
+        :meth:`_draw_framing`'s technique and for its reason, which applies to every label a
+        mark carries: this lands on a live camera frame, as likely to be a sunlit window as a
+        dark part, and eight offset draws hold it against either - where a plate behind it would
+        have to be built, faded and thrown away every frame.
+
+        Kept rather than drawn per frame because of what those nine draws cost. Measured on the
+        Pi: one five-letter label was 2.3 ms of a 33 ms frame - more than the ring, the marker,
+        the arrow and the reticle put together, and the shapes were the things that looked
+        expensive. A label's text does not change while a gesture is up; only its alpha does.
+        """
+        kept = self._labels.get(text)
+        if kept is not None:
+            return kept
+        if len(self._labels) > LABELS_KEPT:
+            self._labels.clear()  # a bench full of pointing, not a leak; cheap to refill
+        rim = max(1, round(1.5 * self.scale))
+        pad = rim + 1
+        width = round(self._width(text, self.font_read, 0.0)) + 2 * pad
+        height = round(self.font_read.size * 1.8) + 2 * pad
+        tile = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        t = ImageDraw.Draw(tile)
+        middle = height / 2
+        for dx in (-rim, 0, rim):
+            for dy in (-rim, 0, rim):
+                if dx or dy:
+                    self._text(t, pad + dx, middle + dy, text, self.font_read,
+                               (*SCREEN, MARK_ALPHA))
+        self._text(t, pad, middle, text, self.font_read, (*GREEN, MARK_ALPHA))
+        self._labels[text] = (tile, pad)
+        return tile, pad
+
+    def _rimmed_text(self, layer: Image.Image, x: float, y: float, text: str,
+                     fade: float) -> None:
+        """A kept label composited so its word starts at *x* and sits centred on *y*."""
+        tile, pad = self._label_tile(text)
+        layer.alpha_composite(self._faded(tile, fade),
+                              (round(x) - pad, round(y - tile.height / 2)))
+
+    def _label_anchor(self, ax: float, ay: float, offset: float,
+                      width: float) -> tuple[float, float]:
+        """Where a label actually goes, given the mark at *ax*,*ay* and how far clear of it.
+
+        Right of the mark by default, flipped to its other side when that would run off the
+        panel, and clamped inside either way. The thing being pointed at is as likely to be at
+        the edge of the picture as anywhere else, and half a word hanging off the glass points
+        at nothing.
+        """
+        pad = max(6, round(10 * self.scale))
+        x = ax + offset
+        if x + width > self.width - pad:
+            x = ax - offset - width
+        x = max(pad, min(x, self.width - width - pad))
+        y = min(max(pad, ay), self.height - pad)
+        # ...and clear of the four things on this panel a word cannot be read through: the
+        # terminal's glass, the two instruments sunk into the bottom-right rail, and his face.
+        # Everything else the chrome is made of is the tube filter over the live picture, which
+        # rimmed text sits on perfectly well. Lifted rather than moved aside, because the mark it
+        # belongs to is what fixes its column - slide it sideways and it labels the wrong thing.
+        for box in self._label_clear:
+            if x < box.right and x + width > box.x and y + pad > box.y and y - pad < box.bottom:
+                y = box.y - pad
+        return x, max(pad, y)
+
+    def _draw_number(self, layer: Image.Image, d: ImageDraw.ImageDraw, mark: PanelMark,
+                     fade: float, alpha: int) -> int:
+        """A numbered marker: the digit sunk in a disc, for "these two, in that order"."""
+        r = self._mark_disc.width // 2
+        layer.alpha_composite(self._faded(self._mark_disc, fade), (mark.x - r, mark.y - r))
+        self._text(d, mark.x, mark.y, str(mark.n), self.font_tab, (*GREEN, alpha), align="c")
+        return r
+
+    def _draw_arrow(self, layer: Image.Image, d: ImageDraw.ImageDraw, mark: PanelMark,
+                    alpha: int) -> int:
+        """A shaft from one point to another, with a head on the end. Returns the head's reach.
+
+        The shaft goes straight onto the layer rather than through a tile: an arrow can cross
+        the whole panel, and supersampling 800x480 to smooth one line is four times the panel's
+        area spent on a stroke nobody reads the edges of. The head is a tile, because a head is
+        all ends - the same reason the reticle's corners are.
+        """
+        stroke = max(1.0, self.line * RETICLE_W)
+        d.line([(mark.x, mark.y), (mark.x2, mark.y2)], fill=(*GREEN_MID, alpha),
+               width=round(stroke))
+        size = max(5, round(MARK_HEAD_R * self.height))
+        span = size + round(stroke) * 2
+        if mark.x == mark.x2 and mark.y == mark.y2:
+            return span  # nowhere to point: the shaft is a dot and a head has no direction
+        along = math.atan2(mark.y2 - mark.y, mark.x2 - mark.x)
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            for turn in (MARK_HEAD_SPREAD, -MARK_HEAD_SPREAD):
+                angle = along + math.pi + turn
+                t.line(
+                    [(at(span), at(span)),
+                     (at(span + math.cos(angle) * size), at(span + math.sin(angle) * size))],
+                    fill=linear(GREEN_MID, alpha), width=round(wide(stroke)), joint="curve",
+                )
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (mark.x2 - span, mark.y2 - span))
+        return span
+
+    def _draw_marks(self, layer: Image.Image, d: ImageDraw.ImageDraw,
+                    marks: Sequence[PanelMark], fade: float) -> None:
+        """What the model is pointing at, over the picture, fading out with the gesture.
+
+        Everything here is drawn on bare camera frame, which is the one surface on this panel
+        with no chassis behind it - so all of it is the phosphor and the near-black rim, and
+        none of it is plated. A ring is the reticle's corners at :data:`MARK_R`, which is what
+        makes the mark and the instrument that travelled to it read as the same thing.
+        """
+        fade = min(1.0, max(0.0, fade))
+        alpha = round(MARK_ALPHA * fade)
+        if alpha <= 0:
+            return
+        ring = self._faded(self._mark_ring, fade)
+        span = ring.width // 2
+        dot = max(2, round(3 * self.scale))
+        for mark in marks:
+            anchor = (mark.x, mark.y)
+            if mark.kind == "ring":
+                layer.alpha_composite(ring, (mark.x - span, mark.y - span))
+                reach = span
+            elif mark.kind == "n":
+                reach = self._draw_number(layer, d, mark, fade, alpha)
+            elif mark.kind == "arrow":
+                reach = self._draw_arrow(layer, d, mark, alpha)
+                anchor = (mark.x2, mark.y2)  # a label belongs at the end it points to
+            else:  # tag: the thing itself is the mark, so this is only a place
+                d.ellipse([mark.x - dot, mark.y - dot, mark.x + dot, mark.y + dot],
+                          fill=(*GREEN, alpha))
+                reach = dot
+            if mark.label:
+                gap = max(4, round(MARK_GAP * self.width))
+                width = self._width(mark.label, self.font_read, 0.0)
+                x, y = self._label_anchor(anchor[0], anchor[1], reach + gap, width)
+                self._rimmed_text(layer, x, y, mark.label, fade)
 
 
     def _base(self, state: str, recording: bool, heat: str = "") -> Image.Image:
@@ -5522,6 +5732,10 @@ class Overlay:
         framing: str = "",
         framing_fade: float = 0.0,
         awake: bool | None = None,
+        reticle: tuple[int, int] | None = None,
+        marks: Sequence[PanelMark] = (),
+        marks_fade: float = 0.0,
+        look_at: tuple[int, int] | None = None,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -5580,6 +5794,13 @@ class Overlay:
         self._draw_hands(layer, d, volume, temp_c, pressed)
         if turning and volume is not None:
             self._draw_slider(d, volume)
+        # The reticle, which is on the lens axis unless something is being pointed at. It used to
+        # be baked into the chrome with everything else that holds still; it travels now, so it is
+        # a composite of one kept tile - see _corners. The marks go over it and the framing's word
+        # over both, which is the order they arrive in: the frame, the answer, the tap.
+        self._draw_reticle(layer, *(reticle or (self.width // 2, self.height // 2)))
+        if marks and marks_fade > 0.0:
+            self._draw_marks(layer, d, marks, marks_fade)
         if framing and framing_fade > 0.0:
             self._draw_framing(d, framing, framing_fade)
         # Him, last of everything in his corner. He is the one control that never inverts under
@@ -5609,6 +5830,17 @@ class Overlay:
             # colour change he might have made on his own.
             mood = replace(mood, tint=GREEN, rings=1.7, aperture=1.0, swell=0.0,
                            voice=0.0, gaze=0.0, dart=0.0, drift=0.0)
+        if look_at is not None and marks_fade > 0.0:
+            # He looks at what he is pointing at, for as long as the mark is up. A place rather
+            # than an angle, because that is the only way gaze is expressed here (eye.gaze_at) -
+            # and it is written into `places` per frame because, unlike every other name in that
+            # map, this one is wherever the mark went. `gaze` rides the fade so the pupil is
+            # drawn home with the gesture rather than dropping you the instant it ends; `dart`
+            # and `drift` off, because glancing round the room while pointing at something is
+            # exactly what somebody who meant it would not do.
+            self.engine.places[POINT] = unit(*self.eye, *look_at)
+            mood = replace(mood, look=(POINT,), gaze=MOODS[LOOKING].gaze * marks_fade,
+                           dart=0.0, drift=0.0)
         self.engine.paint(layer, *self.eye, mood, phase, level)
         layer.alpha_composite(self._glass, (self.eye[0] - self.eye_r, self.eye[1] - self.eye_r))
         if hold > 0.0:

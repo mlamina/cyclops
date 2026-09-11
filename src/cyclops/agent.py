@@ -27,7 +27,7 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import imagine, panel, recall, session, sfx, tasks
+from . import imagine, panel, point, recall, session, sfx, tasks
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -61,6 +61,9 @@ MAX_QUERY_CHARS = 300
 # the model has finished writing it - and 800x480 read at arm's length holds a number, a short
 # list or a small drawing, none of which need more than this.
 MAX_SCRATCHPAD_CHARS = 1500
+# Eight marks at about forty characters each, and room for a label on every one. Longer than a
+# gesture needs on purpose: the cap is here to stop a runaway, not to shape what he writes.
+MAX_MARKS_CHARS = 600
 MAX_PROJECT_NAME_CHARS = 80
 MAX_PROJECT_TAGLINE_CHARS = 300  # a little under store.MAX_TAGLINE_CHARS
 MAX_PROJECT_NOTES_CHARS = 4000  # a project page, not a card's worth of them
@@ -304,6 +307,67 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
             },
         },
         "required": ["request"],
+        "additionalProperties": False,
+    },
+}
+
+POINT_AT_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "point_at",
+    "description": (
+        "Point at something in their picture, the way you would with a finger. Use it whenever "
+        "the answer is WHICH one or WHERE: 'which of these is the cold joint', 'where does this "
+        "wire go', 'is it the left or the right one', 'which way round does it sit'. Marks land "
+        "on the photo they took, their screen holds that photo while they look, your eye turns "
+        "to what you marked, and it all fades a few seconds later. It is instant and it costs "
+        "nothing - nothing is drawn and nothing is spent, so reach for it freely. "
+        "Then say 'that one', or a few words about what it is. Do NOT describe where on the "
+        "picture it is - no 'top left', no 'the third one along', no 'just above the bracket'. "
+        "The mark is what says where; saying it too is the one thing that makes pointing "
+        "pointless. "
+        "It points at a picture you were shown, so there has to be one: if they have not taken "
+        "a photo yet, ask them to hit SNAP instead of guessing at coordinates."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "marks": {
+                "type": "string",
+                "description": (
+                    "One mark per line. Four kinds, and the numbers are always fractions of the "
+                    "picture - x from 0 at the left edge to 1 at the right, y from 0 at the top "
+                    "to 1 at the bottom:\n"
+                    "  ring X Y [label]            - a box round one thing; your usual mark\n"
+                    "  n N X Y                     - a numbered marker, for an order to work in\n"
+                    "  tag X Y label               - a dot with a word on it\n"
+                    "  arrow X1 Y1 X2 Y2 [label]   - from somewhere to the thing it points at\n"
+                    "Aim at the MIDDLE of the thing, read off the picture you were shown. A "
+                    "label is a word or two at most - it is read at arm's length, across a "
+                    "bench, and anything longer belongs in what you say out loud.\n"
+                    "Good - one thing, named:\n"
+                    "  ring 0.42 0.31 cold joint\n"
+                    "Good - two things, in the order to do them:\n"
+                    "  n 1 0.55 0.62\n"
+                    "  n 2 0.71 0.60\n"
+                    "Bad - pixels rather than fractions, and a label that is a sentence:\n"
+                    "  ring 210 150 this is the one that has not taken solder properly\n"
+                    "Eight marks is the most that will be drawn. If you find yourself wanting "
+                    "more than three, what you want is draw_diagram."
+                ),
+            },
+            "picture": {
+                "type": "string",
+                "description": (
+                    "Optional: which picture to mark, by the name it arrived with - "
+                    "'14-32-40_you'. Leave it out for the newest one, which is what 'this', "
+                    "'that' and 'it' nearly always mean. Give it when they plainly mean an "
+                    "earlier picture, and read the name off the line that picture came with "
+                    "rather than guessing: a name you were not given is refused, and you are "
+                    "told the real ones."
+                ),
+            },
+        },
+        "required": ["marks"],
         "additionalProperties": False,
     },
 }
@@ -591,6 +655,9 @@ HOW YOU TALK
 - Call it the scratchpad, because that is what they call it. "Put that on your scratchpad",
   "scratchpad it", "what's on the scratchpad" - all of them mean write_on_scratchpad. A press
   anywhere on it wipes it and gives them your eye back, so they never have to ask you to.
+- You can POINT, as well - at anything in a photo they have taken. When the answer is which one
+  or where, mark it with point_at and say "that one". That is the whole answer: a mark and two
+  words beat the best sentence you could write about which end of the bracket you mean.
 - Answer first. No preamble, no repeating back what they just said, no summarising yourself.
 - End when the answer ends. Do not close by telling them what you could do next, what they
   could ask for, or which button makes you do it. No "if you want, I can", no "just say the
@@ -626,6 +693,9 @@ USING THE EYE
 - When they do speak, you have every photo they have taken. Answer off the pictures, going
   straight to what you actually see, briefly. No preamble: never open with "look at this",
   "let me see", or by narrating which photo you are looking at.
+- Pointing works on the photo, not on the room. The mark lands on the picture as it was when
+  they pressed SNAP, and their screen holds that picture while they look - so aim at where the
+  thing is in the photo you were shown, not where it has got to on the bench since.
 - Every picture you are shown arrives with a name of its own, and that name is how you say which
   one you mean when a tool asks. It is yours and not theirs: never say a name out loud and never
   ask them for one, because nothing on their screen shows one. They say "the ball one" and you
@@ -1147,6 +1217,7 @@ class VoiceAgent:
                 WEB_SEARCH_TOOL,
                 *_diagram_tools(self.settings),
                 *_scratchpad_tools(self.settings),
+                *_point_tools(self.settings),
                 *_imagine_tools(self.settings),
                 *_project_tools(self.settings),
                 *_recall_tools(self.settings),
@@ -1583,6 +1654,9 @@ class VoiceAgent:
         if call.name == "write_on_scratchpad":
             await self._run_scratchpad(call)
             return
+        if call.name == "point_at":
+            await self._run_point(call)
+            return
         if call.name == "draw_diagram":
             await self._run_draw_diagram(call)
             return
@@ -1704,6 +1778,74 @@ class VoiceAgent:
         shown = panel.offer_scratchpad(html) and panel.show()
         session.note("screen", html=html[:MAX_SCRATCHPAD_CHARS], panel=shown)
         return shown
+
+    async def _run_point(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Mark their picture. The only tool here that reaches the glass without touching a file.
+
+        The scratchpad is the shortest handler in this class and this one is shorter still.
+        There is no picture to make, and unlike the scratchpad there is nothing to write either:
+        a gesture is a few marks in memory that the render loop reads on its next frame, so
+        ``panel``, ``card`` and the browser are all out of it. It is up in about 40 ms, which is
+        the whole reason to prefer it to a sentence about where something is.
+
+        Nothing is kept, and for the scratchpad's reason: pointing is something he did while
+        talking, not a picture. The session log records that it happened, and ``photos/`` gets
+        nothing - the photo that was marked is already in there.
+        """
+        marks = point.parse(_tool_marks(call.arguments))
+        wanted = _tool_picture(call.arguments)
+        self._log(f"[tool] point_at {len(marks)} mark(s){f' on {wanted}' if wanted else ''}")
+        if not marks:
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": "no marks I could read",
+                "note": (
+                    "One per line, and the numbers are fractions of the picture: "
+                    "'ring 0.42 0.31 cold joint'."
+                ),
+            })
+            await self._request_response()
+            return
+
+        shot = self._picture_named(wanted) if wanted else self._on_panel
+        if wanted and shot is None:
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": "no picture by that name",
+                "pictures": [
+                    {"name": one.name, "kind": one.what}
+                    for one in reversed(self._pictures[-PICTURES_OFFERED:])
+                ],
+                "note": (
+                    "Nothing was drawn. These are the pictures you have been shown, newest "
+                    "first. Call it again with one of these names if one is plainly the one "
+                    "they mean - and if two of them could be, ask them which rather than picking."
+                ),
+            })
+            await self._request_response()
+            return
+        if shot is None or shot.path is None:
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": "no picture to point at",
+                "note": "Ask them to hit SNAP, in a few words. Do not guess at coordinates.",
+            })
+            await self._request_response()
+            return
+
+        point.show(point.Gesture(tuple(marks), shot.path, time.monotonic()))
+        session.note("point", picture=shot.name, marks=len(marks),
+                     text=_tool_marks(call.arguments))
+        await self._send_tool_output(call.call_id, {
+            "ok": True,
+            "picture": shot.name,
+            "marks": len(marks),
+            "note": (
+                "It is on their screen. Say which one in a few words - never where on the "
+                "picture it is, because they can see the mark."
+            ),
+        })
+        await self._request_response()
 
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Set a drawing going, answer at once, and let :meth:`_draw` finish it.
@@ -2603,6 +2745,17 @@ def _scratchpad_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [SCRATCHPAD_TOOL] if settings.scratchpad else []
 
 
+def _point_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The tool that marks their picture, or nothing. Left out rather than refused, as ever.
+
+    A flag of its own for the same reason the scratchpad has one: it is the second tool here
+    that takes the screen away from the person using it without being asked, and this one holds
+    a still photo over the live camera while it is up. ``CYCLOPS_POINTING=0`` is a way to find
+    out what a bench feels like without it that is not a revert.
+    """
+    return [POINT_AT_TOOL] if settings.pointing else []
+
+
 def _imagine_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The one editing tool, or none. A flag of its own rather than a ride on ``diagrams``.
 
@@ -2669,6 +2822,11 @@ def _tool_picture(arguments: str | None) -> str:
     and a name that resolves to nothing is refused rather than swapped for the newest.
     """
     return _tool_string(arguments, "picture", MAX_PICTURE_NAME_CHARS)
+
+
+def _tool_marks(arguments: str | None) -> str:
+    """point_at's required 'marks' argument: the lines he wants drawn on their picture."""
+    return _tool_string(arguments, "marks", MAX_MARKS_CHARS)
 
 
 def _tool_project(arguments: str | None) -> str:
@@ -2771,6 +2929,10 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
     # silent branches, and the recording is still watching while it is up.
     if call.name == "write_on_scratchpad":
         return "putting that on the screen…"
+    # Seen for about as long as it takes to read, and that is right: the mark is up before the
+    # line has finished typing, and the mark is the answer.
+    if call.name == "point_at":
+        return "pointing…"
     if call.name == "edit_photo":
         return _phrase(
             "editing the picture to", _tool_string(args, "request", MAX_QUERY_CHARS),
