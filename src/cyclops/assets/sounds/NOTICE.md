@@ -39,8 +39,9 @@ turned into silence with a line on stderr rather than played at the wrong speed,
 
 ## The cues that arrived on their own
 
-`cyclops_iris_open.wav`, `cyclops_iris_close.wav`, `cyclops_gears.wav` and
-`cyclops_button_pressed.wav` came one at a time rather than out of the pack above, and are cut by
+`cyclops_iris_open.wav`, `cyclops_iris_close.wav`, `cyclops_locked_in.wav`,
+`cyclops_gears.wav` and `cyclops_button_pressed.wav` came one at a time rather than out of the
+pack above, and are cut by
 `tools/cut_cues.py`, whose `CUTS` table is the whole of what is per-cue: a master, whether the
 cue is that master backwards, how much faster it is played, and how much of the front of it is
 kept.
@@ -54,6 +55,15 @@ be certain of.
 `eye.COVER_OPEN_S` is set to it to the sample, so the lid on the panel takes exactly as long to
 wind clear as the sound of it does. `tests/test_sfx.py` holds the two together - re-cut this and
 that constant has to move with it.
+
+`cyclops_locked_in.wav` is the bolt at the far end of that shut - the cover reaching the rim and
+stopping, which is the one movement on this panel that arrives somewhere. Sounded
+`eye.COVER_SHUT_S` after the close begins rather than on any event, because nothing on the box
+knows the cover has stopped; `cyclops.kiosk.Kiosk._render` is the only clock that does. It is cut
+at `speed=1.25` - the master is a slow low clunk, and a quarter faster is where the pitch stops
+reading as a door and starts reading as something the size of his lid. Nothing has to be re-timed
+if it is re-cut: the close cue is 0.15 s shorter than the movement, so this always has the
+speaker to itself.
 
 `cyclops_gears.wav` is gears turning over: a long press landing, sounded once and from the
 button's own thread (`cyclops.kiosk.Kiosk._toggle_session`). Both directions - starting a session

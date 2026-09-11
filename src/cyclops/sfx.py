@@ -168,6 +168,14 @@ SAMPLES: dict[str, str] = {
     # before it can hear.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
+    # The bolt going home, at the far end of the shut. The close is the one movement on this
+    # panel that arrives somewhere - the cover reaches the far rim and stops - and a mechanism
+    # that size coming to rest in silence is the tell that nothing was ever driving it. Sounded
+    # off the arrival rather than the press (cyclops.kiosk._render), which is why it is the one
+    # cue here scheduled rather than fired: COVER_SHUT_S after the lid starts across him. It
+    # cannot tread on the close - that cue is 0.15 s shorter than the movement - and it shares
+    # the iris's rank so that the lid, and the lid alone, owns the speaker until it is home.
+    "locked_in": "cyclops_locked_in.wav",
     # Gears turning over: the long press landing. Both directions - starting a session and
     # ending one are the same mechanism engaging, and what tells them apart is the lid that
     # follows, which is the half you can watch. Sounded once and not repeated, because a
@@ -202,7 +210,7 @@ SAMPLES: dict[str, str] = {
 # is said about it, and a sound that arrives for some of that movement and not the rest reads as
 # a fault in the box rather than as a cue being polite. Everything else here is an event that has
 # already happened and can wait to be mentioned.
-RANK: dict[str, int] = {"iris_open": 1, "iris_close": 1}
+RANK: dict[str, int] = {"iris_open": 1, "iris_close": 1, "locked_in": 1}
 
 SILENCE = np.zeros(0, dtype=np.int16)  # what a cue that would not load amounts to
 SILENCE.setflags(write=False)

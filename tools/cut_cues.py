@@ -63,6 +63,10 @@ CUTS: dict[str, Cut] = {
     # looped - a mechanism you hear start and stop has done its work, one that keeps going is
     # stuck.
     "gears": Cut("cyclops_gears.wav"),
+    # The bolt going home: sounded as the cover arrives, not while it travels. The master is a
+    # slow, low clunk with a long ring under it; a quarter faster is where the pitch stops
+    # reading as a door and starts reading as something the size of his lid latching.
+    "locked_in": Cut("cyclops_locked_in.wav", speed=1.25),
     # The rising note under a finger on the button. Unlike every other cue here its length is
     # not the master's: it has a window to fill and the window is LONG_PRESS_S - PRESS_GRACE_S,
     # the stretch between a finger settling and the hold landing.

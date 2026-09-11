@@ -66,6 +66,7 @@ from .config import (  # noqa: E402
     ConfigError,
     load_settings,
 )
+from .eye import COVER_SHUT_S  # noqa: E402
 from .overlay import (  # noqa: E402
     CANCEL,
     HEAT,
@@ -191,6 +192,10 @@ SESSIONS_SCREEN, SYSTEM_SCREEN = "/sessions", "/"
 PAGE_ROUTE_S = 0.5  # one poll of /api/panel, plus a little: how long the page has to route itself
 
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
+LOCK_GRACE_S = 0.25  # how late the bolt at the end of a shutting lid may still be sounded. A
+# frame at TARGET_FPS is 33 ms and this loop is not the only thing that can hold it up: the admin
+# page takes the panel and parks the loop entirely, so a lid that arrives behind one would
+# otherwise be heard landing whenever that page is closed, minutes later and from nowhere.
 SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
 SHUTDOWN_JOIN_S = 20.0  # on exit, a stopping session may still be muxing and naming itself
 BROWSERS = ("chromium-browser", "chromium")  # whichever of the two names this Pi installed
@@ -469,6 +474,10 @@ class Kiosk:
         self._awake: bool | None = None  # whether a session was up last frame, which is the one
         # fact the iris answers to. None until the first frame, so a kiosk that starts up idle
         # does not announce a lid that was already shut before anybody was in the room to hear it.
+        self._lock_at = 0.0  # when the shutting lid arrives home, and the one cue on this box
+        # that is scheduled rather than fired: the sound of a bolt going home belongs to the end
+        # of a movement that takes eye.COVER_SHUT_S, and nothing else on the panel knows the
+        # cover has stopped. Zero when no lid is travelling. See the close, below.
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._framing = ""  # the framing just tapped to, and...
         self._framing_until = 0.0  # ...when its name comes off the middle of the screen
@@ -1919,7 +1928,17 @@ class Kiosk:
             # rather than a frame behind it - see VoiceAgent._on_session_ready.
             if self._awake is not None and awake != self._awake and not awake:
                 self._cues.play("iris_close")
+                self._lock_at = started + COVER_SHUT_S
+            if awake:
+                self._lock_at = 0.0  # he woke back up mid-travel; nothing is going to land
             self._awake = awake
+            # ...and the far end of it: the cover reaching the rim and stopping. A frame late at
+            # worst, which is what this can be and the press could not - the press is answering a
+            # finger, and this is answering a picture the loop is drawing itself.
+            if self._lock_at and started >= self._lock_at:
+                late, self._lock_at = started - self._lock_at, 0.0
+                if late <= LOCK_GRACE_S:
+                    self._cues.play("locked_in")
 
             # What the ring is saying. Handed over every frame because what it reflects is a
             # state rather than an event; it only reaches the pin when the answer changes.
