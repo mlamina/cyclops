@@ -1336,16 +1336,24 @@ class Kiosk:
             self._admin_busy.clear()
             self._page_busy.clear()
 
-    def _watch_page(self, shown_at: float) -> None:
+    def _watch_page(self, shown_at: float, hold_s: float = 0.0) -> None:
         """Wait for the page to ask to close, for the browser to die, or for the hard cap.
 
         The page cannot uncover or cover anything itself, so its Close button drops
         :data:`~cyclops.config.BROWSER_CLOSE_FLAG` and the decision is taken here, on the thread
         that put it up. The note counts only if it was written after we uncovered the page, so
         one left behind by an earlier round can never take it away the moment it appears.
+
+        ``hold_s`` raises the cap for something that is meant to run long. :data:`ADMIN_MAX_S`
+        is a guard against a panel stranded on a page nobody closed, which is the right rule
+        for a picture and the wrong one for a video: a twenty-six-minute video would go dark
+        eleven minutes before the end of it. Only :func:`cyclops.panel.offer_video` asks for
+        this, and it asks through :func:`cyclops.panel.hold_s` rather than by putting a number
+        in the payload, because nothing between the offer and the page looks inside the payload.
+        The cap is raised, never removed - a video that stalls still has to give the panel back.
         """
         proc = self._browser
-        deadline = time.monotonic() + ADMIN_MAX_S
+        deadline = time.monotonic() + max(ADMIN_MAX_S, hold_s)
         drawn: object = object()  # the sketch frame we last photographed; never equal to a wire
         settle = 0.0
         while proc is not None and proc.poll() is None:
@@ -1521,7 +1529,9 @@ class Kiosk:
             if panel.announces():
                 self._cues.play("shown")
             print("· picture on the panel", flush=True)
-            self._watch_page(shown_at)
+            # Read before the watch and not after: panel.withdraw() in the finally does not
+            # clear it, but a second offer arriving mid-watch would.
+            self._watch_page(shown_at, panel.hold_s())
         finally:
             # Cleared before the withdraw, so nothing can offer a picture into the gap between
             # this one coming down and the panel coming back.
@@ -1530,6 +1540,11 @@ class Kiosk:
             # The drawing goes before the panel comes back, so the page has already switched
             # itself off the picture by the time it is visible again behind the window.
             panel.withdraw()
+            # The session is told the glass is its own again, on the thread that knows it
+            # first. Only a video cares - it is what puts the microphone back, because
+            # nothing else in this box can tell the difference between a narrator talking
+            # and the person in the room talking. See SessionController.panel_closed.
+            self.controller.panel_closed(time.time() - shown_at if shown else 0.0)
             if shown:
                 self._retake.set()
                 print("· picture closed", flush=True)

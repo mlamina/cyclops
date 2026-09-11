@@ -177,6 +177,7 @@ class Settings:
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
     diagrams: bool = True  # offer draw_diagram, and keep what it draws in photos/
     recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
+    video: bool = True  # offer watch_video, which plays a YouTube video full-screen on the panel
     imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
     scratchpad: bool = True  # offer write_on_scratchpad, so he can write on the panel himself
     cut: bool = True  # offer the Make a video button, and render what it asks for (cyclops.cut)
@@ -379,6 +380,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         projects=_flag("CYCLOPS_PROJECTS", Settings.projects),
         diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
         recall=_flag("CYCLOPS_RECALL", Settings.recall),
+        video=_flag("CYCLOPS_VIDEO", Settings.video),
         imagine=_flag("CYCLOPS_IMAGINE", Settings.imagine),
         scratchpad=_flag("CYCLOPS_SCRATCHPAD", Settings.scratchpad),
         cut=_flag("CYCLOPS_CUT", Settings.cut),

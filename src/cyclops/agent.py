@@ -27,10 +27,11 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import arguments, imagine, panel, point, recall, session, sfx, sketch, tasks
+from . import arguments, imagine, panel, point, recall, session, sfx, sketch, tasks, youtube
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
+from .watch import Watch, WatchError, find_video
 from .webcam import Capture
 
 if TYPE_CHECKING:  # the projects package pulls in pydantic_ai; the tools import it when called
@@ -68,6 +69,25 @@ MAX_PROJECT_NAME_CHARS = 80
 MAX_PROJECT_TAGLINE_CHARS = 300  # a little under store.MAX_TAGLINE_CHARS
 MAX_PROJECT_NOTES_CHARS = 4000  # a project page, not a card's worth of them
 SEARCH_TIMEOUT_S = 14.0  # above search.SEARCH_TIMEOUT_S, so its own message wins
+# A search, a ranking, a metadata fetch and a localising call, end to end. Measured at 4.2-8.8 s
+# over three real requests, so this is a backstop against a wedged connection rather than a plan.
+# Above watch.PICK_TIMEOUT_S for the reason SEARCH_TIMEOUT_S is above its own inner timeout: the
+# inner message says more about what went wrong, so it has to be the one that wins.
+WATCH_TIMEOUT_S = 30.0
+# How long the panel may keep a video before taking itself back. Long enough for anything worth
+# watching at a bench, short enough that a stalled one cannot strand the screen. The kiosk's own
+# cap is fifteen minutes, which is right for a picture nobody dismissed and would cut a long
+# video off in the middle - see cyclops.panel.hold_s.
+VIDEO_HOLD_S = 60 * 60.0
+# Under this it was the wrong video: somebody glanced at it and pressed the screen. Over it they
+# watched, which is the only signal here for whether it was worth keeping on the card.
+#
+# Ten and not twenty. The first real session watched a boom-arm video for seventeen seconds and
+# said "that was nice, thank you" - and twenty threw it away. A wrong video is obvious in two or
+# three seconds, so the gap between a glance and a watch is much nearer ten, and the cost of the
+# two errors is not symmetric: a reference nobody wanted is one row on a tab, and a reference
+# somebody wanted and did not get is gone for good.
+WATCHED_S = 10.0
 MAX_DATA_TAB_CHARS = 40  # a sheet title Excel will take; see projects.data.MAX_TITLE_CHARS
 MAX_DATA_KEY_CHARS = 80  # a label someone looks a value up by, not a sentence
 MAX_DATA_VALUE_CHARS = 200
@@ -119,6 +139,37 @@ WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
             }
         },
         "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+WATCH_VIDEO_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "watch_video",
+    "description": (
+        "Play a YouTube video on the screen, starting at the part that answers them. Use it "
+        "when somebody wants to be SHOWN a procedure rather than told one: a repair, a "
+        "technique, a tool being used, an assembly step - anything where watching hands do it "
+        "beats hearing it described. Say a few words out loud first, because finding it takes "
+        "a few seconds. Do not use it for a fact, a number, a spec or a price - web_search "
+        "answers those in one sentence and this would take the whole screen to do it. Do not "
+        "use it for something on their own bench that they can simply show you. While it "
+        "plays the microphone is off and they cannot hear you, so say what you want to say "
+        "before you call this, not after."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "request": {
+                "type": "string",
+                "description": (
+                    "What they want to be shown, as they would say it - the job, and the step "
+                    "of it if they named one. 'bleeding shimano hydraulic brakes', 'honing a "
+                    "chisel on a diamond stone'."
+                ),
+            }
+        },
+        "required": ["request"],
         "additionalProperties": False,
     },
 }
@@ -1126,6 +1177,15 @@ class VoiceAgent:
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
         self.drawing_active = False  # True while a picture is being made (UI 'drawing')
+        # A video holds the panel and talks over the room. There is no echo cancellation in this
+        # box - the EchoGuard knows about the Speaker and knows nothing about Chromium - so while
+        # one is up the microphone is held shut, or the model hears the narrator and answers him.
+        # Opened again by panel_closed, which is the kiosk saying the glass is ours.
+        self.mic_shut = False
+        self._video: Watch | None = None  # what is on the panel, while one is
+        self._video_at = 0.0
+        self._video_thumb = b""
+        self._mic_shut_until = 0.0  # the backstop on mic_shut; see _pump_mic
         # The last picture in play, which is what edit_photo works on. See :class:`Panel`.
         # Not "what is on the glass" any more: a snapped photo is handed over without going up,
         # so the two parted company the day the shutter stopped filling the screen.
@@ -1351,6 +1411,7 @@ class VoiceAgent:
             },
             "tools": [
                 WEB_SEARCH_TOOL,
+                *_video_tools(self.settings),
                 *_diagram_tools(self.settings),
                 *_scratchpad_tools(self.settings),
                 *_sketch_tools(self.settings),
@@ -1569,6 +1630,21 @@ class VoiceAgent:
     async def _pump_mic(self) -> None:
         assert self.mic is not None
         async for chunk in self.mic.chunks():
+            # Read and dropped, not left unread: the queue has to keep draining or the room
+            # arrives half a minute late once the video is over. See mic_shut and panel_closed.
+            #
+            # The deadline is the backstop, and it is here rather than nowhere because the
+            # failure it guards against is the worst one this feature can produce: a box that
+            # has stopped listening and gives no sign of it. panel_closed is what normally
+            # opens the mic again, and it is reached from the kiosk's thread - so anything that
+            # loses that hop (a swap that outlives its session, a kiosk that went down with the
+            # panel up) would leave this shut for good. Past the deadline it opens itself.
+            if self.mic_shut and time.monotonic() < self._mic_shut_until:
+                continue
+            if self.mic_shut:
+                self._log("[tool] the mic was still shut when the video's time ran out")
+                self.mic_shut = False
+                self.mic.drain()
             encoded = base64.b64encode(chunk).decode("ascii")
             await self.conn.input_audio_buffer.append(audio=encoded)
 
@@ -1885,6 +1961,9 @@ class VoiceAgent:
         if call.name == "recall":
             await self._run_recall(call)
             return
+        if call.name == "watch_video":
+            await self._run_watch_video(call)
+            return
         # Every name still gets an output. A tool the model invents, or one it remembers from a
         # session config that has since changed, must be answered or it waits for it forever.
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
@@ -1936,6 +2015,122 @@ class VoiceAgent:
             self._log(f"[tool] search failed: {output['error']}", stream=sys.stderr)
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
+
+    async def _run_watch_video(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Find a video, seek it to the part that answers them, and hand the panel to it.
+
+        The whole of what comes back to the model is a title, a channel and a clock time -
+        about thirty tokens. The transcript it was chosen from runs to thousands, and it stays
+        inside :mod:`cyclops.watch`: a Realtime conversation pays again for everything in it on
+        every turn that follows, so the one thing this must never do is bring one home.
+
+        No staleness check, unlike :meth:`_run_web_search`. A late search answer is worth
+        reporting as late, because the model can still decide not to read it out. A late video
+        has already taken the screen by the time anyone could decide anything, and the way to
+        dismiss it is the way to dismiss everything else here: press the panel.
+        """
+        request = _tool_request(call.arguments)
+        self._log(f"[tool] watch_video {request!r}")
+        if not request:
+            await self._send_tool_output(call.call_id, {"ok": False, "error": "empty request"})
+            await self._request_response()
+            return
+
+        self.search_active = True  # the panel says SEARCHING; it is the same kind of waiting
+        try:
+            async with asyncio.timeout(WATCH_TIMEOUT_S):
+                found = await find_video(request, self.settings)
+                # Fetched here rather than inside watch.find, because it is the one part of
+                # this that is not a decision: a picture to hold the screen while the video
+                # starts, and the only thing between a video and a black stretch of recording.
+                thumb = await asyncio.to_thread(youtube.fetch, found.thumb)
+        except TimeoutError:
+            output = {
+                "ok": False,
+                "error": f"finding a video took longer than {WATCH_TIMEOUT_S:.0f}s",
+            }
+        except WatchError as exc:
+            output = {"ok": False, "error": str(exc)}
+        except Exception as exc:  # never leave the model waiting for a tool result
+            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        else:
+            output = await self._play(found, thumb)
+        finally:
+            self.search_active = False
+
+        if not output["ok"]:
+            session.note("watched", request=request, error=output["error"])
+            self._log(f"[tool] watch_video failed: {output['error']}", stream=sys.stderr)
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    async def _play(self, found: Watch, thumb: bytes) -> dict:
+        """Put one video on the panel, and shut the microphone for as long as it is up."""
+        shown = await asyncio.to_thread(
+            lambda: panel.offer_video(found.stream, found.title, found.start, thumb, VIDEO_HOLD_S)
+            and panel.show()
+        )
+        if not shown:
+            # No panel at all (uv run cyclops), or the admin page is up and somebody is reading
+            # it. Withdraw, or this offer is what the next tap uncovers onto - see panel.py.
+            await asyncio.to_thread(panel.withdraw)
+            return {
+                "ok": False,
+                "error": "there is no screen free to play it on right now",
+                "title": found.title,
+            }
+        self._video = found
+        self._video_thumb = thumb
+        self._video_at = time.monotonic()
+        self.mic_shut = True
+        # Past the panel's own cap, so this only ever fires when that one did not.
+        self._mic_shut_until = self._video_at + VIDEO_HOLD_S + 60.0
+        self._log(f"[tool] watching {found.id} at {found.clock}: {found.title!r}")
+        return {
+            "ok": True,
+            "title": found.title,
+            "channel": found.channel,
+            "start": found.clock,
+            "note": (
+                "It is playing on the screen now, and they cannot hear you over it. Say "
+                "nothing at all until they speak to you again."
+            ),
+        }
+
+    def panel_closed(self, seconds: float) -> None:
+        """The panel is ours again: open the microphone, and keep the video if it was watched.
+
+        Reached from the kiosk's own thread through
+        :meth:`cyclops.ui.SessionController.panel_closed`, which is why this is a plain method
+        rather than a coroutine - it arrives by ``call_soon_threadsafe`` onto a loop that is
+        carrying audio, so it must not block and must not await.
+
+        Every picture comes through here and only a video has anything to do with it.
+        ``seconds`` is how long the glass was theirs, and that is the one honest signal for
+        whether this was the right video: somebody who pressed the screen after four seconds
+        was telling us it was not, and a reference kept from that is clutter on the card.
+        """
+        self.mic_shut = False
+        if self.mic is not None:
+            # Everything the narrator said while the gate was shut is still queued behind this.
+            # Dropped rather than let through, for the reason _listen gives about the chime.
+            self.mic.drain()
+        found, self._video = self._video, None
+        if found is None:
+            return
+        watched = seconds if seconds > 0 else time.monotonic() - self._video_at
+        if watched < WATCHED_S:
+            self._log(f"[tool] video let go after {watched:.0f}s: {found.title!r}")
+            return
+        self._log(f"[tool] keeping {found.id} after {watched:.0f}s: {found.title!r}")
+        session.keep_video(
+            video_id=found.id,
+            title=found.title,
+            channel=found.channel,
+            start=found.start,
+            seconds=round(watched),
+            thumb=self._video_thumb,
+        )
 
     # ---- drawing one ----
 
@@ -3018,6 +3213,18 @@ def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [DRAW_DIAGRAM_TOOL] if settings.diagrams else []
 
 
+def _video_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The tool that plays a video, or nothing. Left out rather than refused, as ever.
+
+    A flag of its own because it is the most invasive thing in the list. Everything else that
+    takes the screen gives it back the instant somebody presses it, and is silent while it has
+    it; this one holds the panel for minutes, talks over the room the whole time, and shuts the
+    microphone for the duration. ``CYCLOPS_VIDEO=0`` is a way to find out what the box is like
+    without it that is not a revert.
+    """
+    return [WATCH_VIDEO_TOOL] if settings.video else []
+
+
 def _scratchpad_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The one tool that writes on the panel, or nothing. Left out rather than refused, as ever.
 
@@ -3106,6 +3313,11 @@ def _tool_name(arguments: str | None) -> str:
 def _tool_description(arguments: str | None) -> str:
     """track_project's 'description' argument - the sentence that makes the project findable."""
     return _tool_string(arguments, "description", MAX_PROJECT_TAGLINE_CHARS)
+
+
+def _tool_request(arguments: str | None) -> str:
+    """The video tool's required 'request' argument."""
+    return _tool_string(arguments, "request", MAX_QUERY_CHARS)
 
 
 def _tool_query(arguments: str | None) -> str:
@@ -3260,6 +3472,10 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return _phrase("looking up", _tool_data_query(args), "looking that up")
     if call.name == "recall":
         return _phrase("looking for", _tool_query(args), "looking through your things")
+    # Up for the few seconds before the browser covers this strip, which is most of the wait:
+    # the picture only lands once a video has been chosen, fetched and seeked.
+    if call.name == "watch_video":
+        return _phrase("finding a video of", _tool_request(args), "finding a video")
     if call.name == "forget_data":
         return _phrase("forgetting", _tool_key(args), "rubbing that out")
     return "working…"  # a tool the model invented; it still gets an answer, so it still gets a line

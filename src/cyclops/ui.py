@@ -174,6 +174,29 @@ class SessionController:
             return False  # the loop closed in the moment between the guard and the call
         return True
 
+    def panel_closed(self, seconds: float) -> bool:
+        """Tell the agent the glass is its own again, and for how long it was not.
+
+        The same shape as :meth:`show_photo` - snapshot under the lock, then dispatch - and
+        called from the kiosk thread that took the panel back, in the one place that learns it
+        first. Every picture calls this; only a video does anything with it.
+
+        It exists because there is no acoustic echo cancellation in this box. The EchoGuard
+        knows about :class:`cyclops.audio.Speaker` and nothing else, so while Chromium is
+        playing a video the microphone hears a narrator and the model hears the user: it would
+        answer whoever was talking on the screen. The agent holds the mic shut for the duration
+        and this is the edge that opens it again.
+        """
+        with self._lock:
+            loop, agent = self._loop, self._agent
+        if loop is None or agent is None or loop.is_closed() or not loop.is_running():
+            return False
+        try:
+            loop.call_soon_threadsafe(agent.panel_closed, seconds)
+        except RuntimeError:
+            return False  # the loop closed in the moment between the guard and the call
+        return True
+
     def interrupt(self) -> bool:
         """Stop what is being said now. False when there was nothing to stop.
 

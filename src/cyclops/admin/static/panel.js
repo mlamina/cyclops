@@ -5,7 +5,10 @@
    offer file, fetched by id and dropped into #stage as an <img>. A scratchpad is markup the model
    wrote itself, and goes into #stage as an <iframe> with a document of its own; see SCRATCHPAD_HEAD.
    A sketch is neither: it is already on screen in a renderer that has been running since page
-   load, and all that arrives here is permission to stop covering it. See sketch.js.
+   load, and all that arrives here is permission to stop covering it. See sketch.js. A video is a
+   <video> on a URL YouTube signed a moment ago, seeked before it is uncovered, and it is the only
+   thing here that makes a sound - which is why it is also the only one that has to be stopped by
+   hand on the way out.
 
    This file used to be four times longer and carried a symbol library: what a "resistor" or a
    "header" looked like, laid out on the page by JointJS from a JSON scene graph. Diagrams are
@@ -41,6 +44,12 @@ stage.addEventListener('pointerdown', (event) => {
   // picture, and forgetting it would have watch() decide it is new and paint it straight back -
   // a picture flashing back onto a screen you just dismissed it from. It is cleared for real when
   // the withdraw lands, or replaced when a genuinely different picture arrives.
+  // Pause before anything else, and pause rather than drop(). On the panel the withdraw has to
+  // travel to the kiosk and come back, which is the better part of a second - silent for a
+  // picture, but a video would keep talking behind the kiosk's own window after it was covered
+  // again. drop() here instead would hit the flash-back the note above describes.
+  const playing = stage.querySelector('video');
+  if (playing) playing.pause();
   if (!KIOSK) drop();
   window.__leave();
 });
@@ -130,6 +139,51 @@ async function shot(url) {
   try { await img.decode(); } catch (e) { /* show it anyway: a slow decode beats nothing */ }
   stage.textContent = '';
   stage.appendChild(img);
+}
+
+// How long to wait for a video to be ready before uncovering anyway. The kiosk gives the whole
+// poll-and-paint round PAINT_WAIT_S = 8 s, and the poll has already eaten some of it.
+const CLIP_READY_MS = 4000;
+
+// A video on the stage, already seeked to the second worth watching. Same promise as shot():
+// do not come back until there is something worth uncovering onto - here that means seeked and
+// not merely loaded, because uncovering on a loaded-but-unseeked video shows second zero for a
+// beat and then jumps, which reads as a bug rather than as a start.
+async function clip(url, start) {
+  const video = document.createElement('video');
+  video.className = 'clip';
+  video.playsInline = true;
+  video.preload = 'auto';
+  // Unmuted on purpose, and it works because the kiosk's Chromium runs with
+  // --autoplay-policy=no-user-gesture-required - the tap that asked for this landed on the
+  // kiosk's own window and the page never saw it. Elsewhere (a phone on the LAN) the policy
+  // still applies, so take the browser's refusal and play it muted rather than not at all.
+  video.muted = false;
+  video.src = url;
+  stage.textContent = '';
+  stage.appendChild(video);
+  await new Promise((ready) => {
+    let done = false;
+    const settle = () => { if (!done) { done = true; ready(); } };
+    // Seek from the metadata event: currentTime before the duration is known is discarded.
+    video.addEventListener('loadedmetadata', () => {
+      if (start > 0 && start < video.duration) video.currentTime = start;
+      else settle();  // nothing to wait for; canplay is enough
+    }, { once: true });
+    video.addEventListener('seeked', settle, { once: true });
+    video.addEventListener('canplay', () => { if (start <= 0) settle(); }, { once: true });
+    video.addEventListener('error', settle, { once: true });
+    setTimeout(settle, CLIP_READY_MS);
+  });
+  try {
+    await video.play();
+  } catch (e) {
+    video.muted = true;
+    try { await video.play(); } catch (e2) { /* a still frame beats a blank stage */ }
+  }
+  // It ran out on its own. Nobody is going to press a screen they have stopped watching, so the
+  // panel takes itself back rather than sitting on a stopped last frame for fifteen minutes.
+  video.addEventListener('ended', () => { if (!KIOSK) drop(); window.__leave(); }, { once: true });
 }
 
 // A scratchpad on the stage, in a document of its own. Same promise as shot(): do not come back
@@ -255,6 +309,13 @@ async function show(id) {
     // did before raster() existed. A single grim capture from the kiosk once it settles is the
     // cheap fix if it turns out to matter.
     document.body.classList.add('sketching');
+  } else if (found.video) {
+    // Before found.image, and that order is load-bearing. A video offer carries a thumbnail
+    // under `image` as well - cyclops.panel.offer_video explains why: still.of_panel reads
+    // that key and nothing else, so without it the session recording is black for as long as
+    // the video runs. Test the picture first and the panel paints the title card and never
+    // starts anything. See tests/test_video.py, which pins this order.
+    await clip(found.video, found.start || 0);
   } else if (found.image) {
     await shot(found.image);
   }
@@ -279,6 +340,11 @@ async function show(id) {
 function drop() {
   window.__drawing(false);
   document.body.classList.remove('photo', 'paper', 'sketching');
+  // Paused before it is dropped. Detaching the element is enough in practice, but "in practice"
+  // is doing a lot of work there and the failure would be a voice still talking from a screen
+  // showing something else.
+  const playing = stage.querySelector('video');
+  if (playing) playing.pause();
   stage.textContent = '';
 }
 

@@ -13,6 +13,15 @@
    colour rather than a second one. */
 .stage .shot { display: block; width: 100%; height: 100%; object-fit: contain; }
 
+/* A video is the same shape as a picture and is fitted the same way: contain, because a 16:9
+   video cropped to fill an 800x480 panel loses the top and bottom of whatever somebody is being
+   shown how to do, and a workbench demonstration is filmed with the work in the middle.
+
+   No `pointer-events: none` here, unlike .scratchpad and .sketch. A <video> with no `controls`
+   attribute has nothing of its own to take a press, so the #stage listener hears it and one press
+   still puts it away - the same gesture as every other thing on this screen. */
+.stage .clip { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
+
 /* ...and a scratchpad the model wrote is the other thing it holds, in a document of its own (see
    SCRATCHPAD_HEAD in panel.js). Three of these four declarations are load-bearing:
 

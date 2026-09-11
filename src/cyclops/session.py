@@ -60,7 +60,7 @@ from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import card
+from . import card, slug
 from .config import ConfigError, Settings, load_settings
 from .record import SessionRecorder, mux
 
@@ -81,6 +81,7 @@ PAGE_NAME = card.PAGE_NAME
 SUMMARY_NAME = card.SUMMARY_NAME
 RECEIPT_NAME = card.RECEIPT_NAME
 PHOTOS = card.PHOTOS
+VIDEOS = card.VIDEOS
 PARTS = card.PARTS
 VIDEO = card.VIDEO
 STAMP = card.STAMP
@@ -132,6 +133,66 @@ def note(kind: str, **fields: Any) -> None:
     live = current()
     if live is not None:
         live.event(kind, **fields)
+
+
+def keep_video(
+    *, video_id: str, title: str, channel: str, start: int, seconds: int, thumb: bytes
+) -> str:
+    """Keep a watched video on the card as a reference. The name it was kept under, or "".
+
+    A reference is a picture in ``videos/`` and a line in the sidecar beside it, which is the
+    same shape a photograph and its caption already have - and that is the whole trick. Being
+    a real file on the card is what lets everything downstream treat it as a thing rather than
+    as a special case: ``cyclops.recall`` indexes it, ``projects.store`` copies it onto a
+    project, and the page that lists a project's pictures can list these the same way.
+
+    What is *not* kept is a URL. A signed googlevideo link is dead in six hours, so what goes
+    down is the id and the second, and playing it again costs one metadata fetch - see
+    :func:`cyclops.watch.restream`.
+
+    A no-op outside a session, like :func:`note`, so the caller needs no check. Never raises:
+    a reference that cannot be written is a bookmark nobody gets, which is not a reason to
+    take a conversation down.
+    """
+    live = current()
+    if live is None:
+        return ""
+    name = f"{time.strftime('%H-%M-%S')}_{slug.slugify(title) or 'video'}.jpg"
+    try:
+        live.videos_dir.mkdir(parents=True, exist_ok=True)
+        if thumb:
+            card.write_bytes(live.videos_dir / name, thumb)
+        kept = _read_json(live.videos_dir / card.VIDEOS_NAME)
+        kept[name] = {
+            "id": video_id,
+            "title": title,
+            "channel": channel,
+            "start": start,
+            "seconds": seconds,
+        }
+        card.write_text(live.videos_dir / card.VIDEOS_NAME, json.dumps(kept, indent=1))
+    except OSError as exc:
+        print(f"· could not keep the video ({exc})", file=sys.stderr, flush=True)
+        return ""
+    live.event(
+        "watched",
+        file=f"{VIDEOS}/{name}",
+        id=video_id,
+        title=title,
+        channel=channel,
+        start=start,
+        seconds=seconds,
+    )
+    return name
+
+
+def _read_json(path: Path) -> dict:
+    """A sidecar as a dict, or an empty one. A file we cannot parse is a file we rewrite."""
+    try:
+        found = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
 
 
 class SessionLog:
@@ -188,6 +249,10 @@ class SessionLog:
     @property
     def photos_dir(self) -> Path:
         return self.dir / PHOTOS
+
+    @property
+    def videos_dir(self) -> Path:
+        return self.dir / VIDEOS
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -754,6 +819,8 @@ def _render_record(record: dict) -> str:
         return f"**Cyclops** ({at}){mark}\n{record.get('text', '')}"
     if kind == "photo":
         return _render_photo(record, at)
+    if kind == "watched":
+        return _render_watched(record, at)
     if kind == "search":
         query = record.get("query", "")
         if record.get("error"):
@@ -850,6 +917,20 @@ def _render_data(record: dict, at: str) -> str:
     hits = record.get("hits", 0)
     found = f"{hits} found" if hits else "nothing written down"
     return f'*Looked up a value* ({at}) — "{query}" in **{project}** → {found}'
+
+
+def _render_watched(record: dict, at: str) -> str:
+    """A video that was put on the panel, with the picture of it that was kept."""
+    title = record.get("title", "")
+    if record.get("error"):
+        request = record.get("request", "")
+        return f'*Looked for a video* ({at}) — "{request}" → {record["error"]}'
+    where = f"{record.get('start', 0) // 60}:{record.get('start', 0) % 60:02d}"
+    line = f"*Watched* ({at}) — “{title}” by {record.get('channel', '')}, from {where}"
+    file = str(record.get("file", ""))
+    if not file:
+        return line
+    return f"{line}\n\n![{title}]({file})"
 
 
 def _render_photo(record: dict, at: str) -> str:

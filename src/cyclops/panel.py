@@ -6,10 +6,11 @@ one small file plus a flag. What is to be shown is written to :data:`cyclops.con
 the panel's page polls ``/api/panel`` every 400 ms, sees an id it has not drawn, fetches the
 payload and paints it; :func:`show` asks the kiosk to uncover the browser once it has.
 
-There are three doors, and they differ only in what they leave in the file. :func:`offer_image`
-carries a JPEG, :func:`offer_scratchpad` carries markup, and :func:`offer_sketch` carries nothing
-at all - its content arrives over the companion stream instead, because it is still being written
-when the offer is made. The page branches on which key is there and on nothing else; nothing
+There are four doors, and they differ only in what they leave in the file. :func:`offer_image`
+carries a JPEG, :func:`offer_scratchpad` carries markup, :func:`offer_sketch` carries nothing at
+all - its content arrives over the companion stream instead, because it is still being written
+when the offer is made - and :func:`offer_video` carries a URL to play and a picture to hold the
+screen until it does. The page branches on which key is there and on nothing else; nothing
 between here and there - not ``_leave``, not ``/api/picture``, not the kiosk - looks inside the
 payload at all. Whatever is up, a press anywhere puts it away.
 
@@ -79,6 +80,7 @@ def show() -> bool:
 
 
 _announce = False  # whether the picture waiting for the panel should make a sound; see announces
+_hold_s = 0.0  # how long the panel should keep what is waiting; see hold_s
 
 
 def announces() -> bool:
@@ -104,6 +106,20 @@ def announces() -> bool:
     return _announce
 
 
+def hold_s() -> float:
+    """How long the kiosk should leave what is waiting on the glass, or 0 for the usual.
+
+    A module global read by the kiosk, exactly as :func:`announces` is and for the argument
+    it makes: whoever offers and whoever shows are the same process, so there is nothing here
+    that can get out of step with what is on the glass - and reading it out of the offer file
+    instead would mean something between here and the page looking inside the payload, which
+    is the one thing this module promises nothing does.
+
+    Zero from every door but :func:`offer_video`. A picture has nothing to run out.
+    """
+    return _hold_s
+
+
 def offer_image(jpeg: bytes, title: str, *, announce: bool = False) -> bool:
     """Leave a picture where the panel's page will find it. False if it could not be left.
 
@@ -124,8 +140,9 @@ def offer_image(jpeg: bytes, title: str, *, announce: bool = False) -> bool:
     for - see :func:`cyclops.imagine.for_panel`.
     """
     url = JPEG_URL + base64.b64encode(jpeg).decode("ascii")
-    global _announce
+    global _announce, _hold_s
     _announce = announce
+    _hold_s = 0.0
     return _leave({"title": title, "image": url})
 
 
@@ -150,8 +167,9 @@ def offer_scratchpad(html: str) -> bool:
     anything can appear, which is the one cost this feature exists to avoid. The session log names
     it from the words in what he wrote (see ``cyclops.session._render_record``).
     """
-    global _announce
+    global _announce, _hold_s
     _announce = False
+    _hold_s = 0.0
     return _leave({"scratchpad": html})
 
 
@@ -172,9 +190,37 @@ def offer_sketch() -> bool:
 
     Silent, for the same reason a scratchpad is: the model is still talking when it lands.
     """
-    global _announce
+    global _announce, _hold_s
     _announce = False
+    _hold_s = 0.0
     return _leave({"sketch": True})
+
+
+def offer_video(url: str, title: str, start_s: int, thumb: bytes, hold: float) -> bool:
+    """Leave a video for the panel to play, from ``start_s`` seconds in. False if it could not.
+
+    The fourth door, and the only one that makes a noise for a while after it is opened.
+
+    ``thumb`` rides along under ``image``, the same key :func:`offer_image` uses, and that is
+    not a convenience - it is what keeps a video out of the session's recording as a black
+    stretch. The kiosk paints nothing while the browser is uncovered, so the recorder asks
+    :func:`cyclops.still.of_panel` what is on the glass, and that reads ``image`` and nothing
+    else. Without a picture here a ten-minute video is ten minutes of black in ``video.mp4``.
+    The page therefore has to check ``video`` *before* ``image``, or it paints the title card
+    and never starts anything: see the branch order in ``admin/static/panel.js``.
+
+    ``hold`` is read back by the kiosk through :func:`hold_s`, not by anything in between.
+    The panel normally takes itself back after fifteen minutes, which is right for a picture
+    nobody dismissed and wrong for a twenty-six-minute video: it would go dark in the middle.
+
+    It announces. A video was asked for out loud and took several seconds to arrive, which is
+    the same case a drawing makes - see :func:`announces`.
+    """
+    global _announce, _hold_s
+    _announce = True
+    _hold_s = hold
+    picture = JPEG_URL + base64.b64encode(thumb).decode("ascii") if thumb else ""
+    return _leave({"title": title, "video": url, "start": max(0, int(start_s)), "image": picture})
 
 
 def keep_still(url: str, ident: str) -> bool:

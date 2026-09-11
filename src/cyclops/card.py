@@ -64,6 +64,13 @@ RECEIPT_NAME = "project.md"  # written into the session folder by projects/store
 # one in Photos/ and another in any folder you dropped pictures into.
 CAPTIONS_NAME = "captions.json"
 PHOTOS = "photos"
+# Videos somebody was shown and watched. A folder of its own rather than a corner of photos/:
+# a thumbnail there would be counted as a photograph by the end-of-session tally, offered to
+# edit_photo as something to redraw, and filed onto a project card as a picture of the bench.
+# It is none of those - it is a bookmark with a picture on it. Its sidecar names what it points
+# at, the same shape and for the same reason as CAPTIONS_NAME beside it.
+VIDEOS = "videos"
+VIDEOS_NAME = "videos.json"
 PARTS = "parts"
 VIDEO = "video.mp4"
 # The edited video somebody asked for, and the two files it is made from - see cyclops.cut.

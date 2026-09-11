@@ -186,7 +186,7 @@ async def _moment(client: AsyncOpenAI, request: str, video: youtube.Video) -> in
     )
 
 
-async def find(request: str, settings: Settings) -> Watch:
+async def find_video(request: str, settings: Settings) -> Watch:
     """One video and the second to start it at, for a request said out loud.
 
     Raises :class:`WatchError` with a sentence meant for the model to relay, never a
