@@ -1547,3 +1547,147 @@ def test_every_pod_is_centred_and_packed(width: int, height: int) -> None:
         left, right = ov.pods[tags].spine[3][0], ov.pods[tags].spine[2][0]
         assert left + ov.rail_w / 2 < box.x and box.right < right - ov.rail_w / 2
     assert ov.row + ov.font_read.size / 2 < ov.pod.bottom - ov.rail_w / 2, "the clock hits the rail"
+
+
+# ---------------------------------------------------------------- the pilot lamp
+
+
+def _lamp_run(ov: overlay.Overlay, frame: np.ndarray, out: int) -> np.ndarray:
+    """The pixel *out* px to the right of the lamp's middle, on its own row. Colour only: the
+    chrome comes back RGBA and an opaque alpha outranks every channel a comparison cares about.
+    """
+    cx, cy = (round(v) for v in ov.pilot)
+    return frame[cy, cx + out][:3].astype(int)
+
+
+def _lamp_lit(state: str, near: float = 8.0) -> float:
+    """A phase near *near* that is a whole number of this state's blink, so the lamp is on.
+
+    The same care ``test_the_rec_tag_is_red`` takes and for the same reason: a blinking lamp
+    sampled at an arbitrary phase is a coin toss, and a test about colour that lands in the dark
+    half of a duty cycle fails for a reason that has nothing to do with what it is asking.
+    """
+    pilot = overlay.LAMPS[state]
+    if not pilot.period_s:
+        return near
+    # The MIDDLE of the lit half, not the top of the cycle. Landing on the top is exact only in
+    # arithmetic: 20 * 0.41 comes out a hair under 8.2, which lands at the far end of the
+    # previous period and reads as the dark half.
+    return (near // pilot.period_s) * pilot.period_s + pilot.period_s * pilot.duty / 2.0
+
+
+def _lamp_middle(ov: overlay.Overlay, state: str) -> np.ndarray:
+    """The lamp's middle pixel in *state*, settled and caught alight."""
+    shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+    _settle(ov, **shown)
+    frame = ov.render(phase=_lamp_lit(state), **shown)  # type: ignore[arg-type]
+    return _lamp_run(ov, frame, 0)
+
+
+def test_the_pilot_lamps_light_never_reaches_either_dial() -> None:
+    """Its tile is a square and both hitboxes are squares, so this is arithmetic rather than
+    brightness - and it has to be, because ``test_neither_instrument_changes_with_the_session``
+    compares those two boxes BYTE for byte across every state. A tile overlapping one would fail
+    that test even out where its glow is numerically zero, so the reach is capped off the dials'
+    own edges in the constructor rather than typed. This is that cap, asserted.
+    """
+    for width, height in SIZES:
+        ov = _panel(width, height)
+        cx, cy = (round(v) for v in ov.pilot)
+        reach = ov.pilot_reach
+        for name, box in (("volume", ov.hitboxes.volume), ("heat", ov.hitboxes.heat)):
+            apart = max(box.x - (cx + reach), (cx - reach) - box.right,
+                        box.y - (cy + reach), (cy - reach) - box.bottom)
+            assert apart > 0, f"{width}x{height}: the lamp's tile is inside the {name} hitbox"
+
+
+def test_the_pilot_lamp_is_dark_asleep_and_lit_once_something_is_happening() -> None:
+    """The whole of what this lamp is for, and the reason IDLE is a row rather than an omission:
+    with the fitting unlit, the lamp coming on IS the news that the box is doing something.
+    """
+    ov = _panel()
+    dark = _lamp_middle(ov, overlay.IDLE)
+    lit = _lamp_middle(ov, overlay.LISTENING)
+    assert lit.max() > dark.max() + 40, "a live session did not light the lamp"
+
+
+def test_the_pilot_lamp_wears_the_state_in_its_colour() -> None:
+    """A green session, an amber transition, a blue background job and a red fault are four
+    different lamps and not four brightnesses of one - which is the argument the border makes
+    about being read across a workshop, made again in the one corner it does not reach.
+    """
+    ov = _panel()
+    seen = {state: tuple(_lamp_middle(ov, state)) for state in
+            (overlay.LISTENING, overlay.CONNECTING, overlay.WORKING, overlay.ERROR)}
+    assert len(set(seen.values())) == len(seen), f"two states light the same lamp: {seen}"
+    # ...and each is actually the hue the table asked for, rather than merely distinct.
+    for state, got in seen.items():
+        want = overlay.LAMPS[state].colour
+        assert want is not None and got.index(max(got)) == want.index(max(want)), \
+            f"{state} lit {got}, which is not {want}'s colour"
+
+
+def test_the_pilot_lamp_lights_the_plate_it_is_screwed_to() -> None:
+    """The half Marco asked for by name. Measured out on the bare plate past the fitting, where
+    there is nothing of the lamp's own to confuse it with - if only the bead changed, this is a
+    coloured dot on a panel rather than something switched on in a room.
+    """
+    ov = _panel()
+    beyond = ov.pilot_r + max(3, round(4 * ov.scale))
+    for state in (overlay.IDLE, overlay.LISTENING):
+        shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+        _settle(ov, **shown)
+        frame = ov.render(phase=8.0, **shown)  # type: ignore[arg-type]
+        if state == overlay.IDLE:
+            dark = _lamp_run(ov, frame, beyond)
+        else:
+            lit = _lamp_run(ov, frame, beyond)
+    assert lit.sum() > dark.sum() + 12, "the lamp throws no light onto the plate around it"
+
+
+def test_the_pilot_lamp_leaves_the_brass_brass() -> None:
+    """Light lands ON the housing; it does not repaint it. The ring's crown and its face are
+    turned towards the room and cannot see the lens at all, so only the flank falling into the
+    seat may take any colour. Built the other way - the lamp's colour added right across the
+    ring - the brass measured 74 green dead and 217 lit, which is not a lit fitting but a green
+    one, and three channels saturating together is a section going flat.
+    """
+    ov = _panel()
+    crown = round(ov.pilot_r * (1.0 + overlay.PILOT_BEZEL_IN) / 2)
+    frames = {}
+    for state in (overlay.IDLE, overlay.LISTENING):
+        shown = dict(state=state, level=0.0, elapsed=None if state == overlay.IDLE else 12.0)
+        _settle(ov, **shown)
+        frames[state] = ov.render(phase=8.0, **shown)  # type: ignore[arg-type]
+    dark = _lamp_run(ov, frames[overlay.IDLE], crown)
+    lit = _lamp_run(ov, frames[overlay.LISTENING], crown)
+    assert abs(int(lit[1]) - int(dark[1])) <= 8, \
+        f"the lamp repainted its own housing: {dark} -> {lit}"
+
+
+def test_a_blinking_lamp_blinks_and_a_steady_one_does_not() -> None:
+    """The two shapes the table can ask for, told apart by the only thing that separates them.
+    A square wave is a thing being switched and steady is a thing that is on; a row that claimed
+    one and drew the other would pass every other test here.
+    """
+    for state, moves in ((overlay.CONNECTING, True), (overlay.LISTENING, False)):
+        pilot = overlay.LAMPS[state]
+        period = pilot.period_s or 1.0
+        levels = {pilot.level(period * step / 16.0) for step in range(16)}
+        assert (len(levels) > 1) is moves, f"{state} is {'not ' if moves else ''}moving"
+
+
+def test_no_lamp_period_locks_to_the_panels_own() -> None:
+    """Two things blinking on one panel that fall into step read as one mechanism rather than
+    two. The record light, the caption's cursor, its breath and the border's are the four clocks
+    already running, and this is the arithmetic that keeps a lamp off all of them.
+    """
+    theirs = (overlay.REC_PERIOD_S, overlay.CURSOR_PERIOD_S,
+              overlay.BREATH_PERIOD_S, overlay.RIM_PERIOD_S)
+    for state, pilot in overlay.LAMPS.items():
+        if not pilot.period_s:
+            continue
+        for other in theirs:
+            ratio = max(pilot.period_s, other) / min(pilot.period_s, other)
+            assert abs(ratio - round(ratio)) > 0.12, \
+                f"{state}'s lamp at {pilot.period_s}s runs in step with {other}s"

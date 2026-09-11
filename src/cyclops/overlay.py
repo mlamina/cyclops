@@ -251,6 +251,94 @@ HALOS = {
     DRAWING: WHITE,
     ERROR: RED,
 }
+
+
+# The pilot lamp on the small mount's plate: a brass fitting with a glass dome in it, lit from
+# inside, in the state's own colour. See :meth:`Overlay._draw_pilot` for the fitting and
+# :meth:`Overlay._pilot_tile` for the light.
+#
+# It says nothing the border does not already say, and that is the point of where it is rather
+# than an argument against it: the border, the eye and the terminal are all on the left or round
+# the edge, and the bottom-right corner is the one place on this panel a glance lands with nothing
+# in it. What it adds over the border is a SHAPE - a border can only be a colour, and a lamp can
+# hurry, breathe or hold still - which is the difference between "he is up" and "he is up and
+# hunting".
+#
+# Two shapes and no more. A square wave is a thing being SWITCHED, which is what the record
+# light already argues at length (see REC_PERIOD_S), and STEADY is a lamp that is simply on,
+# which is the commonest thing a lamp is. There was a breath here for the live states and it is
+# gone: a session that is up is not a thing that fades in and out, and Marco's call was that
+# while he is live the lamp just burns.
+STEADY, BLINK = "steady", "blink"
+
+
+@dataclass(frozen=True)
+class Pilot:
+    """What the lamp is doing in one state: a colour, a shape, and how fast.
+
+    ``colour`` of None is a dark lamp, and that is a state rather than an omission: asleep, the
+    fitting is there and unlit, so the lamp coming on is itself the news that something is
+    happening. It is also what keeps a sleeping panel still - see
+    ``tests/test_eye.py::test_only_two_things_move_while_he_is_asleep``, which allows the eye and
+    the caption to move at IDLE and nothing else at all.
+    """
+
+    colour: tuple[int, int, int] | None
+    shape: str = STEADY
+    period_s: float = 0.0
+    duty: float = 0.5  # BLINK: the lit share of one period. Under a half is a flash with a rest
+
+    def level(self, phase: float) -> float:
+        """How brightly the lamp burns at *phase*, 0 dark .. 1 full."""
+        if self.colour is None:
+            return 0.0
+        if self.shape == BLINK and self.period_s > 0.0:
+            return 1.0 if phase % self.period_s < self.period_s * self.duty else 0.0
+        return 1.0
+
+
+# One row per state, and three things the lamp can be: out, hurrying in amber, or burning.
+#
+# A live session is one look and not five. The states a conversation actually passes through -
+# listening, speaking, looking at a photograph, searching, drawing - all wear the same bright
+# phosphor green and hold still, because what the lamp is answering there is "he is up", and
+# five shades of the same answer is five things to learn for one fact. The eye is the part of
+# this panel that says what KIND of up, in far more detail than a lamp could, and the terminal
+# spells it out underneath. This one burns.
+#
+# That green is GREEN and not the mood's own white on purpose - it is the phosphor the rest of
+# the chrome is drawn in, so a lit lamp reads as this panel's own hardware rather than as a
+# fifth accent colour. The other three rows keep MOODS' colours, because amber, blue and red
+# each mean something the green cannot.
+#
+# The periods are coprime-ish with the panel's other clocks - 1.0 (REC), 1.2 (the caption's
+# cursor), 2.4 (the caption's breath), 3.7 (the border's). Two things blinking on one panel that
+# fall into step read as one mechanism rather than two, and the fix is arithmetic rather than
+# taste; test_no_lamp_period_locks_to_the_panels_own is what keeps it that way.
+LAMPS = {
+    # Dark, and the only row here that draws nothing. Marco's call, and the strongest version of
+    # what this lamp is for: with the fitting unlit, the lamp coming on IS the signal.
+    IDLE: Pilot(None),
+    # Amber and hurrying, both ends of a session. Half a second is about as fast as a lamp can
+    # blink and still read as deliberate rather than as a fault.
+    STARTING: Pilot(AMBER, BLINK, 0.44),
+    CONNECTING: Pilot(AMBER, BLINK, 0.44),
+    STOPPING: Pilot(AMBER, BLINK, 0.7),  # the same transition, run backwards and slower
+    # ...and then a session is up, and the lamp simply burns. Five states, one look: the
+    # conversation is live and that is the whole of what this is saying.
+    LISTENING: Pilot(GREEN),
+    SPEAKING: Pilot(GREEN),
+    LOOKING: Pilot(GREEN),
+    SEARCHING: Pilot(GREEN),
+    DRAWING: Pilot(GREEN),
+    # Blue, and a short flash with a long rest rather than an even blink: nobody is in a
+    # conversation, and a lamp ticking over in the corner is exactly what that is.
+    WORKING: Pilot(BLUE, BLINK, 1.57, duty=0.22),
+    # Red and dead still. The fault is the one thing on this panel that does not move - see
+    # test_only_the_broken_face_holds_still - and a nagging red light would be this panel
+    # shouting where every other part of it has agreed to say it once, in colour.
+    ERROR: Pilot(RED, STEADY),
+}
 # There is no word for the state any more. There was one for a long time - ASLEEP, LISTENING,
 # OPTICS - in a corner of its own, and what finally argued it off the panel is that three other
 # things were already saying it better: the border's colour, which is readable across a workshop;
@@ -2023,6 +2111,94 @@ BTN_SPACING = 52.0  # along the ramp, either side of its middle
 VOLUME, HEAT = "volume", "heat"
 SWITCHES = (VOLUME, HEAT)
 
+# The pilot lamp, on the plate under the ramp rather than bolted through it like the two dials.
+# It is not a control and never becomes one - see LAMPS - so it wants the plate, which is the one
+# part of this mount nothing has to be able to hit.
+#
+# Measured rather than chosen: with both dials, the ramp, the foot rail, the corner webbing and
+# the machined surround taken out, the empty plate in this corner is Rect(720, 380, 61, 61) and
+# the largest circle that fits it is r=35 at (744, 414). PILOT_DEPTH puts the lamp within two
+# pixels of that centre while being a fact about the mount rather than two magic numbers: it is
+# on the perpendicular bisector of the ramp, which is also what makes it sit square between the
+# knob and the gauge instead of nearer one of them.
+#
+# The r=35 is a ceiling on the FITTING PLUS ITS LIGHT, and it is load-bearing twice over. The
+# circle is bounded by the two dials' own discs, and tests/test_eye.py asserts that both dial
+# hitboxes are byte-identical in every state - so a glow that reaches either one is a glow that
+# breaks a test, and rightly: light from a state lamp landing on a volume knob would make the
+# knob look like it meant something.
+PILOT_DEPTH = 60.0  # in from the ramp's centreline, reference px
+PILOT_R = 28.0  # the brass fitting's outer edge...
+PILOT_BEZEL_IN = 0.66  # ...and the share of it inside the bezel's mouth, where the glass starts
+PILOT_SEAT = 0.12  # the shadowed reveal the dome is set down into, as a share of the radius
+# The ring's section, across its width from the glass out - his collar's, at a quarter of the
+# size. See Overlay._pilot_bezel: Marco asked for the brass round the eye rather than a second
+# idea about brass, so these track COLLAR_* wherever the scale lets them.
+PILOT_ROLL = 0.40  # how much of the ring's width rolls over at the outer edge...
+PILOT_STEP = 2.0  # ...and reference px of its inner flank going dark into the seat
+PILOT_CROWN = 0.40  # sin of the tilt the face has reached where its roll begins - COLLAR_CROWN
+PILOT_FACETS = 3  # ...and the flats it is cut in. A turned bezel of this size gets three
+PILOT_GROOVE = 0.45  # the turned line just inside the roll, the one lathe mark that is not a scale
+# The graduation. The TOOL is shared with every other scale on this panel (see _graduation, and
+# TICK_W, which is not an argument); the PITCH is not, and must not be. The collar cuts 120 marks
+# at a radius near a hundred - five and a half pixels a mark - and the same count here would be
+# one and a half, which is a texture rather than a scale. This is the count that lands on the
+# collar's own arc-length pitch, so the two rings read as indexed by one machine.
+PILOT_TICKS = 28
+PILOT_LONG = 4  # one in four deeper, so it reads in quarters
+PILOT_TICK = 0.34  # how far a short one reaches down the face - COLLAR_TICK
+PILOT_TICK_LONG = 0.72
+PILOT_TARNISH = 0.6  # the slow drift in the brass itself - COLLAR_TARNISH
+PILOT_SCRATCH = 0.34  # how pale the sheet's hairlines show where they cross - COLLAR_SCRATCH
+PILOT_TERMINATOR = 0.72  # how far under the room's own light the far edge of the roll goes
+PILOT_BLOWN = 0.80  # the one line where the roll carries the lamp's own image, not the metal's
+PILOT_BLOWN_AT = 0.45  # of the roll, how far in from the outer edge that line sits
+PILOT_BLOWN_W = 0.85  # ...its sigma in px...
+PILOT_BLOWN_ARC = 4.5  # ...and how squarely a pixel must face the lamp to carry any of it, which
+# is what keeps it an arc on the lit side instead of a ring all the way round
+PILOT_BLOWN_WANDER = 1.4  # px its radius drifts. Nothing is turned perfectly and a line that is
+# the same distance from the edge the whole way round is a drawn one
+PILOT_LIFT = 2.0  # how far the fitting stands off the plate, for the shadow it drops
+PILOT_SHADOW = 0.62
+PILOT_WEAR = 0.35  # brass on a bench machine is handled brass
+# The dome, and the light in it.
+PILOT_DOME = 0.80  # the cap's tilt at its rim: 1 is a hemisphere, this is the low dome Marco picked
+PILOT_FALL = 0.7  # how fast the light inside gives out towards that rim, and it is under one on
+# purpose. A lit lens is BRIGHT nearly all the way to the glass and then stops at the seat; the
+# falloff is what rounds it, not what shapes it. At 1.5 the lens dimmed by half across its own
+# face and the lamp read as a smudge rather than as something switched on - which is the half of
+# "blurry" that is not the blur. What gives the edge is the seat, not the gradient.
+PILOT_CORE = 0.55  # the hot middle, as a share of the glass's radius
+PILOT_CORE_A = 0.95  # ...and how solid it is at full brightness
+PILOT_BODY_A = 0.88  # the rest of the dome, which is lit glass rather than the filament
+PILOT_GLARE_AT = 0.42  # where the bench lamp's own reflection sits, out towards it
+PILOT_GLARE_REACH = 0.30  # ...and how wide. A coin of glass gives back a spot, not a wash
+PILOT_GLARE_A = 0.70  # white, whatever colour the lamp is burning: a reflection is the room's
+PILOT_RIM_A = 0.34  # the cut edge of the glass, lit from inside all the way round
+PILOT_GLASS_A = 0.93  # how solid the unlit bead is. Not 1: a dead lamp is dark glass, not a hole
+PILOT_BLOWN = 0.55  # where the knurl's crown carries the lamp's own image rather than the brass's
+PILOT_SEAT_DARK = 0.62  # the undercut the bead is set down into, under the ring standing over it
+# ...and the light it throws, which is the half Marco asked for by name. One falloff off the
+# edge of the glass, and it is ANALYTIC rather than a blurred mask. This went through two blurs
+# first - PIL's, which is uint8 and quantised the outer halo to six distinct values, and then a
+# separable Gaussian written out in float, which fixed the banding and did not fix the softness.
+# The softness was never the blur's resolution. It was that a blurred mask can only be laid OVER
+# the metal, and a coloured layer at half alpha takes a knurl's bright flank and its dark flank
+# to the same green. A falloff in closed form can be evaluated at the supersampled grid the rest
+# of the part is built on and ADDED to the metal's own shading, which keeps every edge the ring
+# had. See Overlay._pilot_tile.
+PILOT_THROW = 11.0  # how far past the glass the light carries, reference px...
+PILOT_THROW_REACH = 2.2  # ...and how many of those are worth building a tile for. Past this the
+# falloff is under a level and the corner's own cap usually bites first anyway
+PILOT_ON_METAL = 0.26  # ...how much of it lands on the ring's CHAMFER, which is the only face
+# turned inwards far enough to see the lens. The roll and the land face the room and get none:
+# at 0.62 across the whole ring the brass measured 74 green dead and 217 lit, which is not a lit
+# fitting but a green one, and three channels saturating together is a section going flat...
+PILOT_ON_PLATE = 0.30  # ...and how much pools on the plate outside the fitting, where there is
+# no shading of ours underneath to add to and a soft layer is the honest thing
+PILOT_STEPS = 16  # brightnesses a tile is cached at. Every row of LAMPS is STEADY or BLINK, so
+# in practice this is one tile per colour; it is here against the day a row wants to fade
+
 # Both dials sweep 270 degrees with the gap at the bottom, which is where the gap is on every knob
 # anybody has ever turned and every gauge anybody has ever read. PIL measures clockwise from three
 # o'clock, so that is 135 (down-left, empty) through the top and round to 405 (down-right, full),
@@ -2278,6 +2454,14 @@ DIAL_SS = 3  # the face's fields are drawn this many times over and boxed down
 _DIAL_LIGHT: dict[tuple[int, float], np.ndarray] = {}  # see Overlay._dial_light: one per window
 _DIAL_APERTURE: dict[tuple[int, float], np.ndarray] = {}  # ...and Overlay._dial_aperture
 _DIAL_FONT: dict[int, ImageFont.FreeTypeFont] = {}  # the reading's face, one per size
+# The pilot lamp, one tile per window size and appearance - a colour of None being the dead one.
+# Module-level rather than per-instance, which is the same bargain _DIAL_LIGHT strikes and for a
+# measured reason: a lit appearance is a whole fitting rebuilt with light in it (see
+# Overlay._pilot_tile) and costs about fourteen milliseconds, and the panel builds every colour
+# up front so that a state change is never the thing that drops a frame. Held per instance that
+# was four builds per Overlay, which the test suite constructs a great many of - six seconds of
+# it. Nothing here depends on anything but the geometry and the colour, so one is enough.
+_PILOT_TILES: dict[tuple[int, int, tuple[int, int, int] | None, int], Image.Image] = {}
 
 # The reticle: four corners on the lens axis and nothing else. It was a cross with graduations
 # for about an hour, which is exactly as long as it took somebody to say it looked like a gun
@@ -3484,6 +3668,27 @@ class Overlay:
             name: self.brackets["br"].on_ramp(offset)
             for name, offset in zip(SWITCHES, (-spacing, spacing), strict=True)
         }
+        # ...and the pilot lamp on the plate under them, square between the two. Off the ramp
+        # like they are, so it moves with the mount rather than sitting at a pixel someone typed.
+        self.pilot_r = max(4, px(PILOT_R))
+        self.pilot = self.brackets["br"].on_ramp(0.0, px(PILOT_DEPTH))
+        # How far its light carries past the fitting. The tile is built at this reach, so this is
+        # the one number that decides whether the glow can reach a dial - see PILOT_DEPTH.
+        #
+        # Whichever carries further, the light or the shadow the fitting drops, and then capped
+        # at the room the corner actually has. The cap is measured off the two dials rather than
+        # typed: a hitbox is a square round a disc, so what the lamp has to clear is the near
+        # EDGE of each square, and the panel asserts in test_eye.py that both of those squares
+        # are byte-identical in every state. A tile overlapping one would fail that test even
+        # where its light is numerically zero, because the assertion is on bytes not brightness.
+        lift = max(1.0, PILOT_LIFT * scale)
+        spread = math.ceil(max(
+            self.pilot_r + lift * (material.SHADOW_DROP + 3 * material.SHADOW_SOFT),
+            self.pilot_r * PILOT_BEZEL_IN + PILOT_THROW_REACH * max(1.0, PILOT_THROW * scale),
+        )) + 1
+        room = min(self.pilot[0] - (self.switches[VOLUME][0] + self.btn_r),
+                   self.pilot[1] - (self.switches[HEAT][1] + self.btn_r))
+        self.pilot_reach = max(self.pilot_r + 1, min(spread, math.floor(room) - 1))
         # ...and the column a drag on the knob opens, standing in the knob's own column so that a
         # hand travelling up from it stays beside what it is setting rather than across the panel.
         # It stops short of the disc it came out of: the two are one control, and a track running
@@ -3583,6 +3788,14 @@ class Overlay:
         self._surround = self._build_surround()
         self._glass = self._build_glass()
         self._chrome_base = self._build_chrome()
+        # Every colour the lamp can burn, built now rather than on the state change that first
+        # asks for one. A lit appearance is a whole fitting (see _pilot_tile) and costs about
+        # fourteen milliseconds here, which is half a frame on this machine and more than a whole
+        # one on the Pi - so built lazily it is a dropped frame at the exact moment somebody has
+        # just pressed the button and is watching. There are four of them, they are 85 px square,
+        # and this is the constructor that already builds the whole chassis.
+        for lamp in {p.colour for p in LAMPS.values() if p.colour is not None}:
+            self._pilot_tile(lamp, PILOT_STEPS)
         # One engine per window size: it owns the geometry, and it remembers which mood it is
         # easing out of, which is why it is built here and not per frame.
         # Where the places he looks actually are, from where he is bolted. :mod:`cyclops.eye`
@@ -4352,6 +4565,11 @@ class Overlay:
         # every time the state changes, and they belong here with the rail they are bolted to.
         for name in SWITCHES:
             self._draw_instrument(layer, name)
+        # ...and the pilot lamp on the plate under them, last because it stands on everything
+        # else in that corner: the ribs, the foot rail's shadow and the mount's own plate are all
+        # what it is screwed down to. Unlit here - the light in it is the only part that knows
+        # what the box is doing, and that is a tile the frame composites. See _draw_pilot.
+        self._draw_pilot(layer)
         return layer
 
     def _chrome(self, tags: int) -> Image.Image:
@@ -5792,6 +6010,10 @@ class Overlay:
         # read the other, so the knob answers a finger by going white under it and the gauge
         # answers the tap that opens its screen the same way.
         self._draw_hands(layer, d, volume, temp_c, pressed)
+        # ...and the light in the pilot lamp beside them, which is the fourth thing on this panel
+        # that says what the box is doing and the only one in that corner. Before the slider, so
+        # a column coming up under a thumb covers it the way it covers everything else there.
+        self._draw_pilot_light(layer, state, phase)
         if turning and volume is not None:
             self._draw_slider(d, volume)
         # The reticle, which is on the lens axis unless something is being pointed at. It used to
@@ -7777,6 +7999,277 @@ class Overlay:
                            (HEAT, self._needle(temp_c, pressed == HEAT))):
             cx, cy = (round(v) for v in self.switches[name])
             layer.alpha_composite(tile, (cx - self.dial_span, cy - self.dial_span))
+
+    # ------------------------------------------------------------------ the pilot lamp
+
+    def _draw_pilot(self, layer: Image.Image) -> None:
+        """The lamp with nothing burning in it, baked into the chrome with the two dials.
+
+        The dead lamp is the one appearance that is true whatever the box is doing, so it is the
+        one that belongs here. Every lit appearance is the same build with light in it - see
+        :meth:`_pilot_tile`, which this is a call to.
+        """
+        self._paste_pilot(layer, self._pilot_tile(None, 0))
+
+    def _paste_pilot(self, layer: Image.Image, tile: Image.Image) -> None:
+        """One pilot tile onto *layer*, clipped if the window is small enough to push it off."""
+        cx, cy = (round(v) for v in self.pilot)
+        left, top = cx - self.pilot_reach, cy - self.pilot_reach
+        crop = tile.crop((max(0, -left), max(0, -top), tile.width, tile.height))
+        layer.alpha_composite(crop, (max(0, left), max(0, top)))
+
+    def _pilot_tile(self, colour: tuple[int, int, int] | None, step: int) -> Image.Image:
+        """The whole fitting at one appearance: dead if *colour* is None, else burning.
+
+        **The metal is rebuilt with the light in it rather than having the light laid over it,
+        and that is the whole of this method's design.** The first cut of this baked one dead
+        fitting and composited a coloured glow on top, which is what a lamp looks like in a
+        drawing program and not what one looks like on a bench: a flat layer at half alpha
+        replaces half of every pixel under it, so the knurl's bright flank and its dark flank
+        converge on the same green and the ring goes soft. Marco called it blurry twice, and
+        both times it was this - not the resolution, which was always the dials' own.
+
+        So the lamp's light is an argument to the metal's shading, added in the light's own
+        colour the way his collar adds its specular, and the section survives intact: a knurl
+        under a green lamp is a green knurl with all of its contrast, not a green disc.
+
+        The cost of that is a build per appearance instead of one build ever, and it is affordable
+        for exactly one reason - the table only asks for full brightness or none (see LAMPS, where
+        every row is STEADY or BLINK), so this is at most one tile per colour. *step* is kept in
+        the key against the day a row wants to fade, which would make it PILOT_STEPS per colour
+        and still small.
+        """
+        key = (self.width, self.height, colour, step)
+        tile = _PILOT_TILES.get(key)
+        if tile is not None:
+            return tile
+        reach, r = self.pilot_reach, self.pilot_r
+        r_in = r * PILOT_BEZEL_IN
+        dist, ux, uy = self._dial_grid(reach)
+        level = 0.0 if colour is None else max(0.0, min(1.0, step / PILOT_STEPS))
+        lamp = np.asarray(colour or (0, 0, 0), np.float32)
+        # How much of the lamp's own light reaches each sample. One radial falloff off the edge
+        # of the glass, and analytic rather than a blurred mask: a Gaussian over a disc has to be
+        # computed at the tile's own resolution and then quantised into it, and both of those
+        # cost sharpness that this cannot. It is also simply the honest shape - a disc of lit
+        # glass throwing light onto the metal ringing it falls off with distance from the glass.
+        throw = max(1.0, PILOT_THROW * self.scale)
+        glow = np.exp(-np.clip((dist - r_in) / throw, 0.0, None) ** 2) * level
+        sun = float(self._sunlight(*(round(v) for v in self.pilot), 1, 1)[0, 0])
+
+        tile = Image.new("RGBA", (2 * reach + 1, 2 * reach + 1), (0, 0, 0, 0))
+        disc = np.clip(0.5 - (dist - r) * DIAL_SS, 0.0, 1.0)
+        _, cover = self._boxed(np.zeros((*disc.shape, 3), np.float32), disc)
+        lift = max(1.0, PILOT_LIFT * self.scale)
+        # The shadow it drops, and the pool it throws beyond its own edge. The pool goes over the
+        # shadow because a lamp lights the plate it is standing on more than its own body shades
+        # it; both are outside the fitting, which covers them.
+        shade = material.cast(cover, lift) * PILOT_SHADOW
+        tile.alpha_composite(material.to_image(np.zeros((*cover.shape, 3), np.float32), shade))
+        if level > 0.0:
+            pool = self._boxed_field(glow * (dist > r)) * PILOT_ON_PLATE
+            tile.alpha_composite(material.to_image(
+                np.broadcast_to(lamp, (*pool.shape, 3)), np.clip(pool, 0.0, 1.0)))
+        tile.alpha_composite(self._dial_layer(
+            *self._pilot_bead(dist, reach, r_in, lamp, level)))
+        tile.alpha_composite(self._dial_layer(
+            *self._pilot_bezel(dist, ux, uy, r, r_in, sun, lamp, glow)))
+        _PILOT_TILES[key] = tile
+        return tile
+
+    def _pilot_bead(self, dist: np.ndarray, reach: int, r_in: float, lamp: np.ndarray,
+                    level: float) -> tuple[np.ndarray, np.ndarray]:
+        """The glass dome: dark with the room in it, plus whatever is burning behind it.
+
+        A low dome and not a hemisphere, which is what Marco picked: the glass stands a little
+        proud of the brass and turns away at the rim rather than rolling over. ``PILOT_DOME`` is
+        that tilt at the edge, and the cosine of it does two jobs - it darkens the rim, because a
+        surface turned away shows less of what is under it, and it is the same field the light
+        inside uses to decide how much escapes.
+
+        Dead, it is deliberately not black: a bead of glass over a cold filament is near enough
+        the screen's own green-black, where a hole is what it looks like at full alpha with
+        nothing in it, and a hole is what this corner already had.
+
+        Lit, the light is added to that rather than drawn over it, so the dome's own shading and
+        the room's reflection are both still in the result. The reflection is laid down last for
+        that reason: it is the room's light and not the lamp's, so it is the same spot at the
+        same brightness whether the thing is burning amber, green or not at all, and a lens whose
+        highlight vanished when it lit would stop reading as glass.
+        """
+        lit = self._pilot_glare(dist, reach, r_in)
+        nz = self._pilot_dome(dist, r_in)
+        cover = np.clip(0.5 - (dist - r_in) * DIAL_SS, 0.0, 1.0)
+        screen = np.asarray(SCREEN, np.float32)
+        dead = np.asarray(material.STEEL_DARK, np.float32)
+        rgb = screen + (dead - screen) * (1.0 - nz)[..., None]
+        if level > 0.0:
+            core = np.clip(1.0 - dist / max(PILOT_CORE * r_in, 1e-3), 0.0, 1.0) ** 2
+            body = nz ** PILOT_FALL
+            emit = np.clip(PILOT_CORE_A * core + PILOT_BODY_A * body, 0.0, 1.0) * level
+            rgb = rgb + lamp * emit[..., None]
+            # ...and the cut edge of the glass where it goes under the ring, lit from inside all
+            # the way round because a phosphor has no bearing. It is what makes the join a reveal
+            # rather than a drawn line, the argument the dials' crystals make about their own.
+            seat = np.clip(1.0 - (r_in - dist) / max(0.5, PILOT_SEAT * self.pilot_r), 0.0, 1.0)
+            rgb = rgb + lamp * (PILOT_RIM_A * level * seat * seat)[..., None]
+        rgb = rgb + (np.asarray(WHITE, np.float32) - rgb) * np.clip(
+            PILOT_GLARE_A * lit, 0.0, 1.0)[..., None]
+        return np.minimum(rgb, 255.0), PILOT_GLASS_A * cover
+
+    @staticmethod
+    def _pilot_glare(dist: np.ndarray, reach: int, r_in: float) -> np.ndarray:
+        """The bench lamp's own reflection on the bead, 0..1 over the tile.
+
+        ``material.glare`` addresses samples by index, exactly as the dials' glass does: the
+        bead's centre is at ``(reach + 0.5) * DIAL_SS - 0.5`` and the reflection a fraction of it
+        out towards the lamp. A coin of glass under a bench lamp gives back a spot, not a wash.
+        """
+        lx, ly = material.lamp_2d()
+        size = dist.shape[0]
+        middle = (reach + 0.5) * DIAL_SS - 0.5
+        at = (middle + lx * PILOT_GLARE_AT * r_in * DIAL_SS,
+              middle + ly * PILOT_GLARE_AT * r_in * DIAL_SS)
+        return material.glare(size, size, at, max(1.0, PILOT_GLARE_REACH * r_in * DIAL_SS),
+                              ambient=0.0)
+
+    @staticmethod
+    def _pilot_dome(dist: np.ndarray, r_in: float) -> np.ndarray:
+        """How square to the viewer the dome's glass is, 1 in the middle .. 0 edge-on.
+
+        One field, two users - the bead's own shading and the share of the light inside that
+        escapes - which is what keeps a lit lamp and a dead one the same piece of glass.
+        """
+        tilt = np.clip(dist / max(r_in, 1e-3), 0.0, 1.0) * PILOT_DOME
+        return np.sqrt(np.maximum(1.0 - tilt * tilt, 0.0))
+
+    def _pilot_bezel(self, dist: np.ndarray, ux: np.ndarray, uy: np.ndarray, r: float,
+                     r_in: float, sun: float, lamp: np.ndarray, glow: np.ndarray
+                     ) -> tuple[np.ndarray, np.ndarray]:
+        """The brass ring, turned and graduated - his collar's section at a quarter of the size.
+
+        Marco asked for the brass round the eye rather than something new, and this is that part's
+        own vocabulary rather than an imitation of it: a face cut in flats to a crown, a lathe's
+        turned groove just inside the roll, a graduation indexed round it, the sheet's own
+        hairlines showing pale where they cross, and one blown line where the roll mirrors the
+        bench lamp. Same constants where the size allows, so the two read as parts off one lathe -
+        see :meth:`_draw_collar`, which this is the small cousin of.
+
+        **The knurl it replaces was the wrong part.** A knurl is what you put on something a hand
+        turns; nobody turns a pilot lamp. The graduation is what a machined bezel on an instrument
+        panel actually carries, and it is what the only other brass on this panel carries.
+
+        **The pitch is the one thing not copied.** ``_graduation``'s docstring is firm that the
+        tool is shared and never the spacing: the collar cuts 120 marks at a radius of about a
+        hundred, which is five and a half pixels a mark. Cut at this radius the same count would
+        be one and a half, which is not a scale but a texture. PILOT_TICKS is chosen to land on
+        the collar's own arc-length pitch instead, so the two rings look indexed by one machine.
+
+        **What the lamp inside does to the brass stays on the inner flank.** This is the part
+        Marco sent back twice. Light thrown at the whole ring is not what a pilot lamp does - the
+        crown and the face are turned towards the room and cannot see the lens at all, and
+        colouring them turned a brass fitting into a coloured disc: measured, the ring's green
+        went 74 to 217 and took the section with it, three channels saturating being three
+        channels agreeing. Only the flank falling into the seat looks at the glass.
+        """
+        lx, ly = material.lamp_2d()
+        theta = np.arctan2(uy, ux).astype(np.float32)
+        along = theta * r  # arc length round the ring, for the brushing and the wear
+        roll = max(PILOT_ROLL * (r - r_in), 0.8)
+        step = max(PILOT_STEP * self.scale, 0.6)
+        face = max(r - roll - r_in, 1e-3)
+        # The crown: the face's tilt climbing to the roll, cut in flats rather than faded, which
+        # is the difference between a chamfer off a tool and an airbrush.
+        crown = PILOT_CROWN * self._facets((dist - r_in) / face, PILOT_FACETS)
+        nx, ny, nz = material.roll_normals(np.maximum(r - dist, 0.0), ux, uy, roll, dome=crown)
+        diffuse, spec = material.shade(nx, ny, nz)
+        # ...and the inner flank going dark into the seat the bead sits in.
+        shut = np.clip(1.0 - (dist - r_in) / step, 0.0, 1.0)
+        diffuse, spec = diffuse * (1.0 - shut), spec * (1.0 - shut)
+        rubbed = material.wear(along, material.SEED + 21)
+        spec = spec * (1.0 + PILOT_WEAR * rubbed) * sun ** RAIL_SUN_SPEC
+        brushed = material.grain(dist, along, material.SEED + 21) + PILOT_TARNISH * rubbed
+        # The metal's own colour under the lamp, and then its highlight in its own colour too:
+        # `steel` lays its highlight down in STEEL_SPEC, which on brass is a cool smear.
+        rgb = material.steel(diffuse * sun, np.zeros_like(spec), brushed, colour=BRASS)
+        rgb = rgb + np.asarray(BRASS_SPEC, np.float32) * (material.SPEC * spec)[..., None]
+        # The one mark a lathe leaves that is not a scale: the turned line just inside the roll.
+        turned = np.exp(-(((dist - (r - roll - 1.0)) / 0.6) ** 2))
+        rgb = rgb * (1.0 - PILOT_GROOVE * turned)[..., None]
+        rgb = rgb * self._graduation(dist, theta, r - roll, face,
+                                     PILOT_TICKS, PILOT_LONG, PILOT_TICK,
+                                     PILOT_TICK_LONG)[..., None]
+        # ...and the hairlines, pale where they cross brass, exactly as they are on his collar.
+        marks = (self._pilot_marks(dist.shape[0]) * PILOT_SCRATCH)[..., None]
+        rgb = rgb * (1.0 - marks) + np.asarray(BRASS_SPEC, np.float32) * marks
+        # Held to the ceiling in luminance and never per channel: a clip lands on red first on a
+        # warm metal, which leaves green the tallest channel it has - a brass ring with green
+        # highlights, which is the one thing brass may not do.
+        rgb = self._stilled(rgb)
+        # The two things that happen at the edges of the roll, both past what a shaded face may
+        # reach. The far edge is occluded by the part it belongs to, so it goes under the room's
+        # own light; the near one carries the lamp's own image, which is the lamp's colour and
+        # not the metal's.
+        facing = ux * lx + uy * ly
+        rolled = np.clip(1.0 - (r - dist) / roll, 0.0, 1.0)
+        away = np.clip(-facing, 0.0, 1.0) ** 1.5
+        rgb = rgb * (1.0 - PILOT_TERMINATOR * away * rolled)[..., None]
+        ridge = r - roll * PILOT_BLOWN_AT + PILOT_BLOWN_WANDER * material.wear(
+            along, material.SEED + 26)
+        hot = (np.exp(-(((dist - ridge) / PILOT_BLOWN_W) ** 2))
+               * np.clip(facing, 0.0, 1.0) ** PILOT_BLOWN_ARC)
+        rgb = rgb + (np.asarray(BRASS_BLOWN, np.float32) - rgb) * np.clip(
+            PILOT_BLOWN * hot, 0.0, 1.0)[..., None]
+        # Green is the phosphor's and the glass's: no pixel of a METAL leaves here carrying more
+        # of it than a metal may. The pilot's own light goes on after, because a lamp shining on
+        # brass is light lying on a metal and not a metal that has turned green.
+        rgb[..., 1] = np.minimum(rgb[..., 1],
+                                 0.5 * (rgb[..., 0] + rgb[..., 2]) + DIAL_GREENBIAS)
+        rgb = np.minimum(rgb + lamp * (PILOT_ON_METAL * shut * glow)[..., None], 255.0)
+        cover = (np.clip(0.5 - (dist - r) * DIAL_SS, 0.0, 1.0)
+                 * np.clip(0.5 + (dist - r_in) * DIAL_SS, 0.0, 1.0))
+        return rgb, cover
+
+    def _pilot_marks(self, size: int) -> np.ndarray:
+        """The sheet's hairlines where the lamp is bolted, 0..1, at the tile's own sampling.
+
+        Taken out of :data:`_marks` rather than generated here, which is the whole point of there
+        being one sheet: a scratch that runs off the plate and onto the fitting is most of what
+        says the two are the same piece of metal, and one rolled locally would stop dead at the
+        part's edge. Nearest-neighbour up to the supersampled grid, because a hairline is already
+        a pixel wide on the sheet and interpolating it only makes it two.
+        """
+        cx, cy = (round(v) for v in self.pilot)
+        reach = self.pilot_reach
+        span = 2 * reach + 1
+        patch = np.zeros((span, span), np.float32)
+        y0, x0 = max(0, cy - reach), max(0, cx - reach)
+        y1, x1 = min(self.height, cy + reach + 1), min(self.width, cx + reach + 1)
+        patch[y0 - (cy - reach):y1 - (cy - reach), x0 - (cx - reach):x1 - (cx - reach)] = (
+            self._marks[y0:y1, x0:x1])
+        return np.repeat(np.repeat(patch, DIAL_SS, 0), DIAL_SS, 1)[:size, :size]
+
+    @staticmethod
+    def _boxed_field(field: np.ndarray) -> np.ndarray:
+        """One supersampled field averaged down by DIAL_SS. :meth:`_boxed` without the colour."""
+        h, w = field.shape
+        return field.reshape(h // DIAL_SS, DIAL_SS, w // DIAL_SS, DIAL_SS).mean(axis=(1, 3))
+
+    def _draw_pilot_light(self, layer: Image.Image, state: str, phase: float) -> None:
+        """The lamp lit for *state* at *phase*, or nothing at all if the table says it is dark.
+
+        The early return is the whole of why a sleeping panel is exactly as still as it was: at
+        IDLE there is no tile, no composite and no pixel touched, so two resting frames stay
+        byte-identical without this having to be gated on a predicate somebody would later have
+        to remember. A dark row in the table *is* the gate.
+        """
+        pilot = LAMPS.get(state, LAMPS[IDLE])
+        if pilot.colour is None:
+            return
+        step = round(pilot.level(phase) * PILOT_STEPS)
+        if step <= 0:
+            return
+        self._paste_pilot(layer, self._pilot_tile(pilot.colour, step))
 
     def _draw_slider(self, d: ImageDraw.ImageDraw, level: int) -> None:
         """The volume column, up for as long as a finger is on the knob.

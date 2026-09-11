@@ -12,6 +12,18 @@ doing, and two corner mounts carrying three round controls sized for a thumb in 
 | **the knob**, bottom right | the output volume. Press it and drag, and a column comes up the right-hand side: the level is where your finger is, and the number stands above the track where your hand is not. Nothing reaches the speaker until you let go, so a tap on the knob is just a tap. It writes the same note the admin page's slider does, so the two always agree |
 | **the gauge**, in the corner | the board's temperature, on the Pi 5's own scale — green, amber from where the clock starts being capped, red past it. Tap it and the admin page opens on **SYSTEM** |
 
+…and one thing down there that is not a control at all:
+
+| Readout | What it says |
+| --- | --- |
+| **the pilot lamp**, on the plate below the two dials | a brass fitting with a glass dome in it, turned and graduated like the collar round his eye. **Dark asleep** — so the lamp coming on is itself the news that something is happening. **Amber and blinking** while a session is coming up or going down, **bright phosphor green and steady** for as long as one is live, **blue** for a job running in the background with nobody in a conversation, and **red and dead still** on a fault. It is an indicator and nothing else: pressing it does what pressing the plate has always done, which is interrupt him |
+
+A live session is one look rather than five. Listening, speaking, looking at a photograph,
+searching and drawing all burn the same green, because what the lamp answers is *is he up* — the
+eye says what kind of up in far more detail than a lamp could, and the terminal spells it out
+underneath. The fault is the one lit state that does not move, which is the rule the whole panel
+keeps: nothing on this screen blinks at you about something broken twice.
+
 Taking a photo and starting a session are the button beside the panel, not the glass: a tap is
 the photo, a hold is the conversation.
 
