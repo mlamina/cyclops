@@ -29,6 +29,11 @@ dependencies = [
     "lgpio>=0.2.2.0; sys_platform == 'linux'",  # the Pi 5's RP1 factory; RPi.GPIO cannot drive it
     "websockets>=13,<16",
     "prefab-ui>=0.20.2",
+    # Search, chapters and captions for cyclops.youtube, all three from one library. Pure
+    # Python, so `uv sync` on the Pi has no wheel to build. It is the one dependency here
+    # that rots on somebody else's schedule: YouTube changes and yt-dlp catches up, so when
+    # playback breaks `uv lock --upgrade-package yt-dlp` is the first thing to try.
+    "yt-dlp>=2026.1",
 ]
 
 [project.scripts]
