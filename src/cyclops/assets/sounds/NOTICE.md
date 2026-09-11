@@ -56,14 +56,18 @@ be certain of.
 wind clear as the sound of it does. `tests/test_sfx.py` holds the two together - re-cut this and
 that constant has to move with it.
 
-`cyclops_locked_in.wav` is the bolt at the far end of that shut - the cover reaching the rim and
-stopping, which is the one movement on this panel that arrives somewhere. Sounded
-`eye.COVER_SHUT_S` after the close begins rather than on any event, because nothing on the box
-knows the cover has stopped; `cyclops.kiosk.Kiosk._render` is the only clock that does. It is cut
-at `speed=1.25` - the master is a slow low clunk, and a quarter faster is where the pitch stops
-reading as a door and starts reading as something the size of his lid. Nothing has to be re-timed
-if it is re-cut: the close cue is 0.15 s shorter than the movement, so this always has the
-speaker to itself.
+`cyclops_locked_in.wav` is the bolt at the far end of the *open* - the blades reaching the rim
+and stopping, which is the one movement on this panel that arrives somewhere. Sounded
+`eye.COVER_OPEN_S` after the wake begins rather than on any event, because nothing on the box is
+told the cover has arrived; `cyclops.kiosk.Kiosk._render` is the only clock that knows. That puts
+it exactly where `cyclops_iris_open.wav` runs out, since `COVER_OPEN_S` is that file's length to
+the sample - so re-cutting the open moves this too, and the two are held together by the same
+test.
+
+It is cut at `speed=2.5`. The master is a 1.46 s clunk with a long ring under it, which is a
+vault door; this lid is a set of blades the size of a coin. 2.5x is a third of a second of hit,
+1.3 octaves up - 1.25x was tried first and still read as a door swinging shut somewhere else in
+the building.
 
 `cyclops_gears.wav` is gears turning over: a long press landing, sounded once and from the
 button's own thread (`cyclops.kiosk.Kiosk._toggle_session`). Both directions - starting a session

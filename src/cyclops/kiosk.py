@@ -66,7 +66,7 @@ from .config import (  # noqa: E402
     ConfigError,
     load_settings,
 )
-from .eye import COVER_SHUT_S  # noqa: E402
+from .eye import COVER_OPEN_S  # noqa: E402
 from .overlay import (  # noqa: E402
     CANCEL,
     HEAT,
@@ -474,10 +474,10 @@ class Kiosk:
         self._awake: bool | None = None  # whether a session was up last frame, which is the one
         # fact the iris answers to. None until the first frame, so a kiosk that starts up idle
         # does not announce a lid that was already shut before anybody was in the room to hear it.
-        self._lock_at = 0.0  # when the shutting lid arrives home, and the one cue on this box
+        self._lock_at = 0.0  # when the opening lid arrives home, and the one cue on this box
         # that is scheduled rather than fired: the sound of a bolt going home belongs to the end
-        # of a movement that takes eye.COVER_SHUT_S, and nothing else on the panel knows the
-        # cover has stopped. Zero when no lid is travelling. See the close, below.
+        # of a movement that takes eye.COVER_OPEN_S, and nothing else on the panel knows the
+        # cover has stopped. Zero when no lid is travelling. See the wake, below.
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._framing = ""  # the framing just tapped to, and...
         self._framing_until = 0.0  # ...when its name comes off the middle of the screen
@@ -1926,17 +1926,22 @@ class Kiosk:
             # drawing. Only the shut half is sounded from here: the open half now comes off the
             # event that opens it, on the agent's own thread, where it lands with the movement
             # rather than a frame behind it - see VoiceAgent._on_session_ready.
-            if self._awake is not None and awake != self._awake and not awake:
-                self._cues.play("iris_close")
-                self._lock_at = started + COVER_SHUT_S
-            if awake:
-                self._lock_at = 0.0  # he woke back up mid-travel; nothing is going to land
+            if self._awake is not None and awake != self._awake:
+                if awake:
+                    # Waking. The sound of the lid itself is the agent's, off the event that
+                    # opens it; what is left here is the far end of that movement - the blades
+                    # reaching the rim and stopping. Deadlined rather than fired, because
+                    # nothing on this box is told the cover has arrived: this loop is the only
+                    # clock that knows, and it starts the travel on this frame.
+                    self._lock_at = started + COVER_OPEN_S
+                else:
+                    self._cues.play("iris_close")
+                    self._lock_at = 0.0  # shutting mid-open: nothing is going to land now
             self._awake = awake
-            # ...and the far end of it: the cover reaching the rim and stopping. A frame late at
-            # worst, which is what this can be and the press could not - the press is answering a
-            # finger, and this is answering a picture the loop is drawing itself.
             if self._lock_at and started >= self._lock_at:
                 late, self._lock_at = started - self._lock_at, 0.0
+                # A frame late at worst, which is what this can afford and a gesture could not:
+                # it is answering a picture this loop is drawing itself.
                 if late <= LOCK_GRACE_S:
                     self._cues.play("locked_in")
 

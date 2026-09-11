@@ -168,13 +168,17 @@ SAMPLES: dict[str, str] = {
     # before it can hear.
     "iris_open": "cyclops_iris_open.wav",
     "iris_close": "cyclops_iris_close.wav",
-    # The bolt going home, at the far end of the shut. The close is the one movement on this
-    # panel that arrives somewhere - the cover reaches the far rim and stops - and a mechanism
-    # that size coming to rest in silence is the tell that nothing was ever driving it. Sounded
-    # off the arrival rather than the press (cyclops.kiosk._render), which is why it is the one
-    # cue here scheduled rather than fired: COVER_SHUT_S after the lid starts across him. It
-    # cannot tread on the close - that cue is 0.15 s shorter than the movement - and it shares
-    # the iris's rank so that the lid, and the lid alone, owns the speaker until it is home.
+    # The bolt going home, at the far end of the open: the blades reach the rim and stop, and a
+    # mechanism that size coming to rest in silence is the tell that nothing was ever driving
+    # it. The one cue here that is scheduled rather than fired - nothing on the box is told the
+    # cover has arrived, so the render loop deadlines it COVER_OPEN_S from the frame the travel
+    # starts on (cyclops.kiosk._render).
+    #
+    # It lands exactly where "iris_open" runs out, because COVER_OPEN_S *is* that cue's length
+    # to the sample - which is also why the rank below cannot be what keeps the two apart: the
+    # open is the agent's Cues and this is the kiosk's, and a rank does not reach across two
+    # instances. What keeps them off each other is the arithmetic. The rank still earns its
+    # line for the pair that do share an instance: it is what stops the close treading on this.
     "locked_in": "cyclops_locked_in.wav",
     # Gears turning over: the long press landing. Both directions - starting a session and
     # ending one are the same mechanism engaging, and what tells them apart is the lid that
