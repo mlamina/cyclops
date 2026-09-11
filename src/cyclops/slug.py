@@ -79,12 +79,20 @@ start of their next session on this - so end with whatever is still open. Plain 
 past tense. No markdown, no bullets, no line breaks inside it, and do not say "the session",
 "the user" or "we discussed" - say what was done.
 
-If the conversation was too short or too vague to be about anything, reply with exactly one
-line and nothing else:
+If nobody worked on anything - a microphone check, a greeting, a session that ended before it
+started - then there is no session here to write down, and you must not invent one. Reply with
+exactly one line and nothing else:
 slug: chat
 
 Conversation:
 {transcript}"""
+
+
+# What the model answers with when there was no session here to write down. Two words, because
+# every log already on the card was written against the first and a later change of mind should
+# not need a migration. This is the only answer in a reply that means "remove this folder"
+# rather than "call it that", which is why it leaves here as a flag and not as a slug.
+DISCARD = frozenset({"chat", "nothing"})
 
 
 @dataclass(frozen=True)
@@ -94,9 +102,10 @@ class Description:
     slug: str = ""  # "" leaves the folder with the date-stamped name it already has
     title: str = ""  # one sentence; the ``#`` line of summary.md, and one line of the next recap
     summary: str = ""  # one paragraph; the body of summary.md, and the bulk of the next recap
+    nothing: bool = False  # the model read this and said there was no session here
 
     def __bool__(self) -> bool:
-        return bool(self.slug or self.title or self.summary)
+        return bool(self.slug or self.title or self.summary or self.nothing)
 
     @property
     def page(self) -> str:
@@ -186,7 +195,20 @@ def parse(answer: str) -> Description:
             continue
         (after if title else before).append(stripped)
     summary = _clean(" ".join(after if title else before), MAX_SUMMARY_CHARS)
-    return Description(slug=slug, title=title or _first_sentence(summary), summary=summary)
+    title = title or _first_sentence(summary)
+    # The escape hatch, and its two halves are not the same claim. A reply that is *only* the
+    # discard word is the model taking it, and that folder goes. A reply that also has a heading
+    # and a paragraph is a model that named a real conversation badly: it still leaves the folder
+    # dated, exactly as it always did, but it never removes one. Which is the whole point of
+    # carrying this as a flag - until now an answer of "there was nothing here" and no answer at
+    # all were the same empty string, and only one of them is a verdict.
+    discarded = slug in DISCARD
+    return Description(
+        slug="" if discarded else slug,
+        title=title,
+        summary=summary,
+        nothing=discarded and not title and not summary,
+    )
 
 
 def _first_sentence(text: str) -> str:
@@ -222,8 +244,7 @@ def slugify(text: str) -> str:
     text = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
     if not text:
         return ""
-    text = "-".join(text.split("-")[:MAX_WORDS])[:MAX_CHARS].strip("-")
-    return "" if text in {"", "chat"} else text
+    return "-".join(text.split("-")[:MAX_WORDS])[:MAX_CHARS].strip("-")
 
 
 # ------------------------------------------------------------------ naming a project folder

@@ -57,14 +57,16 @@ then stop has done its work, and one that keeps going is stuck.
 
 `cyclops_button_pressed.wav` is the rising note under a finger on the shutter button. It is the
 one cue here whose length is not its master's: it has a window to fill, and the window is
-`LONG_PRESS_S - PRESS_GRACE_S` - 0.5 s, between a finger settling and the hold landing.
+`LONG_PRESS_S - PRESS_GRACE_S` - 0.6 s, between a finger settling and the hold landing. Move
+either constant and this has to be cut again, or the rise stops arriving where the gears start.
 
 Its master is not the eight-second swell it looks like. All of the rise is in the first 0.75 s -
-18 dB, and a spectral centroid climbing from 1.5 kHz to 9 - and the seven seconds after that are
+20 dB, and a spectral centroid climbing from 1.5 kHz to 9 - and the seven seconds after that are
 a flat bright bed, so a window taken from anywhere but the front is a drone rather than a rise.
-The cut is therefore `speed=1.25, head_s=0.5`: the front of it, sped up just enough that the arc
-finishes inside the window instead of being cut off part way up. What ships rises 18 dB across
-its half second and arrives at the top as the gears take over.
+The cut is `head_s=0.6` and nothing else: after the head trim the rise runs 0.62 s, so 0.6 s of
+it at its own rate is still climbing when the gears take over. A shorter window has to have the
+arc resampled into it - `speed` is that knob, and at the 0.5 s window this cue had first it took
+1.25x. What ships rises 20 dB across its 0.6 s.
 
 The masters are kept, in `sounds/`, and re-running the tool is the cut:
 

@@ -160,9 +160,10 @@ LONG_PRESS_S = 0.7
 # ...and how long a finger has to be on the *button* before it is answered with a sound at all.
 # A click is over in about a tenth of a second and should be a shutter and nothing else, so the
 # rise that says "this is going somewhere" cannot start on the press edge: half of every photo
-# you take would have a smear of it in front. What is left - 0.2 to LONG_PRESS_S - is the whole
-# of what the rise has to fill, which is what cyclops_button_pressed.wav is now cut to.
-PRESS_GRACE_S = 0.2
+# you take would have a smear of it in front. What is left - this to LONG_PRESS_S - is the whole
+# of what the rise has to fill, which is what cyclops_button_pressed.wav is cut to, so the two
+# move together: change this and re-cut (tools/cut_cues.py), or the rise stops arriving.
+PRESS_GRACE_S = 0.1
 MENU_TIMEOUT_S = 20.0  # a menu nobody chose from gives the panel back rather than holding it
 # What the panel says while it finishes the session and goes. Not a caption: this is the last
 # thing the screen does, and everything else on it has stopped being true.

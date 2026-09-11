@@ -67,11 +67,15 @@ CUTS: dict[str, Cut] = {
     # the stretch between a finger settling and the hold landing.
     #
     # The master is not the eight-second swell it looks like. All of the rise is in its first
-    # 0.75 s - 18 dB and a centroid climbing 1.5 kHz to 9 - and the seven seconds after it are a
+    # 0.75 s - 20 dB and a centroid climbing 1.5 kHz to 9 - and the seven seconds after it are a
     # flat bright bed, so a window taken from anywhere but the front is a drone. The whole cue
-    # is therefore the front of it, sped up just enough that the arc finishes inside the window
-    # instead of being cut off part way up.
-    "button_pressed": Cut("cyclops_button_pressed.wav", speed=1.25, head_s=0.5),
+    # is therefore the front of it.
+    #
+    # No `speed` at this window, and that is measured rather than assumed: after the head trim
+    # the rise runs 0.62 s, so 0.6 s of it at its own rate is still climbing when the gears take
+    # over. A shorter window needs the arc resampled into it or it is cut off part way up - at
+    # 0.5 s it took 1.25x.
+    "button_pressed": Cut("cyclops_button_pressed.wav", head_s=0.6),
 }
 
 # The middle of the band tests/test_sfx.py holds the shipped cues to (0.05-0.25), and the same
