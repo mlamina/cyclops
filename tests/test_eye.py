@@ -1131,9 +1131,13 @@ def test_the_cover_takes_its_time_and_gets_all_the_way_there() -> None:
     assert max(step) < 0.15, "the middle is a cut, not a burst"
     assert sum(1 for v in step if v < 0.01) > steps // 3, "the ends are merely slow, not held"
     assert abs(walk[steps // 2] - 0.5) < 0.02, "it is faster at one end than the other"
+    # One frame past the span, because the exponential reaches neither end and the clamp is what
+    # does - and a render loop never lands exactly on the boundary anyway. Sampling the last
+    # frame *at* it only read 0.0 while the span was a round number; with the open now fitted to
+    # its cue the same arithmetic comes up a float short of 1.0 and takes the curve instead.
     back = [engine.shut(overlay.MOODS[overlay.LISTENING],
                         eye.COVER_SHUT_S + i * eye.COVER_OPEN_S / steps)
-            for i in range(steps + 1)]
+            for i in range(steps + 2)]
     assert (back[0], back[-1]) == (1.0, 0.0), "it opens from somewhere else, or never clears him"
     assert all(b <= a for a, b in zip(back, back[1:], strict=False)), "it backs up on the way out"
     assert eye.COVER_OPEN_S < eye.COVER_SHUT_S, "waking is as much of a deliberation as sleeping"

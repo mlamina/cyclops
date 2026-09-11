@@ -50,6 +50,11 @@ the same mechanism running two directions, and there is only one recording of it
 the open reversed - which is what that mechanism would actually sound like and costs nothing to
 be certain of.
 
+`cyclops_iris_open.wav` is the one cue here with a length another module depends on:
+`eye.COVER_OPEN_S` is set to it to the sample, so the lid on the panel takes exactly as long to
+wind clear as the sound of it does. `tests/test_sfx.py` holds the two together - re-cut this and
+that constant has to move with it.
+
 `cyclops_gears.wav` is gears turning over: a long press landing, sounded once and from the
 button's own thread (`cyclops.kiosk.Kiosk._toggle_session`). Both directions - starting a session
 and ending one are the same mechanism engaging, and what tells them apart is the lid that

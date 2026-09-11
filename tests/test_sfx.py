@@ -19,7 +19,7 @@ import wave
 import numpy as np
 import pytest
 
-from cyclops import sfx
+from cyclops import eye, sfx
 
 RATE = 24_000  # what cyclops.audio.SAMPLE_RATE is; passed explicitly so the two never drift
 SYNTH = sorted(sfx.CUES)
@@ -93,6 +93,19 @@ def test_every_shipped_cue_sits_where_the_beeps_do(name: str) -> None:
     assert LOUD_FS[0] <= loud <= LOUD_FS[1], f"{name} is {loud:.3f} of full scale, off the bar"
     peak = float(np.abs(pcm.astype(np.int32)).max()) / 32767
     assert PEAK_FS[0] <= peak <= PEAK_FS[1], f"{name} peaks at {peak:.3f}, outside its headroom"
+
+
+def test_the_lid_takes_exactly_as_long_as_the_sound_of_it() -> None:
+    """The one cue whose length another module has to know.
+
+    His lid is the only thing on the panel that moves for over a second, and the recording is of
+    a real mechanism taking as long as it took - so the picture is fitted to the sound rather
+    than the other way round. Written down in eye.py because a render module must not open a
+    wav file, and pinned here because a constant that has to track an asset drifts the moment
+    the asset is re-cut.
+    """
+    seconds = len(sfx.load("iris_open")) / sfx.SAMPLE_HZ
+    assert eye.COVER_OPEN_S == pytest.approx(seconds, abs=0.001), "re-cut the iris? re-time it"
 
 
 @pytest.mark.parametrize("name", EVERY)

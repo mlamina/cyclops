@@ -279,8 +279,15 @@ COVER_SHUT_S = 1.60  # how long it takes to wind across, and the slower of the t
 # Shutting is the gesture - he is going to sleep - and a lid that falls in a fifth of a second is
 # a shutter rather than a cover. It ran at half this for a round and read as a snap: a cover this
 # size is a lump of steel being driven, and what says so is how long it takes.
-COVER_OPEN_S = 1.00  # ...and how long to clear him again. Quicker, because waking is not a
-# deliberation - but not so much quicker that the same mechanism looks like two different ones.
+COVER_OPEN_S = 1.4542  # ...and how long to clear him again: exactly the length of
+# cyclops_iris_open.wav, to the sample. The lid and the sound of the lid are one event, and of
+# the two only the recording has a duration that was not chosen - a real mechanism took as long
+# as it took, so the picture takes that long too rather than finishing half a second early and
+# leaving its own noise still running. It ran at 1.00 s for exactly that reason.
+#
+# Still quicker than the shut, which is what waking not being a deliberation asked for, but by a
+# margin the recording set rather than one picked to feel right. Pinned to the cue in
+# tests/test_sfx.py, so re-cutting the iris cannot silently leave the two apart again.
 
 COVER_RATE = 7.0  # how hard each end is held against the middle, as the exponent's span.
 # The curve is exponential in both halves - 2**(RATE*(2k-1)) mirrored about the middle - and this
