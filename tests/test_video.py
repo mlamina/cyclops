@@ -178,3 +178,75 @@ def test_no_method_on_the_agent_is_defined_twice() -> None:
         ]
         twice = [n for n, count in collections.Counter(names).items() if count > 1]
         assert not twice, f"{node.name} defines {twice} more than once; the second one wins"
+
+
+def _hit(tmp_path, **about):
+    """One video reference on the card, as recall would hand it back."""
+    from cyclops import card, recall
+
+    folder = tmp_path / "videos"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "a.jpg").write_bytes(b"\xff\xd8thumb")
+    kept = {"a.jpg": {"id": "abc", "title": "Honing", "channel": "PS", "start": 312, **about}}
+    (folder / card.VIDEOS_NAME).write_text(json.dumps(kept))
+    item = recall.Item(
+        kind="video",
+        path=str(folder / "a.jpg"),
+        scope="session:2026-09-11_x",
+        title="Honing",
+        text="Honing. PS",
+        mtime_ns=1,
+        size=6,
+    )
+    return recall.Hit(item=item, score=0.9)
+
+
+def test_asking_for_a_video_again_plays_it_rather_than_showing_a_picture(tmp_path, monkeypatch):
+    """A reference stores the id and the second, never the URL - a signed one dies in six hours.
+
+    So recalling it costs a fresh resolve, and what lands on the panel is the video playing
+    from where it was found, not a still of it.
+    """
+    import asyncio
+
+    played = {}
+
+    async def fake_restream(video_id):
+        played["asked"] = video_id
+        return "https://x.invalid/fresh.mp4"
+
+    async def fake_play(self, found, thumb):
+        played["found"] = found
+        played["thumb"] = thumb
+        return {"ok": True, "title": found.title}
+
+    monkeypatch.setattr(agent, "restream", fake_restream)
+    monkeypatch.setattr(agent.VoiceAgent, "_play_video", fake_play)
+    monkeypatch.setattr(session, "note", lambda *a, **k: None)
+    one = agent.VoiceAgent(Settings(api_key=""))
+    out = asyncio.run(one._replay("that honing video", _hit(tmp_path), []))
+    assert out["ok"] and played["asked"] == "abc"
+    assert played["found"].start == 312 and played["found"].stream.endswith("fresh.mp4")
+    assert played["thumb"] == b"\xff\xd8thumb"  # the card's own copy, not fetched again
+
+
+def test_a_video_that_will_not_resolve_still_puts_its_picture_up(tmp_path, monkeypatch):
+    """Pulled, region-locked, or the box is offline. A dead end here would be the worst answer:
+    the thumbnail is a real file on the card, so there is always something to show."""
+    import asyncio
+
+    shown = {}
+
+    async def no_stream(video_id):
+        return ""
+
+    monkeypatch.setattr(agent, "restream", no_stream)
+    monkeypatch.setattr(session, "note", lambda *a, **k: None)
+    monkeypatch.setattr(
+        agent.VoiceAgent, "_show_found", lambda self, path: (shown.setdefault("p", path), b"")
+    )
+    one = agent.VoiceAgent(Settings(api_key=""))
+    out = asyncio.run(one._replay("that honing video", _hit(tmp_path), []))
+    assert out["ok"] and out["kind"] == "video"
+    assert "will not play" in out["note"]
+    assert shown["p"].name == "a.jpg"
