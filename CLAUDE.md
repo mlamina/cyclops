@@ -1,4 +1,9 @@
-This is cyclops, a physical AI project that serves as an assistant for side projects.
+Cyclops — your workshop droid. A one-eyed robot that works with you. It remembers every project,
+has read every manual, and answers any question — so your hands stay free and your phone stays
+in your pocket. README.md carries the mission, the core values and the criteria for success;
+they are the tiebreakers for every design decision here.
+
+This is a physical AI project.
 It has a camera, a screen and a microphone and the main mode of interaction is via voice.
 This project is supposed to run on a raspberry pi, which you can access via ssh at 'cyclops@cyclops.local'.
 Once the pi is booted, the user "wakes" cyclops by pressing a button on the screen,
@@ -16,6 +21,8 @@ Anytime you want to show me an image, don't leave it in your scratchpad. Copy it
 ~/Downloads.
 
 Design principles that matter for this project:
+- Hands stay free - voice in, voice and the screen out. If it needs a keyboard, a phone or a menu, it's wrong.
+- It never becomes the task - a setting to tend, a menu, a nag: that is attention Cyclops asked for, and it has failed.
 - Reduce cognitive load - Cyclops helps users focus on the task at hand, not the tool.
 - Embrace familarity - Where possible, adopt well-established conventions and patterns to reduce the learning curve.
 - CPU matters - The Pi heats quickly in its case. 

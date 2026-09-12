@@ -1,11 +1,59 @@
-# cyclops
+# Cyclops — your workshop droid
 
-A low-latency speech-to-speech agent built on the **OpenAI Realtime API** (WebSocket, `openai`
-Python SDK 3.x). It listens on your microphone, answers through your speakers, and **you** decide
-when it looks: press the shutter, and the photo goes straight into its context so it answers
-about what you are holding. It never takes a picture on its own.
+A one-eyed robot that works with you. It remembers every project, has read every manual, and
+answers any question — so your hands stay free and your phone stays in your pocket.
+
+## Why it exists
+
+Making or fixing something with your hands means the answer you need is always somewhere else: a
+manual, a browser tab, the notes from last time. Each one costs putting the tool down. Cyclops
+takes four of those interruptions away:
+
+* **It remembers.** Everything about a project is written down and kept — what was decided, what
+  was measured, what is still open — without anyone filing it.
+* **It has read the manual.** Questions get answered when they are asked, not after a search.
+* **No phone, laptop, or tablet.** Nothing to unlock, type into, or scroll through. It lives on the
+  bench and you talk to it.
+* **It is good company.** It has an eye and a character. Working with it is more fun than working
+  alone.
+
+## Core values
+
+The tiebreakers. When two designs are both reasonable, the one that keeps these wins.
+
+1. **Hands stay free.** Voice in; voice and the screen out. If it needs a keyboard, a phone, or a
+   menu, it is wrong.
+2. **It never becomes the task.** No settings to tend, no attention of its own. The moment you are
+   working on Cyclops instead of the project, it has failed.
+3. **Nothing gets lost.** Every session is written down. What was decided, measured, and left open
+   is there next week without anyone having filed it.
+4. **You hold the shutter.** It sees what you show it, when you show it. It never looks, records,
+   or acts on its own.
+5. **It says where an answer came from.** A photo, your manual, or a search — or it says it is
+   going from memory. Never a guessed torque value stated as fact.
+6. **Good company.** It has a face and a character. It should be more fun to work with than to
+   work without.
+
+## Criteria for success
+
+1. **It gets switched on.** For real bench sessions, not demos. Sessions per week is the number.
+2. **The phone stays in the pocket.** Nothing gets looked up on another device during a session.
+   Reaching for one is a miss worth writing down.
+3. **One question, one answer.** A question that needs a follow-up — "what?", "say that again",
+   "no, the other one" — is a miss. The transcripts have the count.
+4. **Nothing has to be re-told.** Reopening a project, Cyclops already knows where it left off. A
+   re-explanation in a transcript is a miss.
+5. **Zero time on Cyclops itself.** Turns about the tool — settings, restarts, "why didn't you" —
+   tend to none.
+6. **You want it on.** The one that is not a number. If switching it on feels like a chore,
+   nothing else here counts.
 
 ## How it works
+
+Under the hood it is a low-latency speech-to-speech loop on the **OpenAI Realtime API**
+(WebSocket, `openai` Python SDK 3.x). It listens on your microphone, answers through your
+speakers, and **you** decide when it looks: press the shutter, and the photo goes straight into
+its context so it answers about what you are holding. It never takes a picture on its own.
 
 ```
 mic ──PCM16 24kHz──▶ input_audio_buffer.append ──▶ OpenAI Realtime (server VAD)

@@ -1,7 +1,7 @@
 [project]
 name = "cyclops"
 version = "0.1.0"
-description = "Low-latency speech-to-speech agent on the OpenAI Realtime API that can look through your webcam"
+description = "Cyclops - your workshop droid. A one-eyed robot that remembers every project, has read every manual, and answers any question by voice"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
