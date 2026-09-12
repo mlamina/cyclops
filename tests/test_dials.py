@@ -381,3 +381,25 @@ def test_the_gauge_opens_the_screen_the_rest_of_its_numbers_are_on(
     kiosk._on_mouse(DOWN, *kiosk.overlay.hitboxes.heat.center, 0, None)
     assert kiosk.opened == [kiosk_module.SYSTEM_SCREEN]
     assert kiosk._pressed == overlay.HEAT, "nothing acknowledged the tap"
+
+
+# ------------------------------------------------------------------ whose speaker he is on
+
+
+def test_the_knob_says_when_a_companion_has_his_voice() -> None:
+    """The mark in the knob's gap is the only thing on the panel that says the voice has left
+    this box's amp, and it says it whenever the claim is held - asleep or mid-session.
+
+    The gauge beside it is in the assertion for the same reason its hitbox is: whatever the mark
+    turns into has to stay inside the knob's own tile, and a gauge that moved with it would mean
+    something in that corner had grown past the glass it is printed behind.
+    """
+    ov = overlay.Overlay(800, 480)
+    for state, elapsed in ((overlay.IDLE, None), (overlay.LISTENING, 12.0)):
+        shown = dict(state=state, level=0.0, elapsed=elapsed, phase=10.0, volume=60, temp_c=58.0)
+        here = ov.render(**shown)  # type: ignore[arg-type]
+        away = ov.render(handed_over=True, **shown)  # type: ignore[arg-type]
+        for name, box, same in ((overlay.VOLUME, ov.hitboxes.volume, False),
+                                (overlay.HEAT, ov.hitboxes.heat, True)):
+            a, b = (f[box.y : box.bottom, box.x : box.right].tobytes() for f in (here, away))
+            assert (a == b) is same, f"the {name} dial was the wrong kind of unchanged"

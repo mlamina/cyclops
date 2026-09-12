@@ -2450,9 +2450,9 @@ DIAL_READ_PT = 12  # reference px of face for it. Two points down from the panel
 # speaker, the pointer swinging over both - has to fit inside the glass
 DIAL_MARK = 0.139  # of the radius: the speaker in the knob's half of that gap, for the same
 # reason. It was 0.17, whose bottom corner stood a pixel and a half out on the ring
-DIAL_AWAY_CUTS = ("phone", "chevron", "slash", "leaving")  # the mark the knob shows while a companion holds
-# his voice, in the same gap and the same box as the cone. Three cuts because this one is looked
-# at rather than reasoned about - see Overlay._paint_away and factory/html/003.html
+DIAL_AWAY_CUTS = ("phone", "chevron", "slash", "leaving")  # the mark the knob shows while a
+# companion holds his voice, in the same gap and the same box as the cone. Four cuts because this
+# one is looked at rather than reasoned about - see Overlay._paint_away and factory/html/003.html
 DIAL_AWAY = "phone"
 DIAL_SS = 3  # the face's fields are drawn this many times over and boxed down
 _DIAL_LIGHT: dict[tuple[int, float], np.ndarray] = {}  # see Overlay._dial_light: one per window
@@ -8404,7 +8404,8 @@ class Overlay:
             # reads as a tick, which is the one thing worse than reading as nothing.
             t.polygon(
                 [(at(span - r), at(mid - r * 0.22)), (at(span - r * 0.68), at(mid - r * 0.22)),
-                 (at(span - r * 0.28), at(mid - r * 0.74)), (at(span - r * 0.28), at(mid + r * 0.74)),
+                 (at(span - r * 0.28), at(mid - r * 0.74)),
+                 (at(span - r * 0.28), at(mid + r * 0.74)),
                  (at(span - r * 0.68), at(mid + r * 0.22)), (at(span - r), at(mid + r * 0.22))],
                 fill=linear(c),
             )
@@ -8426,7 +8427,8 @@ class Overlay:
             # every volume control on earth draws, and it would read as "louder".
             t.polygon(
                 [(at(span - r), at(mid - r / 4)), (at(span - r * 0.62), at(mid - r / 4)),
-                 (at(span - r * 0.24), at(mid - r * 0.80)), (at(span - r * 0.24), at(mid + r * 0.80)),
+                 (at(span - r * 0.24), at(mid - r * 0.80)),
+                 (at(span - r * 0.24), at(mid + r * 0.80)),
                  (at(span - r * 0.62), at(mid + r / 4)), (at(span - r), at(mid + r / 4))],
                 fill=linear(c),
             )
