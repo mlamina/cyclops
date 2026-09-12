@@ -27,3 +27,6 @@ recordings/
 # OS
 .DS_Store
 Plans/
+# Factory working state - the job files themselves are worth keeping, this is not.
+factory/logs/
+factory/html/

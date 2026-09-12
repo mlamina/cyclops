@@ -1,54 +1,60 @@
 # The factory
 
-A queue of small jobs, and a worker that takes them from a sentence to something you can look at.
+You say what you want. It gets built while you do something else. You look at the result.
 
-One file per job, one folder, numbered. The number is the name: *"factory, put 7 on the Pi"*.
+```
+/capture ──► ready ──► (the loop builds it) ──► review ──► /ship ──► done
+                ▲                                 │
+                └──────────── /rework ────────────┘
+```
 
-## Your side of it
+Start `factory/loop.sh` in a terminal and leave it. It is the only thing that runs unattended,
+and all it does is build. It never merges, never touches the Pi, and never decides anything.
 
-You only ever write English, and **you review outcomes, never code.** No diffs, no PRs. What
-comes back is a picture of the panel, a number, or the Pi itself doing the thing.
+## What you type
 
-| You want to | You do |
+| | |
 |---|---|
-| Log an idea, a bug, a feature request | `tools/capture.sh "..."` or `/capture ...` |
-| See the board, and start work | `/factory` |
-| Answer the factory's questions | Type under them in the file |
-| Try one with your hands | `/factory pi 7` |
-| Send one back round | Write what's wrong under `## Feedback` |
-| Ship it | `/factory done 7` |
+| `/capture <anything>` | idea, bug, feature request — one way in for all three |
+| `/board` | what's building, what's waiting on you |
+| `/review N` | look at what came out |
+| `/try N` | put it on the Pi and use it |
+| `/ship N` | merge to master and deploy |
+| `/rework N <what's wrong>` | another round |
+| `/drop N` | bin it |
 
-You never edit `state:` and you never move a file. Bookkeeping you can forget is bookkeeping
-that rots.
+Every command ends by naming the next one, so the process is something you read rather than
+something you remember. Every command works at any state — you never need to know what stage
+something is in to act on it.
 
-## Its side of it
+## Capture is where the thinking happens
 
-| `state:` | Means | Who moves it |
-|---|---|---|
-| `new` | Captured, nothing read yet | factory — plans it |
-| `asking` | Plan written, questions open | **you** — answer in the file |
-| `ready` | Nothing left to guess at | factory — builds it in its own worktree |
-| `building` | An agent has it right now | factory |
-| `review` | Built, with something to look at | **you** — accept, or send back |
-| `done` | Merged to master and on the Pi | — |
+It explores the code, plans, asks you what it would otherwise be guessing at, and agrees **what
+done means** before anything is built. That is the only conversation; the loop afterwards just
+executes it. `"you decide"` is a real answer to any question it asks.
 
-## Branches and worktrees
+**Nothing is written until you approve it.** An abandoned capture leaves no file and no branch.
 
-Every job gets a branch, `job/007-slug`, and its own worktree at `../cyclops-jobs/007/`. That's
-what lets several run at once without treading on each other, and what makes "throw this one
-away" free.
+## Review is an outcome, never a diff
 
-**The board itself only ever lives on master.** Jobs change code in their worktree; the factory
-writes the board from the main checkout. Nothing to merge, nothing to conflict.
+A picture of the panel, a number, or the Pi under your hands. No code, no file lists, no PRs —
+if a job page shows you any of that, the page is wrong.
 
-Accepting a job merges it to master and deploys master. Master is still what the Pi runs.
+Every job's plan ends in a **Done when** list where each line names its own check: a
+`panel_shot.py` strip, a `--bench` number, a test, or *"yours, on the Pi"*. The builder works them
+and reports each one. Lines that were only ever yours to judge stay unjudged.
 
-## The one rule that matters
+## Branches, worktrees, and the one Pi
 
-**One job on the Pi at a time** — not a policy, a fact about there being one Pi.
-`factory/ON-THE-PI` says which one is on it.
+Each job gets `job/NNN-slug` and its own worktree at `../cyclops-jobs/NNN/`, so several build at
+once and dropping one costs nothing — master never knew. **The board itself lives only on master**,
+in the main checkout; worktrees never touch `factory/`.
 
-So: building fans out as wide as there's work for, because a screenshot costs you five seconds to
-judge. Getting your *hands* on something is the scarce part, and that queue is one deep.
+Three at a time, because judging a screenshot takes five seconds. **One on the Pi at a time**,
+because there is one Pi — `factory/ON-THE-PI` says which.
 
-Everything else here is a convention and can be broken by saying so.
+## If something stops
+
+A build that dies leaves `factory/logs/NNN.log` and the job sitting at `ready`. The loop won't
+try again — that's deliberate, so a broken job can't burn an afternoon in a loop nobody is
+watching. `/board` shows it as stalled and `/rework N` sends it round again.
