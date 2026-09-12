@@ -197,6 +197,38 @@ body {
 }
 /* How long it runs, where a video player puts it: on the picture, bottom left. It is a fact
    about the recording, so it belongs on the recording and not in a line of prose beside it. */
+/* A kept video's tile: the title card, and under it what the video is called. Under and not
+   across it, which is the arrangement every video site has used for fifteen years - somebody
+   who has ever looked for a video knows without being told that the picture is the thing and
+   the line beneath it is its name. The overlay version of this was tried first and lost twice:
+   it covered the picture it was labelling, and a title too long for its two lines showed a
+   third one sliced in half along the bottom edge.
+
+   A frame of somebody else's workshop says almost nothing on its own - two bike videos are two
+   pictures of a bike - so the name is what is actually being read here, and it gets a fixed
+   two lines whether it needs them or not, so a grid of tiles has one baseline instead of a
+   ragged one. .len keeps the second it was found at, over the picture where a duration always
+   is. */
+.tube { background: var(--screen); }
+.tube .tubename {
+  /* Exactly two lines and no sliver of a third. The height is the arithmetic and the clamp is
+     what puts the ellipsis on: written as 4 + 13 + 13 with no padding under it, so the box ends
+     precisely where the second line does. Given a 4 at the bottom as well, a third line starts
+     inside the box and gets sliced along its waist - which is what the first two attempts at
+     this did, and it looks like a rendering fault rather than a truncation. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  height: calc(30 * var(--u));
+  padding: calc(4 * var(--u)) calc(6 * var(--u)) 0;
+  color: var(--green); background: var(--screen);
+  font-size: calc(11 * var(--u)); line-height: calc(13 * var(--u)); letter-spacing: .04em;
+  text-align: left; overflow: hidden;
+}
+/* .len is anchored to the bottom of the cell, which was the bottom of the picture until this
+   tile grew a caption under it - and then the chip sat on top of the title. Lifted by exactly
+   the caption's height so it is back on the picture, and moved to the right, which is where a
+   duration has been on a video thumbnail since before any of us were doing this. */
+.tube .len { left: auto; right: 0; bottom: calc(30 * var(--u)); }
+
 .len {
   position: absolute; left: 0; bottom: 0; z-index: 2;
   padding: calc(3 * var(--u)) calc(7 * var(--u));

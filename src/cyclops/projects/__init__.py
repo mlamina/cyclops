@@ -137,6 +137,10 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
         # these files, and a link written before the file exists is a broken one in a log that is
         # never rewritten.
         photos = store.copy_photos(project, folder, picks, limit=settings.project_photos)
+        # Beside the photos and for the same reason - inside the lock, before anything that
+        # could point at them. Unlike photos these are every one the session kept rather than a
+        # chosen few; see store.copy_videos for why nothing picks.
+        videos = store.copy_videos(project, folder)
         if session.uuid and session.uuid.lower() in store.filed_uuids(project):
             note = "already in the log"
         else:
@@ -170,7 +174,8 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
         )
         store.write_receipt(folder, project)
     shot = f", {len(photos)} photo(s)" if photos else ""
-    return f"{folder.name}: {note} under {project.name!r}{shot}"
+    reel = f", {len(videos)} video(s)" if videos else ""
+    return f"{folder.name}: {note} under {project.name!r}{shot}{reel}"
 
 
 def _merge(existing: list[str], added: list[str], limit: int) -> list[str]:

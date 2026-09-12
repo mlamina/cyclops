@@ -31,7 +31,7 @@ const VIEWS = ['view-status', 'view-live', 'view-sessions', 'view-session', 'vie
                'view-highlights', 'view-projects', 'view-project'];
 // The five things a project is, in the rail's order. The first is where a project opens, and an
 // address naming none of them - or one this list has never heard of - lands there too.
-const SECTIONS = ['overview', 'log', 'sheets', 'photos', 'files'];
+const SECTIONS = ['overview', 'log', 'sheets', 'photos', 'youtube', 'files'];
 const FRESH = 20000;   // a listing is worth re-using for as long as nothing new can have ended
 
 const vSessions = document.getElementById('v-sessions');
@@ -1147,6 +1147,7 @@ const SHOW = {
   log:      { dress: 'doc', open: (name) => showDoc(name, 'Log.md') },
   sheets:   { dress: 'doc', open: showSheets },
   photos:   { dress: 'shots', open: showPhotos },
+  youtube:  { dress: 'shots', open: showYouTube },
   files:    { dress: 'files', open: (name, path) => showBrowse(name, path) },
   // One file out of FILES. Not a sixth thing in the rail - it stays lit on FILES, because that is
   // where you were and where the way back goes - but the pane is a document rather than a list.
@@ -1216,6 +1217,47 @@ async function showPhotos(name) {
 // One picture on a black screen. A press anywhere on it puts it away, which is the whole of
 // the control surface - nothing to aim at. When it was taken sits in the corner, because the
 // grid no longer says: it is pointer-events: none, so it is a caption and not a target.
+// The videos filed onto this project, which are references and not pictures: each one is a
+// title card, what it was called, and the second somebody was watching it at.
+//
+// Its own array and its own attribute, not `shots` and `data-shot`. gallery() overwrites `shots`
+// globally so that one lightbox listener can serve both galleries, which is right while both are
+// galleries of pictures - but a press here opens YouTube rather than a lightbox, and sharing the
+// array would have the wrong one of the two answering.
+let tubes = [];
+
+async function showYouTube(name) {
+  const at = here = { name, path: '' };
+  pbody.innerHTML = '';
+  try {
+    const found = await grab('/api/project/' + encodeURIComponent(name) + '/youtube');
+    if (here !== at) return;
+    tubes = found.items;
+    pbody.innerHTML = tubes.length
+      ? '<div class="grid">' + tubes.map((one, i) =>
+          '<button class="cell tube" type="button" data-tube="' + i + '">' +
+          '<img loading="lazy" draggable="false" src="' + esc(one.url) +
+          '" alt="' + esc(one.title) + '">' +
+          '<span class="len">' + esc(one.clock) + '</span>' +
+          '<span class="tubename">' + esc(one.title) + '</span>' +
+          '</button>').join('') + '</div>'
+      : '<div class="empty">no videos kept for this project yet</div>';
+  } catch (e) {
+    if (here === at) pbody.innerHTML = '<div class="empty">could not read the card</div>';
+  }
+}
+
+// A new tab, and not the lightbox the pictures use: the thing worth having back is the video
+// itself, playing where it lives, at the second it was found at. The panel has no way to open
+// one of these - on the panel you ask for it out loud and recall plays it - so this is the
+// laptop's and the phone's half of "show me that one again".
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-tube]');
+  if (!el) return;
+  const one = tubes[parseInt(el.dataset.tube, 10)];
+  if (one && one.watch) window.open(one.watch, '_blank', 'noopener');
+});
+
 const lightbox = document.getElementById('lightbox');
 
 function light(i) {

@@ -258,6 +258,11 @@ def pictures(name: str, folder: Path) -> list[dict]:
         relative = found.relative_to(folder)
         if any(part.startswith(".") for part in relative.parts):
             continue
+        # Videos/ holds title cards belonging to the references on their own tab, not pictures
+        # of the project. Without this line every video somebody watched turns up in PHOTOS as
+        # a still of a stranger's workshop, and the sweep that files them makes more every week.
+        if relative.parts and relative.parts[0] == store.VIDEOS:
+            continue
         if found.parent not in captions:
             captions[found.parent] = _captions(found.parent)
         # Two fields and not one. ``title`` is alt text and always says something; ``caption`` is
@@ -276,6 +281,56 @@ def pictures(name: str, folder: Path) -> list[dict]:
         )
     out.sort(key=lambda one: one["when"], reverse=True)
     return out[:MAX_PICTURES]
+
+
+def videos(name: str, folder: Path) -> list[dict]:
+    """Every video reference filed onto one project, newest first - its YOUTUBE tab.
+
+    Read out of the sidecar rather than found by walking, which is the opposite of
+    :func:`pictures` and right for the opposite reason: a picture is a file that may or may not
+    have words about it, and a reference is words that happen to have a picture. A jpg in
+    ``Videos/`` with no line in the sidecar is not a reference, it is a stray.
+
+    ``url`` is the local title card and ``watch`` is where the video actually is, opened at the
+    second it was found at. The picture is deliberately the copy on the card and never
+    i.ytimg.com: this page is the panel as well as a laptop, and reaching off-box for an image
+    is a thing it has never had to do.
+    """
+    inside_folder = folder / store.VIDEOS
+    kept = _sidecar(inside_folder / card.VIDEOS_NAME)
+    out = []
+    for filename, about in kept.items():
+        found = inside_folder / filename
+        if not found.is_file() or not isinstance(about, dict):
+            continue
+        ident = str(about.get("id", ""))
+        start = int(about.get("start", 0) or 0)
+        relative = f"{store.VIDEOS}/{filename}"
+        out.append(
+            {
+                "kind": "video",
+                "id": ident,
+                "title": str(about.get("title", "")) or filename,
+                "channel": str(about.get("channel", "")),
+                "start": start,
+                "clock": f"{start // 60}:{start % 60:02d}",
+                "when": _when(found),
+                "url": media_url(name, relative),
+                "watch": f"https://www.youtube.com/watch?v={quote(ident)}&t={start}s",
+                "path": relative,
+            }
+        )
+    out.sort(key=lambda one: one["when"], reverse=True)
+    return out[:MAX_PICTURES]
+
+
+def _sidecar(path: Path) -> dict:
+    """A videos.json as a dict, or an empty one - the same read _captions makes of its own."""
+    try:
+        found = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
 
 
 # ------------------------------------------------------------------ one file

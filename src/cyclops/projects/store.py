@@ -45,6 +45,7 @@ lets the live agent's two tools, ``cyclops-projects --check`` and plain listing 
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import re
 import shutil
@@ -65,6 +66,11 @@ README_NAME = "README.md"
 LOG_NAME = "Log.md"
 DATA_NAME = "Project Data.xlsx"  # the numbers; see projects/data.py for what is in it
 PHOTOS = "Photos"
+# Videos somebody was shown and watched, filed the same way photos are. A folder of its own and
+# not a corner of Photos/, for the reason cyclops.card gives: a title card is not a picture of
+# the bench, and counting it as one would put it in the project's photo tally and offer it to
+# edit_photo as something to redraw.
+VIDEOS = "Videos"
 RECEIPT_NAME = "project.md"  # written into the *session* folder, not the project
 
 # The end of one entry in Log.md, and the only thing in that file a program reads. An HTML comment
@@ -212,6 +218,10 @@ class Project:
     @property
     def readme(self) -> Path:
         return self.path / README_NAME
+
+    @property
+    def videos_dir(self) -> Path:
+        return self.path / VIDEOS
 
     @property
     def photos_dir(self) -> Path:
@@ -689,6 +699,67 @@ def copy_photos(
             continue  # a photo is never worth failing a filing over
         written.append((f"{PHOTOS}/{target.name}", caption))
     return written
+
+
+def copy_videos(project: Project, session_dir: Path) -> list[str]:
+    """Copy a session's watched videos onto the project, sidecar and all. The names written.
+
+    Every one of them, and no model picks which - which is the one way this differs from
+    :func:`copy_photos`, and it is not an oversight. A session produces dozens of photographs
+    and at most three belong on a card, so something has to choose. Videos are already chosen,
+    twice: somebody asked for each one out loud, and then watched it long enough for the agent
+    to keep it at all. A second filter over one or two items whose titles we already have would
+    be spend for nothing.
+
+    The same idempotence as :func:`copy_photos` and by the same means - the target name is
+    computed from the source, so a re-run finds its own work already done. The sidecar is merged
+    rather than replaced, because a project accumulates these across sessions.
+
+    What is copied is a picture and a bookmark: the id and the second, never a URL. A signed
+    googlevideo link is dead six hours after it is minted, so one written onto a card would be
+    a link that fails exactly when somebody finally wants it.
+    """
+    source_dir = session_dir / card.VIDEOS
+    kept = _read_sidecar(source_dir / card.VIDEOS_NAME)
+    if not kept:
+        return []
+    date = session_dir.name[:10]
+    written: list[str] = []
+    landed: dict[str, dict] = {}
+    for name, about in sorted(kept.items()):
+        source = source_dir / name
+        if not source.is_file() or source.parent.resolve() != source_dir.resolve():
+            continue
+        target = project.videos_dir / f"{date}_{Path(name).name}"
+        try:
+            if not target.is_file() or target.stat().st_size != source.stat().st_size:
+                project.videos_dir.mkdir(parents=True, exist_ok=True)
+                tmp = card.tmp_for(target)
+                shutil.copy2(source, tmp)
+                card.land(tmp, target)
+        except OSError:
+            continue  # a reference is never worth failing a filing over
+        landed[target.name] = about
+        written.append(f"{VIDEOS}/{target.name}")
+    if landed:
+        merged = _read_sidecar(project.videos_dir / card.VIDEOS_NAME)
+        merged.update(landed)
+        try:
+            card.write_text(
+                project.videos_dir / card.VIDEOS_NAME, json.dumps(merged, indent=1)
+            )
+        except OSError:
+            return []  # the pictures are there; without the sidecar they are not references yet
+    return written
+
+
+def _read_sidecar(path: Path) -> dict:
+    """A videos.json as a dict, or an empty one. Unreadable is the same as absent."""
+    try:
+        found = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
 
 
 def append_entry(

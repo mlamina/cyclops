@@ -826,6 +826,11 @@ def project_pictures(request: HttpRequest, name: str) -> JsonResponse:
     return JsonResponse({"items": shelf.pictures(name, _project(name))})
 
 
+def project_youtube(request: HttpRequest, name: str) -> JsonResponse:
+    """Every video reference filed onto one project - the YOUTUBE section of its screen."""
+    return JsonResponse({"items": shelf.videos(name, _project(name))})
+
+
 def project_file(request: HttpRequest, name: str) -> JsonResponse:
     """One file inside one project, in whatever shape it is worth reading in."""
     relative = request.GET.get("path", "")
