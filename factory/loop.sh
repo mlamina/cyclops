@@ -15,9 +15,20 @@ EVERY=30     # seconds between passes
 
 # A second loop would see the same ready jobs, cut the same worktrees and set two agents on one
 # branch. A process fact rather than a lockfile, for tasks.py's reason: a lockfile outlives the
-# thing it describes and this cannot. (BSD pgrep skips its own ancestors, so this finds only a
-# *other* instance - on Linux it would also need `| grep -v $$`.)
-pgrep -f 'factory/loop.sh' > /dev/null && { echo "· A LOOP IS ALREADY RUNNING" >&2; exit 1; }
+# thing it describes and this cannot.
+#
+# The pattern is anchored to the *end* of the command line, and that is the whole trick. Written
+# loose as `factory/loop.sh` it matches the shell that just invoked this script - a `zsh -c`
+# carries the command it was given in its own argv - so the first loop ever started reports that
+# a loop is already running and exits. Measured, not guessed. Anchored, only a shell whose argv
+# ends in the script itself matches, which is what an actually-running loop looks like.
+#
+# `if` and not `&&`: under `set -e` a bare `pgrep ... && { ... }` that finds nothing exits 1 and
+# takes the script with it. A condition is exempt; a statement is not.
+if pgrep -f 'sh .*factory/loop\.sh$' > /dev/null 2>&1; then
+  echo "· A LOOP IS ALREADY RUNNING — one is enough" >&2
+  exit 1
+fi
 
 mkdir -p "$LOGS"
 
@@ -40,9 +51,16 @@ start() {  # $1 number, $2 slug, $3 absolute log path
   # checked out rather than recut, and an existing directory is reused rather than re-added.
   # Every form of `git worktree add` is fatal, and a fatal command under `set -eu` inside a loop
   # nobody is watching means the factory stops and never says so.
-  [ -d "$wt" ] || git worktree add "$wt" "job/$1-$2" >> "$3" 2>&1 \
-               || git worktree add -b "job/$1-$2" "$wt" master >> "$3" 2>&1 \
-               || { echo "· $1 NO WORKTREE — see ${3#$ROOT/}" >&2; return 0; }
+  if [ ! -d "$wt" ]; then
+    # Asked rather than attempted, so the ordinary path doesn't write `fatal: invalid reference`
+    # into a log somebody only ever opens when they already think something is wrong.
+    if git show-ref --verify --quiet "refs/heads/job/$1-$2"; then
+      add="git worktree add $wt job/$1-$2"
+    else
+      add="git worktree add -b job/$1-$2 $wt master"
+    fi
+    $add >> "$3" 2>&1 || { echo "· $1 NO WORKTREE — see ${3#$ROOT/}" >&2; return 0; }
+  fi
   # `< /dev/null` for the reason start-kiosk.sh:49 has it: a backgrounded process that reads the
   # terminal gets SIGTTIN and stops. A stopped build still answers pgrep, so it would hold a slot
   # for ever while looking alive. `trap '' INT` survives exec, so Ctrl-C on the loop leaves the
