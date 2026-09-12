@@ -211,3 +211,24 @@ def test_the_captioner_is_never_pointed_at_a_manual_page(settings):
     one page that disagree about the numbers printed on it.
     """
     assert recall.image_folders(settings) == []
+
+
+def test_a_root_that_does_not_exist_yet_is_watched_through_its_parent(tmp_path):
+    """Otherwise the first manual ever uploaded waits for the 15-minute sweep.
+
+    ``manuals/`` is created by the first upload, so on a card that has never had one there is no
+    directory to hand inotify - and the one upload where "it just appears" matters most was the
+    one where it did not. Observed on the Pi, 2026-09-11.
+    """
+    from cyclops.indexer import _folders_to_watch
+
+    (tmp_path / "sessions").mkdir()
+    watched = _folders_to_watch(
+        Settings(
+            api_key="k",
+            projects_dir=tmp_path / "projects",
+            sessions_dir=tmp_path / "sessions",
+            manuals_dir=tmp_path / "manuals",
+        )
+    )
+    assert tmp_path in watched

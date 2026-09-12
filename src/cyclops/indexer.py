@@ -416,11 +416,20 @@ def _folders_to_watch(settings: Settings) -> list[Path]:
     Every directory, not only the ones holding indexable files: a picture arrives in a folder that
     may not have existed a moment ago, and the way to hear about that is to be watching its parent.
     A manual is the same event - a PDF lands in a folder that did not exist a second earlier.
+
+    **A root that does not exist yet is watched through its parent**, which is the same rule one
+    level up and is not hypothetical: ``manuals/`` is only created by the first upload, so on a
+    card that has never had one there is nothing to watch. Skipping it meant the very first manual
+    somebody ever dropped on the page sat unread until the 15-minute sweep - the one upload where
+    "it just appears" matters most, and the only one where it did not happen. Observed on the Pi,
+    2026-09-11.
     """
     out: list[Path] = []
     for root in (settings.projects_dir, settings.sessions_dir, settings.manuals_dir):
         folder = root.expanduser()
         if not folder.is_dir():
+            if folder.parent.is_dir():
+                out.append(folder.parent)
             continue
         out.append(folder)
         try:
@@ -443,7 +452,12 @@ async def serve(settings: Settings) -> None:
     watching = watch.start()
     watch.add(_folders_to_watch(settings))
     how = "watching" if watching else "sweeping (no watch)"
-    _say(f"{how} {settings.projects_dir} and {settings.sessions_dir}")
+    # Every root it is actually keeping, named. The line used to say two of them while walking
+    # three, which is the kind of log that makes you look everywhere except at the thing that
+    # was never being watched.
+    kept = (settings.projects_dir, settings.sessions_dir, settings.manuals_dir)
+    roots = ", ".join(str(r) for r in kept)
+    _say(f"{how} {roots}")
 
     await _guarded(settings)  # the catch-up sweep
     watch.add(_folders_to_watch(settings))
