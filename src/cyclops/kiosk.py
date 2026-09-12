@@ -2156,6 +2156,11 @@ class Kiosk:
                     volume=self._wanted if self._sliding else self._volume,
                     temp_c=self._temp_c,
                     turning=self._turning,
+                    # ...and the third: whether his voice is coming out of this box's amp at all.
+                    # The mark in the knob's gap is the only thing that says so, and it says it
+                    # whenever the claim is held - a companion tab with nothing playing is
+                    # exactly the case you want to find before you start talking, not after.
+                    handed_over=self._handed_over,
                     # The framing's name, up for its second and fading out of the last third of
                     # it. Held at full for the rest: it is covering the gap while the camera
                     # comes back, so it has to be readable from the moment the finger lifts.

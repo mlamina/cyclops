@@ -9,6 +9,7 @@ same photo, the same state, and the only thing that differs between two shots is
     uv run python tools/panel_shot.py --bg photo.jpg --state listening --out shot.png
     uv run python tools/panel_shot.py --bg photo.jpg --state speaking --level 0.6 --out shot.png
     uv run python tools/panel_shot.py --bg photo.jpg --state listening --strip 8 --seconds 4 --out eye.png
+    uv run python tools/panel_shot.py --handed-over --out away.png
     uv run python tools/panel_shot.py --bench
 
 ``--strip`` crops the eye and lays N frames of it across a row, which is how motion is looked at
@@ -59,6 +60,7 @@ def shown(args: argparse.Namespace, src: tuple[int, int] = (WIDTH, HEIGHT)) -> d
         detail=args.detail,
         volume=args.volume,
         temp_c=args.temp,
+        handed_over=args.handed_over,
     )
     shape = gesture(args)
     if shape is not None:
@@ -137,6 +139,8 @@ def main() -> None:
     ap.add_argument("--volume", type=int, default=60)
     ap.add_argument("--temp", type=float, default=60.0)
     ap.add_argument("--recording", action="store_true")
+    ap.add_argument("--handed-over", action="store_true",
+                    help="a companion on the LAN is holding his voice")
     ap.add_argument("--detail", default="", help="the controller's own line on the terminal")
     ap.add_argument("--phase", type=float, default=12.0, help="the clock, in seconds")
     ap.add_argument("--strip", type=int, default=0, help="crop the eye and lay N frames in a row")

@@ -2450,6 +2450,10 @@ DIAL_READ_PT = 12  # reference px of face for it. Two points down from the panel
 # speaker, the pointer swinging over both - has to fit inside the glass
 DIAL_MARK = 0.139  # of the radius: the speaker in the knob's half of that gap, for the same
 # reason. It was 0.17, whose bottom corner stood a pixel and a half out on the ring
+DIAL_AWAY_CUTS = ("phone", "chevron", "slash", "leaving")  # the mark the knob shows while a companion holds
+# his voice, in the same gap and the same box as the cone. Three cuts because this one is looked
+# at rather than reasoned about - see Overlay._paint_away and factory/html/003.html
+DIAL_AWAY = "phone"
 DIAL_SS = 3  # the face's fields are drawn this many times over and boxed down
 _DIAL_LIGHT: dict[tuple[int, float], np.ndarray] = {}  # see Overlay._dial_light: one per window
 _DIAL_APERTURE: dict[tuple[int, float], np.ndarray] = {}  # ...and Overlay._dial_aperture
@@ -5954,6 +5958,7 @@ class Overlay:
         marks: Sequence[PanelMark] = (),
         marks_fade: float = 0.0,
         look_at: tuple[int, int] | None = None,
+        handed_over: bool = False,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -5996,6 +6001,11 @@ class Overlay:
         ``framing`` is which of the module's three the reticle has just been tapped to, and
         ``framing_fade`` how much of its second is left - the same shape as ``flash``, and for
         the same reason: what fades is the kiosk's to time, and what is drawn is ours.
+
+        ``handed_over`` is a companion on the LAN holding his voice, and it changes the one mark
+        in the knob's gap and nothing else on the panel. Whenever the claim is held, session or
+        not: the case worth catching is the glance at the panel *before* you start talking, when
+        the voice is already routed away and the only thing that could tell you is this mark.
         """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording, heat).copy()
@@ -6009,7 +6019,7 @@ class Overlay:
         # the way the switches here used to: you do not press an instrument, you turn one and
         # read the other, so the knob answers a finger by going white under it and the gauge
         # answers the tap that opens its screen the same way.
-        self._draw_hands(layer, d, volume, temp_c, pressed)
+        self._draw_hands(layer, d, volume, temp_c, pressed, handed_over)
         # ...and the light in the pilot lamp beside them, which is the fourth thing on this panel
         # that says what the box is doing and the only one in that corner. Before the slider, so
         # a column coming up under a thumb covers it the way it covers everything else there.
@@ -7760,6 +7770,7 @@ class Overlay:
         colour: tuple[int, int, int],
         speaker: tuple[int, int, int] | None = None,
         reading: str | None = None,
+        away: bool = False,
     ) -> Image.Image:
         """The half of an instrument that moves: a pointer, its hub, and what it has covered.
 
@@ -7839,7 +7850,7 @@ class Overlay:
         tile = material.to_image(np.zeros((*cover.shape, 3), np.float32), shadow)
         if speaker is not None:
             tile.alpha_composite(self._printed(smoothed(
-                2 * span + 1, lambda t: self._paint_speaker(t, span, speaker))))
+                2 * span + 1, lambda t: self._paint_speaker(t, span, speaker, away))))
         tile.alpha_composite(self._phosphor_bloom(hand, span, r * DIAL_HUB + self.scale))
         tile.alpha_composite(hand)
         if reading is not None:
@@ -7927,7 +7938,7 @@ class Overlay:
         glow.putalpha(glow.getchannel("A").point(lambda a: round(a * DIAL_BLOOM_A)))
         return glow
 
-    def _knob(self, level: int | None, turning: bool) -> Image.Image:
+    def _knob(self, level: int | None, turning: bool, away: bool = False) -> Image.Image:
         """The volume pointer at *level*, white while a finger is on it. Cached per appearance.
 
         The speaker rides in the same tile, because it is part of the same still picture and a
@@ -7936,9 +7947,14 @@ class Overlay:
         White is the whole of what the knob does under a finger, and it says the right thing at
         the right moment twice over: it and the column come up together on the touch, and once
         the finger is on the track it is the pointer following it that says the two are one
-        control rather than two.
+        control rather than two. It still wins while his voice is away: a finger goes on white,
+        mark and all, because what a finger is told is that it has hold of the thing it touched.
+
+        *away* is in the key rather than swapped into a tile after the fact, which is the whole
+        of what it costs: the appearance is two knobs instead of one per level and turning, and
+        the pair is built once each and then handed back for as long as nothing moves.
         """
-        key = (level, turning)
+        key = (level, turning, away)
         tile = self._knobs.get(key)
         if tile is None:
             colour = WHITE if turning else GREEN
@@ -7947,6 +7963,7 @@ class Overlay:
                 None if level is None else level / 100.0,
                 colour,
                 speaker=GREEN_DIM if level is None else (WHITE if turning else GREEN_MID),
+                away=away,
             )
         return tile
 
@@ -7977,6 +7994,7 @@ class Overlay:
         volume: int | None,
         temp_c: float | None,
         pressed: str | None,
+        handed_over: bool = False,
     ) -> None:
         """Both pointers, each with whatever it prints in the gap under its hub.
 
@@ -7995,7 +8013,7 @@ class Overlay:
         this one has nothing left to draw flat.
         """
         turning = pressed == VOLUME
-        for name, tile in ((VOLUME, self._knob(volume, turning)),
+        for name, tile in ((VOLUME, self._knob(volume, turning, handed_over)),
                            (HEAT, self._needle(temp_c, pressed == HEAT))):
             cx, cy = (round(v) for v in self.switches[name])
             layer.alpha_composite(tile, (cx - self.dial_span, cy - self.dial_span))
@@ -8307,16 +8325,24 @@ class Overlay:
         self._text(d, track.center[0], track.y - round(18 * self.scale), str(level),
                    self.font_mode, (*WHITE, 255), align="c")
 
-    def _paint_speaker(self, t: ImageDraw.ImageDraw, span: int, c: tuple[int, int, int]) -> None:
+    def _paint_speaker(self, t: ImageDraw.ImageDraw, span: int, c: tuple[int, int, int],
+                       away: bool = False) -> None:
         """A cone and its throat, in the knob's gap. Says which of the two dials this is.
 
         The gauge's half of that gap is a number in degrees; a knob's reading is the pointer, so
         what goes here instead is the one mark that says what is being turned. Inside the tile
         rather than on the frame: the cone is two diagonals, and a diagonal drawn flat at eleven
         pixels is the staircase this whole corner was rebuilt to be rid of.
+
+        *away* is a companion holding his voice, and it puts a different mark in the same gap -
+        see :meth:`_paint_away`. Only the mark: the pointer, the lit arc and the rung click all
+        stay exactly as they were, because they all still do what they did. The knob is not a
+        dead control while his voice is on a phone; only his voice has left.
         """
-        r = max(3.0, self.btn_r * DIAL_MARK)
-        mid = span + self.btn_r * DIAL_LABEL
+        if away:
+            self._paint_away(t, span, c)
+            return
+        r, mid = self._mark_box(span)
         # One silhouette rather than a throat and a cone drawn separately: two shapes that share
         # an edge each own half of the pixels along it, and the shrink out of the tile averages
         # that pair into a seam down the middle of what is supposed to be one solid mark.
@@ -8326,6 +8352,88 @@ class Overlay:
              (at(span - r / 3), at(mid + r / 3)), (at(span - r), at(mid + r / 3))],
             fill=linear(c),
         )
+
+    def _mark_box(self, span: int) -> tuple[float, float]:
+        """How big a mark in the knob's gap may be, and where its middle sits.
+
+        Ten pixels across, at the panel's own scale, and that is not a style choice: the gap
+        under the hub is bounded above by the pointer swinging over it and below by the bezel -
+        the mark's bottom lands 26.1 px from the middle of a face whose glass stops at 27.8 (see
+        DIAL_MARK, and :meth:`_dial_aperture`, which is what would quietly shave a mark that
+        reached further). Every cut of the handover mark is drawn inside this same square, so
+        two of them differ in shape and in nothing else.
+        """
+        return max(3.0, self.btn_r * DIAL_MARK), span + self.btn_r * DIAL_LABEL
+
+    def _paint_away(self, t: ImageDraw.ImageDraw, span: int, c: tuple[int, int, int]) -> None:
+        """The mark for "his voice is somewhere else", in the gap the cone usually has.
+
+        Which of the cuts in :data:`DIAL_AWAY_CUTS` is drawn is Marco's call, from real renders
+        on the real panel - see ``factory/html/003.html``. They are all three here so the choice
+        is one word rather than a rewrite, and they all three obey :meth:`_mark_box`.
+
+        What none of them may say is *muted* or *broken*. The sound cues have not gone anywhere:
+        the rung click, the shutter and the wake chime are deliberately off the voice stream
+        (see :meth:`cyclops.kiosk.Kiosk._sync_handover`) and still come out of this box's amp at
+        this knob's level. A dimmed hand, or the drawing a dial with no sink behind it gets,
+        would be a lie about what the control still does.
+        """
+        r, mid = self._mark_box(span)
+        cut = DIAL_AWAY
+        if cut == "phone":
+            # A different silhouette, not a decorated cone: upright and narrow against the
+            # cone's sideways wedge, which is the one difference that survives a glance from a
+            # pace away. The screen is knocked back out of it, because a solid slab this size is
+            # a domino - it is the frame around a dark rectangle that says "a device".
+            # Half as wide as it is tall, which is the proportion doing all the work: against the
+            # cone's sideways wedge an upright is the one difference that survives a glance from
+            # a pace away, and it is the proportion rather than any detail that says "a phone".
+            # A square of the same area reads as a button and a wider one as a battery.
+            w = r * 0.50
+            t.rounded_rectangle([at(span - w), at(mid - r), at(span + w), at(mid + r)],
+                                radius=wide(r * 0.24), fill=linear(c))
+            # One knockout, not a frame: a 5 px body has no room for a margin round a screen,
+            # and the earpiece slot is the detail that survives being averaged down to size.
+            t.line([at(span - w * 0.45), at(mid - r * 0.58),
+                    at(span + w * 0.45), at(mid - r * 0.58)],
+                   fill=(0, 0, 0, 0), width=round(wide(1.1)))
+        elif cut == "chevron":
+            # The cone, and the sound carrying on past the gap without it. A chevron rather
+            # than an arrow: at ten pixels an arrowhead is three pixels of head on two of shaft,
+            # which averages down to a blob - and a *diagonal* arrow beside the cone's wedge
+            # reads as a tick, which is the one thing worse than reading as nothing.
+            t.polygon(
+                [(at(span - r), at(mid - r * 0.22)), (at(span - r * 0.68), at(mid - r * 0.22)),
+                 (at(span - r * 0.28), at(mid - r * 0.74)), (at(span - r * 0.28), at(mid + r * 0.74)),
+                 (at(span - r * 0.68), at(mid + r * 0.22)), (at(span - r), at(mid + r * 0.22))],
+                fill=linear(c),
+            )
+            t.line([at(span + r * 0.26), at(mid - r * 0.74), at(span + r * 0.96), at(mid),
+                    at(span + r * 0.26), at(mid + r * 0.74)],
+                   fill=linear(c), width=round(wide(1.4)), joint="curve")
+        elif cut == "slash":
+            self._paint_speaker(t, span, c)
+            # Knocked out under the bar so the bar reads over the cone rather than merging into
+            # it: a hairline of its own colour laid straight on a solid shape of that colour is
+            # not a bar at all.
+            for width, colour in ((wide(2.6), (0, 0, 0, 0)), (wide(1.2), linear(c))):
+                t.line([at(span - r * 0.85), at(mid + r * 0.85),
+                        at(span + r * 0.85), at(mid - r * 0.85)], fill=colour, width=round(width))
+        else:
+            # The cone pulled back to the left, and its sound gone off the right-hand side
+            # without it: two arcs with a gap where they used to leave the throat. Detached is
+            # the whole of the idea - arcs still touching the cone is the loudspeaker glyph
+            # every volume control on earth draws, and it would read as "louder".
+            t.polygon(
+                [(at(span - r), at(mid - r / 4)), (at(span - r * 0.62), at(mid - r / 4)),
+                 (at(span - r * 0.24), at(mid - r * 0.80)), (at(span - r * 0.24), at(mid + r * 0.80)),
+                 (at(span - r * 0.62), at(mid + r / 4)), (at(span - r), at(mid + r / 4))],
+                fill=linear(c),
+            )
+            for reach, arc in ((r * 0.62, 62.0), (r * 1.18, 50.0)):
+                t.arc([at(span + r * 0.38 - reach), at(mid - reach),
+                       at(span + r * 0.38 + reach), at(mid + reach)],
+                      start=-arc, end=arc, fill=linear(c), width=round(wide(1.2)))
 
 
     # ---- the long press, and what it opens ----
