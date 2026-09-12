@@ -58,3 +58,6 @@ because there is one Pi — `factory/ON-THE-PI` says which.
 A build that dies leaves `factory/logs/NNN.log` and the job sitting at `ready`. The loop won't
 try again — that's deliberate, so a broken job can't burn an afternoon in a loop nobody is
 watching. `/board` shows it as stalled and `/rework N` sends it round again.
+
+Ctrl-C in its terminal stops it. From anywhere else, `pkill -f 'factory/loop\.sh$'` — anchored,
+because a loose pattern also matches the shell you typed it into.
