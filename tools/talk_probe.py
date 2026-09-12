@@ -13,6 +13,10 @@ What it measures is what a prompt change to HOW YOU TALK can quietly buy: words 
 whether a turn cost more than one response, how the greeting varies from run to run, and
 which turns carried a film reference or a compliment. The last two are a word list plus a
 pair of eyes - the tally flags candidates and prints the lines, and somebody reads them.
+
+Warmth is not a fault to be driven to zero any more: encouragement that is earned is part of
+the character and empty flattery is not, and no word list can tell those apart. The bucket
+flags both and the reading sorts them.
 """
 
 from __future__ import annotations
@@ -20,6 +24,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import random
 import re
 import statistics
 import sys
@@ -65,14 +70,16 @@ REFERENCE_WORDS = (
     "robot wars", "battlebots", "flux capacitor", "delorean", "great scott",
     "portal", "glados", "aperture", "wintermute", "neuromancer", "cyberpunk", "ghost in the shell",
 )
-PRAISE_WORDS = (
+WARMTH_WORDS = (
     "great job", "nice work", "good job", "well done", "nicely done", "good call", "smart",
     "clever", "love that", "love it", "awesome", "excellent", "brilliant", "fantastic",
     "amazing", "impressive", "perfect", "kudos", "proud", "solid work", "nice one", "sweet",
     "you're good", "you've clearly", "you clearly", "you're clearly", "good work", "nice,",
     "nice.", "nice!", "great,", "great.", "great!", "nice progress", "good progress",
     "solid work", "solid milestone", "milestone", "congrats", "congratulations", "you did",
-    "you've done", "hats off", "respect",
+    "you've done", "hats off", "respect", "great question", "good question", "well spotted",
+    "nice catch", "good thinking", "right call", "the right call", "well played", "tidy",
+    "that's the one", "earned", "not bad", "decent", "handsome", "clean job", "worth it",
 )
 
 
@@ -177,7 +184,7 @@ def tally(path: Path) -> None:
     print(f"distinct greetings: {len(greetings)} of {len(runs)}")
     for line, n in greetings.most_common():
         print(f"  {n}x {line!r}")
-    for label, words in (("reference", REFERENCE_WORDS), ("praise", PRAISE_WORDS)):
+    for label, words in (("reference", REFERENCE_WORDS), ("warmth", WARMTH_WORDS)):
         flagged = [(r, _hits(r["cyclops"], words)) for r in records]
         flagged = [(r, h) for r, h in flagged if h]
         by_run = Counter(r["run"] for r, _ in flagged)
@@ -189,14 +196,62 @@ def tally(path: Path) -> None:
         print(f"  run {r['run']} t{r['turn']} ({r['words']}w) {r['cyclops']!r}")
 
 
+def blind(a: Path, b: Path, out: Path) -> None:
+    """Shuffle two runs' turns together with the arm hidden, for reading without knowing which.
+
+    "Recognisably funnier and more opinionated than the tool it replaced" is a comparison, and a
+    comparison you make while knowing which side you wrote is not one. This writes the lines in
+    one shuffled list with an id each, and the key beside it; mark the list, then --score it.
+    """
+    rows = []
+    for arm, path in (("A", a), ("B", b)):
+        for r in (json.loads(line) for line in path.read_text().splitlines() if line.strip()):
+            if r["turn"] != 1 and r["cyclops"].strip():  # the greeting has its own criterion
+                rows.append({"arm": arm, "turn": r["turn"], "text": r["cyclops"]})
+    random.seed(2)
+    random.shuffle(rows)
+    key = out.with_suffix(".key.json")
+    key.write_text(json.dumps({str(i): r for i, r in enumerate(rows, 1)}, indent=1))
+    lines = [f"{i}\tt{r['turn']}\t{r['text']}" for i, r in enumerate(rows, 1)]
+    out.write_text("\n".join(lines) + "\n")
+    print(f"{len(rows)} lines -> {out}   key -> {key}")
+
+
+def score(key_path: Path, marks_path: Path) -> None:
+    """Join marks (``<id> <letter>`` per line) back onto the key and tally per arm."""
+    key = json.loads(key_path.read_text())
+    marks: dict[str, str] = {}
+    for line in marks_path.read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] in key:
+            marks[parts[0]] = parts[1].lower()
+    tally_: dict[str, Counter] = {"A": Counter(), "B": Counter()}
+    for ident, mark in marks.items():
+        tally_[key[ident]["arm"]][mark] += 1
+    for arm in ("A", "B"):
+        total = sum(tally_[arm].values())
+        got = ", ".join(f"{m}={n} ({n / total:.0%})" for m, n in sorted(tally_[arm].items()))
+        print(f"arm {arm}: n={total}  {got}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--out", type=Path, help="JSONL to append each turn to")
     parser.add_argument("--tally", type=Path, help="tally a JSONL written earlier and exit")
+    parser.add_argument("--blind", type=Path, nargs=3, metavar=("A", "B", "OUT"),
+                        help="shuffle two JSONLs into one anonymous list to read")
+    parser.add_argument("--score", type=Path, nargs=2, metavar=("KEY", "MARKS"),
+                        help="tally marks made against a --blind list, per arm")
     args = parser.parse_args()
     if args.tally:
         tally(args.tally)
+        return
+    if args.blind:
+        blind(*args.blind)
+        return
+    if args.score:
+        score(*args.score)
         return
     if not args.out:
         parser.error("--out is required unless --tally is given")
