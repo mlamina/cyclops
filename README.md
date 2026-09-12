@@ -5,17 +5,21 @@ answers any question — so your hands stay free and your phone stays in your po
 
 ## Why it exists
 
-Making or fixing something with your hands means the answer you need is always somewhere else: a
-manual, a browser tab, the notes from last time. Each one costs putting the tool down. Cyclops
-takes four of those interruptions away:
+An assistant like Claude is enormously helpful on a project — but it lives in a phone, a tablet,
+an app, all built for sitting down, none of them for when your hands are full. Cyclops brings that
+help to where the work is. It takes four interruptions away:
 
 * **It remembers.** Everything about a project is written down and kept — what was decided, what
   was measured, what is still open — without anyone filing it.
 * **It has read the manual.** Questions get answered when they are asked, not after a search.
-* **No phone, laptop, or tablet.** Nothing to unlock, type into, or scroll through. It lives on the
-  bench and you talk to it.
+* **No phone, laptop, or tablet.** Nothing to unlock, type into, or scroll through. It sits next
+  to you and you talk to it.
 * **It is good company.** It has an eye and a character. Working with it is more fun than working
   alone.
+
+Because it is designed to be intuitive — no app, no account, no prompt to write, just talking —
+people who aren't technical can use it as easily as anyone. You switch it on and say what you're
+working on.
 
 ## Core values
 
@@ -27,26 +31,27 @@ The tiebreakers. When two designs are both reasonable, the one that keeps these 
    working on Cyclops instead of the project, it has failed.
 3. **Nothing gets lost.** Every session is written down. What was decided, measured, and left open
    is there next week without anyone having filed it.
-4. **You hold the shutter.** It sees what you show it, when you show it. It never looks, records,
-   or acts on its own.
-5. **It says where an answer came from.** A photo, your manual, or a search — or it says it is
-   going from memory. Never a guessed torque value stated as fact.
-6. **Good company.** It has a face and a character. It should be more fun to work with than to
+4. **Good company.** It has a face and a character. It should be more fun to work with than to
    work without.
+5. **It does what you expect.** Talking to it works the way talking works; showing it something
+   works the way showing works. Nothing to learn, nothing to be shown.
 
 ## Criteria for success
 
-1. **It gets switched on.** For real bench sessions, not demos. Sessions per week is the number.
-2. **The phone stays in the pocket.** Nothing gets looked up on another device during a session.
+1. **The phone stays in the pocket.** Nothing gets looked up on another device during a session.
    Reaching for one is a miss worth writing down.
-3. **One question, one answer.** A question that needs a follow-up — "what?", "say that again",
+2. **One question, one answer.** A question that needs a follow-up — "what?", "say that again",
    "no, the other one" — is a miss. The transcripts have the count.
-4. **Nothing has to be re-told.** Reopening a project, Cyclops already knows where it left off. A
-   re-explanation in a transcript is a miss.
-5. **Zero time on Cyclops itself.** Turns about the tool — settings, restarts, "why didn't you" —
+3. **Zero time on Cyclops itself.** Turns about the tool — settings, restarts, "why didn't you" —
    tend to none.
-6. **You want it on.** The one that is not a number. If switching it on feels like a chore,
-   nothing else here counts.
+4. **No unexpected waits.** Answers arrive at the speed of talking. Anything slower is announced
+   before it starts — what it is doing and roughly how long — so a wait is never a surprise and
+   never a silence.
+5. **Fun and surprise.** A turn you did not see coming, a thing it noticed before you did. A
+   session with no surprise in it is one an app could have done.
+6. **No learning curve.** It behaves the way you assumed it would before anyone told you anything.
+   Having to work out what it wants — how to phrase it, when it's listening, what it can do — is a
+   miss.
 
 ## How it works
 

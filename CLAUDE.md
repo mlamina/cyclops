@@ -1,7 +1,26 @@
 Cyclops — your workshop droid. A one-eyed robot that works with you. It remembers every project,
 has read every manual, and answers any question — so your hands stay free and your phone stays
-in your pocket. README.md carries the mission, the core values and the criteria for success;
-they are the tiebreakers for every design decision here.
+in your pocket.
+
+Why it exists: an assistant like Claude is enormously helpful on a project, but it lives in a
+phone, a tablet, an app - all built for sitting down, none of them for when your hands are full.
+Cyclops brings that help to where the work is, and because it is just talking, people who aren't
+technical can use it as easily as anyone. README.md has the full version.
+
+Core values - the tiebreakers. When two designs are both reasonable, the one that keeps these wins:
+- Hands stay free - voice in, voice and the screen out. If it needs a keyboard, a phone or a menu, it's wrong.
+- It never becomes the task - a setting to tend, a menu, a nag: that is attention Cyclops asked for, and it has failed.
+- Nothing gets lost - every session is written down; what was decided, measured and left open is there next week.
+- Good company - it has a face and a character. More fun to work with than to work without.
+- It does what you expect - talking to it works the way talking works. Nothing to learn, nothing to be shown.
+
+Criteria for success - each is counted in misses:
+- The phone stays in the pocket - reaching for another device mid-session is a miss.
+- One question, one answer - "what?", "say that again", "no, the other one" is a miss.
+- Zero time on Cyclops itself - turns about settings, restarts, "why didn't you" tend to none.
+- No unexpected waits - answers at the speed of talking; anything slower is announced before it starts.
+- Fun and surprise - a session with no surprise in it is one an app could have done.
+- No learning curve - having to work out what it wants, how to phrase it, when it's listening, is a miss.
 
 This is a physical AI project.
 It has a camera, a screen and a microphone and the main mode of interaction is via voice.
@@ -23,8 +42,6 @@ Anytime you want to show me an image, don't leave it in your scratchpad. Copy it
 ~/Downloads.
 
 Design principles that matter for this project:
-- Hands stay free - voice in, voice and the screen out. If it needs a keyboard, a phone or a menu, it's wrong.
-- It never becomes the task - a setting to tend, a menu, a nag: that is attention Cyclops asked for, and it has failed.
 - Reduce cognitive load - Cyclops helps users focus on the task at hand, not the tool.
 - Embrace familarity - Where possible, adopt well-established conventions and patterns to reduce the learning curve.
 - CPU matters - The Pi heats quickly in its case. 
