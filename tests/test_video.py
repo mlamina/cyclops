@@ -154,3 +154,27 @@ def test_the_kiosk_can_reach_a_running_session_to_say_the_panel_is_free() -> Non
 
     controller = SessionController(Settings(api_key=""), frames=None, entrypoint="test")
     assert controller.panel_closed(5.0) is False
+
+
+def test_no_method_on_the_agent_is_defined_twice() -> None:
+    """A class body's second `def foo` silently wins, and nothing warns you.
+
+    Adding `_play` for a video quietly replaced the `_play` that feeds an audio delta to the
+    speaker: the model went on answering, the transcript went on filling up, and the box made
+    no sound at all. Nothing caught it - not ruff, not the suite, not a smoke run - because a
+    shadowed method is legal Python. This is the cheapest thing that would have.
+    """
+    import ast
+    import collections
+
+    tree = ast.parse(Path(agent.__file__).read_text())
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        names = [
+            child.name
+            for child in node.body
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+        ]
+        twice = [n for n, count in collections.Counter(names).items() if count > 1]
+        assert not twice, f"{node.name} defines {twice} more than once; the second one wins"

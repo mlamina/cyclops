@@ -89,6 +89,8 @@ STAMPS = re.compile(r"\d{4}-\d{2}-\d{2}|\d{2}-\d{2}-\d{2}")
 # Folders whose name says nothing a person would search by. An `Eye Designs/` is a name somebody
 # chose and is worth embedding; `photos/` is where every session puts every picture.
 PHOTO_DIRS = frozenset({"Photos", card.PHOTOS})
+# The project folder and the session folder spell it differently, the same way Photos/photos do.
+VIDEOS = "Videos"
 
 # What the role at the end of a photo's filename means, in the words somebody would ask for it
 # by. This is the only thing in the index that says a picture is a *photograph* - the caption
@@ -107,7 +109,7 @@ ROLES = {
 class Item:
     """One thing on the card you could ask for, and everything needed to find and show it."""
 
-    kind: str  # "photo" | "image" | "entry" | "file"
+    kind: str  # "photo" | "image" | "entry" | "file" | "video"
     path: str  # absolute, as a string, because this round-trips through JSON
     scope: str  # "project:<folder name>" | "session:<folder name>"
     title: str  # what to call it out loud
@@ -129,6 +131,17 @@ class Item:
     @property
     def showable(self) -> bool:
         return self.kind in {"photo", "image"}
+
+    @property
+    def playable(self) -> bool:
+        """A video reference, which is put on the glass by playing it rather than drawing it.
+
+        Deliberately not folded into :attr:`showable`. That one means "a picture we can hand
+        to ``panel.offer_image``", and :func:`image_folders` is derived from it - so widening
+        it would point the captioner at every thumbnail on the card and pay a model call to be
+        told what a title card looks like. A video arrives already carrying its own words.
+        """
+        return self.kind == "video"
 
     @property
     def within(self) -> str:
@@ -272,7 +285,8 @@ def _where(scope: str, folder: Path, path: Path) -> str:
     Kept out of :attr:`Item.title`, which is read out loud. Nobody wants to hear a file path.
     """
     holder = scope.partition(":")[2]
-    names = [holder, "" if folder.name in PHOTO_DIRS else folder.name, path.stem]
+    named = folder.name not in PHOTO_DIRS and folder.name not in {VIDEOS, card.VIDEOS}
+    names = [holder, folder.name if named else "", path.stem]
     words = STAMPS.sub(" ", " ".join(n for n in names if n)).replace("-", " ").replace("_", " ")
     said = [w for w in words.split() if w not in ROLES]
     role = ROLES.get(path.stem.rpartition("_")[2], "picture")
@@ -319,6 +333,48 @@ def _images_in(folder: Path, scope: str, log_captions: dict[str, str], kind: str
             )
         )
     return out
+
+
+def _videos_in(folder: Path, scope: str) -> list[Item]:
+    """Every video reference in one folder, described by what was said about it on YouTube.
+
+    Cheaper to index than a photograph and for a good reason: a picture has to be looked at by
+    a model before there are any words about it at all, and a video came with a title, a
+    channel and a section heading already attached. Nothing here costs a call.
+
+    The thumbnail beside the sidecar is what carries the mtime and size, so one new reference
+    re-embeds one item rather than every reference in the folder.
+    """
+    kept = _read_sidecar(folder / card.VIDEOS_NAME)
+    out: list[Item] = []
+    for name, about in sorted(kept.items()):
+        path = folder / name
+        if not path.is_file():
+            continue  # the sidecar outlived its picture; the sweep will tidy it
+        title = str(about.get("title", "")) or path.stem
+        parts = [_where(scope, folder, path), title, str(about.get("channel", ""))]
+        mtime, size = _stat(path)
+        out.append(
+            Item(
+                kind="video",
+                path=str(path),
+                scope=scope,
+                title=title,
+                text=". ".join(p.strip(" .") for p in parts if p.strip())[:MAX_ITEM_CHARS],
+                mtime_ns=mtime,
+                size=size,
+            )
+        )
+    return out
+
+
+def _read_sidecar(path: Path) -> dict:
+    """A videos.json as a dict, or an empty one. Unreadable is the same as absent here."""
+    try:
+        found = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
 
 
 def _entries_of(project: Path, scope: str) -> list[Item]:
@@ -424,15 +480,18 @@ def project_items(folder: Path) -> list[Item]:
     log_captions = _log_captions(folder)
     items = _readme_of(folder, scope) + _entries_of(folder, scope)
     items += _images_in(folder / "Photos", scope, log_captions, "photo")
+    items += _videos_in(folder / VIDEOS, scope)
     items += _files_in(folder, scope)
     # Pictures a person dropped into a folder of their own - "Eye Designs/", say. Photos/ is
-    # already done above, so it is skipped rather than re-read.
+    # already done above, so it is skipped rather than re-read - and so is Videos/, whose
+    # pictures are title cards belonging to the references above. Without that line every
+    # reference is in the index twice, the second time as an ordinary picture of nothing.
     try:
         others = [p for p in sorted(folder.iterdir()) if p.is_dir()]
     except OSError:
         others = []
     for sub in others:
-        if sub.name == "Photos":
+        if sub.name in {"Photos", VIDEOS}:
             continue
         items += _images_in(sub, scope, log_captions, "image")
     return items
@@ -442,6 +501,7 @@ def session_items(folder: Path) -> list[Item]:
     """A session's photos, and the summary somebody already wrote of the conversation."""
     scope = f"session:{folder.name}"
     items = _images_in(folder / card.PHOTOS, scope, {}, "photo")
+    items += _videos_in(folder / card.VIDEOS, scope)
     summary = folder / card.SUMMARY_NAME
     text = " ".join(_text_of(summary).split())
     if text:

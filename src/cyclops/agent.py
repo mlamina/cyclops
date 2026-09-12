@@ -2054,7 +2054,7 @@ class VoiceAgent:
         except Exception as exc:  # never leave the model waiting for a tool result
             output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
         else:
-            output = await self._play(found, thumb)
+            output = await self._play_video(found, thumb)
         finally:
             self.search_active = False
 
@@ -2064,8 +2064,14 @@ class VoiceAgent:
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
-    async def _play(self, found: Watch, thumb: bytes) -> dict:
-        """Put one video on the panel, and shut the microphone for as long as it is up."""
+    async def _play_video(self, found: Watch, thumb: bytes) -> dict:
+        """Put one video on the panel, and shut the microphone for as long as it is up.
+
+        Named in full rather than ``_play``, which is taken: :meth:`_play` is what feeds an
+        audio delta to the speaker. Shadowing it silently costs the session its voice - the
+        model answers, the transcript fills up and nothing comes out of the speaker - which is
+        exactly what happened on 2026-09-11 before this was renamed.
+        """
         shown = await asyncio.to_thread(
             lambda: panel.offer_video(found.stream, found.title, found.start, thumb, VIDEO_HOLD_S)
             and panel.show()
