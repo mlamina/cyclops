@@ -22,6 +22,28 @@
    still puts it away - the same gesture as every other thing on this screen. */
 .stage .clip { display: block; width: 100%; height: 100%; object-fit: contain; background: #000; }
 
+/* ...and a video, unlike everything else the stage holds, has somewhere to be scrubbed to. The
+   seeker is the recording player's - .scrub and .scrub-fill are defined once in views.css and
+   this only says where it goes and that it is visible. Same 6 px bar, same green, same gap.
+
+   Two rows rather than one, so the bar sits UNDER the picture and never on it. That is the rule
+   the recording player already argues for and it holds harder here: a demonstration is filmed
+   across a bench and the bottom of the frame is exactly where somebody's hands are. It also
+   keeps the one pressable thing on this screen off the one surface where every other press
+   means "put it away".
+
+   Written `body.drawing.clipping` and not `body.clipping`, which is not tidiness: a video is up
+   under body.drawing like every other thing on the stage, and `body.drawing .stage { display:
+   block }` below carries the same specificity and comes later in the file. One class more is
+   what makes the grid win, rather than an ordering that the next edit to this file could undo
+   without anything failing. */
+body.drawing.clipping .stage {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) var(--bar);
+  gap: var(--bargap);
+}
+body.clipping .scrub { display: block; }
+
 /* ...and a scratchpad the model wrote is the other thing it holds, in a document of its own (see
    SCRATCHPAD_HEAD in panel.js). Three of these four declarations are load-bearing:
 

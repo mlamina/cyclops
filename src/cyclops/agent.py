@@ -27,11 +27,11 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import arguments, imagine, panel, point, recall, session, sfx, sketch, tasks, youtube
+from . import arguments, card, imagine, panel, point, recall, session, sfx, sketch, tasks, youtube
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
-from .watch import Watch, WatchError, find_video
+from .watch import Watch, WatchError, find_video, restream
 from .webcam import Capture
 
 if TYPE_CHECKING:  # the projects package pulls in pydantic_ai; the tools import it when called
@@ -2058,11 +2058,22 @@ class VoiceAgent:
         finally:
             self.search_active = False
 
+        await self._send_tool_output(call.call_id, output)
         if not output["ok"]:
             session.note("watched", request=request, error=output["error"])
             self._log(f"[tool] watch_video failed: {output['error']}", stream=sys.stderr)
-        await self._send_tool_output(call.call_id, output)
-        await self._request_response()
+            await self._request_response()  # it has to be able to say it could not find one
+            return
+        # ...and no response at all when one is playing. This is the only tool here that does
+        # not ask for one, and it is the difference between a video and a video with somebody
+        # talking over it. The note in the output asks the model to stay quiet, but a note is
+        # advice: the model had already said what it was doing before it called this, so being
+        # asked again afterwards reads as a turn to fill and it filled it - "Got it, there's a
+        # video playing that shows how to mount a boom arm" over the top of the video saying
+        # the same thing. Not creating a response is not a request, it is the mechanism.
+        #
+        # Nothing is left waiting. The function_call_output is sent, so the model is not
+        # blocked; it simply has no turn until the user takes one, which is the whole point.
 
     async def _play_video(self, found: Watch, thumb: bytes) -> dict:
         """Put one video on the panel, and shut the microphone for as long as it is up.
@@ -2098,8 +2109,8 @@ class VoiceAgent:
             "channel": found.channel,
             "start": found.clock,
             "note": (
-                "It is playing on the screen now, and they cannot hear you over it. Say "
-                "nothing at all until they speak to you again."
+                "It is playing on the screen now. They cannot hear you over it and you have "
+                "not been given a turn, which is deliberate - wait for them to speak."
             ),
         }
 
@@ -2521,6 +2532,58 @@ class VoiceAgent:
             await self.add_found(found, name)
         await self._request_response()
 
+    async def _replay(self, query: str, best: recall.Hit, others: list[dict]) -> dict[str, Any]:
+        """Put a video reference from the card back on the panel, playing again.
+
+        A reference keeps the id and the second, never the URL - a signed googlevideo link is
+        dead within six hours of being minted, so a stored one would fail exactly when it was
+        wanted. Resolving a fresh one costs about three seconds.
+
+        A failure here is not a dead end. The thumbnail beside the sidecar is a real picture on
+        the card, so a video that has been pulled, or a box that is offline, still puts the
+        title card up and lets the model say what it found and that it will not play.
+        """
+        about = await asyncio.to_thread(_reference_beside, Path(best.item.path))
+        stream = await restream(about["id"]) if about.get("id") else ""
+        if not stream:
+            shown, _ = await asyncio.to_thread(self._show_found, Path(best.item.path))
+            session.note(
+                "recall", query=query[:120], title=best.item.title, what="video", shown=shown
+            )
+            return {
+                "ok": True,
+                "hits": 1 + len(others),
+                "kind": "video",
+                "title": best.item.title,
+                "note": (
+                    "That video is on the card but will not play right now. Its picture is on "
+                    "the screen. Say what it was and that you cannot start it."
+                ),
+                "others": others,
+            }
+        found = Watch(
+            id=about["id"],
+            title=str(about.get("title", "")) or best.item.title,
+            channel=str(about.get("channel", "")),
+            start=int(about.get("start", 0) or 0),
+            stream=stream,
+            thumb="",
+        )
+        thumb = await asyncio.to_thread(_read_bytes, Path(best.item.path))
+        output = await self._play_video(found, thumb)
+        session.note(
+            "recall",
+            query=query[:120],
+            title=found.title,
+            what="video",
+            file=best.item.within,
+            scope=best.item.scope,
+            shown=bool(output["ok"]),
+        )
+        output["hits"] = 1 + len(others)
+        output["others"] = others
+        return output
+
     def _recall_scopes(self, project: str) -> set[str] | None:
         """Which corners of the card this query may look in, as ``recall.Item.scope`` values.
 
@@ -2589,6 +2652,8 @@ class VoiceAgent:
             {"title": _shorten(hit.item.title, MAX_OTHER_CHARS), "kind": hit.item.kind}
             for hit in hits[1:RECALL_OFFERED]
         ]
+        if best.item.playable:
+            return await self._replay(query, best, others)
         if not best.item.showable:
             # `what`, not `kind`: session.note takes the record's own type as its first
             # parameter and that parameter is called kind, so passing one as a field is a
@@ -3319,6 +3384,27 @@ def _tool_name(arguments: str | None) -> str:
 def _tool_description(arguments: str | None) -> str:
     """track_project's 'description' argument - the sentence that makes the project findable."""
     return _tool_string(arguments, "description", MAX_PROJECT_TAGLINE_CHARS)
+
+
+def _reference_beside(thumb: Path) -> dict:
+    """What the sidecar in this folder says about one kept video. Empty when it says nothing.
+
+    Read off the card rather than carried in the index, so recall.Item keeps the one shape it
+    has for everything - a rebuilt index is expensive and a widened one invalidates every row.
+    """
+    try:
+        kept = json.loads((thumb.parent / card.VIDEOS_NAME).read_text())
+    except (OSError, ValueError):
+        return {}
+    found = kept.get(thumb.name) if isinstance(kept, dict) else None
+    return found if isinstance(found, dict) else {}
+
+
+def _read_bytes(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError:
+        return b""
 
 
 def _tool_request(arguments: str | None) -> str:

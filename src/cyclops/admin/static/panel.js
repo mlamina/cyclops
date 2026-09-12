@@ -48,6 +48,10 @@ stage.addEventListener('pointerdown', (event) => {
   // travel to the kiosk and come back, which is the better part of a second - silent for a
   // picture, but a video would keep talking behind the kiosk's own window after it was covered
   // again. drop() here instead would hit the flash-back the note above describes.
+  // ...except on the seeker, which is the one thing on this screen that takes a press and does
+  // not mean "put it away". Same exemption the recording player makes, and for the same reason:
+  // everything else on the stage, letterboxing included, is a way out.
+  if (event.target.closest('.scrub')) return;
   const playing = stage.querySelector('video');
   if (playing) playing.pause();
   if (!KIOSK) drop();
@@ -149,6 +153,53 @@ const CLIP_READY_MS = 4000;
 // do not come back until there is something worth uncovering onto - here that means seeked and
 // not merely loaded, because uncovering on a loaded-but-unseeked video shows second zero for a
 // beat and then jumps, which reads as a bug rather than as a start.
+// The seeker, built here rather than in the template because the video it belongs to is built
+// here too and the two have to go up and come down together. Markup, classes and gesture are the
+// recording player's (app.js, views.css .scrub): one press-and-drag on a 6 px bar under the
+// picture, green fill, white while a finger is on it.
+//
+// Under the picture and never on it, which is the reason that player gives and it is the same
+// reason here: a demonstration is filmed across a bench and the bottom of the frame is where
+// somebody's hands are. It is also the only thing on this screen that takes a press without
+// putting the video away, so it has to be somewhere a thumb can find without aiming.
+function seeker(video) {
+  const bar = document.createElement('div');
+  bar.className = 'scrub';
+  const fill = document.createElement('div');
+  fill.className = 'scrub-fill';
+  bar.appendChild(fill);
+
+  const paint = () => {
+    fill.style.width = (video.duration ? 100 * video.currentTime / video.duration : 0) + '%';
+  };
+  // object-fit: contain letterboxes inside the element and leaves nothing in the DOM to measure,
+  // so the pillar is worked out and taken off each end - the bar stops where the picture does
+  // rather than running out over the black. On a 16:9 video at 800x480 this comes to nothing,
+  // which is the point: it costs nothing when it is not needed.
+  const fit = () => {
+    const box = video.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    const ratio = (video.videoWidth || 16) / (video.videoHeight || 9);
+    const wide = box.width / box.height > ratio;
+    const pad = wide ? (box.width - box.height * ratio) / 2 : 0;
+    bar.style.marginLeft = pad + 'px';
+    bar.style.marginRight = pad + 'px';
+  };
+  const seek = (e) => {
+    const box = bar.getBoundingClientRect();
+    if (!video.duration || !box.width) return;
+    const along = Math.min(1, Math.max(0, (e.clientX - box.left) / box.width));
+    video.currentTime = along * video.duration;
+    paint();
+  };
+  bar.addEventListener('pointerdown', (e) => { bar.setPointerCapture(e.pointerId); seek(e); });
+  bar.addEventListener('pointermove', (e) => { if (bar.hasPointerCapture(e.pointerId)) seek(e); });
+  video.addEventListener('timeupdate', paint);
+  video.addEventListener('loadedmetadata', () => { fit(); paint(); });
+  window.addEventListener('resize', fit);
+  return bar;
+}
+
 async function clip(url, start) {
   const video = document.createElement('video');
   video.className = 'clip';
@@ -162,6 +213,10 @@ async function clip(url, start) {
   video.src = url;
   stage.textContent = '';
   stage.appendChild(video);
+  // The class before the bar: the stage has to be a two-row grid before the bar is measured, or
+  // fit() reads a picture that is still the full height of the stage.
+  document.body.classList.add('clipping');
+  stage.appendChild(seeker(video));
   await new Promise((ready) => {
     let done = false;
     const settle = () => { if (!done) { done = true; ready(); } };
@@ -270,7 +325,7 @@ async function show(id) {
   const found = await r.json();
   // Cleared before it is decided, so a drawing arriving after a photo gets its button back -
   // and so a photograph landing on top of a drawing gets the bezel back with it.
-  document.body.classList.remove('photo', 'paper', 'sketching');
+  document.body.classList.remove('photo', 'paper', 'sketching', 'clipping');
   // The class before the picture: a stage that is still display:none has no size, and an image
   // fitted to a box of zero by zero paints nowhere at all.
   window.__drawing(true);
@@ -339,7 +394,7 @@ async function show(id) {
 // ever want this memory back.
 function drop() {
   window.__drawing(false);
-  document.body.classList.remove('photo', 'paper', 'sketching');
+  document.body.classList.remove('photo', 'paper', 'sketching', 'clipping');
   // Paused before it is dropped. Detaching the element is enough in practice, but "in practice"
   // is doing a lot of work there and the failure would be a voice still talking from a screen
   // showing something else.
