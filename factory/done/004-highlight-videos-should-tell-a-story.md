@@ -1,5 +1,5 @@
 ---
-state: review
+state: done
 opened: 2026-09-12
 ---
 
