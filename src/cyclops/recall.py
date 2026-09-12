@@ -352,7 +352,13 @@ def _videos_in(folder: Path, scope: str) -> list[Item]:
         if not path.is_file():
             continue  # the sidecar outlived its picture; the sweep will tidy it
         title = str(about.get("title", "")) or path.stem
-        parts = [_where(scope, folder, path), title, str(about.get("channel", ""))]
+        # "a video", not the "picture" _where falls back to on a filename with no role in it.
+        # The word does work: asking for "that video about wiring the m-unit" put the session's
+        # own summary above the video it was summarising, because the only thing in the entry
+        # that said "video" was the summary. It is the same job ROLES does for a photograph
+        # against a diagram - the one place the index says what kind of thing this is.
+        where = _where(scope, folder, path).replace("picture", "a video", 1)
+        parts = [where, title, str(about.get("channel", ""))]
         mtime, size = _stat(path)
         out.append(
             Item(

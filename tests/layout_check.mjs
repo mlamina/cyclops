@@ -220,12 +220,29 @@ const HIGHLIGHTS = {
 // apart by their query string - `/file?path=README.md` and `/file?path=Log.md` are one route and
 // two screens - and a glob cannot see one. `/files?` before `/file?` is a distinction the `s`
 // makes, not the order.
+// The videos filed onto a project - its YOUTUBE tab. Stubbed like everything else here, and not
+// because the screen is watched: nothing under .tube is in the baseline. It is so an unstubbed
+// route cannot 404 into the console and fail this run with something that is not a layout fault.
+const VIDEOS = {
+  items: [
+    { kind: 'video', id: 'aaa', title: 'How to change the Front Brake Pads on a BMW R1200GS',
+      channel: 'Bicester Bob', start: 80, clock: '1:20', when: '2026-09-11T17:10:03',
+      url: '/project-media/x/Videos/a.jpg', watch: 'https://www.youtube.com/watch?v=aaa&t=80s',
+      path: 'Videos/a.jpg' },
+    { kind: 'video', id: 'bbb', title: 'How To Wire a m-Unit from Motogadget | Beginner Guide',
+      channel: 'Moto Wrenchers', start: 0, clock: '0:00', when: '2026-09-11T17:03:38',
+      url: '/project-media/x/Videos/b.jpg', watch: 'https://www.youtube.com/watch?v=bbb&t=0s',
+      path: 'Videos/b.jpg' },
+  ],
+};
+
 const STUBS = [
   ['**/api/status', STATUS], ['**/api/sessions', SESSIONS], ['**/api/media', MEDIA],
   ['**/api/projects', PROJECTS], ['**/api/session/*/records', RECORDS],
   ['**/api/live*', LIVE], ['**/api/highlights', HIGHLIGHTS], ['**/api/session/*', SESSION],
   [/\/api\/project\/[^/]+\/files\?/, PROJECT_FILES],
   [/\/api\/project\/[^/]+\/pictures$/, PICTURES],
+  [/\/api\/project\/[^/]+\/youtube$/, VIDEOS],
   [/\/api\/project\/[^/]+\/file\?path=README\.md$/, README],
   [/\/api\/project\/[^/]+\/file\?path=Log\.md$/, LOG],
   [/\/api\/project\/[^/]+\/file\?path=Project%20Data\.xlsx$/, SHEET],

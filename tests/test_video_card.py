@@ -198,3 +198,15 @@ def test_the_tab_is_wired_all_the_way_through() -> None:
     # Its own array and its own attribute: gallery() overwrites `shots` for the picture
     # galleries, and a press on a video opens YouTube rather than the lightbox.
     assert "data-tube" in app and "data-tube" not in app.split("function gallery")[1][:400]
+
+
+def test_a_reference_says_it_is_a_video(tmp_path) -> None:
+    """The one word that tells a reference from a photograph, and it was measured.
+
+    Without it, "that video about wiring the m-unit" ranked the session's own summary above
+    the video it was summarising - the summary was the only thing in the session that said
+    "video" at all. ROLES does the same job for a photograph against a diagram.
+    """
+    one = [i for i in recall.session_items(_session_with_video(tmp_path)) if i.kind == "video"][0]
+    assert one.text.startswith("a video")
+    assert "picture" not in one.text
