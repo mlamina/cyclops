@@ -96,17 +96,17 @@ async def file_session(
         return f"{folder.name}: not filed - {why}"
 
     # Belt and braces on the one step that is unconditional: if there are photos and a project to
-    # put them in, they get chosen. Leaving it to the orchestrator to remember made it optional,
+    # put them in, they get captioned. Leaving it to the orchestrator to remember made it optional,
     # and the first real session it ran on quietly kept none of its only photo.
-    if deps.picks is None and session.photos and settings.project_photos > 0:
+    if deps.picks is None and session.photos:
         from .agents import choose_photos_for
 
         await choose_photos_for(deps, models, usage)
 
     if dry_run:
         entry = deps.scribed.entry
-        picked = len(deps.picks.picks) if deps.picks else 0
-        return f"{folder.name}: would file under {chosen.name!r} - {entry.title} ({picked} photo)"
+        shots = len(session.photos)
+        return f"{folder.name}: would file under {chosen.name!r} - {entry.title} ({shots} photo)"
     return _apply(folder, session, chosen, deps, settings)
 
 
@@ -122,7 +122,7 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
     would leave a stale README with nothing left to rebuild it.)
     """
     scribed = deps.scribed
-    picks = [(p.file, p.caption) for p in (deps.picks.picks if deps.picks else [])]
+    picks = _captioned(session, deps.picks)
     with store.held(announce=True):
         # Both checks again, inside the lock: another sweep may have filed this while we were
         # waiting on the model, and the ledger is what catches a crash between log and receipt.
@@ -136,7 +136,7 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
         # Copied inside the lock and before the log: the entry about to be appended links to
         # these files, and a link written before the file exists is a broken one in a log that is
         # never rewritten.
-        photos = store.copy_photos(project, folder, picks, limit=settings.project_photos)
+        photos = store.copy_photos(project, folder, picks)
         # Beside the photos and for the same reason - inside the lock, before anything that
         # could point at them. Unlike photos these are every one the session kept rather than a
         # chosen few; see store.copy_videos for why nothing picks.
@@ -176,6 +176,17 @@ def _apply(folder: Path, session, project: Project, deps, settings: Settings) ->
     shot = f", {len(photos)} photo(s)" if photos else ""
     reel = f", {len(videos)} video(s)" if videos else ""
     return f"{folder.name}: {note} under {project.name!r}{shot}{reel}"
+
+
+def _captioned(session, picks) -> list[tuple[str, str]]:
+    """Every photo the session took, in order, with the curator's caption where it wrote one.
+
+    All of them, not the curator's choice. A project folder is where a session's pictures end up,
+    and a model deciding which three of them were worth it was a limit nobody asked for. Where the
+    curator said nothing, the caption is what the photo was asked to look at, which may be empty.
+    """
+    written = {p.file: p.caption for p in (picks.picks if picks else [])}
+    return [(photo.file, written.get(photo.file, photo.focus)) for photo in session.photos]
 
 
 def _merge(existing: list[str], added: list[str], limit: int) -> list[str]:

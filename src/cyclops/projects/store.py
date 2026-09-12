@@ -665,9 +665,9 @@ def _write(path: Path, text: str) -> None:
 
 
 def copy_photos(
-    project: Project, session_dir: Path, picks: list[tuple[str, str]], *, limit: int
+    project: Project, session_dir: Path, picks: list[tuple[str, str]]
 ) -> list[tuple[str, str]]:
-    """Copy the chosen photos in, and hand back ``(relative path, caption)`` for the log.
+    """Copy the session's photos in, and hand back ``(relative path, caption)`` for the log.
 
     Copies rather than symlinks: exFAT has no symlinks, and the session folder may be deleted
     while the project outlives it. The target name is the session's date plus the photo's own
@@ -677,11 +677,9 @@ def copy_photos(
     Never pruned, here or anywhere: a photo removed later would break a link already written into
     Log.md, and Log.md is never rewritten.
     """
-    if limit <= 0:
-        return []
     date = session_dir.name[:10]
     written = []
-    for name, caption in picks[:limit]:
+    for name, caption in picks:
         source = session_dir / name
         if not source.is_file() or source.parent.resolve() != (session_dir / "photos").resolve():
             continue  # a name the model invented, or one pointing outside the session's photos

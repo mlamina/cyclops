@@ -97,7 +97,9 @@ class PhotoPick(BaseModel):
 
 
 class PhotoPicks(BaseModel):
-    picks: list[PhotoPick] = Field(default_factory=list, max_length=3)
+    """One caption per photo. Every photo is kept whether or not it appears here."""
+
+    picks: list[PhotoPick] = Field(default_factory=list)
 
 
 class Outcome(BaseModel):

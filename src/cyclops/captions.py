@@ -3,8 +3,8 @@
 A photo on this card carries no description of itself. The ``photo`` record in ``session.jsonl``
 says how many bytes it is and what Cyclops was asked to look at - ``focus``, which is usually
 something like "current camera view" - and nothing at all about what is in the frame. The filing
-curator writes a real caption for the two or three hero shots it copies into a project, and those
-land in ``Log.md``; every other picture on the card is undescribed, and an image you drag onto the
+curator writes a real caption for each photo it copies into a project, and those land in
+``Log.md``; every other picture on the card is undescribed, and an image you drag onto the
 project folder yourself has nothing whatsoever.
 
 That is the gap this closes, under one rule:

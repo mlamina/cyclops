@@ -191,7 +191,6 @@ class Settings:
     # place rather than sitting beside it, because two doors onto the same glass is a choice
     # the model would have to make mid-sentence, every time.
     sketch: bool = False
-    project_photos: int = 3  # hero shots copied into a project per session; 0 keeps Photos/ empty
     record: bool = True  # record the session to its folder (needs a camera, or a panel)
     record_source: str = "screen"  # "screen": the panel, UI and all; "camera": the raw picture
     record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 800x480
@@ -237,8 +236,8 @@ def _count(name: str, default: int) -> int:
 
     ``_int(name) or default`` reads well and is wrong for any setting whose zero means "off":
     it silently hands back the default. That is survivable for a frame rate, which is why
-    ``record_fps`` and ``record_width`` still do it, but ``CYCLOPS_PROJECT_PHOTOS=0`` has to
-    mean no photos rather than three.
+    ``record_fps`` still does it, but ``CYCLOPS_SLEEP_AFTER_S=0`` has to mean never blank
+    rather than blank after the default.
     """
     value = _int(name)
     if value is None:
@@ -393,7 +392,6 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         cut=_flag("CYCLOPS_CUT", Settings.cut),
         pointing=_flag("CYCLOPS_POINTING", Settings.pointing),
         sketch=_flag("CYCLOPS_SKETCH", Settings.sketch),
-        project_photos=_count("CYCLOPS_PROJECT_PHOTOS", Settings.project_photos),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_source=_record_source("CYCLOPS_RECORD_SOURCE"),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,

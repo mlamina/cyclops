@@ -268,26 +268,23 @@ scribe = Agent(
 # ------------------------------------------------------------------ the curator
 
 CURATOR_INSTRUCTIONS = """\
-Pick at most three photos from this session to keep in the project's folder, and caption them.
+Caption every photo from this session for the project's folder. All of them are kept - you are
+not choosing, and one you leave out is copied anyway with only what it was asked to look at as
+its caption - so give each one the line a person will read beside it.
 
 You are not looking at the pictures. You are looking at who took each one, what Cyclops was asked
 to look at, and what was being said at that moment - which for this purpose tells you more than
 the pixels would. A photo Cyclops took with a focus of "the mitre joint" while someone was saying
-"look at where these two meet, it's not flush" is the one that matters. A photo taken thirty
-seconds in with nothing being said is not.
-
-Prefer the thing itself once, a detail that was being argued about, a problem, or visible
-progress. Avoid near-duplicates taken seconds apart, and shots with no conversation around them.
+"look at where these two meet, it's not flush" is captioned by that. A photo with nothing said
+around it is captioned by what it was asked to look at.
 
 One of these may be a diagram Cyclops drew rather than a photograph anybody took - the line says
-so. A diagram was asked for out loud, drawn on purpose and read, so it is nearly always worth one
-of the slots, ahead of a bench shot that merely happened. Caption it by what it shows.
+so. Caption it by what it shows.
 
 Captions are for someone scrolling a folder in a year: "The mitre joint, not flush" beats "a
 photo of the model". No dates, no filenames, no "photo of".
 
-Use the filenames exactly as they are given to you. Picking nothing is a fine answer and often
-the right one.
+Use the filenames exactly as they are given to you.
 """
 
 curator = Agent(
@@ -447,10 +444,10 @@ async def choose_photos_for(deps: Filing, models: Models, usage) -> PhotoPicks:
 
 @orchestrator.tool
 async def choose_photos(ctx: RunContext[Filing]) -> str:
-    """Pick which of this session's photos to keep in the project folder, and caption them."""
-    if not ctx.deps.session.photos or ctx.deps.settings.project_photos <= 0:
-        return "There are no photos to choose from."
+    """Caption this session's photos for the project folder. Every one of them is kept."""
+    if not ctx.deps.session.photos:
+        return "There are no photos."
     picks = await choose_photos_for(ctx.deps, ctx.deps.models, ctx.usage)
     if not picks.picks:
-        return "Kept none of them."
-    return "Keeping: " + "; ".join(f"{p.file} ({p.caption})" for p in picks.picks)
+        return "Captioned none of them."
+    return "Captioned: " + "; ".join(f"{p.file} ({p.caption})" for p in picks.picks)
