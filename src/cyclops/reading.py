@@ -62,6 +62,9 @@ FLUSH_EVERY = 10
 # enough to name a part, and three is cheap because the transcriptions are already paid for.
 IDENTITY_PAGES = 3
 MAX_FIGURES = 6
+# The description in the session prompt. Short because it is paid for in every session
+# whether a manual comes up or not - see agent.MANUALS_HEADER.
+ABOUT_CHARS = 140
 MAX_PAGE_CHARS = 6000  # one dense page of specifications, generously
 
 PAGE_PROMPT = """\
@@ -84,12 +87,24 @@ These are the opening pages of a product manual. Say what it documents. JSON onl
  "part": "the product it documents, named as somebody with one on the bench would name it",
  "maker": "the manufacturer",
  "revision": "the version or revision, or an empty string",
+ "about": "the topics this manual covers, as a bare comma-separated list",
  "aliases": ["other names this gets called out loud, including sloppy spoken ones"]}
 
-Aliases matter most and are the easiest to do badly. They are how somebody finds this by voice, so
-include what a person would actually say - shortened forms, the name without punctuation, the
-common misspelling. For a motogadget mo.unit that is "m.unit", "mo unit", "munit". At most 6, and
-never include the maker's name on its own.
+Two of these do the real work.
+
+"about" is read at the top of every conversation by an assistant deciding one thing only: is the
+question in front of me one this manual could answer? So it is **the subjects covered, as a bare
+comma-separated list, at most 14 words**. The part name is printed beside it already, so never
+repeat the product, its category or its maker - only what you could look up in it. No sentence,
+no verb, no "this manual covers".
+Good: "loom wiring, load circuits, indicators, fuses, keyless entry, app setup, fault codes"
+Bad: "The mo.unit blue body control module manual, covering safety and installation."
+It is read whether or not a manual ever comes up, so every word is paid for in every session.
+
+"aliases" are how somebody finds this by voice, so include what a person would actually say.
+Always include the part name with its punctuation removed and with it replaced by spaces, plus any
+shortened form. For "mo.unit blue" that is "mo unit", "mounit", "mo.unit", "mo unit blue". At most
+6, all lowercase, never the maker's name on its own, and never a typo you invented.
 
 Pages:
 """
@@ -246,6 +261,17 @@ async def identify(pages: dict[str, dict], client: AsyncOpenAI) -> dict:
     ]
     if not opening:
         return {}
+    # Every page's heading, which is the contents page this document may not have. The opening
+    # pages alone name the product well and describe it badly: on the m.unit manual they are a
+    # cover, a safety warning and a legal page, so the first `about` written from them said the
+    # manual covered "warranty and liability exclusions" - true of pages 2 and 3 and useless as a
+    # description of a wiring manual. The headings say what is actually in it, and they are
+    # already paid for.
+    headings = [
+        h
+        for n in sorted(pages, key=lambda k: int(k) if k.isdigit() else 0)
+        if (h := str(pages[n].get("heading", "")).strip())
+    ]
     # Concatenated, never str.format: both prompts in this module carry a literal JSON example,
     # and a brace in a format string is a field to be substituted. It fails as a KeyError that the
     # catch-all below turns into a silent "could not work it out" - which is exactly how it got
@@ -254,7 +280,12 @@ async def identify(pages: dict[str, dict], client: AsyncOpenAI) -> dict:
         answer = await client.responses.create(
             model=PAGE_MODEL,
             reasoning={"effort": "none"},
-            input=IDENTITY_PROMPT + "\n\n---\n\n".join(opening)[:8000],
+            input=(
+                IDENTITY_PROMPT
+                + "\n\n---\n\n".join(opening)[:6000]
+                + "\n\nEvery page's heading, in order - this is what the manual covers:\n"
+                + "\n".join(f"- {h}" for h in headings)[:3000]
+            ),
         )
     except Exception:
         return {}
@@ -310,13 +341,17 @@ async def fill(manual: Manual, settings: Settings, client: AsyncOpenAI) -> int:
         manuals.write_pages(manual.path, pages)
         manuals.write_identity(manual)
 
-    if made and not manual.part:
+    # Not `and made`: a manual that was already fully read adds no pages, so gating on new work
+    # would mean one identified before `about` existed could never gain a description - the sweep
+    # would skip it for ever. Gating on the missing field alone costs one call, once, for each.
+    if pages and not manual.about:
         found = await identify(pages, client)
         if found:
             manual.name = str(found.get("manual") or manual.name)[:160]
             manual.part = str(found.get("part", ""))[:160]
             manual.maker = str(found.get("maker", ""))[:80]
             manual.revision = str(found.get("revision", ""))[:40]
+            manual.about = str(found.get("about", ""))[:ABOUT_CHARS]
             aliases = found.get("aliases", [])
             if isinstance(aliases, list):
                 manual.aliases = [str(a)[:60] for a in aliases if a][: manuals.MAX_ALIASES]

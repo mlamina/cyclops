@@ -50,7 +50,7 @@ PAGES_DIR = "Pages"
 SOURCE_SUFFIX = ".pdf"
 
 MAX_ALIASES = 8
-MAX_LINE_CHARS = 200  # one manual's line in the model's opening context
+MAX_LINE_CHARS = 220  # one manual's line, and it is read every session - keep it short
 
 
 @dataclass
@@ -63,6 +63,10 @@ class Manual:
     part: str = ""  # the thing it documents - "motogadget mo.unit blue body control module"
     maker: str = ""
     revision: str = ""
+    # One dense sentence: what the thing is, and what this manual can answer about it. The
+    # tagline's twin - `Project.tagline` exists so a session can decide where work belongs, and
+    # this exists so a session can decide whether a question is one this manual answers.
+    about: str = ""
     source: str = ""  # the PDF's filename within the folder
     pages: int = 0  # how many the PDF has
     read: int = 0  # how many have been through reading.py; read < pages means still working
@@ -104,17 +108,24 @@ class Manual:
     def line(self) -> str:
         """One line for the list handed to a model at the start of a session.
 
-        The part leads rather than the title, for the reason ``Project.line`` gives about its
-        tagline: a document's own name is often useless for deciding whether it is relevant, and
-        "motogadget mo.unit, a body control module" tells the model what it can answer with.
+        Shaped like ``Project.line`` and for its reason: a label and a sentence that says what the
+        thing *is*. A document's own title is usually useless for deciding relevance - half of
+        these call themselves "Instruction Manual" - and so is a page count. What decides whether
+        to open a manual is knowing what it covers, which is what :attr:`about` holds.
+
+        Aliases come last and only when there are any. They are not description; they are the
+        spellings somebody says out loud, and they are here so the model can match what it just
+        heard against this line without a lookup.
         """
-        bits = [self.part or self.name]
+        label = self.part or self.name
         if self.revision:
-            bits.append(self.revision)
-        bits.append(f"{self.pages} pages")
+            label += f" {self.revision}"
+        line = f"- {label}"
+        if self.about:
+            line += f" — {self.about}"
         if self.aliases:
-            bits.append("also called: " + ", ".join(self.aliases))
-        return f"- {' | '.join(bits)}"[:MAX_LINE_CHARS]
+            line += f" (also: {', '.join(self.aliases[:3])})"
+        return line[:MAX_LINE_CHARS]
 
 
 # ------------------------------------------------------------------ reading the card
@@ -172,6 +183,7 @@ def _manual_from(folder: Path) -> Manual | None:
         part=one("part"),
         maker=one("maker"),
         revision=one("revision"),
+        about=one("about"),
         source=one("file") or found,
         pages=count("pages"),
         read=count("read"),
@@ -260,6 +272,7 @@ def write_identity(manual: Manual, body: str = "") -> None:
             "part": manual.part,
             "maker": manual.maker,
             "revision": manual.revision,
+            "about": manual.about,
             "aliases": manual.aliases,
             "file": manual.source,
             "pages": manual.pages,

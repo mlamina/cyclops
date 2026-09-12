@@ -782,8 +782,11 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
         "without being asked to: when they ask about a machine or a part you hold a manual for "
         "- a spec, a torque, a clearance, a fuse rating, a part number, which wire goes where. "
         "Looking is faster than saying you could look, so look. A manual page comes back as the "
-        "page itself on their screen; read the answer off it, say which manual and page in a "
-        "few words, and stop. A photo appears on the panel and stays until "
+        "page itself on their screen: read the answer off THAT and never off this tool's result, "
+        "which is written to find a page and is not reliable about a number. Say which manual "
+        "and page in a few words, and stop - having read a manual is not a reason to mention "
+        "what is in it when it does not answer what was asked. A photo appears on the panel "
+        "and stays until "
         "they tap it, so say one short sentence and then stop; they can see it, so do not "
         "describe it back at them unless they ask - and you are shown it too, so answer "
         "whatever they do ask about it by reading the picture. Read it off the picture and not "
@@ -1050,14 +1053,13 @@ PROJECT_LINE_CHARS = 380
 # reach for, so this list is what turns recall from a thing it uses when told into a thing it
 # uses when a question arrives. Names and what each is for - never contents, the rule
 # PROJECTS_HEADER keeps for the same reason.
+# This block has one job: let the model recognise that a question in front of it is one a manual
+# on the card can answer. Nothing about *how* to use what comes back belongs here - that is in
+# RECALL_TOOL's description, which is read only when the model is already considering the tool,
+# where this is read at the top of every session whether a manual comes up or not. At ten manuals
+# the long version of this cost about 900 tokens a session for rules that apply to none of them.
 MANUALS_HEADER = """\
-MANUALS YOU HAVE READ
-You have read these cover to cover and can put any page of one on their screen. Use recall to
-find the page, with the part in the query - "mo.unit indicator wiring", not "manual".
-Two rules. Read the answer off the page itself once it is up, never off what the search said
-about it - the search text is written to find a page and is not reliable about a number. And
-never bring up what a manual says unless it answers what was actually asked: having read it is
-not a reason to mention it.
+MANUALS YOU HAVE READ - use recall on one before the web, and name the part in the query.
 """
 MANUALS_LISTED = 24
 
