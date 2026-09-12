@@ -775,6 +775,15 @@ class Kiosk:
             return
         boxes = self.overlay.hitboxes
         if boxes.volume.contains(x, y):
+            if self._handed_over:
+                # While a companion holds his voice the knob is not a control, it is an icon of
+                # where the voice went: no disc, no column, no rung. Consumed here rather than
+                # left to fall through, because the fall-through is "stop talking" - a finger
+                # that missed every control - and a finger that landed square on this one did
+                # not miss anything. The hitbox stays exactly where it was: an inert control
+                # keeps its geometry and ignores its events, and losing the box would make the
+                # dead knob a hole in the panel that the picture behind it answers through.
+                return
             # Nothing is set yet. The disc lights and the column comes up beside it showing
             # where the speaker already is; what the grab turns out to *mean* is decided by
             # whether the finger walks up onto the track - see _slide. Both held rather than
@@ -1801,6 +1810,12 @@ class Kiosk:
         self.controller.set_on_air(not taken)
         if taken != self._handed_over:
             self._handed_over = taken
+            if taken and self._turning:
+                # A claim that lands with a finger already on the knob. The knob stops being a
+                # control the moment the mark goes up, so the gesture ends with it - otherwise
+                # the moves that follow keep walking the sink under a dial drawn as an icon,
+                # and the column stays up on a control that no longer takes one.
+                self._let_go()
             where = "a companion has his voice" if taken else "his voice is back on the panel"
             print(f"· {where}", flush=True)
 
@@ -2157,9 +2172,11 @@ class Kiosk:
                     temp_c=self._temp_c,
                     turning=self._turning,
                     # ...and the third: whether his voice is coming out of this box's amp at all.
-                    # The mark in the knob's gap is the only thing that says so, and it says it
-                    # whenever the claim is held - a companion tab with nothing playing is
-                    # exactly the case you want to find before you start talking, not after.
+                    # It turns the whole instrument blue, and _on_mouse stops taking its
+                    # presses, so the two halves of "this is an icon now" are set from the one
+                    # flag and cannot disagree. Whenever the claim is held - a companion tab
+                    # with nothing playing is exactly the case you want to find before you
+                    # start talking, not after.
                     handed_over=self._handed_over,
                     # The framing's name, up for its second and fading out of the last third of
                     # it. Held at full for the rest: it is covering the gap while the camera
