@@ -1,30 +1,35 @@
-"""Finding the moments of a session worth showing somebody who was not there.
+"""Cutting one recorded session into the short stories it holds, and rendering them.
 
 A session leaves ``video.mp4`` - the panel, exactly as it was on the glass, for however long the
 conversation ran. That is an archive, not a video: nobody sits through six minutes of somebody
-waiting for an answer. **Nobody sits through ninety seconds of it either.** This module used to
-cut one long video per session, on a button, with a title card and a description sized for a
-YouTube upload; what it makes now is between zero and three clips of about fifteen seconds each,
-every one of them a single moment with the pauses taken out.
+waiting for an answer. What this module makes out of it is between zero and two clips, and every
+one of them is a **story** rather than a moment.
 
-**Zero is the ordinary answer and the most important one.** Four sessions in five are somebody
-checking a torque figure or saying good morning, and a highlights reel is only worth opening if
-everything in it is worth watching. So there are two filters before an encode: :func:`worth_asking`
-reads the log and declines to spend anything at all on a session that is plainly a test - the card
-here held ninety-eight sessions and fifty-five of them never needed a model - and then the model
-itself is asked to answer NOTHING, which the prompt spends four paragraphs making easy to say.
+**Three beats, in session order, and never anything else.** SETUP is the person asking for
+something or holding something up - their whole line. TURN is the thing happening: the picture
+arrives, the drawing lands, the number goes up, and it is held long enough that a viewer sees what
+appeared. PAYOFF is how it ended. That shape is why these clips can autoplay muted on a reel with
+no title card and no text on the frame: a stranger walking past follows one cold. The design this
+replaced cut the *instant* instead - it was told in capitals that "THE WAITING IS NOT THE MOMENT" -
+and the clips it made opened mid-conversation, had no ask and no ending, and Marco could not tell
+what was going on in any of them.
 
-**What makes the clips tight is the audio, not the transcript.** ``session.jsonl`` stamps every
-turn against the same ``t0`` the video was muxed on, so the model can name a moment in seconds
-with no transcription to do. But a turn is not a shot: a logged thirteen-second answer is really
-eight bursts of speech with 2.7 seconds of pause inside it, and server VAD overshoots the tail of
-every one by half a second to a second and a third. :func:`listen` runs ``silencedetect`` over each
-channel - measured at 0.55 s for a six-minute recording, because ``-vn`` means the video packets
-are never decoded - and :func:`tighten` trims the model's ranges down onto the spans where somebody
-was actually audible. Across this card that is 65% of the running time removed. Filler words are
-*not* removed and cannot be: the transcription model normalises them out, so across 220 real turns
-the whole corpus holds one "uh" and no "um" at all. What a viewer perceives as the fillers going is
-the holes around them closing.
+**Zero is still the ordinary answer, and it is now bought in three tiers.** :func:`worth_asking`
+reads the log and nothing else: a session with no turns, no length, no words - or with no new
+picture anywhere in it - costs one read and is never considered again. What survives that goes to
+:mod:`cyclops.stories`, where one cheap Reader call answers with candidate arcs or with none, and
+only a session holding a candidate reaches the Director, the Looker and the Editor. Measured over
+the eighty-seven sessions on this card, forty stop at the first tier for nothing.
+
+**What makes the cuts land is the audio, not the transcript.** ``session.jsonl`` stamps every turn
+against the same ``t0`` the video was muxed on, so a beat can be named in seconds with no
+transcription to do. :func:`listen` runs ``silencedetect`` over each channel - measured at 0.55 s
+for a six-minute recording, because ``-vn`` means the video packets are never decoded - and
+:func:`shape` uses it to pull the head and tail of each beat onto real speech. **It only ever
+trims the edges.** The pauses *inside* a beat stay, which is the other half of the repair: the old
+:func:`tighten` intersected every range with measured speech and bridged only holes under 0.3 s,
+so the six-second hold on a new picture came back as six to twenty splices and the clip read as a
+glitch rather than as an edit.
 
 The queue is the filesystem, as everywhere else here::
 
@@ -34,24 +39,26 @@ The queue is the filesystem, as everywhere else here::
 **Plan-present-means-considered is the entire retry story.** ``deploy/push.sh`` restarts the index
 service on every deploy and the default ``KillMode`` takes the whole cgroup with it, so a render
 *will* be killed halfway - and when it is, the plan is still on the card, so the next sweep re-runs
-ffmpeg for the clip that has no file yet and never pays for the model twice. Each clip is its own
-retryable unit; a session with three of them is three encodes that can be interrupted independently.
+ffmpeg for the clip that has no file yet and never pays for the model twice.
 
 It also makes a bad cut fixable by hand: edit the ranges in ``clips/plan.json``, delete that clip's
 ``.mp4``, and the next sweep renders what you wrote. :func:`sanitize` runs over a hand-edited plan
-exactly as it runs over the model's answer, so that is safe to do.
+exactly as it runs over what the crew decided, so that is safe to do. The plan carries the story
+line, what the Looker saw at each beat and the Editor's blind retelling beside the numbers, so a
+clip that reads wrong can be understood before it is repaired.
 
-Unlike the design this replaced, there is no rule-based fallback. A cut chosen by rules was a
-defensible ninety-second archive; it is not a moment, and a highlights reel padded with material
-nothing chose is worse than a short one. With no key the plan is simply not written, the session
-stays pending, and the next sweep with a key picks up the whole backlog - "nobody looked" and
-"somebody looked and there was nothing" are deliberately different files.
+**A session is considered once, and only after it has a name.** :func:`work` waits for
+``summary.md`` rather than for ``session.md``, because :mod:`cyclops.after` *renames* the folder
+while it writes one - and a plan written into the old path recreated a stamp-only folder holding
+nothing but ``clips/plan.json``, leaving the named folder to be decided all over again. Two of
+those orphans and eleven double calls were on the card. ``SETTLE_S`` is the way out for a session
+that never gets named at all.
 
 Stdlib, :mod:`cyclops.card`, :mod:`cyclops.library` and :mod:`cyclops.stats` - all three of which
-are themselves stdlib-only. ``openai`` is imported inside :func:`decide` rather than at the top,
-the move :mod:`cyclops.after` and :mod:`cyclops.captions` already make: ``cyclops.admin.views``
-imports this module to ask what state a session's clips are in, and loading an SDK to answer that
-would put a second and a half into a request handler.
+are themselves stdlib-only. :mod:`cyclops.stories` is imported inside :func:`_decide_one` rather
+than at the top, the move :mod:`cyclops.after` and :mod:`cyclops.captions` already make:
+``cyclops.admin.views`` imports this module to ask what state a session's clips are in, and
+loading pydantic-ai to answer that would put a second and a half into a request handler.
 """
 
 from __future__ import annotations
@@ -71,36 +78,34 @@ from typing import Any
 from . import card, library, stats
 from .config import CUT_LOCK, Settings
 
-# Not -nano, and this is the only call in the codebase that is not. Deciding which fifteen seconds
-# of a six-minute conversation somebody would want to watch is a judgement about the whole
-# transcript rather than a lookup, and it is the difference between a moment and a montage.
-CUT_MODEL = "gpt-5.4-mini"
-# Generous, because nobody is standing in front of it: this runs niced inside the index service.
-# max_retries=0 still applies, for slug.describe_session's reason.
-CUT_TIMEOUT_S = 60.0
 # Five times the worst measured for a clip of this size. Wide enough that a slow encode is never
 # mistaken for a wedged one, tight enough that a wedged one is not forever.
 RENDER_TIMEOUT_S = 240.0
 
-EDGE_FADE_S = 0.02  # 20 ms across every join, because cutting mid-waveform clicks
+EDGE_FADE_S = 0.02  # 20 ms across every audio join, because cutting mid-waveform clicks
+DIP_S = 0.12        # the dip to black BETWEEN beats. See clip_command: a jump in time that fades
+                    # reads as an edit, and the same jump on a hard cut reads as a dropped frame
 
-MAX_CLIPS = 3       # a bench session does not hold four memorable moments
-MIN_CLIP_S = 5.0    # after tightening. Deliberately BELOW the prompt's floor: a clip the model
-                    # sized at twelve seconds loses a fifth of itself to the pauses, and a clip
-                    # that evaporates between the prompt and sanitize() is a queue that never drains
-MAX_CLIP_S = 25.0   # on a muted autoplaying reel the viewer has already moved on
-TARGET_CLIP_S = 15.0
-WINDOW_S = 60.0     # first number to last number, in the source. This is what "one specific
-                    # moment" means as an enforceable rule, and it bounds the decode as well
+MAX_CLIPS = 2       # a bench session does not hold three stories, and two that look alike on one
+                    # reel are worse than one
 
-MIN_KEEP_S = 0.6    # "Yeah, that's it" is a legitimate shot in a reel
-MERGE_GAP_S = 0.25  # bigger than this and sanitize re-joins the pauses tighten just removed
-LEAD_IN_S = 0.15    # the boundary is measured audio now, not a model's guess at one
+# The shape of a story, and the only numbers in this module a viewer would notice. MIN_SHOT_S is
+# the repair for the splice storm: the old floor was 0.6 s, which is what let a twelve-second clip
+# be twenty shots. TURN_HOLD_S is how long the new picture stays up before anything cuts away -
+# under four seconds and nobody walking past ever sees what arrived.
+MIN_SHOT_S = 2.5
+TURN_HOLD_S = 4.0
+STORY_LOW_S = 15.0   # below this it is a flash, not a story
+STORY_CAP_S = 45.0   # above this the reel has lost them
+STORY_TARGET_S = 27.0  # the middle of the 20-35 s the crew is asked to aim for
+WINDOW_S = 60.0      # first number to last number, in the source. A story may reach across the
+                     # whole session, and this is how far "the whole session" is allowed to be
+
+LEAD_IN_S = 0.15     # the boundary is measured audio now, not a model's guess at one
 LEAD_OUT_S = 0.25
-MAX_RANGES = 24     # per clip. Tightening turns two model ranges into six to twenty pieces
-FPS = 15.0          # what the panel records at; boundaries are snapped to it
+FPS = 15.0           # what the panel records at; boundaries are snapped to it
 
-SNAP_TO_TURN_S = 1.5  # a boundary this close to a logged turn was meant to be that turn
+SNAP_TO_TURN_S = 2.5  # a setup this close to one of the person's own turns was meant to be it
 
 # Silence detection - see listen(). Two floors because they are two instruments: the mic is an
 # open mic in a workshop, the right channel is the speaker's own zero-filled output.
@@ -109,16 +114,18 @@ CYC_FLOOR_DB = -50
 SILENCE_MIN_S = 0.20
 SILENCE_TIMEOUT_S = 120.0
 BRIDGE_S = 0.30   # a hole this small between two audible spans is a breath, not a pause
-FLOOR_S = 0.50    # what is left of a range after trimming, below which it was never a shot
 
-# What a session has to have before the model is asked about it at all - see worth_asking. These
-# are the cheapest filter there is and they run off the log, so a test session costs one read.
+# What a session has to have before anything is spent on it at all - see worth_asking. The
+# cheapest filter there is, and it runs off the log, so a test session costs one read.
 WORTH_YOU = 1       # turns from the person. One is the archetype here, not a mic check: "make
-                    # this photo a cartoon" is one request, one picture and a whole clip. Two cost
-                    # six of the best moments on this card and saved six model calls.
+                    # this photo a cartoon" is one request, one picture and a whole clip.
 WORTH_CYCLOPS = 2
 WORTH_SECONDS = 30.0
 WORTH_CHARS = 300   # of transcript, both voices. Kills a mic storm: thirty turns in four seconds
+
+# A folder with no summary yet is one cyclops.after is still naming, and naming renames it. Ten
+# minutes is far longer than a naming call and far shorter than a backlog - see work().
+SETTLE_S = 600.0
 
 MAX_TIMELINE_CHARS = 24000
 MAX_LINE_CHARS = 200  # a timeline line is trimmed rather than the timeline being elided
@@ -133,25 +140,51 @@ OUT_W, OUT_H = 800, 480
 CHOOSING = "Choosing what to keep of"
 CUTTING = "Cutting the video of"
 
-_RANGE_LINE = re.compile(r"^\s*[-*]?\s*(\d+(?:\.\d+)?)\s*[-–—]\s*(\d+(?:\.\d+)?)\s*$")
-_CLIP_LINE = re.compile(r"^\s*(?:[-*]\s*)?CLIP\b\s*:?\s*$", re.IGNORECASE)
 _SIL = re.compile(r"silence_(start|end):\s*(-?\d+(?:\.\d+)?)")
 
 
 # ------------------------------------------------------------------ the plan
 
 
+# The three beats, in the order they must appear in. Written down once, because the shape is the
+# whole design and a fourth kind of beat is not a feature anybody should be able to add by typing.
+SETUP, TURN, PAYOFF = "setup", "turn", "payoff"
+BEATS = (SETUP, TURN, PAYOFF)
+
+
+@dataclass(frozen=True)
+class Beat:
+    """What one shot of a clip is, beside the numbers. One of these per range, in the same order.
+
+    Deliberately holds no times. ``Clip.ranges`` is the renderable truth and the thing a hand
+    repair edits; keeping a second copy of the same seconds here would mean a hand edit that
+    silently disagreed with itself.
+    """
+
+    kind: str = ""  # one of BEATS
+    what: str = ""  # what happens in it, in one clause
+    saw: str = ""   # what the Looker found on the screen here. "" when it was never looked at
+
+
 @dataclass(frozen=True)
 class Clip:
-    """One moment, and the pieces of the recording it is made of."""
+    """One story, and the three pieces of the recording it is made of."""
 
     title: str = ""
+    story: str = ""   # the story in one sentence, as the Director put it
     ranges: tuple[tuple[float, float], ...] = ()
+    beats: tuple[Beat, ...] = ()  # one per range. () on a plan somebody edited into a new shape
+    retelling: str = ""  # what the Editor got out of it watching cold, which is what let it pass
     why: str = ""  # why this one will never be rendered. Empty means it is still owed.
 
     @property
     def seconds(self) -> float:
         return sum(end - start for start, end in self.ranges)
+
+    @property
+    def shaped(self) -> bool:
+        """Do the beats still describe the ranges? False after a hand edit changed their number."""
+        return len(self.beats) == len(self.ranges) and len(self.ranges) > 1
 
 
 @dataclass(frozen=True)
@@ -163,7 +196,10 @@ class Plan:
     """
 
     decided: str = ""             # ISO-8601, when it was looked at
-    by: str = "model"             # "model" | "gate" - which of the two filters answered
+    by: str = "model"             # "model" | "gate" - which of the filters answered
+    tier: int = 0                 # 1 the log, 2 the Reader, 3 the crew. Which one it got to
+    cost: str = ""                # what the crew spent on it, in dollars, as written
+    took: float = 0.0             # how long the crew took, in seconds
     seconds: float = 0.0          # the source recording's length, from ffprobe
     why: str = ""                 # why nothing could be decided at all. A failure, and shown
     note: str = ""                # why nothing was looked for. Not a failure - see worth_asking
@@ -202,19 +238,37 @@ def read_plan(folder: Path) -> Plan | None:
                     out.append((float(one[0]), float(one[1])))
         return tuple(out)
 
+    def beats(got: Any) -> tuple[Beat, ...]:
+        rows = got if isinstance(got, list | tuple) else ()
+        return tuple(
+            Beat(
+                kind=str(one.get("kind", "")),
+                what=str(one.get("what", "")),
+                saw=str(one.get("saw", "")),
+            )
+            for one in rows
+            if isinstance(one, dict)
+        )
+
     clips = []
     for one in raw.get("clips", []) if isinstance(raw.get("clips"), list) else []:
         if isinstance(one, dict):
             clips.append(
                 Clip(
                     title=str(one.get("title", "")),
+                    story=str(one.get("story", "")),
                     ranges=pairs(one.get("ranges")),
+                    beats=beats(one.get("beats")),
+                    retelling=str(one.get("retelling", "")),
                     why=str(one.get("why", "")),
                 )
             )
     return Plan(
         decided=str(raw.get("decided", "")),
         by=str(raw.get("by", "")),
+        tier=int(raw.get("tier", 0) or 0) if isinstance(raw.get("tier"), int | float) else 0,
+        cost=str(raw.get("cost", "")),
+        took=float(raw.get("took", 0.0) or 0.0),
         seconds=float(raw.get("seconds", 0.0) or 0.0),
         why=str(raw.get("why", "")),
         note=str(raw.get("note", "")),
@@ -306,11 +360,11 @@ def work(sessions_dir: Path) -> Work | None:
     except OSError:
         return None
     for folder in folders:
-        # A recording and a finished summary. The summary is the "this session is over and the
-        # index service has been through it" marker, which keeps this off a folder still settling.
         if not card.written(folder / card.VIDEO) or not card.written(folder / card.PAGE_NAME):
             continue
         if card.locked(folder):
+            continue
+        if not settled(folder):
             continue
         plan = read_plan(folder)
         if plan is None:
@@ -327,6 +381,31 @@ def work(sessions_dir: Path) -> Work | None:
                 continue
             return Work(folder, n)
     return None
+
+
+def settled(folder: Path) -> bool:
+    """Has this session stopped moving? Asked before anything is spent on deciding about it.
+
+    A finished ``summary.md`` is the marker, and the reason is a race that was costing every
+    session on this card a second model call. ``cyclops.after`` writes the summary and then
+    **renames the folder** to include the slug; the index service, meanwhile, was happy with
+    ``session.md``, which exists from the moment the session ends. So a decision that began before
+    the rename finished wrote its plan back to a path that no longer existed - recreating the
+    stamp-only folder with nothing in it but ``clips/plan.json`` - while the renamed folder, with
+    no plan, was picked up and decided all over again. Two orphans and eleven doubled sessions.
+
+    ``SETTLE_S`` is the escape hatch for a session that never gets a summary at all - no key that
+    night, or a model that declined - because "wait for the naming" must not mean "wait forever".
+    Measured against the recording's own mtime: the mux happens at teardown and never again, where
+    a directory's mtime changes every time anything is written beside it.
+    """
+    if card.written(folder / card.SUMMARY_NAME):
+        return True
+    try:
+        age = time.time() - (folder / card.VIDEO).stat().st_mtime
+    except OSError:
+        return False
+    return age > SETTLE_S
 
 
 def forget(folder: Path) -> None:
@@ -384,6 +463,12 @@ def worth_asking(records: list[dict]) -> str:
 
     The thresholds are measured rather than chosen. ``WORTH_SECONDS`` is what rejects the session
     with thirty "you" turns inside four seconds, which is a fan and not a conversation.
+
+    The last clause is the newest and the biggest: **a session where the picture never changed
+    cannot hold a TURN**, so it cannot hold a story, and no amount of cleverness downstream will
+    find one. Twenty of the eighty-seven sessions on this card are exactly that - a question
+    answered out of memory, a search that came back with prose - and they are twenty model calls
+    that were being paid for an answer nobody could have given.
     """
     you = [r for r in records if r.get("type") == "you"]
     cyclops = [r for r in records if r.get("type") == "cyclops"]
@@ -399,7 +484,22 @@ def worth_asking(records: list[dict]) -> str:
     chars = sum(len(str(r.get("text", "") or "")) for r in (*you, *cyclops))
     if chars < WORTH_CHARS:
         return "there is barely any conversation in that one"
+    if not any(made_a_picture(r) for r in records):
+        return "nothing new ever appeared on the screen in that one"
     return ""
+
+
+def made_a_picture(record: dict) -> bool:
+    """Did this record put something new on the screen? The TURN beat has to be one of these.
+
+    ``recall`` is not here and must not be: it drags an OLD picture back out of storage, which is
+    the same few images session after session, and a story built on one is a story about the
+    filing cabinet. Neither is ``search`` - nothing happens on screen at all.
+    """
+    kind = record.get("type")
+    if kind == "photo":
+        return bool(record.get("file"))
+    return kind in {"screen", "sketch"}
 
 
 # ------------------------------------------------------------------ how long the recording is
@@ -565,6 +665,13 @@ def timeline(records: list[dict], captions: dict[str, str]) -> str:
             # session, and the only thing besides a photo that changes the picture - reached the
             # model as a bare "[wrote on the panel]" with nothing after it.
             lines.append(f"[{at:.1f}] [wrote on the panel] {_flat(record.get('html', ''))}")
+        elif kind == "sketch":
+            # What replaced ``screen`` when the panel started taking Prefab rather than HTML, and
+            # for a while the only record type that changes the picture was invisible here: every
+            # session after 2026-09-11 reached the model with its drawings missing, which is most
+            # of why the newest clips on the card had nothing to hold on. The code is Python, not
+            # prose, so it is squeezed harder than a line of HTML would be.
+            lines.append(f"[{at:.1f}] [drew on the panel] {_flat(record.get('code', ''))}")
         elif kind == "search":
             lines.append(f"[{at:.1f}] [searched the web] {_flat(record.get('query', ''))}")
         elif kind == "recall":
@@ -580,380 +687,208 @@ def _flat(text: Any) -> str:
     return " ".join(str(text or "").split())
 
 
-CLIP_PROMPT = """\
-Below is the timeline of a recorded session between a person making or fixing something at their
-workbench and Cyclops, the assistant that sits on the bench beside them. The recording is
-{seconds:.0f} seconds long and every time below is a position in it, in seconds from the start.
-
-What the recording looks like: one fixed camera view of the bench with Cyclops's own screen drawn
-over it. The camera never moves and never follows anybody. Exactly one thing in that frame ever
-changes - the picture on the screen. Apart from that it is a still with two voices over it.
-
-These clips go on a reel that autoplays one after another, often muted, to somebody walking past.
-There is only one question about any moment: is it fun or interesting TO LOOK AT.
-
-Read the timeline's marked lines exactly this way. They are the only way you can tell what a
-viewer would see.
-
-  [photo] ...              THE PICTURE CHANGED. A new image is on the screen - a snap of the
-                           bench, or an edit or a drawing that was just made. This is the good one.
-  [wrote on the panel] ... THE PICTURE CHANGED. A number, a diagram or a few words now fill the
-                           screen. Also good.
-  [found something on the card] ...  An OLD picture dragged back out of storage. However handsome
-                           it is, Cyclops did not make it here: it has been on this panel before
-                           and the same few stored images come back session after session, so
-                           keeping one means the reel shows one picture three times. On its own it
-                           is never a clip, and the session it appears in is usually one where
-                           Cyclops could not find what was asked for anyway.
-  [searched the web] ...   NOTHING HAPPENS ON SCREEN AT ALL. A search runs inside the machine.
-                           Never a clip, however interesting the result sounded. What a search
-                           finds counts only if it then turns into its own [photo] or
-                           [wrote on the panel] line.
-
-WHAT MAKES A MOMENT WORTH WATCHING is not the assistant's answer. It is the person. Somebody
-asking for something with an attitude, showing off what they built, introducing a friend to a
-machine, getting impatient with it, teasing it, being pleased, being let down, changing their
-mind out loud. The trick the machine does is only fun because of the human next to it. A clip is
-a person being a person, and the picture landing is what they are being a person AT.
-
-YOUR WORKING, FIRST. Before you decide anything, write one line for every moment in this session
-that changed the picture, plus a line for any moment you were tempted to keep for what was said.
-One line each, this shape and nothing fancier:
-
-MARK 3 - a cartoon version of the photo appears at 70.7 because he asked for one
-
-Write the mark, then the one thing that happened. The time in a mark line is the instant the
-picture changed. It is NOT the clip; the clip gets built later and is far longer.
-
-Mark on this scale.
-
-MARK 3 - something is on the screen that did not exist anywhere before this moment, and it is
-there because somebody asked for it. A photograph edited into a different picture: a background
-cut away, a person straightened and centred, an object recoloured, a snapshot turned into a
-catalogue shot or into a cartoon. A drawing made to order that names real parts and real values.
-A figure written across the panel in answer to a question about the work. A stranger sees the
-before and the after with the sound off and gets it. This is the commonest and best thing that
-happens here.
-
-MARK 2 - the picture changes to a real THING, and somebody is showing it to the camera on
-purpose. The machine on the bench, the part in a hand, the tool, the board, the case, the page of
-the manual - it arrives on screen and the person says what it is or what they mean to do with it
-while Cyclops names it back. One change, one payoff. A snap like this is a 2 even when it is
-completely plain: the object is the reveal and nobody had to ask for a transformation. These are
-easy to walk past because nobody asked for anything, and they are some of the best moments here.
-
-MARK 1 - the picture changes, but not into anything new. All of these are 1 however good the
-thing on screen looks:
-- a [found something on the card] line. An old picture out of storage. Always a 1.
-- a search that came back with nothing to show, or an answer of the form "I could not find it".
-- a photograph that failed, and Cyclops's own next line tells you it failed: it calls the picture
-  blurry, or too close, or off angle, or says it cannot see the thing or cannot tell what it is
-  looking at, or asks for another one. A 1 however interesting the object was.
-- a drawing with nothing real inside it. Judge it by what is written IN it, never by what was
-  asked for. Boxes reading INPUT, PROCESS, OUTPUT, CONTROLLER or MODULE are a picture of nothing.
-  So is anything drawn only to demonstrate that Cyclops can draw - when the request is to show off
-  the panel, or to prove a feature works, or to put up a sample, the picture is a demo of the tool
-  rather than a picture of the work, and it is a 1 even when the person says it looks cool. A
-  drawing that names actual parts, actual values, or the actual machine on the bench is a 3,
-  however casually it was asked for.
-- a snap of a person's face, or a selfie, with nothing done to it afterwards. The person is not a
-  workpiece and a face on its own is not a reveal. If that same face is later cut out,
-  straightened or restyled, the EDIT is a 3 and that is the moment.
-- a snap of a VIEW rather than of a thing: out of a window, at a wall, a doorway, a ceiling, an
-  empty corner, the room in general, the bench with nothing on it. There is no object in it, so
-  there is nothing to look at, whatever was asked about it.
-- a second snap of something this session has already put on the screen. The first one was the
-  reveal; this one is the camera being checked again.
-- a SECOND panel write repeating what this session already drew: the same diagram laid out again
-  more simply or more cleanly, a written or text version of a picture already on the panel, a list
-  of what that drawing already showed, a summary of it. The first one was the moment and it keeps
-  its 3; every repeat after it is a 1 however neat it is.
-
-MARK 0 - the frame does not change at all. Whatever is being said over it, this is two voices
-over a still. These are all 0, and it is not close:
-- a correction, however sharp
-- a warning, however important
-- the best explanation in the session
-- a plan, a list of parts on order, somebody describing what they are about to build
-- working out loud about what to do next
-- a greeting, a microphone check, small talk, a good joke, a touching line
-- a question answered out of memory with nothing shown
-Every one of those reads well written down. None of them is anything to look at. This is the
-mistake to be most careful about: the strongest-reading thing in the session is usually a 0.
-
-One thing is never kept whatever it marks: a picture carrying somebody's private paperwork - a
-home address, a VIN or serial number, a registration or insurance document - or a close-up of a
-person's face showing an injury. This reel gets shared with people who were not there.
-
-THE BAR IS 2, AND APPLYING IT IS MECHANICAL, not a second opinion. You already made the
-judgement when you wrote the mark down; do not now talk yourself back out of it. Work through
-these in order. They only ever choose WHICH moment to cut, never whether to cut anything at all.
-
-1. IS THERE A 3 IN YOUR LIST? Then you are writing at least one clip. Take the 3 where the
-   picture changed most and build a clip around it. That moment's own time has to sit inside the
-   clip's ranges.
-2. IS THERE A SECOND 3 THAT LOOKS PLAINLY DIFFERENT FROM THE FIRST? A photograph that became a
-   cartoon where the other became a cut-out, a second drawing of a different thing - something a
-   stranger would see as a different picture. Then write a second clip for it.
-   A 3 that only NUDGES the picture you already cut - brighter, warmer, a shelf under it, moved
-   over a bit - does not get a clip. Skip it and stop. A session marked 3, 3, 3 ends with one
-   clip or two. IT NEVER ENDS WITH NOTHING.
-3. NO 3s AT ALL? Then your best 2 becomes the clip. A second 2 gets a clip only when it is a
-   picture of a completely different thing, asked for separately, minutes away, with its own line
-   from the person.
-4. TWO CLIPS FROM ONE SESSION AT THE MOST, and never two that look alike. All these clips land on
-   one reel together, so two clips that look alike are worse than one. The same picture nudged
-   twice, the same object snapped twice, a drawing and then a written version of it: one clip,
-   and it is the first and the more picture-like of them.
-5. At most {max_clips} clips in the answer, best mark first.
-
-NOTHING is the answer when, and only when, every line you wrote is a 1 or a 0. That is a session
-of zeroes, not a failure to find something, and saying so costs nothing - most sessions here are
-somebody checking the microphone works.
-
-DO NOT HOLD OUT FOR DELIGHT. Nobody in this workshop whoops. The ordinary case is a person asking
-for a picture and the picture showing up, and THAT IS THE MOMENT - it is never too plain to keep.
-Nothing has to be discovered, argued about, got wrong or admitted for a clip to be worth
-watching. A flat "cool, thanks" over a picture that just changed is a real reaction and counts.
-Small and visible beats big and invisible every time.
-
-FOUR SHAPES THAT PASS. Look for these.
-
-  A. SOMEBODY ASKS AND THE MACHINE DELIVERS. A person asks for a change to a picture, or for a
-     number, or for a drawing of the thing in front of them, and the changed picture, the number
-     or the drawing arrives. The best shape here.
-  B. SOMEBODY HOLDS UP WHAT THEY ARE BUILDING. A snap of the machine, the part, the tool, the
-     case, and the person says what it is or what they mean to do with it. The photo landing plus
-     their own line about it is the whole clip.
-  C. SOMEBODY REACTS TO A PICTURE THAT JUST CHANGED. Pleased, impatient, teasing, unimpressed,
-     pushing for more. The picture change is the setup and their line is the punchline.
-  D. THE WAIT PAYS OFF. A drawing can take a minute and a half to arrive, and while it does the
-     person gets restless - wondering aloud how long this will take, asking whether it is still
-     working on it, saying they will wait. Put that line next to the moment the picture lands,
-     cut out everything in between, and you have the best joke this machine makes. Do not let a
-     long wait talk you out of a session: the request may be too far back to reach, but the
-     restless line and the arrival are almost always close enough.
-
-If nothing here reached the bar, write your MARK lines, then one word on its own line, and stop:
-
-NOTHING
-
-Otherwise one block per clip, at most {max_clips} of them, best first:
-
-CLIP
-TITLE: Make the bracket blue
-KEEP:
-88.5-96.0
-99.5-104.0
-
-TITLE is one line under {title_chars} characters. Name what appeared and why somebody asked for
-it, in the words a person would use out loud - the person's own words are the best title there
-is. Never the passive voice of an archive label. But the transcript mishears things, so never
-quote a line that reads as garbled or misheard; when the words are broken, say what happened
-instead. No quotes, no emoji, no "In this video".
-
-The KEEP lines are the seconds of the recording the clip is built from, smallest number first.
-Choose them like this.
-
-1. HOLD ON THE PICTURE, AND THIS RULE BEATS EVERY RULE BELOW IT. A [photo] or [wrote on the
-   panel] line is stamped at the instant the picture changed, but the picture stays up afterwards,
-   and that shot is the whole payoff. So the range containing an arrival runs from about a second
-   BEFORE that stamp to at least SIX SECONDS AFTER it. A photo stamped at 122.0 is kept as
-   121.0-128.0 at the very least, and longer if the person says something about it. Do this even
-   when nobody speaks in those six seconds and even when the only voice is Cyclops saying it is up
-   on the screen: the recording is still running, the picture is still there, and quiet seconds on
-   something that just appeared are the shot, not dead air. Cutting away one second after a
-   picture lands is the single commonest way to wreck one of these clips - on the reel it is a
-   flicker and the viewer never sees what arrived. Watch the END of the clip especially: whatever
-   else the ranges do, THE LAST NUMBER YOU WRITE must be at least six seconds past the last
-   picture stamp inside the clip. A clip that runs 102.3-122.8 around a photo stamped at 122.0 has
-   done all the work and then cut away before the payoff - it needs to run to 128 or later.
-2. THE WAITING IS NOT THE MOMENT. Ten to ninety seconds can pass between the asking and the
-   picture landing. Build the clip out of separate ranges - the asking, then the arrival with its
-   hold, then what the person says to it - and throw away the dead middle. Two ranges are normal.
-   If a range you have written has more than about three seconds inside it where nobody speaks and
-   nothing appears, split it in two rather than carrying the dead air. If the asking is further
-   back than {window:.0f} seconds, let it go and open instead on whatever the person said while
-   they were waiting, or simply on the arrival.
-3. Overshooting the END of a range costs nothing: the silence is measured and trimmed off
-   automatically before anything is rendered. Undershooting cuts somebody off mid-word and cannot
-   be repaired. So when a range ends on something Cyclops is saying, run it past the end of that
-   sentence rather than stopping on the timestamp the line starts at.
-4. Everything in one clip comes from the same part of the session. First number to last number is
-   never more than {window:.0f} seconds apart.
-5. {low:.0f} to {high:.0f} seconds of kept material per clip, aiming for {target:.0f}. Add your
-   ranges up before you write them down. Under {low:.0f} seconds is a flash, not a moment: fix it
-   by lengthening the hold on the picture or taking in the whole line on either side, never by
-   dropping the clip. Over {high:.0f} and one range is carrying dead air - trim that range.
-6. Open on a person talking wherever you can, and close on one when there is one. Trim Cyclops's
-   trailing offer to crop it tighter or asking what is next - but only when trimming it still
-   leaves the new picture its six seconds. When it does not, keep talking over the picture
-   instead. Rule 1 wins.
-7. Cut in the silence between turns and never inside a sentence. Start about half a second before
-   the first word kept and end about half a second after the last.
-8. Ranges are ascending and never overlap - not inside one clip and not between two clips. No
-   second of the recording is used twice.
-
-BEFORE YOU ANSWER, take each clip you have written and check it against this list. These are
-repairs to the ranges, not a chance to reconsider the mark you gave.
-
-  - Does a [photo] or a [wrote on the panel] stamp actually fall INSIDE one of its ranges? Not
-    nearby, not just before the range starts - INSIDE, with the range beginning a second or so
-    earlier than the stamp. This goes wrong most often when the picture lands first and the person
-    speaks after it: the clip opens on their line and the arrival is a second outside the range,
-    so nobody watching ever sees the picture appear. Pull the start back past the stamp. If no
-    range can be made to contain a stamp, delete the clip.
-  - Is the clip's very last number at least six seconds past the last picture stamp in it? If it
-    is not, push it out until it is. This is the one that keeps going wrong.
-  - Do the ranges add up to between {low:.0f} and {high:.0f} seconds?
-  - Are the ranges ascending, and does no range overlap another, in this clip or in any other clip
-    you are sending?
-
-Timeline:
-{timeline}"""
-
-
-def decide(shown: str, seconds: float, settings: Settings) -> tuple[tuple[Clip, ...], bool]:
-    """Ask what is worth clipping. ``(clips, asked)``. Never raises.
-
-    ``asked`` says whether the model actually answered, so "no key" and "nothing here" are
-    recorded differently: the first writes no plan and leaves the session pending, the second
-    writes an empty plan and is never asked again. Collapsing the two would mean a night without
-    a network quietly deciding that the whole card is boring.
-
-    Imported here rather than at the top of the module for the reason in the module docstring:
-    the admin service asks this module for a folder's state on every listing and has no business
-    loading an SDK to do it.
-    """
-    if not shown.strip() or not settings.cut or not settings.api_key:
-        return (), False
-
-    from openai import APIError, OpenAI
-
-    # max_retries=0 for slug.describe_session's reason, and one more: three retries of a
-    # sixty-second budget is three minutes of an index service not indexing.
-    client = OpenAI(api_key=settings.api_key, timeout=CUT_TIMEOUT_S, max_retries=0)
-    try:
-        response = client.responses.create(
-            model=CUT_MODEL,
-            reasoning={"effort": "low"},  # unlike a folder name, this is a judgement
-            input=CLIP_PROMPT.format(
-                seconds=seconds, max_clips=MAX_CLIPS, title_chars=MAX_TITLE_CHARS,
-                window=WINDOW_S, low=12, high=int(MAX_CLIP_S), target=int(TARGET_CLIP_S),
-                timeline=shown,
-            ),
-        )
-        answer = (getattr(response, "output_text", "") or "").strip()
-    except (APIError, OSError, ValueError):
-        return (), False
-    except Exception:  # noqa: BLE001 - a clip is never worth taking the index service down
-        return (), False
-    finally:
-        with suppress(Exception):
-            client.close()
-    return parse(answer), True
-
-
-def parse(answer: str) -> tuple[Clip, ...]:
-    """One block per clip, each read on its own.
-
-    slug.parse's doctrine one level up: a block that goes wrong loses that block and not the
-    other two. NOTHING anywhere in the reply means nothing, because a model that has decided
-    that has decided it - and being able to say so is most of what makes the reel watchable.
-    """
-    blocks: list[dict] = []
-    for line in answer.splitlines():
-        stripped = line.strip()
-        upper = stripped.upper()
-        if upper in {"NOTHING", "NONE"}:
-            return ()
-        if _CLIP_LINE.match(stripped) or upper.startswith("CLIP:"):
-            title = stripped.split(":", 1)[1].strip().strip('"') if ":" in stripped else ""
-            blocks.append({"title": title, "ranges": []})
-            continue
-        if not blocks:
-            continue  # anything before the first CLIP is preamble
-        if upper.startswith("TITLE:"):
-            blocks[-1]["title"] = stripped[6:].strip().strip('"')
-            continue
-        if upper.startswith("KEEP:"):
-            stripped = stripped.split(":", 1)[1].strip()
-            if not stripped:
-                continue
-        found = _RANGE_LINE.match(stripped)
-        if found:
-            blocks[-1]["ranges"].append((float(found.group(1)), float(found.group(2))))
-    return tuple(
-        Clip(title=_clip(one["title"], MAX_TITLE_CHARS), ranges=tuple(one["ranges"]))
-        for one in blocks[:MAX_CLIPS]
-        if one["ranges"]
-    )
-
-
 def _clip(text: str, limit: int) -> str:
     """One line, no control characters, cut at a word boundary if it has to be cut."""
-    flat = " ".join(str(text or "").replace(" ", " ").split())
+    flat = " ".join(str(text or "").replace("\u00a0", " ").split())
     if len(flat) <= limit:
         return flat
-    return flat[:limit].rsplit(" ", 1)[0].rstrip(",.;:") + "…"
+    return flat[:limit].rsplit(" ", 1)[0].rstrip(",.;:") + "\u2026"
 
 
 # ------------------------------------------------------------------ making it renderable
 
 
-def snap_to_turns(ranges, records: list[dict]) -> tuple[tuple[float, float], ...]:
-    """Each start pulled onto a logged turn when it is within ``SNAP_TO_TURN_S`` of one.
+def opens_on_a_person(start: float, records: list[dict]) -> float:
+    """A setup's start, pulled back onto one of the person's own turns when one is near.
 
-    A model asked for seconds is routinely a second or two out, and two seconds out means the
-    clip opens on the tail of the previous sentence - which is the one thing that kills a cold
-    open. The log knows where every turn started, so this is three lines rather than a subsystem
-    for making the model name quotes instead of numbers.
+    Only ever backwards, and only onto a ``you`` turn. "Opens on the person's own line" is the
+    first thing a viewer notices about one of these clips and the one thing the crew is routinely
+    a second or two out on; the log knows where every turn began, so this is five lines rather
+    than a subsystem for making a model name quotes instead of numbers.
 
-    Only the start moves. Pulling the end onto a turn boundary would as often cut off the word
-    the clip exists for, and :func:`tighten` is about to trim the tail against measured audio.
+    Pulling *forwards* would be a different thing entirely - it would trim the first word off the
+    ask - so a start that has already crept past the turn it belongs to stays where it is and
+    :func:`shape` trims it against real audio instead.
     """
-    marks = sorted(
-        float(r.get("t", 0.0) or 0.0) for r in records if r.get("type") in {"you", "cyclops"}
-    )
-    if not marks:
-        return tuple((float(a), float(b)) for a, b in ranges)
-
-    def pull(t: float) -> float:
-        near = min(marks, key=lambda m: abs(m - t))
-        return near if abs(near - t) <= SNAP_TO_TURN_S else t
-
-    return tuple((pull(float(a)), float(b)) for a, b in ranges)
+    marks = [float(r.get("t", 0.0) or 0.0) for r in records if r.get("type") == "you"]
+    behind = [m for m in marks if start - SNAP_TO_TURN_S <= m <= start]
+    return min(behind) if behind else start
 
 
 def tighten(ranges, speech) -> tuple[tuple[float, float], ...]:
-    """The chosen ranges, with the silence taken out of them.
+    """The chosen ranges, with the silence trimmed off their **edges** and nowhere else.
 
-    Only ever a TRIM of ranges the model named, never a source of new ones. That ordering is the
-    whole safety argument: silence detection cannot tell an interesting moment from a dull one,
-    and a threshold two decibels wrong can only cost a fraction of a second off an edge rather
-    than putting a stranger's dead air into the reel.
+    An edge trim, deliberately, and this is the half of the repair nothing else could do. The
+    version before this intersected each range with measured speech and bridged only holes under
+    ``BRIDGE_S``, so every pause longer than a breath became a cut: the median clip on the card
+    was twelve seconds of six to twenty splices, and the six-second hold on a new picture - the
+    whole payoff - came back as whatever speech happened to land inside it. A beat is one shot
+    now. The silence inside it is somebody looking at a picture, which is the shot.
 
-    No spans means no opinion: the ranges pass through untouched and the clip renders at turn
-    granularity, which is exactly what the design before this one did. A quality multiplier, not
-    a dependency - a box with no ffmpeg still gets clips, just looser ones.
+    No spans means no opinion: the ranges pass through untouched and the clip renders at the
+    beats the crew named. A quality multiplier, not a dependency - a box with no ffmpeg still
+    gets clips, just looser ones.
     """
     if not speech:
         return tuple((float(a), float(b)) for a, b in ranges)
     out: list[tuple[float, float]] = []
     for a, b in ranges:
-        hits = [[max(a, s), min(b, e)] for s, e in speech if e > a and s < b]
-        for piece_a, piece_b in _bridge(hits, BRIDGE_S):
-            if piece_b - piece_a >= FLOOR_S:
-                out.append((piece_a, piece_b))
+        hits = [(max(a, s), min(b, e)) for s, e in speech if e > a and s < b]
+        if not hits:
+            out.append((float(a), float(b)))  # a silent hold on a picture is a shot, not dead air
+            continue
+        out.append((hits[0][0], hits[-1][1]))
     return tuple(out)
 
 
-def sanitize(raw: Any, seconds: float) -> tuple[tuple[float, float], ...]:
-    """Whatever was suggested, turned into ranges that cannot render badly.
+def shape(beats, speech, seconds: float, records: list[dict]) -> tuple[tuple[float, float], ...]:
+    """Three beats as three renderable ranges: SETUP, TURN, PAYOFF, in session order.
 
-    Run over the model's answer *and* over whatever is read back out of ``plan.json``, so that a
-    plan somebody edited by hand is held to the same rules. The plan stores what comes out of
-    here, never what went in, so the file always says exactly what was rendered.
+    The one place a story becomes a cut, and the only function here that may make a range
+    *longer*. Four things happen, in this order and for these reasons:
+
+    1. The setup is pulled back onto the person's own line, so the clip opens on the ask.
+    2. Each beat's edges are trimmed onto measured speech - the pauses inside it stay.
+    3. Every beat is grown back to its floor: ``MIN_SHOT_S`` for a shot anybody can read, and
+       ``TURN_HOLD_S`` for the turn, because the picture arriving is what the clip is *for* and a
+       viewer who does not see it has watched nothing. Growth is forwards, into the recording, and
+       never into the beat that follows.
+    4. The whole thing is grown towards ``STORY_LOW_S`` and then capped at ``STORY_CAP_S``.
+
+    Returns ``()`` when these three beats cannot be made into a clip at all - beats out of order,
+    or a story that has nowhere left to grow into. The caller drops the story and says why.
+    """
+    if seconds <= 0 or len(beats) != len(BEATS):
+        return ()
+    spans = [(max(0.0, float(a)), min(seconds, float(b))) for a, b in beats]
+    if any(b <= a for a, b in spans) or any(
+        spans[n][1] > spans[n + 1][0] for n in range(len(spans) - 1)
+    ):
+        return ()
+
+    first = opens_on_a_person(spans[0][0], records)
+    spans[0] = (min(first, spans[0][0]), spans[0][1])
+    trimmed = list(tighten(spans, speech))
+
+    # A trim that pulled a beat past its neighbour's start cannot have been a trim of this beat.
+    for n, (a, b) in enumerate(trimmed):
+        low = trimmed[n - 1][1] if n else 0.0
+        trimmed[n] = (max(low, min(a, spans[n][1] - 0.1)), max(min(b, seconds), a + 0.1))
+
+    floors = [TURN_HOLD_S if kind == TURN else MIN_SHOT_S for kind in BEATS]
+    grown = _grow(trimmed, floors, seconds)
+    if grown is None:
+        return ()
+    capped = _cap(_stretch(grown, _towards(grown, floors), seconds), floors)
+    if capped[-1][1] - capped[0][0] > WINDOW_S + LEAD_OUT_S:
+        return ()
+    snapped = [(_snap(a), _snap(b)) for a, b in capped]
+    # Six boundaries rounded to the nearest frame can lose three frames between them, which is
+    # what put two clips on this card at 14.93 s against a floor of 15. Paid back on the tail.
+    short = STORY_LOW_S - sum(b - a for a, b in snapped)
+    if short > 0:
+        a, b = snapped[-1]
+        snapped[-1] = (a, min(_snap(b + short + 1.0 / FPS), _snap(seconds)))
+    return tuple(snapped)
+
+
+def _grow(spans, floors, seconds: float) -> list[tuple[float, float]] | None:
+    """Every span out to its floor, forwards first and backwards only if it has to be.
+
+    ``None`` when one of them has nowhere to go, which means these three beats are sitting on top
+    of each other and no arithmetic here can separate them.
+    """
+    out = list(spans)
+    for n, (a, b) in enumerate(out):
+        want = floors[n]
+        if b - a >= want:
+            continue
+        ceiling = out[n + 1][0] if n + 1 < len(out) else seconds
+        b = min(ceiling, a + want)
+        if b - a < want:  # no room ahead; take it out of the pause in front instead
+            floor = out[n - 1][1] if n else 0.0
+            a = max(floor, b - want)
+        if b - a < want - 0.05:
+            return None
+        out[n] = (a, b)
+    return out
+
+
+def _stretch(spans, wants, seconds: float) -> list[tuple[float, float]]:
+    """Every span towards its target, as far as there is room, and never past its neighbour.
+
+    Best-effort where :func:`_grow` is all-or-nothing, and the difference matters: a story whose
+    payoff has nowhere to go should still come out as long as it can be, not as short as it
+    started. Measured over the card, that is the difference between a clip at 14.9 seconds and
+    one inside the 15-45 band it is supposed to be in.
+    """
+    out = list(spans)
+    for n, (a, b) in enumerate(out):
+        ceiling = out[n + 1][0] if n + 1 < len(out) else seconds
+        out[n] = (a, max(b, min(ceiling, a + wants[n])))
+    for n in range(len(out) - 1, -1, -1):  # backwards, into the pause in front of the beat
+        a, b = out[n]
+        if b - a >= wants[n]:
+            continue
+        floor = out[n - 1][1] if n else 0.0
+        out[n] = (max(floor, b - wants[n]), b)
+    return out
+
+
+def _towards(spans, floors) -> list[float]:
+    """Per-beat targets that would bring a short story up to ``STORY_LOW_S``.
+
+    The turn gets the first shot's worth and the setup the last, because holding the new picture
+    longer is the one way of making a clip longer that makes it better, and the ask is the one
+    beat where extra seconds are somebody waiting to speak.
+    """
+    want = [max(floors[n], b - a) for n, (a, b) in enumerate(spans)]
+    short = STORY_LOW_S - sum(want)
+    order = (BEATS.index(TURN), BEATS.index(PAYOFF), BEATS.index(SETUP))
+    # A shot at a time, round and round, rather than the whole shortfall onto one beat: a
+    # ten-second hold and a two-second reaction add up to the same number as three even shots and
+    # read as a still with a caption. Bounded by STORY_TARGET_S, so this always terminates.
+    while short > 0.05:
+        for n in order:
+            if short <= 0.05:
+                break
+            add = min(short, MIN_SHOT_S)
+            want[n] += add
+            short -= add
+        if sum(want) >= STORY_TARGET_S:
+            break
+    return want
+
+
+def _cap(spans, floors) -> list[tuple[float, float]]:
+    """Back under ``STORY_CAP_S``, taken off the longest beat first and never below its floor."""
+    out = [list(one) for one in spans]
+    for _ in range(len(out) * 2):
+        over = sum(b - a for a, b in out) - STORY_CAP_S
+        if over <= 0:
+            break
+        # The longest beat above its own floor. Trimming the tail rather than the head, because a
+        # head is where somebody starts talking and a tail is where they have stopped.
+        room = [(out[n][1] - out[n][0] - floors[n], n) for n in range(len(out))]
+        slack, n = max(room)
+        if slack <= 0:
+            break
+        out[n][1] -= min(over, slack)
+    return [(a, b) for a, b in out]
+
+
+def sanitize(raw: Any, seconds: float) -> tuple[tuple[float, float], ...]:
+    """Whatever is in the plan file, turned into ranges that cannot render badly.
+
+    Run over what :func:`shape` produced *and* over whatever is read back out of ``plan.json``, so
+    that a plan somebody edited by hand is held to the same rules. The plan stores what comes out
+    of here, never what went in, so the file always says exactly what was rendered.
+
+    **It does not merge.** The version before this joined any two ranges closer together than a
+    quarter of a second, which was right when a clip was one moment cut into twenty pieces and is
+    wrong now that a range *is* a beat: two beats that happened to touch would silently become one
+    and the clip would stop being three shots. Overlaps are resolved by shortening the earlier
+    range instead, which keeps the count and the order a hand edit wrote down.
 
     Returns () when nothing survives, which the caller reads as "there is no clip here".
     """
@@ -963,11 +898,11 @@ def sanitize(raw: Any, seconds: float) -> tuple[tuple[float, float], ...]:
     for item in raw if isinstance(raw, list | tuple) else ():
         if not isinstance(item, list | tuple) or len(item) != 2:
             continue  # dropped, never repaired: a three-element range meant nothing knowable
+        if isinstance(item[0], bool) or isinstance(item[1], bool):
+            continue
         try:
             start, end = float(item[0]), float(item[1])
         except (TypeError, ValueError):
-            continue
-        if isinstance(item[0], bool) or isinstance(item[1], bool):
             continue
         if not (math.isfinite(start) and math.isfinite(end)):
             continue
@@ -975,38 +910,21 @@ def sanitize(raw: Any, seconds: float) -> tuple[tuple[float, float], ...]:
             start, end = end, start  # written backwards still meant a range
         start = max(0.0, start - LEAD_IN_S)
         end = min(seconds, end + LEAD_OUT_S)
-        # Padding before merging is deliberate: it is what makes two ranges either side of a
-        # breath touch, so the step below joins them instead of leaving a frame of black between.
-        if end - start >= MIN_KEEP_S:
+        if end - start >= MIN_SHOT_S:
             pairs.append([start, end])
 
     pairs.sort(key=lambda p: p[0])
-    merged: list[list[float]] = []
-    for start, end in pairs:
-        # A negative gap is an overlap, so this is also where overlapping keeps become one.
-        if merged and start - merged[-1][1] < MERGE_GAP_S:
-            merged[-1][1] = max(merged[-1][1], end)
-        else:
-            merged.append([start, end])
-
-    # One clip is one moment, and that is enforced here as well as asked for in the prompt: a
-    # model that answered with the start of the session and the end of it gets the start.
-    if merged and merged[-1][1] - merged[0][0] > WINDOW_S:
-        first = merged[0][0]
-        merged = [p for p in merged if p[1] <= first + WINDOW_S] or merged[:1]
-
-    if len(merged) > MAX_RANGES:
-        # In time order. Keeping the longest - which is what the one-video design did - scatters
-        # a tightened clip across its own holes and deletes the short reactions that are the point.
-        merged = merged[:MAX_RANGES]
-
     kept: list[tuple[float, float]] = []
     total = 0.0
-    for start, end in merged:
-        if total >= MAX_CLIP_S:
+    for start, end in pairs:
+        if kept:
+            start = max(start, kept[-1][1])
+            if start - kept[0][0] > WINDOW_S:
+                break  # one story, one part of the session. A plan naming both ends gets the first
+        if total >= STORY_CAP_S:
             break
-        end = min(end, start + (MAX_CLIP_S - total))
-        if end - start < MIN_KEEP_S:
+        end = min(end, start + (STORY_CAP_S - total))
+        if end - start < MIN_SHOT_S:
             continue
         kept.append((_snap(start), _snap(end)))
         total += end - start
@@ -1093,14 +1011,31 @@ def clip_command(clip: Clip, out_name: str) -> list[str]:
     from the preceding keyframe and discards - and it is what keeps the decode proportional to
     the clip rather than to the session. A fifteen-second clip out of six minutes is a fifteen
     second decode, which is most of why three clips cost less than the one video did.
+
+    **The dip to black is the only thing on the frame.** A clip is three beats that may be a
+    minute apart in the source, and a hard cut between two of them reads as a dropped frame on a
+    recording that is otherwise a fixed camera on a still bench. ``DIP_S`` at each end of the
+    jump says "time passed" in the one visual language a muted reel has. It is skipped where two
+    beats are actually contiguous, because there the picture genuinely does continue.
     """
     base = clip.ranges[0][0]  # -ss rebases every timestamp to zero
     span = clip.ranges[-1][1] - base
+    jumps = [
+        n
+        for n in range(len(clip.ranges) - 1)
+        # Half a frame: a gap smaller than that is two beats the shaping grew into each other.
+        if clip.ranges[n + 1][0] - clip.ranges[n][1] > 0.5 / FPS
+    ]
     graph: list[str] = []
     for n, (start, end) in enumerate(clip.ranges):
         a, b = start - base, end - base
         fade_out = max(0.0, (b - a) - EDGE_FADE_S)
-        graph.append(f"[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS[v{n}]")
+        dips = ""
+        if n - 1 in jumps:
+            dips += f",fade=t=in:st=0:d={DIP_S}"
+        if n in jumps:
+            dips += f",fade=t=out:st={max(0.0, (b - a) - DIP_S):.3f}:d={DIP_S}"
+        graph.append(f"[0:v]trim=start={a:.3f}:end={b:.3f},setpts=PTS-STARTPTS{dips}[v{n}]")
         graph.append(
             f"[0:a]atrim=start={a:.3f}:end={b:.3f},asetpts=PTS-STARTPTS,"
             # Cutting mid-waveform clicks. Twenty milliseconds either side of every join is
@@ -1287,20 +1222,26 @@ def _drop_stale_rows() -> None:
 def _decide_one(folder: Path, settings: Settings) -> str:
     """Look at one session once: check it is worth anything, measure the silence, ask.
 
-    The order is the point. :func:`worth_asking` reads the log and nothing else, so a session
-    that is plainly a test costs one read and one small file - no ffprobe, no silencedetect, no
-    network - and is never considered again.
+    The order is the point, and it is the whole cost argument. :func:`worth_asking` reads the log
+    and nothing else, so a session that is plainly a test - or one where the picture never changed
+    - costs one read and one small file and is never considered again. Only what survives that
+    pays for ffprobe, silencedetect and a Reader call, and only a session the Reader found a
+    candidate arc in pays for the Director, the Looker and the Editor.
+
+    Which tier a session stopped at goes in the plan and in the line this returns, because the
+    line is the journal: ``journalctl -u cyclops-index`` is where the question "what is this
+    costing" gets answered, and "nothing worth a clip" three hundred times does not answer it.
     """
-    from . import tasks
+    from . import stories, tasks
 
     records, _ = card.read_log(folder / card.LOG_NAME)
     thin = worth_asking(records)
     if thin:
         # An empty plan with the reason in `note` rather than in `why`: this session was not
         # looked at and did not fail, and the page must not offer to try again.
-        write_plan(folder, Plan(decided=_now(), by="gate", note=thin, clips=()))
+        write_plan(folder, Plan(decided=_now(), by="gate", tier=stories.GATE, note=thin, clips=()))
         _sweep_old(folder)
-        return f"nothing worth a clip in {folder.name}: {thin}"
+        return f"tier 1, free: {folder.name} - {thin}"
 
     seconds, has_video = probe(folder, records)
     if not has_video or seconds <= 0:
@@ -1313,32 +1254,54 @@ def _decide_one(folder: Path, settings: Settings) -> str:
 
     task = tasks.start(f"{CHOOSING} {folder.name}…")
     speech = listen(folder, seconds)
-    found, asked = decide(timeline(records, _captions(folder)), seconds, settings)
-    if not asked:
+    title, paragraph = library._summary(folder)  # noqa: SLF001 - the Director's brief
+    outcome = stories.tell(
+        folder=folder,
+        records=records,
+        timeline=timeline(records, _captions(folder)),
+        brief=f"{title}\n{paragraph}".strip(),
+        seconds=seconds,
+        settings=settings,
+    )
+    if not outcome.asked:
         # No key, no network, a refusing model. No plan is written, so this session is still
         # pending and the next sweep with a key processes the whole backlog. "Nobody looked" and
         # "somebody looked and there was nothing" must never be the same file.
         tasks.fail(task, "could not ask")
         return f"could not decide {folder.name}: no answer from the model"
 
-    clips: list[Clip] = []
-    for got in found:
-        ranges = sanitize(
-            [list(r) for r in tighten(snap_to_turns(got.ranges, records), speech)], seconds
-        )
-        if sum(b - a for a, b in ranges) < MIN_CLIP_S:
-            continue  # nothing left after the pauses came out; not a clip
-        clips.append(Clip(title=naming(folder, got.title), ranges=ranges))
+    clips = [made for made in (_as_clip(folder, one, speech, seconds, records)
+                               for one in outcome.stories) if made is not None]
     write_plan(
         folder,
-        Plan(decided=_now(), by="model", seconds=seconds, speech=speech,
+        Plan(decided=_now(), by="model", tier=outcome.tier, cost=f"{outcome.cost}",
+             took=outcome.took, seconds=seconds, speech=speech, note=outcome.why,
              clips=tuple(clips[:MAX_CLIPS]), source=_source(folder)),
     )
     _sweep_old(folder)
-    tasks.finish(task, f"{len(clips)} clips" if clips else "nothing worth a clip")
-    return (
-        f"{folder.name}: {len(clips)} clips" if clips
-        else f"nothing worth a clip in {folder.name}"
+    tasks.finish(task, f"{len(clips)} stories" if clips else "no story in that one")
+    spent = f"${outcome.cost} in {outcome.took:.0f}s"
+    if clips:
+        return f"tier {outcome.tier}, {spent}: {folder.name} - {len(clips)} story/ies"
+    return f"tier {outcome.tier}, {spent}: {folder.name} - {outcome.why or 'no story in it'}"
+
+
+def _as_clip(folder: Path, story, speech, seconds: float, records: list[dict]) -> Clip | None:
+    """One story, shaped against measured speech, or None when the beats cannot be cut.
+
+    The only place the crew's seconds become a clip's seconds. A story that cannot be shaped is
+    dropped rather than repaired: the crew had its one repair already, and a story whose beats sit
+    on top of each other is not a numbers problem.
+    """
+    ranges = shape([(one.start, one.end) for one in story.shots], speech, seconds, records)
+    if not ranges or sum(b - a for a, b in ranges) < STORY_LOW_S:
+        return None
+    return Clip(
+        title=naming(folder, story.title),
+        story=story.line,
+        ranges=ranges,
+        beats=tuple(Beat(kind=one.kind, what=one.what, saw=one.saw) for one in story.shots),
+        retelling=story.retelling,
     )
 
 
@@ -1367,10 +1330,12 @@ def _render_one(folder: Path, n: int, sessions_dir: Path) -> str:
         return ""
     clip = plan.clips[n - 1]
     ranges = sanitize([list(r) for r in clip.ranges], plan.seconds)
-    if sum(b - a for a, b in ranges) < MIN_CLIP_S:
-        _blame(folder, plan, n, "nothing left of that one after the pauses came out")
+    if sum(b - a for a, b in ranges) < STORY_LOW_S - MIN_SHOT_S:
+        _blame(folder, plan, n, "there is not enough of that one left to be a story")
         return f"{folder.name} clip {n}: nothing left to render"
-    clip = replace(clip, ranges=ranges)
+    # The beats describe the ranges by position, so a hand edit that changed their number has
+    # thrown that away. Renders as plain hard cuts rather than guessing which beat is which.
+    clip = replace(clip, ranges=ranges, beats=clip.beats if len(ranges) == len(clip.beats) else ())
 
     task = tasks.start(f"{CUTTING} {clip.title}…")
     done = render(folder, clip, n, sessions_dir)
