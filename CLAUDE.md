@@ -13,7 +13,9 @@ which opens a new session with OpenAI's realtime API.
 Whenever you build something, it must be deployed there without asking.
 Deploy early and often – I want to see the results of your work as soon as possible, so I can steer you if things are not to my linking.
 None of this is required to work on Mac, the only platform that matters is the Pi.
-No branching, all commits go straight to master.
+Working by hand: no branching, all commits go straight to master. Factory jobs are the exception —
+each gets a branch and a worktree so several can run at once (`factory/README.md`), and accepting
+one merges it back to master, which is still what the Pi runs.
 Don't over-engineer this. It's a proof-of-concept. What matters is speed of iteration.
 I don't care about details like pixels, alpha values, etc. Keep your responses simple,
 short and outcome-focused.
