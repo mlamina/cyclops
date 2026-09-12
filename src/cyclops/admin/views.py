@@ -25,7 +25,7 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import barge, card, cut, filming, library, mixer, shelf, stats, tasks, voice
+from .. import barge, card, cut, filming, library, manuals, mixer, shelf, stats, tasks, voice
 from ..config import (
     BROWSER_CLOSE_FLAG,
     COMPANION_PORT,
@@ -860,6 +860,85 @@ def project_media(request: HttpRequest, name: str, relative: str) -> HttpRespons
     return _serve(request, found, kind)
 
 
+# ------------------------------------------------------------------ manuals
+
+
+def manuals_list(request: HttpRequest) -> JsonResponse:
+    """Every manual on the card, and how far through reading it the indexer has got.
+
+    ``read`` against ``pages`` is the whole of the progress display. It comes off the frontmatter
+    rather than from any live channel, because the thing doing the work is a different process
+    that writes its progress down every few pages - so the page re-fetching this is reading the
+    same file the indexer is appending to, which is all the coordination either of them needs.
+    """
+    settings = _settings()
+    out = []
+    for one in manuals.catalog(settings):
+        out.append(
+            {
+                "key": one.key,
+                "folder": one.path.name,
+                "name": one.name,
+                "part": one.part,
+                "maker": one.maker,
+                "revision": one.revision,
+                "aliases": one.aliases,
+                "pages": one.pages,
+                "read": one.read,
+                "ready": one.ready,
+                "added": one.added,
+                "cover": f"/manual-media/{one.path.name}/{manuals.PAGES_DIR}/0001.jpg"
+                if (one.pages_dir / "0001.jpg").is_file()
+                else "",
+            }
+        )
+    return JsonResponse({"manuals": out, "reading": not all(m["ready"] for m in out)})
+
+
+@require_POST
+def manual_upload(request: HttpRequest) -> JsonResponse:
+    """Take in one PDF and give it a folder of its own. The indexer does the rest.
+
+    Nothing is read here and nothing is asked of a model: this answers as soon as the bytes are on
+    the card, and ``cyclops-index`` notices the new folder through inotify within seconds. A
+    request that waited for a manual to be read would hold a connection open for a minute and
+    would have to be retried after a power cut, which is exactly the design the rest of this box
+    avoids.
+    """
+    refusal = _offered(request)
+    if refusal is not None:
+        return refusal
+    chunks = iter(lambda: request.read(CHUNK), b"")
+    try:
+        landed = manuals.receive(
+            _settings().manuals_dir,
+            request.GET.get("name", ""),
+            chunks,
+            limit=MAX_UPLOAD_BYTES,
+        )
+    except ValueError:  # more bytes arrived than the header promised
+        return HttpResponseBadRequest(_too_big())
+    except OSError as exc:
+        return HttpResponseBadRequest(f"could not write that file ({exc})")
+    if landed is None:
+        return HttpResponseBadRequest("a manual has to be a PDF with a name in it")
+    return manuals_list(request)
+
+
+def manual_media(request: HttpRequest, name: str, relative: str) -> HttpResponse:
+    """One rendered page out of one manual. The same containment every other read here runs on."""
+    folder = shelf.resolve(_settings().manuals_dir, name)
+    if folder is None:
+        raise Http404("no such manual")
+    found = shelf.inside(folder, relative)
+    if found is None or not found.is_file():
+        raise Http404("no such page")
+    kind = shelf.MEDIA_TYPES.get(found.suffix.lower())
+    if kind is None:
+        raise Http404("no such page")
+    return _serve(request, found, kind)
+
+
 # ------------------------------------------------------------------ putting something in
 
 # The two endpoints on this box that answer to somebody who is not the kiosk - see the note on
@@ -877,6 +956,33 @@ def project_media(request: HttpRequest, name: str, relative: str) -> HttpRespons
 def _too_big() -> str:
     """What the page is told when a file is past the ceiling. Said from two places, so said once."""
     return f"that file is over {MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+
+
+def _offered(request: HttpRequest) -> HttpResponse | None:
+    """Refuse a body we cannot size, or one too big. ``None`` means carry on.
+
+    Django sizes the stream it hands us from Content-Length and falls back to *zero* when the
+    header is missing (wsgi.py builds a LimitedStream from it). So a chunked body - curl -T, or
+    any client that streams - would read as nothing, and write_stream would fsync and rename an
+    empty file onto the card: a name with no bytes behind it, landed durably, looking exactly like
+    a file that arrived. That is the zero-byte husk this whole card.py dance exists to make
+    impossible, and it is only not reachable from our own page because fetch() sets the header.
+    Refuse it out loud instead, and take the chance to turn away something enormous before any of
+    it has been written rather than 128 MB in.
+
+    ``request.read`` goes straight to the WSGI input and past every ``DATA_UPLOAD_*`` ceiling
+    Django would otherwise apply, so the ceiling below is not a second opinion - it is the only
+    one there is.
+    """
+    try:
+        offered = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        offered = 0
+    if offered <= 0:
+        return HttpResponse("say how many bytes are coming", status=411)
+    if offered > MAX_UPLOAD_BYTES:
+        return HttpResponse(_too_big(), status=413)
+    return None
 
 
 def _folder(name: str, relative: str) -> Path:
@@ -932,14 +1038,9 @@ def project_upload(request: HttpRequest, name: str) -> JsonResponse:
     # impossible, and it is only not reachable from our own page because fetch() sets the header.
     # Refuse it out loud instead, and take the chance to turn away something enormous before any
     # of it has been written to the card rather than 128 MB in.
-    try:
-        offered = int(request.META.get("CONTENT_LENGTH") or 0)
-    except ValueError:
-        offered = 0
-    if offered <= 0:
-        return HttpResponse("say how many bytes are coming", status=411)
-    if offered > MAX_UPLOAD_BYTES:
-        return HttpResponse(_too_big(), status=413)
+    refusal = _offered(request)
+    if refusal is not None:
+        return refusal
 
     relative = request.GET.get("path", "")
     here = _folder(name, relative)

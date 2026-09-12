@@ -12,10 +12,15 @@ be answered by reading one folder. "Show me the picture of the torque spec" is n
 docstrings are updated rather than left arguing with the code.
 
 What survives is the property the rule was protecting: **the card is still the only thing that
-holds a fact.** Every item below is derived from a file in ``sessions/`` or ``projects/``, the
-index holds nothing that is not, and ``rm ~/.cache/cyclops/recall.npz`` costs a rebuild and
-nothing else. That is worth keeping true, because it is what lets the whole of this be wrong
-without anything being lost.
+holds a fact.** Every item below is derived from a file in ``sessions/``, ``projects/`` or
+``manuals/``, the index holds nothing that is not, and ``rm ~/.cache/cyclops/recall.npz`` costs a
+rebuild and nothing else. That is worth keeping true, because it is what lets the whole of this be
+wrong without anything being lost.
+
+The third root is the newest and is derived twice over: a manual's pages are read by
+:mod:`cyclops.reading` into a ``pages.json`` beside the PDF, and *that* is what is embedded here.
+Delete the index and it rebuilds for free; delete ``pages.json`` and it costs one vision call per
+page. The PDF is the only thing in that folder nobody can regenerate.
 
 Two constraints inherited from the neighbours, and for their reasons:
 
@@ -109,9 +114,9 @@ ROLES = {
 class Item:
     """One thing on the card you could ask for, and everything needed to find and show it."""
 
-    kind: str  # "photo" | "image" | "entry" | "file" | "video"
+    kind: str  # "photo" | "image" | "entry" | "file" | "video" | "page"
     path: str  # absolute, as a string, because this round-trips through JSON
-    scope: str  # "project:<folder name>" | "session:<folder name>"
+    scope: str  # "project:<name>" | "session:<name>" | "manual:<name>"
     title: str  # what to call it out loud
     text: str  # what gets embedded
     mtime_ns: int
@@ -130,16 +135,22 @@ class Item:
 
     @property
     def showable(self) -> bool:
-        return self.kind in {"photo", "image"}
+        return self.kind in {"photo", "image", "page"}
 
     @property
     def playable(self) -> bool:
         """A video reference, which is put on the glass by playing it rather than drawing it.
 
         Deliberately not folded into :attr:`showable`. That one means "a picture we can hand
-        to ``panel.offer_image``", and :func:`image_folders` is derived from it - so widening
-        it would point the captioner at every thumbnail on the card and pay a model call to be
-        told what a title card looks like. A video arrives already carrying its own words.
+        to ``panel.offer_image``", and a video arrives already carrying its own words - there is
+        nothing a caption of its thumbnail would add.
+
+        This used to say that :func:`image_folders` is derived from ``showable``, and that
+        widening ``showable`` would therefore point the captioner at things it should not
+        describe. That was true and is the right instinct; the coupling is what it warned about.
+        Manual pages are showable and must not be captioned, so ``image_folders`` now keys on the
+        kind instead and the trap is closed at the other end. The rule it was protecting still
+        stands: **nothing already carrying its own words should reach the captioner.**
         """
         return self.kind == "video"
 
@@ -330,6 +341,80 @@ def _images_in(folder: Path, scope: str, log_captions: dict[str, str], kind: str
                 mtime_ns=mtime,
                 size=size,
                 mark=content_hash(path),
+            )
+        )
+    return out
+
+
+def manual_items(folder: Path) -> list[Item]:
+    """One manual as items: every page it has read, and one entry for the manual itself.
+
+    **One item per page, not per chunk.** A page is both the unit somebody is answered from and
+    the unit that goes on the panel, so splitting it through :func:`_chunks` would cost the page
+    number - which is the whole of the citation - and cap a manual at ``MAX_CHUNKS`` items.
+
+    The item's ``path`` is the rendered page, never the PDF, so the panel and the model are handed
+    pixels by machinery that already exists. What is embedded is the transcription; what is *read*
+    is the render. That split is the rule :meth:`cyclops.agent.VoiceAgent.add_found` states - index
+    text may find a picture and may never describe one - and it matters more here than anywhere
+    else on the card, because a torque figure misread off a caption is a broken part.
+    """
+    from . import manuals  # local: keeps this module importable wherever manuals.py is not wanted
+
+    manual = manuals._manual_from(folder)
+    if manual is None:
+        return []
+    pages = manuals.read_pages(folder)
+    scope = manual.scope
+    named = manual.part or manual.name
+    # An unread manual falls back to its folder name, which is a filename and often already ends
+    # in "manual" - so say it once. "mo.unit blue manual manual, page 28" is what not doing this
+    # reads like on every page of the first manual uploaded.
+    book = named if named.lower().rstrip(" .").endswith("manual") else f"{named} manual"
+    out: list[Item] = []
+
+    # The manual itself, so "have we got anything on the m.unit" lands even when no single page
+    # is a good match for it. An entry rather than a page: there is nothing to put on the panel.
+    said = [named, manual.name, manual.maker, manual.revision, ", ".join(manual.aliases)]
+    about = ". ".join(p for p in said if p)
+    mtime, size = _stat(manual.identity if manual.identity.exists() else manual.pdf)
+    out.append(
+        Item(
+            kind="entry",
+            path=str(manual.pdf),
+            scope=scope,
+            title=f"The {book}",
+            text=f"The manual for {about}. {manual.pages} pages."[:MAX_ITEM_CHARS],
+            mtime_ns=mtime,
+            size=size,
+        )
+    )
+
+    for number, page in pages.items():
+        image = manual.pages_dir / f"{int(number):04d}.jpg"
+        if not image.is_file():
+            continue  # read but the render has been deleted; nothing to show, so nothing to find
+        heading = str(page.get("heading", "")).strip()
+        figures = [
+            f"Illustration: {f.get('what', '')} ({f.get('kind', '')})"
+            for f in page.get("figures", [])
+            if isinstance(f, dict) and f.get("what")
+        ]
+        parts = [f"{named}, page {number}", heading, str(page.get("text", "")), " ".join(figures)]
+        mtime, size = _stat(image)
+        out.append(
+            Item(
+                kind="page",
+                path=str(image),
+                scope=scope,
+                # The citation, and it arrives in the model's hands through the existing
+                # `title` in a recall result with nothing in the agent needing to know about it.
+                title=f"{book}, page {number}" + (f" - {heading}" if heading else ""),
+                text=". ".join(p.strip(" .") for p in parts if p.strip())[:MAX_ITEM_CHARS],
+                mtime_ns=mtime,
+                size=size,
+                # No mark, deliberately: `dedupe` folds items that share one, and two genuinely
+                # blank pages of a manual are two pages, not one.
             )
         )
     return out
@@ -538,6 +623,7 @@ def corpus(settings: Settings, *, collapse: bool = True) -> list[Item]:
     for root, reader in (
         (settings.projects_dir, project_items),
         (settings.sessions_dir, session_items),
+        (settings.manuals_dir, manual_items),
     ):
         folder = root.expanduser()
         if not folder.is_dir():
@@ -584,10 +670,18 @@ def image_folders(settings: Settings) -> list[Path]:
 
     Derived from the same walk as :func:`corpus` rather than from a second set of rules, so a
     picture that can be indexed is by construction a picture that can be captioned.
+
+    **Keyed on the kind, not on** ``showable``. Those were the same test until manual pages
+    arrived, and they must not be again: a page is showable because it belongs on the panel, but it
+    has already been read by :mod:`cyclops.reading` and describing it a second time with the photo
+    captioner would cost a vision call per page - 45 for one manual - to produce a worse copy of
+    what is already in ``pages.json``. Worse than wasteful: it is the failure
+    :func:`cyclops.indexer._known_captions` exists to prevent, two passes over one manual page
+    disagreeing about the numbers printed on it.
     """
     seen: dict[Path, None] = {}
     for item in corpus(settings, collapse=False):
-        if item.showable:
+        if item.kind in {"photo", "image"}:
             seen.setdefault(Path(item.path).parent, None)
     return list(seen)
 

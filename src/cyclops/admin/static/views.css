@@ -22,6 +22,13 @@ body.view-media    .media { display: grid; }
    cannot do at all - the track wants the item's width, the item wants the row's height, and the
    two wait for each other. Measured: the picture came out 386 px wide instead of 508. */
 body.view-highlights .highlights { display: flex; }
+/* Rendered for the LAN only - the panel has no filesystem to drag a PDF out of - so on the panel
+   this selector matches nothing, the same way view-highlights above it does. */
+body.view-manuals .manuals { display: grid; }
+/* The bar at its own height and the list with the rest, which is what .project does two rules
+   down. Without the template both children share the height equally and the toolbar becomes a
+   third of the screen. */
+.manuals { grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
 /* #v-live by id and not `.live` like its six neighbours: `.rowsub.live` is the word "recording"
    on a session row, and `body.view-live .live` would claim that too. */
 
@@ -488,6 +495,10 @@ body.lit .lightbox { display: grid; }
   overflow-x: auto; white-space: nowrap;
 }
 body.sec-files .crumbs { display: flex; }
+/* And the manuals screen, which has no sections and so no `sec-` class to hang this on. It is
+   not a path - there is nothing to descend into - but it is the same bar doing the same job:
+   saying where you are, with the way to put something here at the far end of it. */
+body.view-manuals .crumbs { display: flex; }
 .crumb {
   appearance: none; -webkit-appearance: none; border: 0; background: transparent;
   color: var(--mid); font: inherit; font-size: calc(13 * var(--u)); letter-spacing: .1em;

@@ -7,14 +7,17 @@ set -eu
 TARGET=${1:-cyclops@cyclops.local}
 DEST=cyclops
 
-# The leading slash on /projects is load-bearing: an rsync pattern without one matches at
-# every level, and src/cyclops/projects/ is a real package. Anchored, it means the output
-# directory beside sessions/ and nothing else. The three above have the same shape and are
-# only safe because nothing under src/ is named that yet.
+# The leading slash on /projects and /manuals is load-bearing: an rsync pattern without one
+# matches at every level, and src/cyclops/projects/ and src/cyclops/manuals.py are both real
+# code. Anchored, each means the output directory beside sessions/ and nothing else. The three
+# above have the same shape and are only safe because nothing under src/ is named that yet.
+#
+# Getting this wrong on a data directory is not a rebuild, it is a loss: --delete would take
+# every manual on the Pi the first time somebody deployed after uploading one.
 rsync -a --delete \
   --exclude '.env' --exclude '.venv' --exclude '.git' --exclude '__pycache__' \
   --exclude 'captures' --exclude 'recordings' --exclude 'sessions' \
-  --exclude '/projects' \
+  --exclude '/projects' --exclude '/manuals' \
   --exclude '.ruff_cache' --exclude 'Plans' \
   src pyproject.toml uv.lock README.md docs deploy "$TARGET:$DEST/"
 

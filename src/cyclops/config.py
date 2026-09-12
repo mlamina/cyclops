@@ -171,12 +171,17 @@ class Settings:
     sessions_dir: Path = Path("sessions")  # one folder per session; everything it produced
     captures_dir: Path = Path("captures")  # where a photo goes when no session is running
     projects_dir: Path = Path("projects")  # one folder per project; README, Log, Photos
+    manuals_dir: Path = Path("manuals")  # one folder per manual; the PDF, its pages, its identity
     about_file: Path = Path("about-you.md")  # the standing facts about whoever it works with
     slug: bool = True  # name each finished session from its transcript (cyclops.slug)
     remember: bool = True  # keep about-you.md up to date from what is said (cyclops.about)
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
     diagrams: bool = True  # offer draw_diagram, and keep what it draws in photos/
     recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
+    # Read uploaded PDFs into searchable pages (cyclops.reading). Separate from `recall` rather
+    # than folded into it: a manual costs one vision call per page the moment it lands, which is
+    # the one thing on this box that spends real money without anybody asking it to.
+    manuals: bool = True
     video: bool = True  # offer watch_video, which plays a YouTube video full-screen on the panel
     imagine: bool = True  # offer edit_photo, and keep what it makes (cyclops.imagine)
     scratchpad: bool = True  # offer write_on_scratchpad, so he can write on the panel himself
@@ -374,12 +379,14 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         sessions_dir=Path(_env("CYCLOPS_SESSIONS_DIR") or Settings.sessions_dir).expanduser(),
         captures_dir=Path(_env("CYCLOPS_CAPTURES_DIR") or Settings.captures_dir).expanduser(),
         projects_dir=Path(_env("CYCLOPS_PROJECTS_DIR") or Settings.projects_dir).expanduser(),
+        manuals_dir=Path(_env("CYCLOPS_MANUALS_DIR") or Settings.manuals_dir).expanduser(),
         about_file=Path(_env("CYCLOPS_ABOUT_FILE") or Settings.about_file).expanduser(),
         slug=_flag("CYCLOPS_SLUG", Settings.slug),
         remember=_flag("CYCLOPS_REMEMBER", Settings.remember),
         projects=_flag("CYCLOPS_PROJECTS", Settings.projects),
         diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
         recall=_flag("CYCLOPS_RECALL", Settings.recall),
+        manuals=_flag("CYCLOPS_MANUALS", Settings.manuals),
         video=_flag("CYCLOPS_VIDEO", Settings.video),
         imagine=_flag("CYCLOPS_IMAGINE", Settings.imagine),
         scratchpad=_flag("CYCLOPS_SCRATCHPAD", Settings.scratchpad),

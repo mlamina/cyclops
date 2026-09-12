@@ -638,3 +638,24 @@ body:not(.kiosk) .reelcap {
   max-width: calc(920 * var(--u)); margin: 0 auto; width: 100%;
   flex: 0 0 auto; align-self: auto; padding: calc(12 * var(--u)) 0 0;
 }
+
+/* ---- manuals, which is the upload chrome above re-used on a screen of its own ---- */
+/* Almost nothing here: a manual row is a .row like a project's, the bar is the same .crumbs and
+   .put, and the drop state is the same .files.drop. What is left is the two ways this row is not
+   a project row - it does not go anywhere when clicked, and it says how far through reading the
+   indexer is rather than when it was last touched. */
+/* Padded like the file browser's body, and the same dashed outline when something is over it. */
+body:not(.kiosk) .pbody.sheet { padding: calc(8 * var(--u)) calc(2 * var(--u)); }
+body:not(.kiosk) .pbody.sheet.drop {
+  outline: calc(1 * var(--u)) dashed var(--green);
+  outline-offset: calc(-4 * var(--u));
+}
+body:not(.kiosk) .row.manual { cursor: default; }
+body:not(.kiosk) .row.manual:hover { background: none; }
+body:not(.kiosk) .crumb.here { color: var(--green); }
+/* "reading 12 of 45" while the indexer works, so an upload that looks like it did nothing is
+   visibly doing something. Amber for the same reason the flight bar is: worth watching. */
+body:not(.kiosk) .row.manual .rowwhen { color: var(--amber); }
+body:not(.kiosk) .row.manual .thumb.none {
+  color: var(--amber); font-size: calc(11 * var(--u)); letter-spacing: .1em;
+}

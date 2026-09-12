@@ -44,7 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import around, captions, card, cut, recall
+from . import around, captions, card, cut, manuals, reading, recall
 from .config import RECALL_FILE, RECALL_LOCK, ConfigError, Settings, load_settings
 
 # How long the card must be quiet before a burst of events is treated as finished. Filing one
@@ -159,6 +159,39 @@ async def caption_pass(settings: Settings, *, again: bool = False) -> int:
     return total
 
 
+async def manual_pass(settings: Settings) -> int:
+    """Read whatever is still unread of every manual on the card. Returns pages added.
+
+    ``caption_pass``'s sibling, and it runs before it for the same reason that one runs before the
+    embedding: a manual dropped on the admin page ten seconds ago should be answerable from at the
+    end of this sweep, not the next.
+
+    Ordered before captions rather than after on a second argument too. This is the only work on
+    the card that spends real money the moment a file appears - one vision call per page - so if a
+    sweep is going to be cut short by ``RECONCILE_BUDGET_S``, the half that costs a penny and
+    finishes should have gone first. It is resumable to the page either way.
+    """
+    if not (settings.manuals and settings.api_key):
+        return 0
+    found = manuals.catalog(settings)
+    if not found:
+        return 0
+    total = 0
+    client = reading.client_for(settings)
+    try:
+        for manual in found:
+            made = await reading.fill(manual, settings, client)
+            if made:
+                total += made
+                _say(f"read {made} page(s) of {manual.path.name} ({manual.read}/{manual.pages})")
+    except Exception as exc:  # a manual is never worth failing a sweep over
+        _say(f"manuals: {exc}", error=True)
+    finally:
+        with contextlib.suppress(Exception):
+            await client.close()
+    return total
+
+
 async def reconcile(settings: Settings, *, rebuild: bool = False) -> bool:
     """Bring the index into line with the card. True if anything changed.
 
@@ -170,6 +203,7 @@ async def reconcile(settings: Settings, *, rebuild: bool = False) -> bool:
     card writes nothing at all, so the file's own mtime is a truthful record of when the index
     last actually moved.
     """
+    await manual_pass(settings)
     await caption_pass(settings)
 
     wanted = recall.corpus(settings)
@@ -377,13 +411,14 @@ class Watch:
 
 
 def _folders_to_watch(settings: Settings) -> list[Path]:
-    """The two roots and every directory under them.
+    """The three roots and every directory under them.
 
     Every directory, not only the ones holding indexable files: a picture arrives in a folder that
     may not have existed a moment ago, and the way to hear about that is to be watching its parent.
+    A manual is the same event - a PDF lands in a folder that did not exist a second earlier.
     """
     out: list[Path] = []
-    for root in (settings.projects_dir, settings.sessions_dir):
+    for root in (settings.projects_dir, settings.sessions_dir, settings.manuals_dir):
         folder = root.expanduser()
         if not folder.is_dir():
             continue

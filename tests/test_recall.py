@@ -101,6 +101,9 @@ def settings(card_dir: Path) -> Settings:
         api_key="test-key",
         projects_dir=card_dir / "projects",
         sessions_dir=card_dir / "sessions",
+        # Anchored even though this card has no manuals: unset, it defaults to a relative
+        # "manuals", and a suite run from a card's own directory would index the real ones.
+        manuals_dir=card_dir / "manuals",
     )
 
 

@@ -86,6 +86,7 @@ room for. That is the one question here answered by the stylesheet rather than b
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
       <button class="tab" type="button" data-go="/highlights">Highlights</button>
       <button class="tab" type="button" data-go="/projects">Projects</button>
+      <button class="tab" type="button" data-go="/manuals">Manuals</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
 
@@ -109,6 +110,10 @@ room for. That is the one question here answered by the stylesheet rather than b
              which is this device and never the one bolted to the bench. -->
         <option value="/highlights">HIGHLIGHTS</option>
         <option value="/projects">PROJECTS</option>
+        <!-- Not on the panel either, and the plainest case of the argument LIVE and HIGHLIGHTS
+             make above: this screen exists to take a PDF off the machine you downloaded it on,
+             and the Pi is never that machine. -->
+        <option value="/manuals">MANUALS</option>
         <option value="/media">MEDIA</option>
         <option value="/">SYSTEM</option>
       </select>
@@ -314,6 +319,18 @@ room for. That is the one question here answered by the stylesheet rather than b
   <main class="view media" id="v-media"></main>
 
   <main class="view projects" id="v-projects"></main>
+
+  {% comment %}
+  The manuals on the card, and the way one gets there. Empty like the projects list above it and
+  filled by showManuals(), so there is no markup here to keep in step with the JS.
+
+  Rendered for the LAN only, like the upload controls inside the project screen and for the same
+  three reasons: the panel has no filesystem to drag a PDF out of, no file picker worth opening at
+  800x480, and a keyboard only when somebody has plugged one in.
+  {% endcomment %}
+  {% if not local %}
+  <main class="view manuals" id="v-manuals"></main>
+  {% endif %}
 
   {% comment %}
   One project, and the five things it is. A project folder holds a README, a Log, a workbook, its

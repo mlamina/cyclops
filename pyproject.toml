@@ -10,6 +10,10 @@ dependencies = [
     "numpy>=2.5.2",
     "openai[realtime]>=3.3.1",
     "pillow>=12.3.0",
+    # Manuals: render a PDF page to pixels, and count the pages. Nothing else in the PDF
+    # ecosystem earns its place on a Pi - docling and marker both pull torch, which is a
+    # second project, not a dependency. This is one wheel with no build on py3.14 arm64.
+    "pymupdf>=1.28.2",
     "pydantic-ai-slim[openai]>=2.35.3,<3",
     "opencv-python>=5.0.0.93",
     "markdown>=3.7",

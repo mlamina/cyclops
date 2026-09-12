@@ -58,6 +58,17 @@ urlpatterns = [
         views.project_media,
         name="project-media",
     ),
+    # The third root on the card. Not a project sub-folder, deliberately: a manual documents a
+    # part, so the same one serves two bikes and filing it under either would hide it from the
+    # other. Upload answers to the LAN for the reason the two project writes above do - a manual
+    # arrives from the laptop you downloaded it on, never from the Pi.
+    path("api/manuals", views.manuals_list, name="manuals"),
+    path("api/manuals/upload", views.manual_upload, name="manual-upload"),
+    path(
+        "manual-media/<str:name>/<path:relative>",
+        views.manual_media,
+        name="manual-media",
+    ),
     path("api/panel", views.panel, name="panel"),
     path("api/picture/<str:ident>", views.picture, name="picture"),
     path("panel/painted", views.picture_painted, name="panel-painted"),

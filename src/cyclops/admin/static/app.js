@@ -28,7 +28,7 @@ const WIDE = window.matchMedia(
   getComputedStyle(document.documentElement).getPropertyValue('--wide-q').trim().slice(1, -1));
 
 const VIEWS = ['view-status', 'view-live', 'view-sessions', 'view-session', 'view-media',
-               'view-highlights', 'view-projects', 'view-project'];
+               'view-highlights', 'view-projects', 'view-project', 'view-manuals'];
 // The five things a project is, in the rail's order. The first is where a project opens, and an
 // address naming none of them - or one this list has never heard of - lands there too.
 const SECTIONS = ['overview', 'log', 'sheets', 'photos', 'youtube', 'files'];
@@ -52,6 +52,9 @@ const reelFlashEl = document.getElementById('reelflash');
 const reelTitle = document.getElementById('reeltitle');
 const reelWhen = document.getElementById('reelwhen');
 const vProjects = document.getElementById('v-projects');
+// Null on the panel: the manuals screen is rendered for the LAN only, so every
+// listener below is guarded on it the way the upload controls guard on putBar.
+const vManuals = document.getElementById('v-manuals');
 const crumbTrail = document.getElementById('crumbtrail');
 const railName = document.getElementById('railname');
 const rails = [...document.querySelectorAll('.railtab')];
@@ -802,6 +805,115 @@ function projectRow(one) {
     '</button>';
 }
 
+// ---------------------------------------------------------------- manuals
+
+// How far through a manual the indexer has got. It is the only thing on this screen that moves,
+// and it moves in a different process - so the row says what the frontmatter said when it was
+// fetched, and a poll below re-asks while anything is unfinished.
+function manualRow(one) {
+  const cover = one.cover
+    ? '<img class="thumb" loading="lazy" alt="" src="' + esc(one.cover) + '">'
+    : '<span class="thumb none">reading</span>';
+  const sub = one.ready
+    ? many(one.pages, 'page')
+    : one.pages ? 'reading ' + one.read + ' of ' + one.pages : 'reading';
+  // The part, not the document's own title: "Instruction Manual" is what half of these call
+  // themselves, and it tells you nothing about which one you are looking at.
+  const title = one.part || one.name || one.folder;
+  const also = one.aliases && one.aliases.length
+    ? '<span class="rowsum">also called: ' + esc(one.aliases.join(', ')) + '</span>' : '';
+  return '<div class="row manual">' +
+    '<span class="shot">' + cover + '</span>' +
+    '<span class="rowtext"><span class="rowtitle">' + esc(title) + '</span>' + also + '</span>' +
+    '<span class="rowwhen">' + esc(sub) + (one.revision ? '<span class="rowsub">' +
+      esc(one.revision) + '</span>' : '') + '</span>' +
+    '</div>';
+}
+
+let manualPoll = 0;
+function paintManuals(found) {
+  if (!vManuals) return;
+  const rows = found.manuals.length
+    ? found.manuals.map(manualRow).join('')
+    : '<div class="empty">no manuals yet - drop a PDF here</div>';
+  vManuals.innerHTML =
+    '<div class="crumbs"><span class="crumb here">Manuals</span>' +
+    '<span class="put"><span class="flightbar" id="mflight"></span>' +
+    '<button class="crumb act" id="mpick" type="button">&#8593; Upload</button>' +
+    '<input class="pickfile" id="mpickfile" type="file" accept="application/pdf" multiple>' +
+    '</span></div><div class="pbody sheet" id="mbody">' + rows + '</div>';
+  bindManuals();
+  // Only while something is unfinished, and only on this screen. A poll for a screen nobody is
+  // on is a warm Pi - the same rule showLive and showHighlights state when they stop themselves.
+  clearTimeout(manualPoll);
+  if (found.reading && at === '/manuals') manualPoll = setTimeout(showManuals, 4000);
+}
+
+async function showManuals() {
+  if (!vManuals) return;
+  try {
+    paintManuals(await grab('/api/manuals'));
+  } catch (e) {
+    vManuals.innerHTML = '<div class="empty">could not read the card</div>';
+  }
+}
+
+function sayManual(text, bad) {
+  const flight = document.getElementById('mflight');
+  if (!flight) return;
+  flight.textContent = text || '';
+  flight.classList.toggle('bad', !!bad);
+}
+
+// One request per file, in order, stopping at the first refusal. A manual that did not arrive
+// must never be left looking like one that did.
+async function sendManuals(list) {
+  const rest = [...list].filter((f) => /\.pdf$/i.test(f.name));
+  if (!rest.length) return sayManual('a manual has to be a PDF', true);
+  for (let n = 0; n < rest.length; n++) {
+    const one = rest[n];
+    sayManual((rest.length > 1 ? (n + 1) + '/' + rest.length + ' ' : '') + one.name);
+    try {
+      // octet-stream for the reason the project uploader gives: it is not a CORS-simple type,
+      // so every upload sits behind a preflight this server never answers.
+      const r = await fetch('/api/manuals/upload?name=' + encodeURIComponent(one.name),
+        { method: 'POST', body: one, headers: { 'Content-Type': 'application/octet-stream' } });
+      if (!r.ok) throw new Error((await r.text()).slice(0, 60) || r.status);
+      paintManuals(await r.json());
+    } catch (e) {
+      return sayManual(String(e.message || e).slice(0, 60), true);
+    }
+  }
+  sayManual('reading it now - that takes about a minute');
+}
+
+function bindManuals() {
+  const pick = document.getElementById('mpick');
+  const file = document.getElementById('mpickfile');
+  if (!pick || !file) return;
+  pick.onclick = () => file.click();
+  file.onchange = () => { if (file.files.length) sendManuals(file.files); file.value = ''; };
+}
+
+// Drag onto the whole screen, not onto the list. A drop landing anywhere this does not cover
+// makes Chromium navigate to file:/// - fatal on a page whose premise is never navigating - so
+// the handler goes on the view and dragover is prevented across all of it.
+if (vManuals) {
+  const lit = (on) => {
+    const body = document.getElementById('mbody');
+    if (body) body.classList.toggle('drop', on);
+  };
+  vManuals.addEventListener('dragover', (e) => { e.preventDefault(); lit(true); });
+  vManuals.addEventListener('dragleave', (e) => {
+    if (!vManuals.contains(e.relatedTarget)) lit(false);
+  });
+  vManuals.addEventListener('drop', (e) => {
+    e.preventDefault();
+    lit(false);
+    if (e.dataTransfer.files.length) sendManuals(e.dataTransfer.files);
+  });
+}
+
 async function showProjects() {
   try {
     const found = await shelf();
@@ -1380,6 +1492,7 @@ function route() {
   if (at.startsWith('/s/')) letGo();
   if (at === '/live') stopLive();   // a poll for a screen nobody is on is a warm Pi
   if (at === '/highlights') stopReel();   // and two decoders for a screen nobody is on is a warm Pi
+  if (at === '/manuals') clearTimeout(manualPoll);   // and so is polling one you have left
   if (document.body.classList.contains('lit')) douse();
   at = path;
 
@@ -1393,6 +1506,7 @@ function route() {
     showSession(decodeURIComponent(path.slice(3)));
   }
   else if (path === '/projects') { view = 'view-projects'; tab = '/projects'; showProjects(); }
+  else if (path === '/manuals') { view = 'view-manuals'; tab = '/manuals'; showManuals(); }
   else if (path.startsWith('/p/')) {
     view = 'view-project'; tab = '/projects';
     const [name, asked, where] = hashParts(path.slice(3), true);

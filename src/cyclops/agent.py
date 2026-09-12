@@ -27,7 +27,20 @@ from openai.types.realtime import (
     RealtimeSessionCreateRequestParam,
 )
 
-from . import arguments, card, imagine, panel, point, recall, session, sfx, sketch, tasks, youtube
+from . import (
+    arguments,
+    card,
+    imagine,
+    manuals,
+    panel,
+    point,
+    recall,
+    session,
+    sfx,
+    sketch,
+    tasks,
+    youtube,
+)
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
@@ -763,9 +776,14 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
         "touchscreen. This searches by meaning rather than by wording, so their words do not "
         "have to match what was written: photos and their descriptions, what was written up "
         "about each session of a project, and any file they put in the project folder "
-        "themselves. Use it whenever they refer back to something that exists - 'show me the "
-        "pic of the torque spec from the manual', 'what did we decide about the fork seals', "
-        "'find that datasheet I put in there'. A photo appears on the panel and stays until "
+        "themselves. Reach for it in two situations. First, whenever they refer back to "
+        "something that exists - 'show me the pic of the torque spec from the manual', 'what "
+        "did we decide about the fork seals', 'find that datasheet I put in there'. Second, and "
+        "without being asked to: when they ask about a machine or a part you hold a manual for "
+        "- a spec, a torque, a clearance, a fuse rating, a part number, which wire goes where. "
+        "Looking is faster than saying you could look, so look. A manual page comes back as the "
+        "page itself on their screen; read the answer off it, say which manual and page in a "
+        "few words, and stop. A photo appears on the panel and stays until "
         "they tap it, so say one short sentence and then stop; they can see it, so do not "
         "describe it back at them unless they ask - and you are shown it too, so answer "
         "whatever they do ask about it by reading the picture. Read it off the picture and not "
@@ -893,8 +911,13 @@ USING THE EYE
 LOOKING THINGS UP
 - When they ask something factual you are not sure about - a spec, a size, a torque value,
   whether two parts fit together, what something costs, anything that may have changed
-  recently - call the web_search tool instead of guessing. It takes a few seconds; wait them
-  out rather than filling them, and lead with the answer when it lands.
+  recently - look it up instead of guessing.
+- If it is about a thing they own and you hold a manual for it, look there FIRST, with recall,
+  and without being asked to. The manual is about their exact part; the web is about what
+  somebody said about a part like it. Do this the moment the question is asked - do not offer
+  to look, do not ask which manual, just answer and say where it came from in a few words.
+- Use web_search when no manual covers it, or when the manual does not say. It takes a few
+  seconds; wait them out rather than filling them, and lead with the answer when it lands.
 - Combine the two when it helps: ask for a photo of the thing, then search for what you saw.
   If a search comes back empty or failed, say so plainly instead of inventing an answer.
 - When what comes back is a figure they are going to work to - a torque, a clearance, a gap, a
@@ -1022,6 +1045,23 @@ PROJECTS_LISTED = 20
 PROJECT_LINE_CHARS = 380
 
 
+# Introduces the manuals below it, and it is the whole of "answer from the manual without being
+# asked to". A tool cannot be reached for by a model that does not know there is anything to
+# reach for, so this list is what turns recall from a thing it uses when told into a thing it
+# uses when a question arrives. Names and what each is for - never contents, the rule
+# PROJECTS_HEADER keeps for the same reason.
+MANUALS_HEADER = """\
+MANUALS YOU HAVE READ
+You have read these cover to cover and can put any page of one on their screen. Use recall to
+find the page, with the part in the query - "mo.unit indicator wiring", not "manual".
+Two rules. Read the answer off the page itself once it is up, never off what the search said
+about it - the search text is written to find a page and is not reliable about a number. And
+never bring up what a manual says unless it answers what was actually asked: having read it is
+not a reason to mention it.
+"""
+MANUALS_LISTED = 24
+
+
 def _about_block(settings: Settings) -> str:
     """What it knows about them, or the instruction to go and find out.
 
@@ -1073,6 +1113,22 @@ def _projects_block(settings: Settings) -> str:
     return f"{PROJECTS_HEADER}\n" + "\n".join(lines) + "\n"
 
 
+def _manuals_block(settings: Settings) -> str:
+    """What it has read, or nothing at all. ``_projects_block``'s sibling, in every respect."""
+    if not settings.manuals:
+        return ""
+    try:
+        held = [one for one in manuals.catalog(settings) if one.read]
+    except OSError:
+        return ""
+    if not held:
+        return ""
+    lines = [one.line() for one in held[:MANUALS_LISTED]]
+    named = ", ".join(one.part or one.name for one in held[:MANUALS_LISTED])
+    print(f"· manuals: {named}", flush=True)
+    return f"{MANUALS_HEADER}\n" + "\n".join(lines) + "\n"
+
+
 def build_instructions(settings: Settings) -> str:
     """The full system prompt for one session: the standing rules, plus what came before.
 
@@ -1094,6 +1150,10 @@ def build_instructions(settings: Settings) -> str:
         blocks.append(f"{RECAP_HEADER}\n{recap.text}\n")
     if projects_block := _projects_block(settings):
         blocks.append(projects_block)
+    # Last, because it is the only block that is reference rather than context: the others say
+    # who and what happened, this says what can be looked up.
+    if manuals_block := _manuals_block(settings):
+        blocks.append(manuals_block)
     return "\n".join(blocks)
 
 
@@ -1206,6 +1266,10 @@ class VoiceAgent:
         # than being read back off `_on_panel`, which a drawing landing in that same window moves.
         self._found_image: bytes | None = None
         self._found_name = ""
+        # What kind of picture it was, so add_found can say so. A manual page and a photograph of
+        # the bench are both "found", and calling one the other is how the model ends up saying
+        # "in the photo you took" about page 28 of a manual.
+        self._found_kind = ""
         # ...and, beside those three, the sentence the panel says underneath. The flags answer
         # "what mode is this?", which colours the border and picks the word on the strip, and
         # they stay a closed set of three. This answers "what is it doing?", which is open-ended
@@ -2528,8 +2592,9 @@ class VoiceAgent:
         # `_run_edit_photo` uses, and for the same reasons.
         found, self._found_image = self._found_image, None
         name, self._found_name = self._found_name, ""
+        kind, self._found_kind = self._found_kind, ""
         if found is not None:
-            await self.add_found(found, name)
+            await self.add_found(found, name, kind=kind)
         await self._request_response()
 
     async def _replay(self, query: str, best: recall.Hit, others: list[dict]) -> dict[str, Any]:
@@ -2592,10 +2657,18 @@ class VoiceAgent:
         sessions are indexed but not searched, because a year of half-finished conversations is
         mostly noise against a question about a project, and the project is where the finished
         version of anything ends up.
+
+        Manuals are in scope always, and are why this builds the set before the early returns
+        below rather than after them. A manual belongs to a part and not to a project, so "on the
+        Honda, what is the valve clearance" - a question that names a project and so takes the
+        ``if project:`` return - must still be able to reach one. Both exits have to carry them,
+        or the feature is dead in exactly the phrasing most likely to be used.
         """
         scopes: set[str] = set()
         if (live := session.current()) is not None:
             scopes.add(f"session:{live.dir.name}")
+        if self.settings.manuals:
+            scopes.update(one.scope for one in manuals.catalog(self.settings))
         if not self.settings.projects:
             return scopes or None
         from .projects import store
@@ -2610,6 +2683,17 @@ class VoiceAgent:
             # still on the card under a spelling neither of us guessed.
         scopes.update(f"project:{p.path.name}" for p in catalog)
         return scopes or None
+
+    def _full_page(self, path: Path, fallback: bytes | None) -> bytes | None:
+        """A manual page at the size it was rendered, for the model to read rather than glance at.
+
+        Falls back to whatever went to the panel if the file will not read - a smaller picture is
+        worse than this one but much better than none, and the page is already on their screen.
+        """
+        try:
+            return path.read_bytes()
+        except OSError:
+            return fallback
 
     async def _recall(self, query: str, project: str) -> dict[str, Any]:
         """One search, and the panel if the answer is a picture."""
@@ -2669,6 +2753,15 @@ class VoiceAgent:
             }
 
         shown, seen = await asyncio.to_thread(self._show_found, Path(best.item.path))
+        if best.item.kind == "page":
+            # The panel keeps the downscaled copy - it is 800x480 and cannot use more - but the
+            # model gets the full render. `_show_found` hands back one copy for both jobs, which
+            # is right for a photograph and wrong for a page of small print: `imagine.for_panel`
+            # caps the long edge at PANEL_MAX_EDGE, so a 150 dpi A4 page reaches the model at
+            # about 87 dpi. The 0.96 transcription recall this feature rests on was measured at
+            # 120. Reading a torque figure off the page is the whole point, so it reads the page.
+            seen = await asyncio.to_thread(self._full_page, Path(best.item.path), seen)
+        self._found_kind = best.item.kind
         if shown:
             # It is the picture in front of them now, so it is the one edit_photo works on. The
             # path is the file on the card, not the downscaled copy that went to the panel: an
@@ -2732,7 +2825,7 @@ class VoiceAgent:
         small = imagine.for_panel(blob)
         return bool(panel.offer_image(small, path.stem) and panel.show()), small
 
-    async def add_found(self, jpeg: bytes, name: str = "") -> None:
+    async def add_found(self, jpeg: bytes, name: str = "", *, kind: str = "") -> None:
         """Show the model the picture it just put on the panel. No response is asked for here.
 
         The reason this exists rather than the caption being enough: the caption is *index text*,
@@ -2745,7 +2838,12 @@ class VoiceAgent:
         The same shape as :meth:`add_edit`, and not that method, because what it says about the
         picture is the opposite: an edit is a drawing that must not be read as evidence, and this
         is a photograph of their own bench that must be.
+
+        A manual page is the same argument with a different noun, and it is worth the branch: the
+        sentence below is the only thing telling the model what it is looking at, and told it is a
+        photograph it will talk about a printed page as though they had taken it.
         """
+        page = kind == "page"
         if not self.connected:
             return
         await self._send_item(
@@ -2756,12 +2854,26 @@ class VoiceAgent:
                     {
                         "type": "input_text",
                         "text": (
-                            "[The picture you just found, now on their screen. This is a real "
-                            "photograph from their own card, so you may read it and answer "
+                            "[The "
+                            + ("page you just looked up" if page else "picture you just found")
+                            + ", now on their screen. This is a real "
+                            + (
+                                "page of a manual on their card"
+                                if page
+                                else "photograph from their own card"
+                            )
+                            + ", so you may read it and answer "
                             "questions about what is in it - and prefer reading it to anything "
-                            "the search said about it, which was written to find the picture "
-                            "rather than to describe it accurately. They are looking at it too, "
-                            "so do not narrate it unprompted."
+                            "the search said about it, which was written to find the "
+                            + ("page" if page else "picture")
+                            + " rather than to describe it accurately. They are looking at it "
+                            "too, so do not narrate it unprompted."
+                            + (
+                                " Say which manual and page it is, in a few words, so they know "
+                                "where the answer came from."
+                                if page
+                                else ""
+                            )
                             + (f" It is called {name}." if name else "")
                             + "]"
                         ),

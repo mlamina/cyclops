@@ -10,6 +10,12 @@
 # It is also the thing that gives every picture on the card a caption, because captioning and
 # indexing want the same trigger: a photo that appeared. See cyclops/indexer.py.
 #
+# And, since manuals, the thing that reads an uploaded PDF: one vision call per page, written to
+# a pages.json beside the file. That is the only work on this box that spends money the moment a
+# file appears rather than when somebody asks, which is why it goes first in a sweep and why it
+# is resumable to the page - a manual half-read at a power cut costs the pages in flight.
+# See cyclops/reading.py.
+#
 # Since 2026-09-05 it also renders the videos the Videos screen asks for (cyclops.cut). That is
 # a two-minute libx264 burn rather than a wait on the network, which is a real change to what
 # this unit does - but it is the same shape of work, wants the same tier, and a second
