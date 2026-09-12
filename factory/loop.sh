@@ -10,7 +10,7 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 LOGS=$ROOT/factory/logs
 JOBS=$ROOT/../cyclops-jobs
 MAX=3        # builds at once
-WEDGED=90    # minutes before a build is presumed hung
+WEDGED=90    # minutes of silence before a build is presumed hung
 EVERY=30     # seconds between passes
 
 # A second loop would see the same ready jobs, cut the same worktrees and set two agents on one
@@ -32,6 +32,29 @@ fi
 
 mkdir -p "$LOGS"
 
+# One timestamped line in a job's log. Everything this loop knows goes through here, and the
+# markers - START, PID, EXIT, DONE, STALLED, WEDGED - are the whole of what /board reads.
+#
+# They exist because a build that finished and a build that gave up look identical from out here.
+# `claude -p` exits the moment the model ends its turn, and a model ends its turn to report
+# progress as readily as to report a result; either way what is left behind is a log with prose
+# in it and no process. Job 002 backgrounded a sixty-turn measurement, ended its turn at forty-nine
+# to say how it was going, and took the measurement down with it - and because nothing had written
+# down that it ended, /board called it "building" for the next twenty minutes.
+say() { printf '· %s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$2" >> "$1"; }
+
+# What a job's frontmatter says right now, or "gone". Read once, after a build exits: `review` is
+# the only thing a build that finished its work leaves behind, so it is how this loop tells the
+# two endings apart without understanding anything about the job itself.
+state_of() {  # $1 number
+  for jf in "$ROOT"/factory/"$1"-*.md; do
+    [ -e "$jf" ] || continue
+    head -8 "$jf" | sed -n 's/^state: *//p' | head -1
+    return 0
+  done
+  echo gone
+}
+
 # What "007 is building" looks like in ps - the whole invocation, not the number. Claude Code's
 # Bash tool puts the command text in its shell's own argv, so a peer session running
 # `cat factory/007-something.md` has `007` on its command line, and a loop matching the number
@@ -45,7 +68,8 @@ start() {  # $1 number, $2 slug, $3 absolute log path
   # the marker this loop reads never appears - so every job would restart every thirty seconds
   # for ever. And a worktree that cannot be cut has to leave the marker too, or that is the same
   # runaway with a different cause. The git error lands in the log, the only place anyone looks.
-  date '+%Y-%m-%d %H:%M:%S' > "$3"
+  : > "$3"
+  say "$3" "START $1 - $2"
   wt=$JOBS/$1
   # An existing branch is this job's own earlier work - a crashed run, or a /rework - so it is
   # checked out rather than recut, and an existing directory is reused rather than re-added.
@@ -59,14 +83,46 @@ start() {  # $1 number, $2 slug, $3 absolute log path
     else
       add="git worktree add -b job/$1-$2 $wt master"
     fi
-    $add >> "$3" 2>&1 || { echo "· $1 NO WORKTREE — see ${3#$ROOT/}" >&2; return 0; }
+    $add >> "$3" 2>&1 || {
+      # An ending, written down like any other. A log that stops dead with a git error in it is
+      # the shape a crashed build has, and out here they must not be the same thing.
+      say "$3" "EXIT 1"
+      say "$3" "STALLED - git could not cut the worktree"
+      echo "· $1 NO WORKTREE — see ${3#$ROOT/}" >&2
+      return 0
+    }
   fi
-  # `< /dev/null` for the reason start-kiosk.sh:49 has it: a backgrounded process that reads the
-  # terminal gets SIGTTIN and stops. A stopped build still answers pgrep, so it would hold a slot
-  # for ever while looking alive. `trap '' INT` survives exec, so Ctrl-C on the loop leaves the
-  # builds standing and the next loop finds them and leaves them alone.
-  ( trap '' INT; cd "$wt" && nohup claude -p "/build $1" --dangerously-skip-permissions \
-      >> "$3" 2>&1 < /dev/null & )
+  # Waited on rather than fired and forgotten, and the waiting is the point: `$?` from a build
+  # is the one fact that says how it ended, and it exists for a few milliseconds unless something
+  # is standing there to catch it.
+  #
+  # The supervisor is backgrounded so the pass carries on. `claude` inside it is backgrounded so
+  # its pid can be written down, and waited on so its status is real. `< /dev/null` for the reason
+  # start-kiosk.sh:49 has it: a backgrounded process that reads the terminal gets SIGTTIN and
+  # stops, and a stopped build holds a slot for ever while looking alive. `trap '' INT HUP`
+  # survives exec and covers both ways this loop can be walked away from - Ctrl-C leaves the
+  # builds standing, and closing the terminal no longer kills the one process that would have
+  # recorded the ending.
+  ( trap '' INT HUP
+    cd "$wt" 2>/dev/null || { say "$3" "EXIT 1"; say "$3" "STALLED - $wt is not there"; exit 0; }
+    nohup claude -p "/build $1" --dangerously-skip-permissions >> "$3" 2>&1 < /dev/null &
+    cpid=$!
+    say "$3" "PID $cpid"
+    # `|| code=$?` and not a bare `wait`: under `set -e` a build that exits non-zero would take
+    # this subshell with it, and the ending would go unwritten in exactly the case that needs it.
+    code=0; wait "$cpid" || code=$?
+    say "$3" "EXIT $code"
+    if [ "$(state_of "$1")" = review ]; then
+      say "$3" "DONE - waiting on Marco"
+      echo "· $1 done — /review $1"
+    else
+      # The build's own contract: the page, then the ticks, then `state: review`, in that order
+      # and last. Exiting without it means it stopped somewhere in the middle, whatever its exit
+      # status says - a model that ends its turn to describe what it is about to do next exits 0.
+      say "$3" "STALLED - exited at 'state: $(state_of "$1")' without setting review"
+      echo "· $1 STALLED — /rework $1 to send it round again" >&2
+    fi
+  ) &
   echo "· $1 building — $2"
 }
 
@@ -77,14 +133,23 @@ pass() {
     [ -e "$f" ] || continue               # an empty board is an unexpanded glob, not a file
     b=${f##*/}; b=${b%.md}; n=${b%%-*}; slug=${b#*-}; log=$LOGS/$n.log
 
-    # `claude -p` prints nothing until it finishes, so the log's mtime is its start time and
-    # nothing else - which makes `find -mmin` the whole timeout, with no ps parsing (macOS has
-    # no `-o etimes`). Kill by pid and never `pkill -f`: a pattern that finds one build finds
-    # three, and finds a peer's shell.
-    pid=$(pgrep -f "$(pat "$n")" | head -1 || true)
-    if [ -n "$pid" ] && [ -n "$(find "$log" -mmin +$WEDGED 2>/dev/null)" ]; then
-      kill "$pid" 2>/dev/null || true
-      echo "· $n WEDGED — killed after ${WEDGED}m. /rework $n to try again" >&2
+    # Alive is the pid written into the log when the build started, never a pattern. `pgrep -f`
+    # matches any shell whose argv carries the string, which includes the one asking - that is
+    # how /board reported job 002 as building for twenty minutes after it had died. A pid cannot
+    # match the process asking about it, and `kill -0` only asks.
+    pid=$(sed -n 's/^· .* PID \([0-9][0-9]*\)$/\1/p' "$log" 2>/dev/null | tail -1)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      # Wedged is "has written nothing", not "has been going a while". The old test read the log's
+      # mtime, which `claude -p` only touches when it finishes, so it was the start time and
+      # nothing else: a build still working at minute 91 was killed for the crime of being slow,
+      # and one stuck at minute 3 was left alone. What a working build always does is write files.
+      if [ -z "$( { find "$JOBS/$n" -name .venv -prune -o -type f -mmin -$WEDGED -print
+                    find "$ROOT/factory/html/$n" -type f -mmin -$WEDGED -print
+                  } 2>/dev/null | head -1)" ]; then
+        kill "$pid" 2>/dev/null || true
+        say "$log" "WEDGED - killed, nothing written for ${WEDGED}m"
+        echo "· $n WEDGED — killed after ${WEDGED}m idle. /rework $n to try again" >&2
+      fi
       continue
     fi
 

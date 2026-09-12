@@ -42,6 +42,20 @@ reason `panel_shot.py` exists.
 
 A criterion that was only ever Marco's to judge stays unjudged. Say so; don't grade it yourself.
 
+**Your turn ending is the build ending.** You are running under `claude -p`, which exits the moment
+you end your turn and takes everything you started with it — a background probe, a measurement
+half-run, a test still going. There is no checking back, because there is no later. A turn that
+ends *"I'll tally it the moment it completes"* is a build that completed nothing, and that has
+already happened here: a sixty-turn measurement died at forty-nine because the turn that started it
+ended to say how it was going. So never end a turn while work you started is still running. Wait
+for it.
+
+Waiting is free, but silence is not: the loop kills a build that has written nothing for ninety
+minutes. If you are waiting on something long, write as it goes — results into
+`$MAIN/factory/html/NNN/` line by line rather than all at the end — and the wait takes care of
+itself. If the work genuinely cannot fit, that is a wrong plan: say so in the job file and leave
+the state at `ready`.
+
 ## Leave two things
 
 **`$MAIN/factory/html/NNN.html`** — one page, written by you, shaped to this job. A picture and a

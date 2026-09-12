@@ -55,9 +55,16 @@ because there is one Pi — `factory/ON-THE-PI` says which.
 
 ## If something stops
 
-A build that dies leaves `factory/logs/NNN.log` and the job sitting at `ready`. The loop won't
-try again — that's deliberate, so a broken job can't burn an afternoon in a loop nobody is
-watching. `/board` shows it as stalled and `/rework N` sends it round again.
+Every build is watched to its end, and `factory/logs/NNN.log` says how it went — `START`, the
+pid, the exit status, and then either `DONE` or `STALLED` with the reason. A build that finished
+and a build that gave up halfway both leave a log and no process, so the loop writes down which
+one happened rather than leaving `/board` to guess.
+
+The job still sits at `ready` and the loop won't try again — that's deliberate, so a broken job
+can't burn an afternoon in a loop nobody is watching. `/rework N` sends it round again.
+
+A build that writes nothing for ninety minutes is presumed hung and killed; one that is working,
+however long it takes, is left alone.
 
 Ctrl-C in its terminal stops it. From anywhere else, `pkill -f 'factory/loop\.sh$'` — anchored,
 because a loose pattern also matches the shell you typed it into.
