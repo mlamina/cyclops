@@ -232,3 +232,49 @@ def test_a_root_that_does_not_exist_yet_is_watched_through_its_parent(tmp_path):
         )
     )
     assert tmp_path in watched
+
+
+def test_a_manual_with_every_page_read_still_gets_named(manual, monkeypatch):
+    """The one piece of work a complete manual can still be owed.
+
+    `fill` returns early when there is nothing left to read, and a manual read before `about`
+    existed has every page and no description - so every later sweep took that exit and it could
+    never gain one. Observed on the Pi, 2026-09-12, on a manual that had been read the day before.
+    """
+    asked = []
+
+    async def identify(pages, client):
+        asked.append(len(pages))
+        return {"part": "Raspberry Pi 5", "about": "power, ports, pinout", "aliases": ["pi 5"]}
+
+    monkeypatch.setattr(reading, "identify", identify)
+    # every page accounted for, so there is no reading to do
+    monkeypatch.setattr(reading, "page_count", lambda pdf: 2)
+    manual.pages, manual.read = 2, 2
+
+    made = asyncio.run(reading.fill(manual, None, None))
+
+    assert made == 0, "nothing to read"
+    assert asked, "but it still has to be named"
+    assert manuals._manual_from(manual.path).about == "power, ports, pinout"
+
+
+def test_a_description_that_restates_the_label_is_trimmed(manual):
+    """The prompt says not to repeat the part name; the model does it anyway about half the time.
+
+    The label is printed beside the description, so a repeat is paid for in every session and
+    says nothing. Only a leading repeat goes - the same words further in are a topic.
+    """
+    manual.part = "mo.unit blue / basic body control module"
+    manual.about = "mo unit blue basic body control module specs, installation, wiring"
+    manual.aliases = []
+    assert manual.line() == "- mo.unit blue / basic body control module — specs, installation, wiring"
+
+
+def test_a_line_that_runs_long_ends_on_a_whole_topic(manual):
+    """Half a topic and a dangling comma is worse than one topic fewer."""
+    manual.part = "thing"
+    manual.about = ", ".join(f"topic number {n}" for n in range(40))
+    manual.aliases = []
+    assert not manual.line().rstrip().endswith((",", "—", "-"))
+    assert len(manual.line()) <= manuals.MAX_LINE_CHARS

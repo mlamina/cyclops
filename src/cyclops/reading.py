@@ -316,6 +316,11 @@ async def fill(manual: Manual, settings: Settings, client: AsyncOpenAI) -> int:
         if manual.pages != total or manual.read != len(pages):
             manual.pages, manual.read = total, len(pages)
             manuals.write_identity(manual)
+        # A manual finished reading before `about` existed has every page and no description, and
+        # nothing else will ever come and give it one: there are no pages left to add, so every
+        # later sweep would take this exit. The identity call is the one piece of work a complete
+        # manual can still be owed.
+        await _name(manual, pages, client)
         return 0
 
     manual.pages = total
@@ -341,22 +346,32 @@ async def fill(manual: Manual, settings: Settings, client: AsyncOpenAI) -> int:
         manuals.write_pages(manual.path, pages)
         manuals.write_identity(manual)
 
-    # Not `and made`: a manual that was already fully read adds no pages, so gating on new work
-    # would mean one identified before `about` existed could never gain a description - the sweep
-    # would skip it for ever. Gating on the missing field alone costs one call, once, for each.
-    if pages and not manual.about:
-        found = await identify(pages, client)
-        if found:
-            manual.name = str(found.get("manual") or manual.name)[:160]
-            manual.part = str(found.get("part", ""))[:160]
-            manual.maker = str(found.get("maker", ""))[:80]
-            manual.revision = str(found.get("revision", ""))[:40]
-            manual.about = str(found.get("about", ""))[:ABOUT_CHARS]
-            aliases = found.get("aliases", [])
-            if isinstance(aliases, list):
-                manual.aliases = [str(a)[:60] for a in aliases if a][: manuals.MAX_ALIASES]
-            manuals.write_identity(manual)
+    await _name(manual, pages, client)
     return made
+
+
+async def _name(manual: Manual, pages: dict[str, dict], client: AsyncOpenAI) -> None:
+    """Work out what this manual is, if that is not known yet. One call, once, per manual.
+
+    Gated on the description rather than on new pages: what decides whether to open a manual is
+    knowing what it covers, and a manual read before that field existed has a name and nothing
+    else. Gating on work done would mean the sweep skipped it for ever, because a complete manual
+    adds no pages.
+    """
+    if not pages or manual.about:
+        return
+    found = await identify(pages, client)
+    if not found:
+        return
+    manual.name = str(found.get("manual") or manual.name)[:160]
+    manual.part = str(found.get("part", ""))[:160]
+    manual.maker = str(found.get("maker", ""))[:80]
+    manual.revision = str(found.get("revision", ""))[:40]
+    manual.about = str(found.get("about", ""))[:ABOUT_CHARS]
+    aliases = found.get("aliases", [])
+    if isinstance(aliases, list):
+        manual.aliases = [str(a)[:60] for a in aliases if a][: manuals.MAX_ALIASES]
+    manuals.write_identity(manual)
 
 
 def client_for(settings: Settings) -> AsyncOpenAI:

@@ -25,6 +25,7 @@ What this module must never do:
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import date
@@ -121,11 +122,37 @@ class Manual:
         if self.revision:
             label += f" {self.revision}"
         line = f"- {label}"
-        if self.about:
-            line += f" — {self.about}"
+        if about := _unrepeated(self.about, label):
+            line += f" — {about}"
         if self.aliases:
             line += f" (also: {', '.join(self.aliases[:3])})"
-        return line[:MAX_LINE_CHARS]
+        # Cut at a comma, so a line that runs long ends on a whole topic rather than mid-word
+        # with a dangling separator. This is a list; half an item in it is worse than one fewer.
+        if len(line) > MAX_LINE_CHARS:
+            line = line[:MAX_LINE_CHARS].rsplit(",", 1)[0].rstrip(" ,;—-")
+        return line
+
+
+def _unrepeated(about: str, label: str) -> str:
+    """The description with any restatement of the label trimmed off its front.
+
+    The identity prompt says not to repeat the product name and the model does it anyway about
+    half the time - "mo.unit blue basic body control module specs, installation, wiring" against a
+    label that already said all of that. Asking twice does not fix it; this does, and it costs
+    nothing. Only a *leading* repeat is trimmed: the same words later in the list are a topic.
+    """
+    if not about:
+        return ""
+    known = {w for w in re.split(r"[^a-z0-9]+", label.lower()) if len(w) > 2}
+    words = about.split()
+    cut = 0
+    for n, word in enumerate(words):
+        if re.sub(r"[^a-z0-9]", "", word.lower()) in known:
+            cut = n + 1
+        elif n - cut > 1:  # two words in a row that are not the label: the list has started
+            break
+    trimmed = " ".join(words[cut:]).lstrip(" ,;:-—")
+    return trimmed or about
 
 
 # ------------------------------------------------------------------ reading the card
