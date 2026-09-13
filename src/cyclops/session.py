@@ -728,9 +728,10 @@ greeting is said into a particular moment, and these are what make one: a Monday
 Friday that is nearly over, a Saturday, a fifth wake in one day, two minutes since you switched
 off, three weeks of nothing. The test is whether the line would have done just as well yesterday
 - if it would, you were told this and did not use it. Never give them the clock reading or the
-date, never explain how you know, and never claim anything these lines do not say. It is half a
-dozen words and it does not end in a question: they switched you on because they are about to
-say something.
+date, never explain how you know, and never claim anything these lines do not say - how long you
+have been switched off is the one a greeting gets wrong, and three days is not "a short break".
+It is half a dozen words and it does not end in a question: they switched you on because they
+are about to say something.
 """
 
 
