@@ -723,10 +723,14 @@ def recent_context(settings: Settings) -> Recap:
 # and "two minutes ago" is precisely the case this exists for.
 MOMENT_HEADER = """\
 WHEN IT IS
-The clock as the eye opened. It matters in one place - the first thing you say. A greeting
-belongs to an hour and a day: a Monday first thing is not a Friday fifth wake, and switching on
-two minutes after you switched off is not switching on after three days. Never announce the time
-or the date, never explain how you know, and never say anything these lines do not.
+The clock as the eye opened. It belongs to the first thing you say and to nothing after it. A
+greeting is said into a particular moment, and these are what make one: a Monday first thing, a
+Friday that is nearly over, a Saturday, a fifth wake in one day, two minutes since you switched
+off, three weeks of nothing. The test is whether the line would have done just as well yesterday
+- if it would, you were told this and did not use it. Never give them the clock reading or the
+date, never explain how you know, and never claim anything these lines do not say. It is half a
+dozen words and it does not end in a question: they switched you on because they are about to
+say something.
 """
 
 
@@ -819,7 +823,7 @@ def now_context(settings: Settings, now: datetime | None = None) -> Moment:
     close, and the folder being set up right now has no page yet.
     """
     now = now or datetime.now()
-    lines = [f"- {now:%A} {_part_of_day(now)}, {now:%H:%M}."]
+    lines = [f"It is {now:%A} {_part_of_day(now)}, {now:%H:%M}."]
     nth, gap, last, said = 1, None, None, ""
     if settings.sessions_dir.is_dir():
         for folder in reversed(_folders(settings.sessions_dir)):
@@ -832,17 +836,19 @@ def now_context(settings: Settings, now: datetime | None = None) -> Moment:
             if started.date() != now.date():
                 break
             nth += 1
-        lines.append(f"- Their {_ordinal(nth)} session today.")
         said = _since_said(last, now) if last is not None else ""
         lines.append(
-            f"- The last one ended {said}." if said else "- You have never been switched on before."
+            f"The last time ended {said}." if said else "They have never switched you on before."
         )
+        first = "This is the first time they have switched you on today."
+        lines.append(first if nth == 1 else
+                     f"This is the {_ordinal(nth)} time they have switched you on today.")
     note = f"{now:%A} {now:%H:%M}, {_ordinal(nth)} today" + (f", last ended {said}" if said else "")
     return Moment(
         now=now,
         nth_today=nth,
         since=gap,
-        text=f"{MOMENT_HEADER}\n" + "\n".join(lines) + "\n",
+        text=f"{MOMENT_HEADER}\n" + " ".join(lines) + "\n",
         note=note,
     )
 
