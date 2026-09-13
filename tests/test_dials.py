@@ -68,6 +68,16 @@ class _Cues:
         pass
 
 
+class _Controller:
+    """The session, in place of one: only the switch the handover actually reaches."""
+
+    def __init__(self) -> None:
+        self.on_air: list[bool] = []
+
+    def set_on_air(self, live: bool) -> None:
+        self.on_air.append(live)
+
+
 class _Mixer:
     """A sink that remembers what it was asked for, in place of pactl."""
 
@@ -99,6 +109,7 @@ def _panel(monkeypatch: pytest.MonkeyPatch) -> tuple[kiosk_module.Kiosk, _Mixer]
     kiosk._press_until = 0.0
     kiosk._turning = False
     kiosk._sliding = False
+    kiosk._handed_over = False  # his voice is on this box's amp, so the knob is a control
     kiosk._slide_from = 0.0
     kiosk._wanted = None
     kiosk._volume = 50
@@ -381,3 +392,76 @@ def test_the_gauge_opens_the_screen_the_rest_of_its_numbers_are_on(
     kiosk._on_mouse(DOWN, *kiosk.overlay.hitboxes.heat.center, 0, None)
     assert kiosk.opened == [kiosk_module.SYSTEM_SCREEN]
     assert kiosk._pressed == overlay.HEAT, "nothing acknowledged the tap"
+
+
+# ------------------------------------------------------------------ whose speaker he is on
+
+
+def test_the_knob_says_when_a_companion_has_his_voice() -> None:
+    """The knob goes over to the handover hue whenever the claim is held - asleep or mid-session
+    - and nothing else in that corner moves with it.
+
+    The gauge beside it is in the assertion for the same reason its hitbox is: what the knob
+    turns into has to stay inside the knob's own hole in the panel, and a gauge that changed
+    with it would mean a board temperature had started depending on who was listening.
+    """
+    ov = overlay.Overlay(800, 480)
+    for state, elapsed in ((overlay.IDLE, None), (overlay.LISTENING, 12.0)):
+        shown = dict(state=state, level=0.0, elapsed=elapsed, phase=10.0, volume=60, temp_c=58.0)
+        here = ov.render(**shown)  # type: ignore[arg-type]
+        away = ov.render(handed_over=True, **shown)  # type: ignore[arg-type]
+        for name, box, same in ((overlay.VOLUME, ov.hitboxes.volume, False),
+                                (overlay.HEAT, ov.hitboxes.heat, True)):
+            a, b = (f[box.y : box.bottom, box.x : box.right].tobytes() for f in (here, away))
+            assert (a == b) is same, f"the {name} dial was the wrong kind of unchanged"
+
+
+def test_the_whole_knob_goes_over_and_not_one_mark_on_it() -> None:
+    """Every lit thing on the instrument, not a badge in the gap. That is the difference between
+    this and the round before it, which was looked at on the Pi and called too easy to miss.
+
+    Counted as pixels that changed hue rather than as a colour anywhere: a mark swapped for
+    another mark of the same size moves a couple of hundred pixels in the gap under the hub, and
+    a dial relit moves the arc, the pointer, the hub, the graduations and the seat's reveal with
+    it. The floor is a tenth of the face, which no mark that fits in :meth:`_mark_box` can reach.
+    """
+    ov = overlay.Overlay(800, 480)
+    shown = dict(state=overlay.LISTENING, level=0.0, elapsed=12.0, phase=10.0,
+                 volume=60, temp_c=58.0)
+    box = ov.hitboxes.volume
+    here, away = (ov.render(handed_over=h, **shown)[  # type: ignore[arg-type]
+        box.y : box.bottom, box.x : box.right].astype(int) for h in (False, True))
+    # Bluer than it was green, which is the one direction that cannot be reached by dimming.
+    bluer = (away[..., 2] - away[..., 1]) - (here[..., 2] - here[..., 1])
+    face = np.pi * ov.btn_r ** 2
+    assert (bluer > 30).sum() > face / 10, "the knob changed in one place instead of all over"
+
+
+def test_a_knob_that_is_an_icon_takes_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No column, no rung, no level - and no barge-in either. A press that lands on a control
+    has not missed every control, whatever the control has stopped doing."""
+    kiosk, mixer = _panel(monkeypatch)
+    kiosk._handed_over = True
+    x, y = _knob(kiosk)
+    kiosk._on_mouse(DOWN, x, y, 0, None)
+    kiosk._on_mouse(MOVE, x, _at(kiosk, 90), HELD, None)
+    kiosk._on_mouse(UP, x, _at(kiosk, 90), 0, None)
+    assert not kiosk._turning and not kiosk._sliding, "the column came up on a dead knob"
+    assert mixer.levels == [] and kiosk._volume == 50, "an icon set the sink"
+    assert kiosk._cues.played == [], "an icon clicked"
+
+
+def test_a_claim_that_lands_mid_drag_ends_the_drag(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The finger is already on the track when a phone picks his voice up. The knob becomes an
+    icon under it, so the gesture goes with it rather than carrying on out of sight."""
+    kiosk, mixer = _panel(monkeypatch)
+    kiosk._handed_over = False
+    kiosk._handover_at = 0.0  # the clock is monotonic, so any poll is overdue
+    kiosk.controller = _Controller()
+    x, y = _knob(kiosk)
+    kiosk._on_mouse(DOWN, x, y, 0, None)
+    kiosk._on_mouse(MOVE, x, _at(kiosk, 90), HELD, None)
+    assert kiosk._sliding, "set the drag up first, or this test is about nothing"
+    monkeypatch.setattr(kiosk_module.companion, "listening", lambda: True)
+    kiosk._sync_handover()
+    assert not kiosk._turning and not kiosk._sliding, "the drag outlived the control"
