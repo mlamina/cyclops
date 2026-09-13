@@ -2,18 +2,37 @@
 description: What the factory is doing and what's waiting on you
 ---
 
-Read the frontmatter of every `factory/[0-9]*.md` and say where things stand. **Waiting on Marco
-first** — that's the only part he has to act on.
+Read the frontmatter of every `factory/[0-9]*.md`, and for each one the **markers** in
+`factory/logs/NNN.log` — the lines the loop writes about that build: `START`, `PID`, `WORKING`,
+`WAITING`, `STATE`, `EXIT`, `DONE`, `STALLED`, `WEDGED`. The loop writes them as they happen — a
+status line every five minutes, and every state change — so the log is what knows how a build is
+going. Nothing here has to be inferred.
 
-- `state: review` → waiting on him. Give the number, the title, and `/review N`.
-- `state: ready` with a build running (`pgrep -f "claude -p /build NNN"`) → building.
-- `state: ready` with no process but a `factory/logs/NNN.log` → **stalled**: the loop took its
-  swing and the build died. Say `/rework N` to send it round again.
-- `state: ready`, no process, no log → queued, the loop will take it within half a minute.
-- anything else → say the state as it stands. The loop ignores it, so it is waiting on nobody
-  until he does something with it.
+**Never `pgrep` for a build.** `pgrep -f "claude -p /build NNN"` matches the shell you are running
+it from, because Claude Code puts your command text in its own argv — it will tell you a build is
+alive when you are the only thing alive. It reported a dead job as building for twenty minutes.
+Liveness is `kill -0 <the pid in the log>`, which cannot match the process asking.
 
-If `factory/loop.sh` isn't running (`pgrep -f factory/loop.sh`), say so first — nothing will move
-until it is.
+**Waiting on Marco first** — that's the only part he has to act on.
+
+| what you find | what it is |
+|---|---|
+| `state: review` | **waiting on him** — the number, the title, and `/review N` |
+| no log | queued; the loop takes it within half a minute |
+| last marker `PID n`, and `kill -0 n` succeeds | **building** — say how long since `START` |
+| the last `WORKING` line | building normally; it says what was written last and when |
+| the last `WAITING` line | **stuck or waiting** — say how long it has been quiet and, if the line names it, what on. Killed at 90m |
+| `STATE a -> b` | the board moved under it — when, and from what to what |
+| `DONE` | finished; the state line says where it went |
+| `STALLED` or `WEDGED` | **stalled** — say the reason written on that line |
+| last marker `PID n`, and the pid is gone | **stalled** — killed hard, or the machine restarted |
+| a log with no markers at all | **stalled** — it predates them |
+| any other state in the frontmatter | say it as it stands; the loop ignores it, so it waits on nobody |
+
+Stalled is `/rework N`, and say so on the line.
+
+If the loop isn't running nothing will move — say that first. Check it with the anchored pattern
+`pgrep -f 'sh .*factory/loop\.sh$'`; written loose it matches your own shell, which is the same
+trap as above.
 
 One line per job, newest first. If nothing is waiting on him, say that in one line and stop.
