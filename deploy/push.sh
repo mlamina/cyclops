@@ -4,6 +4,16 @@
 # The Pi's own .env is never touched - the key lives there, not here.
 set -eu
 
+# The Pi belongs to whoever is standing in front of it. A factory build is not, so the loop sets
+# CYCLOPS_NO_PI=1 on every build it starts and this refuses - there is one Pi and up to three
+# builds, and job 003 proved what prose in a skill is worth: it deployed mid-build, collided with
+# job 002 on the same panel, and then spent eight minutes pinging a box that was off the network.
+# /try is how a job reaches the glass, and that is Marco's word in his own session.
+if [ -n "${CYCLOPS_NO_PI:-}" ]; then
+  echo "· push.sh: refusing — CYCLOPS_NO_PI is set. The Pi is /try's, not a build's." >&2
+  exit 3
+fi
+
 TARGET=${1:-cyclops@cyclops.local}
 DEST=cyclops
 

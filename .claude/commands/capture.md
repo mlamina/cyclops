@@ -31,6 +31,12 @@ be guessing at. Each with your own recommendation, so answering is one word. Non
 - `render stays under 12 ms a frame` → `panel_shot.py --bench`, the number before and after
 - `a wedged camera recovers without an ssh` → yours, on the Pi
 
+**A line whose check needs the Pi is written as *"yours, on the Pi"*, every time.** The builder
+has no Pi — it cannot deploy, photograph or touch the glass — so a criterion that needs one and does
+not say so is a line nobody can ever tick: the builder either leaves it hanging or, worse, argues it
+from the code. Anything involving a photo of the panel, a `grim` burst, a finger on it, the camera,
+the mic, the amp or "from a pace away" is his.
+
 If nothing can check a line, say so now — while he can still change what he asked for — rather
 than leaving the builder to invent something that merely looks convincing. Vague is the failure
 mode: *"the eye looks better"* is not a criterion.

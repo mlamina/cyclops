@@ -3,9 +3,10 @@ description: What the factory is doing and what's waiting on you
 ---
 
 Read the frontmatter of every `factory/[0-9]*.md`, and for each one the **markers** in
-`factory/logs/NNN.log` — the lines the loop writes about that build: `START`, `PID`, `EXIT`,
-`DONE`, `STALLED`, `WEDGED`. The loop writes them as they happen, so the log is what knows how a
-build is going. Nothing here has to be inferred.
+`factory/logs/NNN.log` — the lines the loop writes about that build: `START`, `PID`, `WORKING`,
+`WAITING`, `STATE`, `EXIT`, `DONE`, `STALLED`, `WEDGED`. The loop writes them as they happen — a
+status line every five minutes, and every state change — so the log is what knows how a build is
+going. Nothing here has to be inferred.
 
 **Never `pgrep` for a build.** `pgrep -f "claude -p /build NNN"` matches the shell you are running
 it from, because Claude Code puts your command text in its own argv — it will tell you a build is
@@ -19,6 +20,9 @@ Liveness is `kill -0 <the pid in the log>`, which cannot match the process askin
 | `state: review` | **waiting on him** — the number, the title, and `/review N` |
 | no log | queued; the loop takes it within half a minute |
 | last marker `PID n`, and `kill -0 n` succeeds | **building** — say how long since `START` |
+| the last `WORKING` line | building normally; it says what was written last and when |
+| the last `WAITING` line | **stuck or waiting** — say how long it has been quiet and, if the line names it, what on. Killed at 90m |
+| `STATE a -> b` | the board moved under it — when, and from what to what |
 | `DONE` | finished; the state line says where it went |
 | `STALLED` or `WEDGED` | **stalled** — say the reason written on that line |
 | last marker `PID n`, and the pid is gone | **stalled** — killed hard, or the machine restarted |
