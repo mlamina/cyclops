@@ -209,6 +209,9 @@ beat() {  # $1 number, $2 log, $3 pid, $4 minutes since START, $5 minutes silent
       say "$2" "WAITING $4m - nothing written for ${5}m, no idea what on"
       echo "· $1 waiting — ${5}m quiet at minute $4 (killed at ${WEDGED}m)" >&2
     fi
+  elif [ "$6" = - ]; then
+    say "$2" "WORKING $4m - nothing written yet"
+    echo "· $1 working — ${4}m in, nothing written yet"
   else
     say "$2" "WORKING $4m - last wrote $6 ${5}m ago"
     echo "· $1 working — ${4}m in, last wrote $6 ${5}m ago"
@@ -258,9 +261,17 @@ pass() {
       lw=$(last_write "$n" || true)
       lwe=${lw%% *}; lwf=${lw#* }
       case $lwe in ''|*[!0-9]*) lwe=$now; lwf=- ;; esac
-      silent=$(( (now - lwe) / 60 ))
       began=$(sed -n 's/^· \(.*\) START .*/\1/p' "$log" 2>/dev/null | head -1)
-      age=$(epoch_of "$began"); age=$(( age > 0 ? (now - age) / 60 : 0 ))
+      from=$(epoch_of "$began")
+      # Silence is measured from the later of the last write and START, and that `later of` is
+      # the whole of this line's history. A /rework reuses the worktree, so on the pass that
+      # starts one every file in it is as old as the round that last used it - a day, a week -
+      # and a build thirty seconds old looks like one that has written nothing for ninety
+      # minutes. Job 002 was killed at thirty seconds on 2026-09-13 for exactly that. A build
+      # that has just begun has not gone quiet; it has not started writing yet.
+      if [ "$from" -gt "$lwe" ]; then lwe=$from; lwf=- ; fi
+      silent=$(( (now - lwe) / 60 ))
+      age=$(( from > 0 ? (now - from) / 60 : 0 ))
       if [ "$silent" -ge "$WEDGED" ]; then
         kill "$pid" 2>/dev/null || true
         say "$log" "WEDGED - killed, nothing written for ${silent}m"
