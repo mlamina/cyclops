@@ -262,6 +262,82 @@ async def _wakes(repeat: int, out_path: Path) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ the words it leans on
+
+# "Ten distinct greetings" turned out to be ten variations on two words: every line opened
+# "Morning" or "Back again" and nearly every one reached for "the bench". Distinctness is
+# therefore not the measure - a line can be unique and still be the same line. This counts what
+# recurs *across* greetings: the first word, the first two words, and every content word. A noun
+# that turns up in a third of them is a crutch, and the word "bench" additionally assumes a
+# workshop that not everybody has.
+STOPWORDS = frozenset("""
+a an and are as at back be been but by can did do for from get got had has have he her here his
+how i if in into is it its just let lets me my no not of off on once one or our out so some
+than that the their them then there these they this to too up us was we were what when where
+which while who will with you your yours i'm im you're we're let's thats it's don't going go
+""".split())
+# Not a noun, but the thing "the bench" is a member of: a line that only works in a workshop.
+ROOM_WORDS = ("bench", "workbench", "workshop", "shop", "garage", "shed", "bench-top")
+# The clock, in words. These are what the greeting is built out of - a line that names the day
+# is doing what it was told - so they are counted and printed but they are not crutches, and the
+# verdict is taken on everything else. "morning" recurring as the FIRST word is still a fail:
+# that is the opening-word count, which is where the stale opener was measured in the first place.
+TIME_WORDS = frozenset("""
+monday tuesday wednesday thursday friday saturday sunday weekend weekday today tonight yesterday
+morning afternoon evening night midday noon midnight hour hours minute minutes day days week
+weeks month months
+""".split())
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z][a-z'-]*", text.lower().replace("’", "'"))
+
+
+def _greetings(paths: list[Path]) -> list[str]:
+    """Every first-thing-said in these files, whether they are runs or wakes."""
+    lines = []
+    for path in paths:
+        for row in (json.loads(x) for x in path.read_text().splitlines() if x.strip()):
+            said = row.get("greeting") if "greeting" in row else (
+                row["cyclops"] if row.get("turn") == 1 else None
+            )
+            if said and said.strip():
+                lines.append(said.strip())
+    return lines
+
+
+def props(paths: list[Path], limit: float = 0.25) -> None:
+    """First words, first pairs and content words, as a share of the greetings they appear in."""
+    lines = _greetings(paths)
+    n = len(lines)
+    print(f"greetings={n}  (pass line: nothing over {limit:.0%})")
+
+    def show(label: str, counts: Counter, top: int = 8) -> bool:
+        worst = counts.most_common(1)[0][1] / n if counts else 0
+        print(f"\n{label}: worst is {worst:.0%}  {'OK' if worst <= limit else 'OVER'}")
+        for word, hits in counts.most_common(top):
+            if hits > 1:
+                print(f"  {hits:3d}  {hits / n:4.0%}  {word}")
+        return worst <= limit
+
+    firsts = Counter(_words(line)[:1][0] for line in lines if _words(line))
+    pairs = Counter(" ".join(_words(line)[:2]) for line in lines if len(_words(line)) > 1)
+    content = Counter()
+    for line in lines:
+        for word in {w for w in _words(line) if w not in STOPWORDS and len(w) > 2}:
+            content[word] += 1
+    nouns = Counter({w: n for w, n in content.items() if w not in TIME_WORDS})
+    ok = show("opening word", firsts)
+    ok = show("opening phrase", pairs) and ok
+    ok = show("word that is not the clock", nouns, top=12) and ok
+    show("every content word, clock included", content, top=12)
+    room = [line for line in lines if any(w in _words(line) for w in ROOM_WORDS)]
+    print(f"\nassumes a workshop: {len(room)} of {n} ({len(room) / n:.0%})")
+    for line in room:
+        print(f"  {line!r}")
+    print(f"\nverdict: {'PASS' if ok and not room else 'FAIL'}")
+
+
 def wake_tally(path: Path) -> None:
     """Every greeting, grouped by the situation it was said into."""
     rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
@@ -367,7 +443,12 @@ def main() -> None:
                         help="JSONL to append one greeting per made-up situation to")
     parser.add_argument("--repeat", type=int, default=2, help="takes per situation, for --wakes")
     parser.add_argument("--wake-tally", type=Path, help="tally a --wakes JSONL and exit")
+    parser.add_argument("--props", type=Path, nargs="+",
+                        help="count openers and recurring nouns over every greeting in these")
     args = parser.parse_args()
+    if args.props:
+        props(args.props)
+        return
     if args.wake_tally:
         wake_tally(args.wake_tally)
         return

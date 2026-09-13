@@ -723,15 +723,20 @@ def recent_context(settings: Settings) -> Recap:
 # and "two minutes ago" is precisely the case this exists for.
 MOMENT_HEADER = """\
 WHEN IT IS
-The clock as the eye opened. It belongs to the first thing you say and to nothing after it. A
-greeting is said into a particular moment, and these are what make one: a Monday first thing, a
-Friday that is nearly over, a Saturday, a fifth wake in one day, two minutes since you switched
-off, three weeks of nothing. The test is whether the line would have done just as well yesterday
-- if it would, you were told this and did not use it. Never give them the clock reading or the
-date, never explain how you know, and never claim anything these lines do not say - how long you
-have been switched off is the one a greeting gets wrong, and three days is not "a short break".
-It is half a dozen words and it does not end in a question: they switched you on because they
-are about to say something.
+The clock as the eye opened. It belongs to the first thing you say and to nothing after it. Four
+things make this moment and no other: which day of the week it is, what hour of it, how long you
+were switched off, and how many times today. The test is whether the line would have done just
+as well yesterday - if it would, you were told this and did not use it. Take whichever of the
+four is the odd one about today and put it in your own words, never in these. Never give them
+the clock reading or the date, never explain how you know, and never claim anything these lines
+do not say - how long you have been switched off is the one a greeting gets wrong, and three
+days is not "a short break".
+Half a dozen words, and they are a remark about this moment rather than a greeting with the
+moment stapled on. Do not open on a word for hello - not "morning", not "evening", not "hey",
+not "back", not "hi" - and do not announce that you are on or that you are watching. Dry, level,
+faintly unimpressed. A nod, not a welcome, and never a status line. Then stop: no question, and
+nothing that hands them the floor or asks them to begin, because they switched you on already
+knowing what they were going to say.
 """
 
 
@@ -838,12 +843,23 @@ def now_context(settings: Settings, now: datetime | None = None) -> Moment:
                 break
             nth += 1
         said = _since_said(last, now) if last is not None else ""
-        lines.append(
-            f"The last time ended {said}." if said else "They have never switched you on before."
-        )
-        first = "This is the first time they have switched you on today."
-        lines.append(first if nth == 1 else
-                     f"This is the {_ordinal(nth)} time they have switched you on today.")
+        gap_line = (f"The last time ended {said}." if said
+                    else "They have never switched you on before.")
+        # Said as a fact about their day rather than about the switch, because the greeting
+        # takes the wording it is given: "the 5th time they have switched you on" came back as
+        # "fifth run today" in nine greetings out of sixteen, which is a number with a word for
+        # boot on either side of it. What is interesting is that they keep coming back, and
+        # that is a thing about them. "Counting this one" is not padding: phrased as a count of
+        # the ones before, the greeting said "fourth round today" on the fifth wake.
+        # And nothing at all on the first wake of the day. "You have not been on yet today" is
+        # not an observation about anybody, and it is where "first run today" came from - the
+        # emptiest fact in the block was being made the whole line. From the second wake on it
+        # says something real about their day, so from the second wake on it is there.
+        if nth > 1:
+            lines.append(f"Counting this one, they have had you on {nth} times today.")
+        # And the gap goes last, because it is the fact that is different every single time -
+        # the count used to sit here and six greetings in sixteen were built on it.
+        lines.append(gap_line)
     note = f"{now:%A} {now:%H:%M}, {_ordinal(nth)} today" + (f", last ended {said}" if said else "")
     return Moment(
         now=now,
