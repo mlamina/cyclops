@@ -24,15 +24,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import random
 import re
 import statistics
 import sys
+import tempfile
 from collections import Counter
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from openai.types.realtime import RealtimeServerEvent
 
+from cyclops import card, session
 from cyclops.agent import VoiceAgent, function_calls
 from cyclops.config import ConfigError, load_settings
 
@@ -162,6 +166,122 @@ async def _probe(runs: int, out_path: Path) -> int:
     return 0
 
 
+# ------------------------------------------------------------------ one wake, on a made-up clock
+
+# "The greeting knows when it is" cannot be checked by ten runs at one moment - ten runs at one
+# moment is one situation, sampled ten times. So each of these is a whole situation: a clock, and
+# a card with the right sessions already on it. Everything else about the session is identical,
+# which is what makes a difference between two greetings attributable to the moment.
+MONDAY = datetime(2026, 9, 14, 8, 10)  # a Monday morning; every other situation is offset from it
+
+
+def _at(day: int, hour: int, minute: int = 0) -> datetime:
+    return (MONDAY + timedelta(days=day)).replace(hour=hour, minute=minute)
+
+
+# (name, the clock when the eye opens, [(when a past session started, how many minutes it ran)])
+SITUATIONS: tuple[tuple[str, datetime, tuple[tuple[datetime, int], ...]], ...] = (
+    ("mon-first-thing", _at(0, 8, 10), ((_at(-3, 15, 40), 35),)),
+    ("fri-fifth-wake", _at(4, 16, 40), tuple((_at(4, h, 0), 20) for h in (9, 11, 13, 15))),
+    ("straight-back", _at(1, 14, 5), ((_at(1, 13, 30), 33),)),
+    ("three-weeks-dark", _at(2, 10, 0), ((_at(-19, 11, 0), 40),)),
+    ("saturday-morning", _at(5, 9, 30), ((_at(4, 19, 20), 25),)),
+    ("late-night", _at(3, 23, 40), tuple((_at(3, h, 0), 30) for h in (14, 19))),
+    ("never-switched-on", _at(6, 11, 0), ()),
+    ("sunday-evening", _at(6, 19, 20), ((_at(6, 17, 50), 30),)),
+)
+
+# One sentence, the same one in every fabricated session, so the recap block is present and
+# identical everywhere and the only thing that moves between situations is the clock.
+FAKE_SUMMARY = (
+    "# Robot arm wiring\n\nRan the twelve servo wires down the arm and into the base, and "
+    "settled on 3.3 volts for the power LED with a 220 ohm resistor.\n"
+)
+
+
+def _lay_the_card(root: Path, history: tuple[tuple[datetime, int], ...]) -> Path:
+    """A sessions directory holding the past this situation says it has."""
+    sessions = root / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    for started, minutes in history:
+        folder = sessions / started.strftime(card.STAMP)
+        folder.mkdir(parents=True, exist_ok=True)
+        rows = [
+            {"type": "session", "uuid": "probe"},
+            {"type": "you", "text": "how deep should this go?"},
+            {"type": "cyclops", "text": "about 40 mm."},
+            {"type": "end", "seconds": minutes * 60},
+        ]
+        card.write_text(folder / card.LOG_NAME, "".join(json.dumps(r) + "\n" for r in rows))
+        card.write_text(folder / card.PAGE_NAME, "# a session\n")
+        card.write_text(folder / card.SUMMARY_NAME, FAKE_SUMMARY)
+    return sessions
+
+
+async def _one_wake(name: str, when: datetime, sessions: Path, take: int, out) -> None:
+    """Switch on once into a fabricated moment and keep only the first thing it says."""
+    os.environ["CYCLOPS_SESSIONS_DIR"] = str(sessions)
+    settings = load_settings()
+    told = session.now_context(settings, now=when)
+    real = session.now_context
+    session.now_context = lambda s, now=None: real(s, now=when)  # type: ignore[assignment]
+    agent = VoiceAgent(settings)
+    agent_task = asyncio.create_task(agent.run())
+    try:
+        await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
+        turn = Turn()
+        agent.on_event = turn
+        await agent.send_text("Hey.")
+        await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
+        out.write(json.dumps({
+            "situation": name,
+            "take": take,
+            "told": told.note,
+            "greeting": turn.text,
+            "words": len(turn.text.split()),
+        }) + "\n")
+        out.flush()
+        print(f"· {name} #{take}: [{told.note}] {turn.text!r}", flush=True)
+    finally:
+        session.now_context = real  # type: ignore[assignment]
+        await agent.close()
+        await asyncio.gather(agent_task, return_exceptions=True)
+
+
+async def _wakes(repeat: int, out_path: Path) -> int:
+    root = Path(tempfile.mkdtemp(prefix="cyclops-wakes-"))
+    with out_path.open("a", encoding="utf-8") as out:
+        for take in range(1, repeat + 1):
+            for name, when, history in SITUATIONS:
+                sessions = _lay_the_card(root / f"{name}-{take}", history)
+                try:
+                    await _one_wake(name, when, sessions, take, out)
+                except (TimeoutError, RuntimeError) as exc:
+                    print(f"{name} #{take} failed: {exc}", file=sys.stderr)
+                    return 1
+    return 0
+
+
+def wake_tally(path: Path) -> None:
+    """Every greeting, grouped by the situation it was said into."""
+    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    order = [name for name, _, _ in SITUATIONS]
+    words = [r["words"] for r in rows if r["words"]]
+    print(f"wakes={len(rows)} situations={len(order)}")
+    print(f"words/greeting: median={statistics.median(words)} mean={statistics.mean(words):.1f}"
+          f" max={max(words)}")
+    seen: set[str] = set()
+    for name in order:
+        mine = [r for r in rows if r["situation"] == name]
+        if not mine:
+            continue
+        print(f"\n{name}  [{mine[0]['told']}]")
+        for r in mine:
+            print(f"  #{r['take']} ({r['words']}w) {r['greeting']!r}")
+        seen.update(r["greeting"].strip().lower() for r in mine)
+    print(f"\ndistinct greetings overall: {len(seen)} of {len(rows)}")
+
+
 def _hits(text: str, words: tuple[str, ...]) -> list[str]:
     low = f" {text.lower()} "
     return [w for w in words if re.search(rf"(?<![a-z0-9]){re.escape(w)}(?![a-z0-9])", low)]
@@ -243,7 +363,20 @@ def main() -> None:
                         help="shuffle two JSONLs into one anonymous list to read")
     parser.add_argument("--score", type=Path, nargs=2, metavar=("KEY", "MARKS"),
                         help="tally marks made against a --blind list, per arm")
+    parser.add_argument("--wakes", type=Path,
+                        help="JSONL to append one greeting per made-up situation to")
+    parser.add_argument("--repeat", type=int, default=2, help="takes per situation, for --wakes")
+    parser.add_argument("--wake-tally", type=Path, help="tally a --wakes JSONL and exit")
     args = parser.parse_args()
+    if args.wake_tally:
+        wake_tally(args.wake_tally)
+        return
+    if args.wakes:
+        try:
+            sys.exit(asyncio.run(_wakes(args.repeat, args.wakes)))
+        except ConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(2)
     if args.tally:
         tally(args.tally)
         return

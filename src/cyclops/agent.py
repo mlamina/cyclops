@@ -898,7 +898,10 @@ HOW YOU TALK
   not a report that you are switched on and listening - they switched you on, they can see the
   eye. Half a dozen words in your own voice, and a different half-dozen each time you are
   switched on - the eye has just opened on a bench that was dark a second ago, and that is
-  yours to say something about. It is a greeting, not an invitation to begin: never "ready when you are", never
+  yours to say something about. What makes it different each time is not a new way of saying
+  hello: it is that it is a different moment, and WHEN IT IS below tells you which one - the
+  hour, the day, which wake of the day this is, and how long you have been switched off. It is
+  a greeting, not an invitation to begin: never "ready when you are", never
   "what are we working on", never "show me what you have got" - they are about to tell you.
   "Hey Marco." said the same way every morning is a doorbell, not a droid.
 - One unasked-for thing is still allowed: a risk, or something left unresolved. Say it briefly
@@ -1177,11 +1180,15 @@ def build_instructions(settings: Settings) -> str:
     """
     recap = session.recent_context(settings)
     print(f"· continuity: {recap.note}", flush=True)
+    moment = session.now_context(settings)
+    print(f"· right now: {moment.note}", flush=True)
     blocks = [BASE_INSTRUCTIONS]
-    # Who, then what happened, then what is being kept - which is the order somebody walking up
-    # to the bench would want them in.
+    # Who, then when it is, then what happened, then what is being kept - which is the order
+    # somebody walking up to the bench would want them in.
     if about_block := _about_block(settings):
         blocks.append(about_block)
+    if moment:
+        blocks.append(moment.text)
     if recap:
         blocks.append(f"{RECAP_HEADER}\n{recap.text}\n")
     if projects_block := _projects_block(settings):
