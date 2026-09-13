@@ -1,5 +1,5 @@
 ---
-state: ready
+state: done
 opened: 2026-09-12
 ---
 
@@ -62,18 +62,18 @@ Anything you add lives inside the knob's own tile.
 
 ## Done when
 
-- [ ] The whole knob goes blue while a companion holds the voice — not one mark on it, the hand,
+- [x] The whole knob goes blue while a companion holds the voice — not one mark on it, the hand,
       the arc, the hub, the face — `panel_shot.py` with the flag, the two PNGs side by side
 - [ ] You cannot miss it from a pace away, and without being told what changed — **yours, on the
       Pi**. The bar is "I saw it without looking for it", not "I can tell them apart"
 - [ ] The knob takes no interaction while the claim is held: a drag does nothing, no column opens,
       no rung clicks — **yours, on the Pi**, a finger on it and nothing happens
-- [ ] It agrees with the amp: it goes blue within ~0.5 s of his voice leaving the panel and back to
+- [x] It agrees with the amp: it goes blue within ~0.5 s of his voice leaving the panel and back to
       green within ~0.5 s of it coming back — a `grim` burst while opening and closing the
       companion page, against the `· a companion has his voice` lines in `/tmp/kiosk_live.log`
-- [ ] It is blue with the claim held and no session running — open the companion page, take no
+- [x] It is blue with the claim held and no session running — open the companion page, take no
       session, screenshot the panel
-- [ ] Render stays inside budget — `panel_shot.py --bench`, the number before and after
+- [x] Render stays inside budget — `panel_shot.py --bench`, the number before and after
 - [ ] Both dial hitboxes stay byte-identical in every state, and the suite stays under ten
       seconds — `uv run pytest`
 
@@ -135,3 +135,57 @@ every state — an inert knob should keep its hitbox geometry and ignore the eve
 hitbox, so that test should still pass untouched. And the ten-second suite line is still on the
 list, but it was 17 s before this job and 17 s after, measured both ways: it is a real miss and it
 is not this job's to fix.
+
+## Built — 2026-09-12 (round two)
+
+The whole instrument goes over now. Pointer, lit arc, hub, graduations, unlit track, the reveal
+that leaks into the seat of the bezel, and the mark in the gap — all of it blue, and the press
+path taken away with it: a finger on the knob sets nothing, lights nothing, opens no column and
+clicks no rung. It is consumed rather than ignored, because the fall-through behind that hitbox
+is "stop talking" and a finger that landed square on a control has not missed every control. The
+hitbox itself is untouched, so `test_eye.py` passes as it stood. A claim that lands while you are
+already mid-drag ends the drag with it.
+
+The blue is the panel's own — the one the eye wears while he works alone — rather than a second
+blue invented for this. A new hue would argue with the green; this one already lives here. It is
+the only blue in that corner, and on the Pi it is the only blue on the glass.
+
+One thing I found on the way that is worth writing down. Painting the knob over the top does not
+work: the graduations and the unlit track are printed under the glass and inside the ring, and a
+second pass at them from outside leaves a green halo where the old phosphor skirt still shows,
+plus a green tip on every tick where the ring's aperture cuts a moving mark shorter than a baked
+one. So the still half of the knob is now **built twice from the same numbers** — one green
+instrument, one blue — and the blue one is stamped over the green when the claim is held. The
+bezel's seat reveal takes the face's phosphor as an argument for the same reason: a blue dial in
+a ring with a green glow round it is two instruments in one hole. The green panel comes out
+byte-for-byte what it was, which I checked rather than assumed.
+
+**The Pi was up for this one.** It is photographed on the real glass, and the timing criterion is
+measured there rather than argued from the code: 1252 grabs of the knob 18 ms apart, against the
+kiosk's own lines stamped as they were written. The glass went blue 27 ms after the amp switched
+and green 11 ms after it switched back — both inside one frame, because both are set from one
+answer in one call. With the 0.4 s poll in front of it that is 0.43 s worst case from the page
+opening. Closing the page shows green about eight seconds later, which is the claim going stale
+and not the panel being slow; that is the mechanism that takes his voice back when a phone walks
+out of wifi range.
+
+Two things about the state of the Pi, both honest rather than tidy. **Job 002 was building at the
+same time** and deploys to the same box, so it pushed over this build partway through — my
+measurements were all taken before that and on this code, which I checked frame by frame. And
+when I went to push again at the end, **the Pi dropped off the network**: `cyclops.local` stopped
+resolving mid-rsync, and it had not come back twenty minutes later — three sweeps of the subnet
+in that time turned up no host answering as cyclops. So the last push that actually landed on the
+box was 002's, and `/try 003` is how you put this one on the glass. Everything photographed above
+was taken while this build was running there, which I checked frame by frame before trusting it.
+
+The suite line is still half met and I re-measured it myself rather than repeating the last
+round's word for it: three runs at the branch point were 16.9 / 18.0 / 17.5 s for 945 tests, and
+three runs here were 17.2 / 16.8 / 16.9 s for 949. Same, within noise, and over the ten-second
+bar either way. A real miss, not this job's.
+
+Hands-on: `/try 003`, then open the companion page on your phone and look at the corner from
+where you would actually be standing — that is the criterion I cannot judge. Then put a finger on
+the knob and drag it while the page is open: nothing should happen at all, no column, no click.
+Close the page and it comes back green about eight seconds later.
+
+factory/html/003.html
