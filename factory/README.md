@@ -8,9 +8,10 @@ You say what you want. It gets built while you do something else. You look at th
                 └──────────── /rework ────────────┘
 ```
 
-Start `factory/loop.sh` in a terminal and leave it. It is the only thing that runs unattended,
-and all it does is build and watch. It never merges, never touches the Pi, and never decides
-anything.
+`/run-factory` starts it and leaves it: the loop builds and watches, and the command watching the
+loop fixes the pipeline when it breaks. It is the only thing that runs unattended, it never merges,
+never touches the Pi, and never decides anything. (`factory/loop.sh` in a terminal still works, and
+is the same loop without anyone watching it.)
 
 **Nothing in the factory reaches the Pi except `/try`.** Builds are headless — `deploy/push.sh`
 refuses while one is running — so the panel only ever changes because you asked it to, and a Pi
@@ -22,6 +23,7 @@ glass are yours, and they are written that way from capture.
 | | |
 |---|---|
 | `/capture <anything>` | idea, bug, feature request — one way in for all three |
+| `/run-factory` | start the factory and keep it running |
 | `/board` | what's building, what's waiting on you |
 | `/review N` | look at what came out |
 | `/try N` | put it on the Pi and use it |
@@ -78,5 +80,9 @@ can't burn an afternoon in a loop nobody is watching. `/rework N` sends it round
 A build that writes nothing for ninety minutes is presumed hung and killed; one that is working,
 however long it takes, is left alone.
 
-Ctrl-C in its terminal stops it. From anywhere else, `pkill -f 'factory/loop\.sh$'` — anchored,
-because a loose pattern also matches the shell you typed it into.
+Ctrl-C in its terminal stops it. From anywhere else, `kill` the loop's own pid — of the processes
+that match, the one whose parent is not another of them. **Not `pkill -f 'factory/loop\.sh$'`**: a
+forked `sh` keeps its parent's argv, so that pattern matches every supervisor too, and a supervisor
+killed mid-build takes the process that would have written `EXIT`, `DONE` or `STALLED` with it. The
+build carries on writing prose into a log that never gets an ending, which is the one shape nothing
+can tell from a build still going.
