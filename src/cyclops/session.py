@@ -55,7 +55,7 @@ import uuid as uuid_module
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -709,6 +709,165 @@ def recent_context(settings: Settings) -> Recap:
     if (others := len(picked) - 1) > 0:
         note += f" + {others} earlier headline{'' if others == 1 else 's'}"
     return Recap(text="\n".join(lines).strip()[:RECAP_MAX_CHARS], note=note)
+
+
+# ------------------------------------------------------------------ when it is
+
+# The other half of what a session is handed about the ones before it. The recap says what was
+# talked about; this says *when* it is being talked about - the clock, the weekday, which wake of
+# the day this is and how long the bench has been dark. None of it is anything a realtime model
+# is told: with no clock at all it opened ten sessions out of ten with "Morning", at any hour.
+#
+# Read off folder names and one log, never off summary.md. A summary is written by the detached
+# child a round trip after the session ends, so the session that ended two minutes ago has none -
+# and "two minutes ago" is precisely the case this exists for.
+MOMENT_HEADER = """\
+WHEN IT IS
+The clock as the eye opened. It belongs to the first thing you say and to nothing after it. Four
+things make this moment and no other: which day of the week it is, what hour of it, how long you
+were switched off, and how many times today. The test is whether the line would have done just
+as well yesterday - if it would, you were told this and did not use it. Take whichever of the
+four is the odd one about today and put it in your own words, never in these. Never give them
+the clock reading or the date, never explain how you know, and never claim anything these lines
+do not say - how long you have been switched off is the one a greeting gets wrong, and three
+days is not "a short break".
+Half a dozen words, and they are a remark about this moment rather than a greeting with the
+moment stapled on. Do not open on a word for hello - not "morning", not "evening", not "hey",
+not "back", not "hi" - and do not announce that you are on or that you are watching. Dry, level,
+faintly unimpressed. A nod, not a welcome, and never a status line. Then stop: no question, and
+nothing that hands them the floor or asks them to begin, because they switched you on already
+knowing what they were going to say.
+"""
+
+
+@dataclass(frozen=True)
+class Moment:
+    """When a session is starting, in the terms a greeting is built out of."""
+
+    now: datetime
+    nth_today: int = 1  # 1 is the first wake of the day
+    since: timedelta | None = None  # since the last real session ended; None means no last one
+    text: str = ""
+    note: str = ""
+
+    def __bool__(self) -> bool:
+        return bool(self.text)
+
+
+def _part_of_day(when: datetime) -> str:
+    """The word somebody would use for that hour, not the hour."""
+    hour = when.hour
+    if hour < 5:
+        return "night"
+    if hour < 8:
+        return "early morning"
+    if hour < 12:
+        return "morning"
+    if hour < 14:
+        return "midday"
+    if hour < 18:
+        return "afternoon"
+    if hour < 22:
+        return "evening"
+    return "night"
+
+
+def _ordinal(n: int) -> str:
+    tail = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{tail}"
+
+
+def _since_said(last: datetime, now: datetime) -> str:
+    """How long the bench has been dark, in the words someone would say out loud.
+
+    Finer than :func:`_ago` on purpose, and measured from a different end. That one answers "when
+    was the last session about", at the granularity of a day, from when it *started*; this answers
+    "how long have you been switched off", which is the difference between walking back after a
+    cup of tea and walking back after a fortnight.
+
+    Days are counted off the calendar and not off the elapsed hours, because "yesterday" is a
+    date and not a duration: Saturday evening to Monday morning is under two days on the clock
+    and two days to anybody who lived through it.
+    """
+    minutes = max(0, int((now - last).total_seconds())) // 60
+    if minutes < 2:
+        return "a moment ago"
+    if minutes < 60:
+        return f"{minutes} minutes ago"
+    days = (now.date() - last.date()).days
+    if days <= 0:
+        hours = round(minutes / 60)
+        return "an hour ago" if hours == 1 else f"{hours} hours ago"
+    if days == 1:
+        return f"yesterday {_part_of_day(last)}"
+    if days < 7:
+        return f"{days} days ago, {last:%A} {_part_of_day(last)}"
+    weeks = days // 7
+    return "a week ago" if weeks == 1 else f"{weeks} weeks ago"
+
+
+def _ended(folder: Path, started: datetime) -> datetime:
+    """When a finished session switched off: its own start plus what its log says it ran for."""
+    records, _ = read_log(folder / LOG_NAME)
+    tail = next((r for r in reversed(records) if r.get("type") == "end"), {})
+    seconds = tail.get("seconds")
+    if isinstance(seconds, int | float) and seconds > 0:
+        return started + timedelta(seconds=float(seconds))
+    return started
+
+
+def now_context(settings: Settings, now: datetime | None = None) -> Moment:
+    """What time it is, whose day this is, and how long the bench has been dark.
+
+    ``now`` is an argument so this can be driven with a made-up clock, which is the only honest
+    way to check that a Monday first thing and a Friday fifth wake read differently.
+
+    Cheap by construction: folder names carry the start times, so counting today's wakes is a
+    directory listing, and only one log is opened - the newest finished folder's, for the seconds
+    it ran. ``session.md`` having bytes in it is the test for "a session happened here", the same
+    one :func:`card.triage` calls finished; a folder with nothing in it was removed at its own
+    close, and the folder being set up right now has no page yet.
+    """
+    now = now or datetime.now()
+    lines = [f"It is {now:%A} {_part_of_day(now)}, {now:%H:%M}."]
+    nth, gap, last, said = 1, None, None, ""
+    if settings.sessions_dir.is_dir():
+        for folder in reversed(_folders(settings.sessions_dir)):
+            started = _started(folder)
+            if started is None or not card.written(folder / PAGE_NAME):
+                continue
+            if last is None:
+                last = _ended(folder, started)
+                gap = now - last
+            if started.date() != now.date():
+                break
+            nth += 1
+        said = _since_said(last, now) if last is not None else ""
+        gap_line = (f"The last time ended {said}." if said
+                    else "They have never switched you on before.")
+        # Said as a fact about their day rather than about the switch, because the greeting
+        # takes the wording it is given: "the 5th time they have switched you on" came back as
+        # "fifth run today" in nine greetings out of sixteen, which is a number with a word for
+        # boot on either side of it. What is interesting is that they keep coming back, and
+        # that is a thing about them. "Counting this one" is not padding: phrased as a count of
+        # the ones before, the greeting said "fourth round today" on the fifth wake.
+        # And nothing at all on the first wake of the day. "You have not been on yet today" is
+        # not an observation about anybody, and it is where "first run today" came from - the
+        # emptiest fact in the block was being made the whole line. From the second wake on it
+        # says something real about their day, so from the second wake on it is there.
+        if nth > 1:
+            lines.append(f"Counting this one, they have had you on {nth} times today.")
+        # And the gap goes last, because it is the fact that is different every single time -
+        # the count used to sit here and six greetings in sixteen were built on it.
+        lines.append(gap_line)
+    note = f"{now:%A} {now:%H:%M}, {_ordinal(nth)} today" + (f", last ended {said}" if said else "")
+    return Moment(
+        now=now,
+        nth_today=nth,
+        since=gap,
+        text=f"{MOMENT_HEADER}\n" + " ".join(lines) + "\n",
+        note=note,
+    )
 
 
 def _clock(seconds: object) -> str:
