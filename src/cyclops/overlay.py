@@ -169,8 +169,8 @@ def working_over(state: str, busy: bool) -> str:
     a comparison. IDLE is the obvious half: nobody is talking to him and the child is filing a
     session, so a panel that snores through it is lying. DRAWING is the half that was missed on
     the first attempt, and it is the commonest case by far - you ask for a diagram *in* a
-    conversation, so the state during those ninety seconds is DRAWING and never IDLE, and gating
-    on IDLE alone meant the one path anybody would actually take never showed the face.
+    conversation, so the state for the whole of that half minute is DRAWING and never IDLE, and
+    gating on IDLE alone meant the one path anybody would actually take never showed the face.
 
     DRAWING is replaced rather than kept alongside because since the picture stopped blocking its
     tool call the two say the same thing: ``agent.drawing_active`` is true exactly while a picture

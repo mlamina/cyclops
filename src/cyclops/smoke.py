@@ -29,7 +29,7 @@ from .webcam import capture_image_async
 READY_TIMEOUT_S = 30.0
 TURN_TIMEOUT_S = 90.0
 # How long turn 4 then waits for the picture itself. draw_diagram returns as soon as it is called
-# and the image lands about ninety seconds later (imagine.DRAW_QUALITY), so the turn is over long
+# and the image lands about half a minute later (imagine.DRAW_QUALITY), so the turn is over long
 # before the drawing is - and checking the offer file the moment the turn ends would always find
 # it empty. Comfortably past imagine.DRAW_TIMEOUT_S, so a slow draw fails on its own timeout with
 # a message rather than on this one without.
@@ -176,7 +176,7 @@ async def _main() -> int:
         # timing out is what a tool that raises instead of replying looks like from here.
         #
         # Its own deadline, and a long one. The tool returns the moment it is called and the
-        # picture lands a minute and a half later, so the turn finishes long before the drawing
+        # picture lands about half a minute later, so the turn finishes long before the drawing
         # does - and the ordinary TURN_TIMEOUT_S would have this checking for an offer that was
         # never going to be there yet.
         turn.reset()

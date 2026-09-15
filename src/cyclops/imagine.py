@@ -37,7 +37,7 @@ asking it nicely in the prompt. The door is open if a future panel gains a finge
 
 **And no retry, in either half.** The drawing used to get one, because its failure was a schema
 violation with a complaint you could hand back and the second attempt usually fixed it. There is
-no schema now and so nothing to hand back: a retry is only another eighty seconds of somebody's
+no schema now and so nothing to hand back: a retry is only another half-minute of somebody's
 patience spent on the same dice. The one exception is the pixel-budget probe in :func:`edit`,
 which is not a second roll - the first attempt never rendered anything.
 
@@ -64,7 +64,29 @@ from PIL import Image, UnidentifiedImageError
 from . import card
 from .config import Settings
 
-IMAGE_MODEL = "gpt-image-2"  # newest GA image model; the id pins snapshot gpt-image-2-2026-04-21
+# Sunburst, and not Flare and not the gpt-image-2 this used to be. Measured on 2026-09-15 from a
+# laptop, through draw() and edit() themselves at production settings - the real DRAW_PROMPT and
+# DEFAULT_STYLE, the same request each time:
+#
+#                             drawing, 1200x720 "high"   edit, 1152x640 "low"   output tokens
+#   gpt-image-2                      76-88 s                 13.1 / 13.2 s          7024
+#   gpt-image-2.5-flare               20.5 s                     10.8 s             1756
+#   gpt-image-2.5-sunburst            26.0 s                     13.1 s             1756
+#
+# A drawing lands in a third of the time and a quarter of the price. The edit was already "low"
+# and already quick: it does not move, and it did not need to. Everything downstream that says
+# how long to expect to wait was rewritten for that first column - see DRAW_DIAGRAM_TOOL and the
+# system prompt in cyclops.agent - because a picture announced as taking three times as long as
+# it does sends the conversation off somewhere else and leaves it there.
+#
+# Sunburst over Flare on the picture and not on the clock: asked for the same diagram, Flare
+# padded it with a "Colour Key (Wires)" legend nothing had asked for, and Sunburst drew what was
+# asked. The two edits were indistinguishable - the tank painted, every label untouched.
+#
+# The saved half-minute is not to be spent back on quality. 2.5 adds "xhigh" and "max" above
+# "high"; Sunburst took 34.4 s at xhigh and 62.3 s at max, and xhigh drew crisper lines and then
+# invented a colour key *and* misspelled a label. See DRAW_QUALITY.
+IMAGE_MODEL = "gpt-image-2.5-sunburst"
 
 # Low, and not a compromise. Measured from a laptop on 2026-09-02 against a real 1024x576
 # capture: 13.1 s and 13.2 s for "paint every wooden surface matt black" and "put a full
@@ -92,11 +114,13 @@ MAX_REQUEST_CHARS = 600
 MAX_TITLE_CHARS = 70
 MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TOOL
 
-# High, and it buys less than you would like. Measured on 2026-09-04 over five requests - a relay
-# wiring, the NS4168 amp on the Pi's header, the 40-pin pinout, a block diagram and a state
-# machine: "low" took 19-22 s and put two of the I2S wires on the wrong rows of the header;
-# "high" takes 76-88 s and made one such mistake in the same drawing (LRCLK labelled "pin 35" and
-# drawn from pin 36, on the Pi, first try). Fewer, not none.
+# High, and it buys less than you would like. Measured on 2026-09-04 over five requests against
+# gpt-image-2 - a relay wiring, the NS4168 amp on the Pi's header, the 40-pin pinout, a block
+# diagram and a state machine: "low" took 19-22 s and put two of the I2S wires on the wrong rows
+# of the header; "high" took 76-88 s and made one such mistake in the same drawing (LRCLK
+# labelled "pin 35" and drawn from pin 36, on the Pi, first try). Fewer, not none. The same
+# request through 2.5 sunburst is 26 s at "high" - see IMAGE_MODEL - so what follows about the
+# wait costs a third of what it did, and every word of the argument still holds.
 #
 # So this is a reduction in a failure rate and not a fix, and the rest of the mitigation is
 # elsewhere on purpose: DRAW_DIAGRAM_TOOL tells the model to say a connection out loud when
@@ -105,7 +129,7 @@ MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TO
 # is the one error a person cannot catch by looking, because the label beside it still reads
 # correctly.
 #
-# Eighty seconds is bearable only because nothing is waiting on it: the tool has returned, the
+# Half a minute is bearable only because nothing is waiting on it: the tool has returned, the
 # overlay says "drawing…", and the conversation carries on. That was written as a description and
 # was not true - `_run_draw_diagram` awaited this call inside the tool handler, so the call stayed
 # open for the whole of it and the model could not say another word. It is true now, and it is
@@ -113,19 +137,21 @@ MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TO
 # and the model is told when the picture lands. Anything that puts a caller back in front of this
 # await takes the argument for "high" with it.
 #
-# If the error rate turns out not to justify the wait, "low" is a one-word change and the honest
-# one.
+# Upwards is not the answer either, now that there is an upwards: 2.5 adds "xhigh" and "max",
+# and xhigh cost another eight seconds and drew a legend nobody asked for with a word misspelled
+# in it. If the error rate turns out not to justify the wait, "low" is a one-word change and the
+# honest one.
 DRAW_QUALITY = "high"
 DRAW_TIMEOUT_S = 180.0  # the documented worst case, with room; see EDIT_TIMEOUT_S
 
 # Exactly 5:3, which is the panel's own shape, so nothing is letterboxed on the way to the
 # glass. Both edges divide by 16 and the area clears the pixel-budget floor described below;
-# checked against the API on 2026-09-04, because a size it will not take is a 400 arriving
-# eighty seconds late. Fixed rather than computed by size_for, because size_for exists to
-# preserve a *source photograph's* framing and a drawing has no source.
+# checked against the API on 2026-09-04 and again on 2026-09-15 against 2.5, because a size it
+# will not take is a 400 arriving half a minute late. Fixed rather than computed by size_for,
+# because size_for exists to preserve a *source photograph's* framing and a drawing has no source.
 PANEL_SIZE = "1200x720"
 
-# gpt-image-2 takes an arbitrary WIDTHxHEIGHT as long as both sides divide by 16 and the aspect
+# The image model takes an arbitrary WIDTHxHEIGHT as long as both sides divide by 16 and the aspect
 # is between 1:3 and 3:1, so the edit can keep the photograph's own framing instead of being
 # cropped into one of three standard shapes. Keeping the framing is the whole point: a crop
 # changes what you are looking at, which is the one thing an edit of your own photo must not do.
@@ -212,7 +238,7 @@ def _text(value: object, limit: int) -> str:
 
 
 def _up(value: float) -> int:
-    """One edge, rounded *up* to something gpt-image-2 will accept.
+    """One edge, rounded *up* to something the image model will accept.
 
     Up rather than nearest, so that rounding can only ever move us further above the minimum
     pixel budget. Rounding down is how you send 1024x576 and get a 400 back.
@@ -299,8 +325,9 @@ async def edit(source: Path, request: str, settings: Settings) -> bytes:
                     size=size,
                     quality=QUALITY,
                     output_format=OUTPUT_FORMAT,
-                    # input_fidelity is deliberately absent: gpt-image-2 is always high and
-                    # rejects being told so.
+                    # input_fidelity is deliberately absent: the image model is always high and
+                    # rejects being told so. Re-checked on 2026-09-15 against 2.5 sunburst, which
+                    # answers "does not support the 'input_fidelity' parameter".
                 )
             except APIError as exc:
                 message = exc.message or str(exc)
@@ -397,7 +424,7 @@ async def draw(request: str, style: str, settings: Settings) -> bytes:
 
     No retry, unlike :func:`cyclops.panel.draw` before it and for the reason this module's
     docstring already gives about :func:`edit`: an image has no schema to fail, so a second
-    attempt is another eighty seconds of somebody's patience spent on the same dice.
+    attempt is another half-minute of somebody's patience spent on the same dice.
     """
     request = _text(request, MAX_REQUEST_CHARS)
     if not request:

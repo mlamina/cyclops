@@ -89,7 +89,7 @@ def announces() -> bool:
     The panel asks so that it can stay quiet for some arrivals and not others, and the rule is
     whether anything else already said so. A photograph had the shutter a beat earlier and a
     second sound on top of it is one too many. A drawing had nothing: it was asked for out loud,
-    it takes a minute and a half to arrive, and in between there is only a strip of text on a
+    it takes about half a minute to arrive, and in between there is only a strip of text on a
     screen the person may not be looking at.
 
     This used to be ``is_picture()``, and it read the question the other way round - was this a
@@ -150,13 +150,13 @@ def offer_scratchpad(html: str) -> bool:
     """Leave a scratchpad of HTML where the panel's page will find it. False if it could not.
 
     The other door onto the glass, and the cheap one. Everything above arrives as pixels somebody
-    made - a camera, or a minute and a half of ``gpt-image-2`` - and this arrives as markup the
+    made - a camera, or half a minute of the image model - and this arrives as markup the
     model wrote itself in the time it takes to say a sentence. A number, a short list, a word worth
     reading rather than hearing, a small SVG.
 
     It is silent. :func:`announces` is about whether *anything else* said this had arrived, and a
     scratchpad is the one case where something did: the model is still talking when it lands. A
-    drawing sounds because it took ninety seconds and nothing else marked it.
+    drawing sounds because it took half a minute and nothing else marked it.
 
     No ``drawn`` key, and that is the whole of how it is dismissed. The page reads ``drawn`` to
     decide between a corner square and a press anywhere, and a scratchpad gets the press: it is one

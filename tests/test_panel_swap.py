@@ -98,7 +98,7 @@ def test_a_photograph_going_up_makes_no_sound(panel, monkeypatch) -> None:
 
 
 def test_a_drawing_replacing_one_still_says_so(panel, monkeypatch) -> None:
-    """Nothing else announces a drawing: it took a minute and a half and arrived silently."""
+    """Nothing else announces a drawing: it took half a minute and arrived silently."""
     monkeypatch.setattr(kiosk.panel, "announces", lambda: True)
     panel._page_busy.set()
     panel._panel_showing.set()

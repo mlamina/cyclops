@@ -196,7 +196,7 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
         "of connections that would take several sentences to say and one picture to show - "
         "'wire this relay to GPIO 17', 'what goes where on the header', 'how does this loop "
         "work'. "
-        "This call comes back straight away and the picture arrives about a minute and a half "
+        "This call comes back straight away and the picture arrives about half a minute "
         "later, so say one short sentence out loud and then carry on talking about something "
         "else - do not wait for it, do not call it again, and do not keep mentioning it. You "
         "are told separately when it lands or if it fails. It fills the panel when it arrives "
@@ -275,8 +275,8 @@ SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
         "stop describing what is up there. They can see it. "
         "This is the tool to reach for by default. draw_diagram is the expensive exception: it "
         "is for a real technical drawing - how something is wired, what goes where on a header, "
-        "how parts fit together - and it costs a minute, which is a minute wasted on anything "
-        "that is text, numbers, a list or a simple shape. "
+        "how parts fit together - and it costs half a minute, which is half a minute wasted on "
+        "anything that is text, numbers, a list or a simple shape. "
         "It is read at arm's length and it does not scroll, so whatever does not "
         "fit is not seen: one idea at a time, set big, a handful of elements. "
         "It holds the whole panel until they touch it - a press anywhere wipes it and gives them "
@@ -466,10 +466,11 @@ SKETCH_TOOL: RealtimeFunctionToolParam = {
         "seconds, and drawn correctly, because you write what connects to what and the layout "
         "is done for you. Reach for those as readily as for a heading. "
         "This is the tool to reach for by default, diagrams included. draw_diagram is now the "
-        "narrow exception: it costs a minute and it is for a picture of a PHYSICAL thing - what "
-        "a part looks like, where a fitting sits on an engine, something you would photograph if "
-        "it were in front of you. Anything structural - wiring, a flow, an order of operations, "
-        "what plugs into what - belongs here, in Mermaid, now rather than in a minute. "
+        "narrow exception: it costs half a minute and it is for a picture of a PHYSICAL "
+        "thing - what a part looks like, where a fitting sits on an engine, something you would "
+        "photograph if it were in front of you. Anything structural - wiring, a flow, an order "
+        "of operations, what plugs into what - belongs here, in Mermaid, now rather than in half "
+        "a minute. "
         "It is read at arm's length and it does not scroll, so whatever does not "
         "fit is not seen: one idea at a time, set big, a handful of elements. "
         "It holds the whole screen until they touch it - a press anywhere wipes it and gives "
@@ -925,7 +926,7 @@ HOW YOU TALK
   and let it go, and never raise the same unheeded point twice.
 - Saying nothing is a real option. While they measure, count, cut or think, stay quiet. When
   they say hang on, "Okay" is the whole turn, with nothing offered for afterwards.
-- Two things take about a minute to arrive: a drawing and a change to their photo. Those come
+- Two things take about half a minute to arrive: a drawing and a change to their photo. Those come
   back to you the moment you ask, before the work is done. For those two, say what you are
   doing in a few words and carry on talking; you are told separately when it lands or fails,
   and that is when to mention it. Never ask for the same thing twice while you are waiting,
@@ -999,12 +1000,12 @@ SHOWING THEM SOMETHING
   not for a caption on every sentence.
 - When the answer is a set of connections or a layout - how something is wired, what goes where on
   a header, how parts fit together - draw it rather than saying it; see draw_diagram for what it
-  can and cannot draw. It takes about a minute, so say what you are doing and carry on talking.
+  can and cannot draw. It takes about half a minute, so say what you are doing and carry on talking.
   Never reach for it for something you could have put on the scratchpad in a second.
 - When the answer is what something would LOOK like - a colour, a finish, a part moved, a thing
   that is not there yet - edit the picture in front of them rather than describing it; see
-  edit_photo. It can take a minute, so say what you are doing and carry on talking. What comes
-  back is a drawing of their photo and not a photograph: never treat it as evidence and never
+  edit_photo. It takes about half a minute, so say what you are doing and carry on talking. What
+  comes back is a drawing of their photo and not a photograph: never treat it as evidence and never
   measure anything off it.
 - Once it is up, stop describing it. They can see it. Answer what they ask about it.
 
@@ -2287,8 +2288,8 @@ class VoiceAgent:
     async def _run_scratchpad(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Put what the model wrote on the panel. The shortest handler here, and deliberately.
 
-        Every other tool that reaches the glass has a picture to make first - a minute of
-        ``gpt-image-2``, or a file off the card. This one already has everything it needs in its
+        Every other tool that reaches the glass has a picture to make first - half a minute of
+        the image model, or a file off the card. This one already has everything it needs in its
         own arguments, so there is nothing between the call and the panel but one small write.
         """
         html = _tool_string(call.arguments, "html", MAX_SCRATCHPAD_CHARS)
@@ -2480,13 +2481,15 @@ class VoiceAgent:
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Set a drawing going, answer at once, and let :meth:`_draw` finish it.
 
-        The tool returns in a moment and the picture arrives about ninety seconds later. That is
+        The tool returns in a moment and the picture arrives about half a minute later. That is
         the whole point of the split: this used to await the image model here, so the call stayed
         open for the whole of it and the model could not say another word until it closed - while
         both this tool's own description and the system prompt told it to say what it was doing
-        and carry on talking. ``imagine.py`` said the same thing about the eighty seconds being
-        bearable "only because nothing is waiting on it", and asked for the lifecycle to be fixed
-        rather than the quality dropped. This is that fix.
+        and carry on talking. ``imagine.py`` said the same thing about the wait being bearable
+        "only because nothing is waiting on it", and asked for the lifecycle to be fixed rather
+        than the quality dropped. This is that fix. The wait is a third of what it was since
+        ``IMAGE_MODEL`` became 2.5 sunburst, and none of that argument changes: a call held open
+        for twenty-six seconds is still a conversation with nothing in it.
 
         What holds the two halves together is a task (:mod:`cyclops.tasks`): the panel says what
         is being drawn for as long as it takes, and :meth:`announce` tells the model when it
@@ -2511,7 +2514,7 @@ class VoiceAgent:
             "ok": True,
             "started": True,
             "note": (
-                "It is being drawn now and takes about a minute and a half. Say in a few words "
+                "It is being drawn now and takes about half a minute. Say in a few words "
                 "that you are drawing it, then carry on talking about something else - you will "
                 "be told when it lands or if it fails."
             ),
@@ -2519,12 +2522,13 @@ class VoiceAgent:
         await self._request_response()
 
     async def _draw(self, task: str, request: str, style: str) -> None:
-        """The ninety seconds. Runs on its own after :meth:`_run_draw_diagram` has answered.
+        """The half minute. Runs on its own after :meth:`_run_draw_diagram` has answered.
 
         The model is deliberately *not* told what the diagram contains. It asked for a picture,
         the picture is on the screen, and a model handed a description of it will read that
         description out at somebody who is already looking at the thing.
         """
+        started = time.monotonic()
         try:
             # Keeping and showing is inside the try, not in an else. It was in an else once, and
             # a TypeError in the record it writes propagated straight out of this coroutine: the
@@ -2532,6 +2536,10 @@ class VoiceAgent:
             # never sent until the user spoke over it.
             jpeg = await imagine.draw(request, style, self.settings)
             output, kept = await asyncio.to_thread(self._keep_and_show_drawing, jpeg, request)
+            # The one number that says whether a change of image model landed, and the only place
+            # it is visible on the box. `_edit` has had this line all along; this half timed
+            # nothing, so the thing everybody waits on was the thing nothing wrote down.
+            self._log(f"[tool] draw: {len(jpeg) // 1024} KB in {time.monotonic() - started:.1f}s")
         except imagine.ImagineError as exc:
             session.note("photo", by="drawn", request=request[:80], error=str(exc))
             self._log(f"[tool] draw_diagram failed: {exc}", stream=sys.stderr)
@@ -2962,9 +2970,9 @@ class VoiceAgent:
         """Tell the model that something it started in the background has landed, and let it talk.
 
         The other end of a tool that returns before its work is done. ``draw_diagram`` answers in
-        a moment and the picture arrives a minute and a half later, so the arrival has to reach the
-        conversation on its own - there is no tool call left to answer by then, and the model would
-        otherwise be told nothing at all and go on believing a drawing was still being made.
+        a moment and the picture arrives about half a minute later, so the arrival has to reach
+        the conversation on its own - there is no tool call left to answer by then, and the model
+        would otherwise be told nothing at all and go on believing a drawing was still being made.
 
         A synthetic user turn for the reason :meth:`add_photo`'s docstring gives, and flat and
         bracketed for the reason its caption is: a line written as speech comes back out of the

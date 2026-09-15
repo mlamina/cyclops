@@ -41,11 +41,11 @@ def test_finishing_closes_the_row_it_was_told_about_and_no_other() -> None:
 
 def test_a_failure_keeps_what_went_wrong() -> None:
     task = tasks.start("drawing the relay wiring…")
-    tasks.fail(task, "gpt-image-2 refused: content policy")
+    tasks.fail(task, "the image model refused: content policy")
 
     (row,) = tasks.read()
     assert row.state == tasks.FAILED
-    assert row.result == "gpt-image-2 refused: content policy"
+    assert row.result == "the image model refused: content policy"
 
 
 def test_the_newest_running_task_is_what_the_panel_says() -> None:

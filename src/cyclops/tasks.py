@@ -1,7 +1,7 @@
 """What is happening in the background, in one file anything on the box can write to.
 
-A *task* is a piece of work that outlives the call that started it. Drawing a diagram takes a
-minute and a half; naming and filing a finished session takes the better part of another one. Both
+A *task* is a piece of work that outlives the call that started it. Drawing a diagram takes about
+half a minute; naming and filing a finished session takes the better part of a minute. Both
 used to happen with nothing on the panel and nothing on the card to say so, which is the whole
 reason this module exists: **the only purpose of the ledger is so that somebody can see whether
 anything is going on.** It is not a scheduler, nothing pulls work off it, and no task here was ever
