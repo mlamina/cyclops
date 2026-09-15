@@ -81,15 +81,20 @@ live_builds() {
   echo "$c"
 }
 
-# New markers since the last pass. The first sight of a log is primed rather than replayed: a
-# watcher armed onto a factory that has been running all afternoon would otherwise open with an
-# hour of endings that are already on the board. What is in flight at arming time is /run-factory's
-# to report, once, from the board itself.
+# New markers since the last pass. A log found on the **first** pass is primed rather than
+# replayed: a watcher armed onto a factory that has been running all afternoon would otherwise open
+# with an hour of endings that are already on the board. What is in flight at arming time is
+# /run-factory's to report, once, from the board itself.
+#
+# Only the first pass, and that is the whole of this function's history. Priming every log it had
+# not seen before meant a log written *while* the watch was running - which is to say every build
+# that starts from now on, START marker and all - was primed away unread, and the one event Marco
+# actually waits for after a /capture never fired.
 scan() {  # $1 number, $2 log
   f=$SEEN/$1.off
   size=$(wc -c < "$2" 2>/dev/null | tr -d ' ')
   case ${size:-} in ''|*[!0-9]*) return ;; esac
-  if [ ! -e "$f" ]; then printf '%s' "$size" > "$f"; return; fi
+  if [ ! -e "$f" ] && [ -n "$first" ]; then printf '%s' "$size" > "$f"; return; fi
   off=$(cat "$f" 2>/dev/null || echo 0)
   case $off in ''|*[!0-9]*) off=0 ;; esac
   [ "$size" -lt "$off" ] && off=0        # /rework truncates the log; start again from the top
@@ -99,6 +104,7 @@ scan() {  # $1 number, $2 log
     case $line in '· '*) ;; *) continue ;; esac   # the model's own prose shares this file
     rest=${line#· }; rest=${rest#* }; rest=${rest#* }
     case $rest in
+      START*)   echo "BUILDING $1 ${rest#START * - }" ;;
       DONE*)    echo "REVIEW $1" ;;
       STALLED*) echo "STALLED $1 ${rest#STALLED - }" ;;
       WEDGED*)  echo "WEDGED $1 ${rest#WEDGED - }" ;;
@@ -119,7 +125,7 @@ stranded() {  # $1 log
   [ -n "$p" ] && ! kill -0 "$p" 2>/dev/null
 }
 
-had= miss=0
+had= miss=0 first=1
 while :; do
   lp=$(loop_pid)
   # Two passes, not one. This is the only event that ends the watch, so a transient `pgrep` or
@@ -167,5 +173,6 @@ while :; do
     fi
   done
 
+  first=
   sleep "$EVERY"
 done

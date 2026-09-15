@@ -57,6 +57,7 @@ Every line the watcher prints is one of these. Nothing else is.
 
 | event | what it means |
 |---|---|
+| `BUILDING N <slug>` | the loop took the job and started it. Say it in one line — after a `/capture`, "it started" and "it never started" look identical for four minutes otherwise, and that is the one silence worth breaking |
 | `REVIEW N` | the build set `state: review`. Marco's cue, and the only good news you pass on |
 | `STALLED N <reason>` | the build ended without reaching `review`, reason as loop.sh wrote it |
 | `WEDGED N <reason>` | ninety minutes silent, killed |
@@ -74,7 +75,7 @@ teatime. So every event that needs reading gets **one throwaway subagent**: give
 things — *what actually happened*, and *whose fault it is: the pipeline's or the job's*. Tell it to
 change nothing. You get a verdict; its reading stays in its own context.
 
-`REVIEW` needs no subagent. Say the line and move on.
+`BUILDING` and `REVIEW` need no subagent. Say the line and move on.
 
 ## Whose fault it is
 
@@ -141,9 +142,10 @@ does not earn an afternoon.
 Silence while things build. The beats are in `loop.out` if he wants them; relaying them is how this
 becomes the task.
 
-Speak for three things only: **you fixed something** (what broke, what you changed, that it went
-round again — three lines), **a job needs him** (`REVIEW`, or a job whose own plan is wrong), and
-**you have stopped** (the loop went, a job used both its rounds, or the cause is out of your reach).
+Speak for four things only: **the factory took a job** (`BUILDING`, one line), **you fixed
+something** (what broke, what you changed, that it went round again — three lines), **a job needs
+him** (`REVIEW`, or a job whose own plan is wrong), and **you have stopped** (the loop went, a job
+used both its rounds, or the cause is out of your reach).
 
 Never announce that you are still watching.
 
