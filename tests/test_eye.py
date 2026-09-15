@@ -254,7 +254,7 @@ def test_a_mood_that_asks_for_no_wander_gets_the_turn_it_always_had() -> None:
 
 def test_a_job_in_the_background_puts_the_working_face_up() -> None:
     """The bug this is here for: it shipped gated on IDLE alone, and a diagram is asked for in a
-    conversation - so the state for the whole ninety seconds is DRAWING, and the one path anybody
+    conversation - so the state for the whole half minute is DRAWING, and the one path anybody
     would actually take never showed the face."""
     assert overlay.working_over(overlay.DRAWING, True) == overlay.WORKING, "the commonest case"
     assert overlay.working_over(overlay.IDLE, True) == overlay.WORKING, "and the quiet one"

@@ -120,7 +120,7 @@ def test_an_empty_request_never_reaches_the_network(tmp_path) -> None:
 
 
 def test_a_diagram_with_nothing_described_never_reaches_the_network() -> None:
-    """The same guard as an edit's, and it matters more: a drawing costs eighty seconds."""
+    """The same guard as an edit's, and it matters more: a drawing costs half a minute."""
     with pytest.raises(imagine.ImagineError):
         asyncio.run(imagine.draw("   ", "a wiring diagram", Settings(api_key="")))
 
@@ -128,9 +128,10 @@ def test_a_diagram_with_nothing_described_never_reaches_the_network() -> None:
 def test_a_drawing_asked_for_at_the_panel_s_own_shape() -> None:
     """The size is fixed rather than computed, so this is the one place it is written down twice.
 
-    Both edges must divide by 16 and the area must clear gpt-image-2's minimum pixel budget - the
-    two rules that make `size_for` non-obvious for edits. A drawing has no source photo to take a
-    shape from, so a typo here would simply be a 400 from the API in eighty seconds' time.
+    Both edges must divide by 16 and the area must clear the image model's minimum pixel
+    budget - the two rules that make `size_for` non-obvious for edits. A drawing has no source
+    photo to take a shape from, so a typo here would simply be a 400 from the API half a minute
+    later.
     """
     width, height = (int(n) for n in imagine.PANEL_SIZE.split("x"))
     assert width % 16 == 0 and height % 16 == 0
@@ -527,7 +528,7 @@ def tool_result(made, call) -> dict:
     """Drive one image tool and hand back the output it sent, without doing the work.
 
     `_spawn` is stubbed for the reason `edit_result`'s docstring gives: the half of these that
-    talks to gpt-image-2 belongs to `cyclops-smoke` and the Pi, not to a suite with no key.
+    talks to the image model belongs to `cyclops-smoke` and the Pi, not to a suite with no key.
     """
     sent: list[dict] = []
 
@@ -544,7 +545,7 @@ def tool_result(made, call) -> dict:
 def test_a_drawing_is_answered_before_it_has_been_drawn(voice) -> None:
     """The change this whole mechanism is for.
 
-    The tool used to await gpt-image-2 here, so the call stayed open for eighty-odd seconds and
+    The tool used to await the image model here, so the call stayed open for the whole draw and
     the model could not say another word - while its own description told it to say what it was
     doing and carry on. Now it answers at once and is told separately when the picture lands.
     """

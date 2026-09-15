@@ -73,7 +73,7 @@ def test_an_offer_carries_only_what_the_page_branches_on(panel_file) -> None:
 
 
 def test_a_scratchpad_lands_quietly_and_leaves_the_cue_where_it_found_it(panel_file) -> None:
-    """A drawing arrives silently after ninety seconds; a scratchpad arrives while he is talking."""
+    """A drawing arrives silently half a minute later; a scratchpad arrives while he is talking."""
     panel.offer_scratchpad("<h1>25 Nm</h1>")
     assert panel.announces() is False, "he is still speaking over it; a cue would be one too many"
 

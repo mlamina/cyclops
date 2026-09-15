@@ -37,7 +37,7 @@ withholds the tool entirely.
 
 Some answers are a picture. Ask *"how do I wire this relay to GPIO 17"* and Cyclops draws it on
 the touchscreen — a wiring diagram in the idiom of a printed service manual, a pinout chart, a
-block diagram, an assembly sketch. It takes about a minute and a half, fills the panel when it
+block diagram, an assembly sketch. It takes about half a minute, fills the panel when it
 lands, and keeps a small **Close** square in the corner rather than the full-width bar: a diagram
 is a thing you point at while you talk about it, so pressing it must not put it away.
 
@@ -46,7 +46,7 @@ saying what to draw, with every value that matters in it, and a second saying wh
 drawing it should be. That second one is not a menu: the model is asked to name the conventions
 of whatever field the subject belongs to, because a diagram in the wrong idiom is read wrong. Ask
 for wires and terminals on a piece of software and the picture will invent terminals that do not
-exist. `gpt-image-2` draws it at `quality="high"`, which takes about eighty seconds.
+exist. `gpt-image-2.5-sunburst` draws it at `quality="high"`, which takes about 26 seconds.
 
 **It is drawn, not checked.** There is no schema and no validation behind the picture — nothing
 distinguishes a wire drawn to the right pin from one drawn to the pin beside it. (Until
@@ -76,8 +76,8 @@ it was. **Press it anywhere to put it away** — a drawing keeps its corner butt
 thing you read and point at while you talk; a picture of your own bench is a thing you look at and
 are then done with.
 
-`edit_photo` sends one picture to `gpt-image-2` on OpenAI's image edits endpoint, along with one
-sentence saying what to change. By default that is the newest picture in play — including a
+`edit_photo` sends one picture to `gpt-image-2.5-sunburst` on OpenAI's image edits endpoint, along
+with one sentence saying what to change. By default that is the newest picture in play — including a
 previous edit, so *"now make it darker"* compounds the first change rather than starting over.
 
 **Any picture from the session can be named instead.** Every picture Cyclops is shown arrives
@@ -116,9 +116,9 @@ redrew an earlier photo, so it never files one believing it is a record of the b
 
 ## Background tasks
 
-A **task** is a piece of work that outlives the call that started it. Drawing a diagram takes a
-minute and a half; naming, summarising and filing a session after you tap stop takes the better
-part of another one. Both used to happen with nothing anywhere saying so.
+A **task** is a piece of work that outlives the call that started it. Drawing a diagram takes
+about half a minute; naming, summarising and filing a session after you tap stop takes the better
+part of a minute. Both used to happen with nothing anywhere saying so.
 
 ```
 ~/.cache/cyclops/tasks.yaml
@@ -135,7 +135,7 @@ tasks:
     state: failed
     started: 2026-09-05 12:38:02+0200
     ended: 2026-09-05 12:38:24+0200
-    result: 'gpt-image-2 refused: content policy'
+    result: 'gpt-image-2.5-sunburst refused: content policy'
 ```
 
 Newest first, the last twenty rows, and `cat` is the intended reader — that plus
@@ -160,7 +160,7 @@ ends. And, on the admin page, one amber line at the right-hand end of the header
 screen, updated by the poll that was already running.
 
 **A tool that starts a task answers straight away** — it says it is drawing and the model keeps
-talking, rather than the call staying open for eighty seconds with nothing able to be said. When
+talking, rather than the call staying open for half a minute with nothing able to be said. When
 the picture lands or fails Cyclops is told in a synthetic user turn, of the kind a photo arrives
 in, and says so out loud. Nothing polls, nothing waits, and a session that ends mid-drawing
 simply has nobody left to tell.
