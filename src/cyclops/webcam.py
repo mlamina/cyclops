@@ -27,7 +27,7 @@ MAX_EDGE = 1024
 JPEG_QUALITY = 85
 PROBE_INDICES = 3
 FRAME_WIDTH, FRAME_HEIGHT = 1280, 720
-FRAME_RATE = 15  # asked of the camera, not the reader; see the format note in open_camera
+FRAME_RATE = 30  # asked of the camera, not the reader; see the format note in open_camera
 USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
@@ -42,7 +42,7 @@ FRAMINGS: dict[str, list[str]] = {
     WIDE: ["--mode", "2304:1296"],  # the whole sensor, binned 2x2. 1x, and what the lens is for
     NARROW: ["--mode", "1536:864"],  # the sensor's own centre crop, 1.5x, still every pixel of it
     # 1:1 sensor pixels: 1280x720 of the full 4608x2592 frame, which is 0.278 of each edge and
-    # centred, so 3.6x with nothing interpolated. The mode tops out at 14.35 fps against the 15
+    # centred, so 3.6x with nothing interpolated. The mode tops out at 14.35 fps against the 30
     # we ask for, which is the whole of what this framing costs.
     ZOOMED: ["--mode", "4608:2592", "--roi", "0.361,0.361,0.278,0.278"],
 }
@@ -205,8 +205,8 @@ class _RpicamCapture:
 
     Raw YUV420 out of it rather than MJPEG, deliberately. MJPEG would buy a smaller pipe by
     spending a software encode there and a decode here - the Pi 5 has no JPEG encoder in
-    hardware - and the pipe is local and not the bottleneck. Measured, this costs 4% of one
-    core and delivers the 15 fps we ask for.
+    hardware - and the pipe is local and not the bottleneck. Measured at 15 fps, this cost 4%
+    of one core and delivered every frame asked for.
     """
 
     def __init__(self, proc: subprocess.Popen, width: int, height: int) -> None:
@@ -379,9 +379,9 @@ def open_camera(
     which is 10 fps and nothing more on a USB 2.0 bus. That is the whole reason the preview used
     to step: the panel redraws about 25 times a second and only had ten new frames to draw. MJPG
     frames are a tenth the size, so the wire stops deciding, and the rate we ask for is the rate
-    we get. 15 is a deliberate middle: it fills most of the panel's redraws and gives
-    :meth:`~cyclops.camera.CameraSource.snapshot` half again as many frames to pick the sharpest
-    from, without paying for 30 fps of JPEG decode on a Pi that already runs warm.
+    we get. 30 is one new frame for every redraw of the panel, so the preview - and a recording
+    of it - moves as smoothly as the panel can show it. It was 15 while the C920 was the camera
+    and every frame was a JPEG to decode; the module sends raw frames, and that cost is gone.
     """
     backend = cv2.CAP_AVFOUNDATION if sys.platform == "darwin" else cv2.CAP_ANY
     params = [
