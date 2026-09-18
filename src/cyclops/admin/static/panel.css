@@ -76,6 +76,17 @@ body.clipping .scrub { display: block; }
 body.paper::before { border: 0; border-radius: 0; }
 body.paper { padding: 0; }
 
+/* ...and so does a page of a manual (body.page, set in panel.js), for a different reason. A
+   portrait page contained inside the bezel came out about 315 px wide with 225 px of black on
+   each side, small print too small to read at a bench. So it is laid across the whole 800 px,
+   height following, and the stage scrolls it - opening at the top, with no scrollbar: text
+   running off the bottom edge is the cue. The finger that scrolls it is panel.js's (dragScroll);
+   a companion's own touchscreen pans it natively through the overflow. */
+body.page::before { border: 0; border-radius: 0; }
+body.page { padding: 0; }
+body.drawing.page .stage { overflow-y: auto; overscroll-behavior: contain; }
+body.page .stage .shot { height: auto; object-fit: fill; }
+
 /* A picture gets the whole panel. Everything the dashboard needs around it - the header, the
    volume, the full-width way out - is chrome for a page of numbers, and a wiring diagram at
    arm's length wants the pixels more than it wants a title bar. So the grid collapses to one

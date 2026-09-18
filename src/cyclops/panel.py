@@ -132,21 +132,29 @@ def hold_s() -> float:
     return _hold_s
 
 
-def offer_image(jpeg: bytes, title: str, *, announce: bool = False) -> bool:
+def offer_image(jpeg: bytes, title: str, *, announce: bool = False, page: bool = False) -> bool:
     """Leave a picture where the panel's page will find it. False if it could not be left.
 
     ``announce`` asks the kiosk to sound the "shown" cue as this one lands, and that is all it
     does - see :func:`announces` for when it is worth it. It defaults to False because three of
     the four callers are photographs, which the shutter already announced.
 
-    **There is one kind of picture.** This used to carry a second flag, ``drawn``, which rode all
-    the way to the page and made a diagram behave differently from a photograph: a press anywhere
-    put a photograph away, while a diagram kept a small square in the corner, on the argument that
-    a diagram is a thing you point at while you talk about it. Two dismissals for one gesture, and
-    the corner square was the one nobody could find on a second screen. A photo, a picture
-    recalled from the card, an edit and a diagram are all now simply pictures, and a press
-    anywhere puts any of them away. The scratchpad is the only other thing the panel shows, and
-    it is a different door (:func:`offer_scratchpad`) rather than a flag on this one.
+    **There is one kind of picture, and one exception to it.** This used to carry a second flag,
+    ``drawn``, which rode all the way to the page and made a diagram behave differently from a
+    photograph: a press anywhere put a photograph away, while a diagram kept a small square in the
+    corner, on the argument that a diagram is a thing you point at while you talk about it. Two
+    dismissals for one gesture, and the corner square was the one nobody could find on a second
+    screen. A photo, a picture recalled from the card, an edit and a diagram are all now simply
+    pictures, and a press anywhere puts any of them away. The scratchpad is the only other thing
+    the panel shows, and it is a different door (:func:`offer_scratchpad`) rather than a flag on
+    this one.
+
+    The exception is ``page``: a page of a manual. Fitted inside the panel like a photograph, a
+    portrait page is a strip of small print between two black bars, so the page lays it across
+    the whole width instead and lets a finger scroll it - which means a press has to be allowed
+    to become a drag, and only a tap puts it away. The picture still travels under ``image``,
+    so :mod:`cyclops.still` and the recording take it exactly as they take any other. The caller
+    sizes it with :func:`cyclops.imagine.for_page` rather than ``for_panel``.
 
     Downscale it first. The caller does that, because the caller knows what the full-size copy is
     for - see :func:`cyclops.imagine.for_panel`.
@@ -155,7 +163,10 @@ def offer_image(jpeg: bytes, title: str, *, announce: bool = False) -> bool:
     global _announce, _hold_s
     _announce = announce
     _hold_s = 0.0
-    return _leave({"title": title, "image": url})
+    offer: dict[str, Any] = {"title": title, "image": url}
+    if page:
+        offer["page"] = True
+    return _leave(offer)
 
 
 def offer_scratchpad(html: str) -> bool:

@@ -33,6 +33,9 @@ const KIOSK = document.body.classList.contains('kiosk');
 // ...and so does any press on a scratchpad, which is why .scratchpad takes no pointer events.
 stage.addEventListener('pointerdown', (event) => {
   if (!document.body.classList.contains('photo')) return;  // nothing is up
+  // ...except a page of a manual, where a press may be the start of a scroll. It goes on the tap
+  // instead - see the click listener below.
+  if (document.body.classList.contains('page')) return;
   event.preventDefault();  // no synthetic click behind it, and no double-tap zoom
   // On a companion, put our own copy away now and remember which one it was. The note we leave
   // below has to travel to the kiosk, be noticed within ADMIN_POLL_S and come back as a withdraw
@@ -57,6 +60,19 @@ stage.addEventListener('pointerdown', (event) => {
   if (!KIOSK) drop();
   window.__leave();
 });
+// A page of a manual is laid across the whole width and is taller than the panel, so a finger
+// on it is as likely to be scrolling as leaving. It is put away by a tap: a press and a lift
+// that stayed inside dragScroll's slop. A drag never gets here - dragScroll swallows the click
+// that ends one and marks it handled - and on a companion's touchscreen the browser's own pan
+// sends no click at all.
+stage.addEventListener('click', (event) => {
+  if (!document.body.classList.contains('page') || event.defaultPrevented) return;
+  if (!KIOSK) drop();
+  window.__leave();
+});
+// On the panel a finger arrives as a mouse, so the drag is turned into a scroll by hand, exactly
+// as it is for the lists (app.js). Only while a page is up: every other picture keeps its press.
+if (KIOSK) dragScroll(stage, () => document.body.classList.contains('page'));
 // ---- a scratchpad's own document ----
 //
 // The other thing that can land on the stage: a piece of HTML the model wrote
@@ -143,6 +159,7 @@ async function shot(url) {
   try { await img.decode(); } catch (e) { /* show it anyway: a slow decode beats nothing */ }
   stage.textContent = '';
   stage.appendChild(img);
+  stage.scrollTop = 0;  // a page opens at the top, whatever the last one was scrolled to
 }
 
 // How long to wait for a video to be ready before uncovering anyway. The kiosk gives the whole
@@ -325,7 +342,7 @@ async function show(id) {
   const found = await r.json();
   // Cleared before it is decided, so a drawing arriving after a photo gets its button back -
   // and so a photograph landing on top of a drawing gets the bezel back with it.
-  document.body.classList.remove('photo', 'paper', 'sketching', 'clipping');
+  document.body.classList.remove('photo', 'paper', 'sketching', 'clipping', 'page');
   // The class before the picture: a stage that is still display:none has no size, and an image
   // fitted to a box of zero by zero paints nowhere at all.
   window.__drawing(true);
@@ -372,6 +389,9 @@ async function show(id) {
     // starts anything. See tests/test_video.py, which pins this order.
     await clip(found.video, found.start || 0);
   } else if (found.image) {
+    // A page of a manual goes edge to edge and scrolls (panel.css). The class before the picture,
+    // for the reason the stage's own class goes first above.
+    if (found.page) document.body.classList.add('page');
     await shot(found.image);
   }
   // Tell the kiosk it may uncover the panel. Sent even when there was no picture in the payload:
@@ -394,7 +414,7 @@ async function show(id) {
 // ever want this memory back.
 function drop() {
   window.__drawing(false);
-  document.body.classList.remove('photo', 'paper', 'sketching', 'clipping');
+  document.body.classList.remove('photo', 'paper', 'sketching', 'clipping', 'page');
   // Paused before it is dropped. Detaching the element is enough in practice, but "in practice"
   // is doing a lot of work there and the failure would be a voice still talking from a screen
   // showing something else.

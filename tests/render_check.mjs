@@ -11,7 +11,8 @@
  * scratchpad the model wrote reaches it as an <iframe> with a document of its own, laid out by that
  * document's own stylesheet and letting a press through to the stage behind it; the page posts
  * back so the kiosk may uncover; every one of them puts itself away on a press anywhere; and what
- * the model wrote cannot run a script or reach the network.
+ * the model wrote cannot run a script or reach the network. A page of a manual is the one
+ * exception to the press: it fills the width, scrolls under a drag, and goes away on a tap.
  *
  * Not run by pytest, deliberately: pyproject says the suite must run anywhere in a second, and
  * this needs Chromium and a server. Run it when you touch the template, diagram.js or the CSS.
@@ -291,6 +292,141 @@ if (cleared.drawing || cleared.stage) {
 } else {
   console.log('ok   withdraw: the stage went back to the dashboard');
 }
+
+// ---- a page of a manual ----
+//
+// The one picture that is not contained. A portrait page inside the bezel was a 315 px strip of
+// small print between two black bars, so a page (`page: true` in the offer, see
+// cyclops/panel.py) goes the full width, opens at the top, scrolls under a finger - which on the
+// panel arrives as a mouse, hence real mouse drags here - and is put away by a tap rather than
+// a press. Every other picture keeps the press, and the last case below holds it to that.
+//
+// The page is drawn here on a canvas, A4-shaped at what imagine.for_page sends (800x1132), so the
+// check still needs no fixture. PAGE_JPEG=<a real render> swaps in a real one for screenshots.
+const PAGE_URL = process.env.PAGE_JPEG
+  ? 'data:image/jpeg;base64,' + (await import('node:fs')).readFileSync(process.env.PAGE_JPEG)
+      .toString('base64')
+  : await page.evaluate(() => {
+    const sheet = document.createElement('canvas');
+    sheet.width = 800;
+    sheet.height = 1132;
+    const pen = sheet.getContext('2d');
+    pen.fillStyle = '#fff';
+    pen.fillRect(0, 0, 800, 1132);
+    pen.fillStyle = '#111';
+    pen.font = 'bold 40px sans-serif';
+    pen.fillText('TOP OF THE PAGE', 60, 80);
+    pen.font = '16px sans-serif';
+    for (let y = 130; y < 1060; y += 26) {
+      pen.fillText(`Line ${(y - 104) / 26}: tighten the M6 bolts to 10 Nm in a cross pattern.`, 60, y);
+    }
+    pen.font = 'bold 40px sans-serif';
+    pen.fillText('BOTTOM OF THE PAGE', 60, 1110);
+    return sheet.toDataURL('image/jpeg', 0.85);
+  });
+
+const closes = [];
+const onClose = (r) => { if (r.url().endsWith('/close') && r.method() === 'POST') closes.push(r); };
+page.on('request', onClose);
+const stageNow = () => page.evaluate(() => {
+  const st = document.getElementById('stage');
+  const img = st.querySelector('img.shot');
+  const box = img ? img.getBoundingClientRect() : null;
+  return {
+    page: document.body.classList.contains('page'),
+    drawing: document.body.classList.contains('drawing'),
+    width: box ? Math.round(box.width) : 0,
+    left: box ? Math.round(box.left) : null,
+    top: box ? Math.round(box.top) : null,
+    scrollTop: Math.round(st.scrollTop),
+    room: st.scrollHeight - st.clientHeight,
+  };
+});
+const drag = async (from, to) => {
+  await page.mouse.move(400, from);
+  await page.mouse.down();
+  await page.mouse.move(400, to, { steps: 12 });
+  await page.mouse.up();
+};
+
+{
+  writeFileSync(PENDING, JSON.stringify({ id: 'page-' + Date.now(), title: 'p0042',
+    image: PAGE_URL, page: true }));
+  const bad = [];
+  await page.waitForSelector('body.drawing', { timeout: 20000 });
+  await page.waitForTimeout(800);
+  await page.screenshot({ path: join(SHOTS, 'page.png') });
+  const opened = await stageNow();
+  if (!opened.page) bad.push('no body.page, so the page is fitted like a photograph');
+  if (opened.width !== 800 || opened.left !== 0) {
+    bad.push(`the page is ${opened.width} px wide at x=${opened.left}, wanted 800 at 0`);
+  }
+  if (opened.top !== 0 || opened.scrollTop !== 0) {
+    bad.push(`the page opens at top=${opened.top}, scrollTop=${opened.scrollTop}, wanted 0 and 0`);
+  }
+  if (opened.room <= 0) bad.push('the page does not scroll; a portrait page is taller than 480');
+
+  // One 200 px drag, read the moment the finger lifts - before any glide - and then again once it
+  // has settled, which is what a flick does to a page.
+  await drag(400, 200);
+  const lifted = (await stageNow()).scrollTop;
+  await page.waitForTimeout(1500);
+  const settled = (await stageNow()).scrollTop;
+  if (lifted <= 0) bad.push('a 200 px drag did not move the page');
+  // ...and on until there is no more page. Slow drags as well as quick ones would be nice, but a
+  // page that can be reached the bottom of at all is the claim.
+  let bottom = await stageNow();
+  for (let i = 0; i < 12 && bottom.scrollTop < bottom.room - 1; i++) {
+    await drag(400, 200);
+    await page.waitForTimeout(400);
+    bottom = await stageNow();
+  }
+  await page.screenshot({ path: join(SHOTS, 'page-bottom.png') });
+  if (bottom.scrollTop < bottom.room - 1) {
+    bad.push(`drags stopped at ${bottom.scrollTop} of ${bottom.room}; the bottom is out of reach`);
+  }
+  if (!bottom.drawing || !bottom.page) bad.push('dragging put the page away');
+  if (closes.length) bad.push(`dragging POSTed /close ${closes.length} time(s)`);
+
+  // A tap - press and lift in one place - is the way out.
+  await page.mouse.click(400, 240);
+  await page.waitForTimeout(500);
+  if (closes.length !== 1) bad.push(`a tap POSTed /close ${closes.length} time(s), wanted 1`);
+
+  if (bad.length) { failed++; console.log('FAIL page:', bad.join('; ')); }
+  else {
+    console.log(`ok   page: 800 px edge to edge from the top; a 200 px drag moved it ${lifted} px ` +
+                `(${settled} after the glide), ${bottom.room} px reached, a tap closed it`);
+  }
+}
+
+// ...and a photograph behind it is exactly what it was: contained, and away on the press - the
+// POST goes before the finger lifts.
+{
+  closes.length = 0;
+  writeFileSync(PENDING, JSON.stringify({ id: 'photo-after-page-' + Date.now(),
+    title: '14-32-40_you', image: 'data:image/jpeg;base64,' + JPEG_B64 }));
+  await page.waitForFunction(() => document.body.classList.contains('drawing') &&
+    !document.body.classList.contains('page') &&
+    document.querySelector('#stage img.shot')?.naturalWidth === 200, null, { timeout: 20000 });
+  const bad = [];
+  const got = await stageNow();
+  const fit = await page.evaluate(() =>
+    getComputedStyle(document.querySelector('#stage img.shot')).objectFit);
+  if (fit !== 'contain') bad.push(`the photo is object-fit ${fit}, wanted contain`);
+  if (got.room > 0) bad.push('the stage scrolls under a photograph');
+  await page.mouse.move(400, 240);
+  await page.mouse.down();
+  await page.waitForTimeout(400);
+  if (closes.length !== 1) bad.push(`a press POSTed /close ${closes.length} time(s), wanted 1`);
+  await page.mouse.up();
+  if (bad.length) { failed++; console.log('FAIL photo press:', bad.join('; ')); }
+  else console.log('ok   photo press: contained, and put away on the press as before');
+}
+page.off('request', onClose);
+try { unlinkSync(PENDING); } catch { /* already gone */ }
+try { unlinkSync(CLOSE_FLAG); } catch { /* already gone */ }
+await page.waitForTimeout(1200);
 
 // ---- companion mode ----
 //

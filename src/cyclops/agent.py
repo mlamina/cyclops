@@ -3019,8 +3019,9 @@ class VoiceAgent:
                 "others": others,
             }
 
-        shown, seen = await asyncio.to_thread(self._show_found, Path(best.item.path))
-        if best.item.kind == "page":
+        page = best.item.kind == "page"
+        shown, seen = await asyncio.to_thread(self._show_found, Path(best.item.path), page=page)
+        if page:
             # The panel keeps the downscaled copy - it is 800x480 and cannot use more - but the
             # model gets the full render. `_show_found` hands back one copy for both jobs, which
             # is right for a photograph and wrong for a page of small print: `imagine.for_panel`
@@ -3069,7 +3070,7 @@ class VoiceAgent:
         self._found_image = seen  # picked up by _run_recall once the tool output is away
         return result
 
-    def _show_found(self, path: Path) -> tuple[bool, bytes | None]:
+    def _show_found(self, path: Path, *, page: bool = False) -> tuple[bool, bytes | None]:
         """Put a picture already on the card onto the panel, and hand back what was shown.
 
         The bytes come back for the same reason :meth:`_keep_and_show_edit` returns them: the
@@ -3081,6 +3082,9 @@ class VoiceAgent:
         safe for a photo and wrong for a small PNG - which is what a picture dropped into a project
         folder tends to be - so anything not already a JPEG is re-encoded first. A mislabelled data
         URL renders as nothing at all, silently, on the one screen nobody can see from here.
+
+        A manual ``page`` goes the full width of the panel instead (``imagine.for_page``), and the
+        panel is told it is a page so that it lays it edge to edge and lets a finger scroll it.
         """
         try:
             blob = path.read_bytes()
@@ -3089,8 +3093,8 @@ class VoiceAgent:
             return False, None
         if path.suffix.lower() not in {".jpg", ".jpeg"}:
             blob = imagine.as_jpeg(blob)
-        small = imagine.for_panel(blob)
-        return bool(panel.offer_image(small, path.stem) and panel.show()), small
+        small = imagine.for_page(blob) if page else imagine.for_panel(blob)
+        return bool(panel.offer_image(small, path.stem, page=page) and panel.show()), small
 
     async def add_found(self, jpeg: bytes, name: str = "", *, kind: str = "") -> None:
         """Show the model the picture it just put on the panel. No response is asked for here.
