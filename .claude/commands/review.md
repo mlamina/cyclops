@@ -6,13 +6,13 @@ argument-hint: <job number>
 Job `$ARGUMENTS` is built. Show Marco the result.
 
 Read the job file's **Done when** and **Built** sections, and **read the PNGs under
-`factory/html/NNN/` so they appear here** — that saves him a switch. Then give him
-`factory/html/NNN.html` for the full page.
+`factory/html/NNN/` so they appear here** — that saves him a switch. Then open the full page
+in his browser without asking: `open factory/html/NNN.html`.
 
 Say, in this order:
 1. What it does now — one or two lines, in outcome terms.
 2. The checklist: what's met, what isn't, and which lines were only ever his to judge.
-3. The page path.
+3. That the page is open in the browser, and its path.
 
 **Never show or summarise the code, the diff, the files touched or the approach.** If a criterion
 is unmet, say so plainly rather than talking around it.
