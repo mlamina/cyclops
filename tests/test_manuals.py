@@ -10,7 +10,9 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+from types import SimpleNamespace
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -278,3 +280,111 @@ def test_a_line_that_runs_long_ends_on_a_whole_topic(manual):
     manual.aliases = []
     assert not manual.line().rstrip().endswith((",", "—", "-"))
     assert len(manual.line()) <= manuals.MAX_LINE_CHARS
+
+
+# ------------------------------------------------------------------ what the agent does with a page
+
+LOWER_NOTES = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
+BENCH_PHOTO = np.array([[0.0, 0.0, 1.0]], dtype=np.float32)
+
+
+def _jpeg(path) -> str:
+    Image.new("RGB", (40, 56), "white").save(path, "JPEG")
+    return str(path)
+
+
+class _Client:
+    def __init__(self, **_):
+        pass
+
+    async def close(self) -> None:
+        pass
+
+
+@pytest.fixture
+def found(tmp_path, monkeypatch):
+    """A voice agent over two manual pages that both match a question, and one photo.
+
+    Page 12 is the better match and page 18 the next one, so a second look at the same question
+    has somewhere to go. Nothing reaches the network or the real panel.
+    """
+    from cyclops import agent, panel, session
+
+    def item(name: str, kind: str) -> recall.Item:
+        return recall.Item(kind=kind, path=_jpeg(tmp_path / f"{name}.jpg"), scope="manual:oxi",
+                           title=name, text="", mtime_ns=0, size=0)
+
+    index = recall.Index(
+        items=[item("0012", "page"), item("0018", "page"), item("bench", "photo")],
+        vectors=np.array([[1.0, 0.0, 0.0], [0.8, 0.6, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32),
+    )
+
+    async def embed(texts, client):
+        return BENCH_PHOTO if "photo" in texts[0] else LOWER_NOTES
+
+    offered: list[str] = []
+    sent: list[dict] = []
+
+    async def send(item):
+        sent.append(item)
+
+    async def nothing(*_):
+        pass
+
+    monkeypatch.setattr(recall, "load", lambda: index)
+    monkeypatch.setattr(recall, "embed", embed)
+    monkeypatch.setattr(agent, "AsyncOpenAI", _Client)
+    monkeypatch.setattr(agent.VoiceAgent, "_recall_scopes", lambda self, project: None)
+    monkeypatch.setattr(session, "note", lambda *a, **k: None)
+    monkeypatch.setattr(
+        panel, "offer_image", lambda jpeg, title, **k: offered.append(title) or True
+    )
+    monkeypatch.setattr(panel, "show", lambda: True)
+    one = agent.VoiceAgent(Settings(api_key="test-key"))
+    one._conn = object()  # connected, as far as add_found is concerned
+    monkeypatch.setattr(one, "_send_item", send)
+    monkeypatch.setattr(one, "_send_tool_output", nothing)
+    monkeypatch.setattr(one, "_request_response", nothing)
+    return one, offered, sent
+
+
+def _ask(query: str, **flags) -> SimpleNamespace:
+    arguments = json.dumps({"query": query, **flags})
+    return SimpleNamespace(call_id="c1", name="recall", arguments=arguments)
+
+
+def _pictures(sent: list[dict]) -> int:
+    return sum(any(part["type"] == "input_image" for part in item["content"]) for item in sent)
+
+
+def test_a_page_already_read_is_skipped_until_they_speak_again(found):
+    one, _, _ = found
+
+    async def look_three_times_then_hear_them():
+        looks = [await one._recall("the notes below the grid", "") for _ in range(3)]
+        await one._on_user_speech_started()
+        return [*looks, await one._recall("the notes below the grid", "")]
+
+    first, second, third, fresh = asyncio.run(look_three_times_then_hear_them())
+    assert (first["title"], second["title"]) == ("0012", "0018")
+    assert third["hits"] == 0, "nothing new was left, so nothing is handed back"
+    assert fresh["title"] == "0012", "their next words make the first page fair game again"
+
+
+def test_a_page_goes_up_only_when_asked_and_a_photo_always_does(found):
+    one, offered, sent = found
+
+    async def read_then_show_then_photo():
+        await one._run_recall(_ask("the notes below the grid"))
+        steps = [(list(offered), _pictures(sent))]
+        await one._on_user_speech_started()
+        await one._run_recall(_ask("the notes below the grid", show=True))
+        steps.append((list(offered), _pictures(sent)))
+        await one._run_recall(_ask("that photo of the bench"))
+        steps.append((list(offered), _pictures(sent)))
+        return steps
+
+    read, shown, photo = asyncio.run(read_then_show_then_photo())
+    assert read == ([], 1), "read without show: the model has the page and the panel does not"
+    assert shown == (["0012"], 2), "read with show: both"
+    assert photo == (["0012", "bench"], 3), "a photo goes up without being asked"
