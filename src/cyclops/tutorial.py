@@ -28,6 +28,11 @@ MAX_STEP_CHARS = 60  # a label is read on one row of the terminal; the glass eli
 NONE_RUNNING = "No tutorial is running. If they want one, call start_tutorial with the steps."
 FINISHED = "That was the last step. Say so in a few words. The tutorial is over."
 ENDED = "The tutorial is off their screen. Say so in a few words, then carry on."
+# Said with every step, not only the first: "forget it, stop this" comes four steps after the
+# brief, and the note the model acts on is the last one it read.
+STOP = (
+    "The walkthrough stays up until you call end_tutorial. Call it as soon as they want to stop."
+)
 
 
 @dataclass(frozen=True)
@@ -93,13 +98,11 @@ def note(tutorial: Tutorial) -> str:
     up = f"Step {tutorial.number} of {tutorial.total} is on their screen"
     if tutorial.index == 0:
         return (
-            f"{up}. Go straight into it, no preamble: one or two sentences, and only what the "
+            f"{up}. Your first words are the step itself: one or two sentences, and only what the "
             "screen does not already say. Then stop talking and wait: they will tell you when it "
             "is done, and only then call advance_tutorial. A question mid-step gets an answer and "
             "the step stays where it is. Do not read the steps out, and do not say how many there "
-            "are unless they ask. The steps stay on their screen until you call end_tutorial, so "
-            "call it as soon as they want to stop."
+            f"are unless they ask. {STOP}"
         )
-    if tutorial.number == tutorial.total:
-        return f"{up}, the last one. Go straight into it, then wait."
-    return f"{up}. Go straight into it, then wait."
+    last = ", the last one" if tutorial.number == tutorial.total else ""
+    return f"{up}{last}. Your first words are the step itself; then wait. {STOP}"
