@@ -184,7 +184,7 @@ COVER_SLICES = 20  # how many strips a blade's shading is laid down in, ACROSS t
 # Each strip runs the length of the blade and takes one value, which is what a brushed surface
 # under one lamp actually does - so the bright band lies along the blade and slides down it as
 # the set turns. Eighteen is where the steps stop reading as steps at his size: a blade is a
-# sixth of the turn, so a strip is three and a bit degrees, and at r88 that is under two panel
+# sixth of the turn, so a strip is three and a bit degrees, and at r66 that is under one and a half
 # pixels at the rim. A real gradient here would be a numpy pass over a quarter of a million
 # pixels a frame, which is the trade `leaves` made and lost.
 COVER_ARC = 1.4  # how long a step along a seam is, in thin lines. A seam is a polyline sampled
@@ -464,9 +464,9 @@ POINT = "point"  # whatever he has just marked on the picture (:mod:`cyclops.poi
 # day the bracket moves.
 LANDMARKS: dict[str, tuple[float, float]] = {
     AHEAD: (0.0, 0.0),
-    FRAME: (0.911, -0.413),   # up and to the right of him, at 800x480
-    WORDS: (0.952, 0.305),    # down and to the right, at the head of his own line
-    DIALS: (0.644, -0.765),   # steeply up, at the pod
+    FRAME: (0.898, -0.439),   # up and to the right of him, at 800x480
+    WORDS: (0.974, 0.224),    # down and to the right, at the head of his own line
+    DIALS: (0.648, -0.762),   # steeply up, at the pod
     WORK: (-0.55, 0.84),      # down and to his left, off the panel: the bench
     AWAY: (-0.80, -0.60),     # up and to his left, at nothing at all
 }
