@@ -1,17 +1,17 @@
-"""Finding the moments of a session worth watching, and the several ways that can go wrong.
+"""One session into one video, with the silence played fast - and the ways that can go wrong.
 
-Imports ``cyclops.cut``, which is stdlib plus ``card``, ``library`` and ``stats`` - so this suite
-runs anywhere in a second and never opens a socket. The two things it deliberately does not test
-are the model call and ffmpeg itself: one needs a key and the other needs a Pi, and both are
-covered by running ``cyclops-index --once`` against a real session on the box.
-
-What is here instead is everything between them - which is where the bugs would be, because it is
-all arithmetic about time.
+Almost all of it is arithmetic about time, tested with no subprocess. One test at the end renders
+a real, short, synthetic recording with the system ffmpeg, because "the file is as long as the
+numbers say" is the one claim nothing but ffmpeg can answer. It is skipped where there is none.
 """
 
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+
+import pytest
 
 from cyclops import card, cut
 from cyclops.config import Settings
@@ -24,11 +24,7 @@ def make(root, name, *, log=None, summary="# S\n\nA session.\n", page="done", vi
     """One session folder, in whatever state of repair the test needs.
 
     ``plan`` is a dict written to ``clips/plan.json``; ``made`` is the clip numbers that already
-    have a file, which is the only thing separating "owed" from "done".
-
-    A summary by default, because that is what :func:`cyclops.cut.settled` waits for now - a
-    folder without one is one ``cyclops.after`` may be about to rename. Pass ``summary=None`` to
-    get that folder.
+    have a file. A summary by default, because that is what :func:`cyclops.cut.settled` waits for.
     """
     folder = root / name
     folder.mkdir(parents=True)
@@ -49,44 +45,25 @@ def make(root, name, *, log=None, summary="# S\n\nA session.\n", page="done", vi
     return folder
 
 
-STORY = [[12.0, 20.0], [30.0, 38.0], [40.0, 48.0]]  # three beats, 24 s, over STORY_LOW_S
-BEATS_OF = [
-    {"kind": "setup", "what": "asks", "saw": ""},
-    {"kind": "turn", "what": "it lands", "saw": "drawing: a wiring diagram"},
-    {"kind": "payoff", "what": "likes it", "saw": "drawing: a wiring diagram"},
-]
+WHOLE = [[11.85, 20.25, 1.0], [20.25, 58.85, 8.0], [58.85, 66.25, 1.0]]
 
 
 def a_plan(**over):
-    """``clips/plan.json`` as a dict, with one three-beat story unless told otherwise."""
+    """``clips/plan.json`` as a dict, with the one video unless told otherwise."""
     body = {
         "decided": "2026-09-01T18:00:00+0200",
-        "by": "model",
-        "tier": 3,
         "seconds": 90.0,
         "why": "",
         "speech": [],
-        "clips": [
-            {
-                "title": "A bolt",
-                "story": "He asks for the torque and it goes up on the panel.",
-                "ranges": [list(r) for r in STORY],
-                "beats": BEATS_OF,
-                "retelling": "He wanted the torque. It appeared. He said that was the one.",
-                "why": "",
-            }
-        ],
+        "clips": [{"title": "A bolt", "ranges": WHOLE, "why": ""}],
         "source": {},
     }
     return body | over
 
 
 def clips_of(*specs):
-    """``[{title, ranges, beats, why}]`` from ``(title, ranges, why)`` triples."""
-    return [
-        {"title": t, "ranges": [list(r) for r in rs], "beats": BEATS_OF[: len(rs)], "why": w}
-        for t, rs, w in specs
-    ]
+    """``[{title, ranges, why}]`` from ``(title, ranges, why)`` triples."""
+    return [{"title": t, "ranges": [list(r) for r in rs], "why": w} for t, rs, w in specs]
 
 
 # Long enough in words and seconds to clear worth_asking, because almost every test below is
@@ -116,11 +93,16 @@ def records_of(log=LOG):
     return [json.loads(line) for line in log.strip().splitlines()]
 
 
-# ------------------------------------------------------------------ what is worth asking about
+def calm(monkeypatch):
+    """No live session and a cool board, so a sweep gets as far as the work."""
+    monkeypatch.setattr(cut.card, "locked", lambda f: False)
+    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
 
 
-def test_a_session_nobody_said_anything_in_is_never_asked_about() -> None:
-    """Twenty-six of the ninety-eight sessions on the card are this, and each is a free no."""
+# ------------------------------------------------------------------ is it worth a video
+
+
+def test_a_session_nobody_said_anything_in_is_never_clipped() -> None:
     assert cut.worth_asking([{"t": 4.0, "type": "end", "seconds": 4.0}])
 
 
@@ -132,11 +114,7 @@ def test_a_mic_storm_is_not_a_conversation() -> None:
     assert cut.worth_asking(storm)
 
 
-def test_a_real_conversation_is_worth_asking_about() -> None:
-    assert cut.worth_asking(records_of()) == ""
-
-
-def test_a_long_session_of_almost_no_words_is_not_worth_asking_about() -> None:
+def test_a_long_session_of_almost_no_words_is_not_worth_a_video() -> None:
     """Two turns of "yeah" over three minutes passes every count but the character one."""
     thin = [
         {"t": 10.0, "type": "you", "text": "yeah", "dur": 1.0},
@@ -148,169 +126,67 @@ def test_a_long_session_of_almost_no_words_is_not_worth_asking_about() -> None:
     assert cut.worth_asking(thin)
 
 
-def test_a_session_where_the_picture_never_changed_holds_no_story() -> None:
-    """The newest and biggest clause: no TURN is possible, so no story is, so nobody is asked.
-
-    Twenty of the eighty-seven sessions on the card are this - a question answered out of memory -
-    and each one used to buy a model call to be told there was nothing in it.
-    """
+def test_a_conversation_gets_a_video_whether_or_not_the_picture_changed() -> None:
+    """The story needed a new picture to hold its turn. There is no story any more."""
     talk = records_of()
-    assert cut.worth_asking([r for r in talk if r.get("type") != "photo"])
+    assert cut.worth_asking(talk) == ""
+    assert cut.worth_asking([r for r in talk if r.get("type") != "photo"]) == ""
 
 
-def test_a_drawing_on_the_panel_is_a_new_picture() -> None:
-    """``sketch`` replaced ``screen`` on 2026-09-11 and nothing here had noticed."""
-    assert cut.made_a_picture({"type": "sketch", "code": "Heading('x')"})
-    assert cut.made_a_picture({"type": "screen", "html": "<h1>25 Nm</h1>"})
-    assert cut.made_a_picture({"type": "photo", "file": "photos/a.jpg"})
+# ------------------------------------------------------------------ what plays how fast
 
 
-def test_an_old_picture_out_of_storage_is_not_a_new_one() -> None:
-    """A story built on a recall is a story about the filing cabinet, and it repeats on the reel."""
-    assert not cut.made_a_picture({"type": "recall", "title": "the caliper"})
-    assert not cut.made_a_picture({"type": "search", "query": "torque"})
-    assert not cut.made_a_picture({"type": "photo"})  # a photo record with no file: nothing landed
+def speeds(found):
+    return [speed for _, _, speed in found]
 
 
-def test_a_drawing_reaches_the_model_with_what_is_in_it() -> None:
-    """Every session after 2026-09-11 used to reach the model with its drawings missing."""
-    shown = cut.timeline([{"t": 13.5, "type": "sketch", "code": "Metric(value='25 Nm')"}], {})
-    assert "25 Nm" in shown
+def test_nothing_between_the_first_word_and_the_last_is_dropped() -> None:
+    """Back to back from the first audible moment to the last: no holes, no overlaps."""
+    speech = [(3.0, 5.2), (5.9, 8.0), (12.0, 15.5), (15.7, 16.0), (40.0, 41.3), (41.8, 60.0)]
+    found = cut.segments(speech, 90.0)
+    assert found[0][0] <= speech[0][0] and found[-1][1] >= speech[-1][1]
+    assert found[0][0] > 0.0 and found[-1][1] < 90.0, "the empty head and tail are trimmed"
+    assert all(a < b for a, b, _ in found)
+    assert all(found[n][1] == found[n + 1][0] for n in range(len(found) - 1))
 
 
-# ------------------------------------------------------------------ the shape of a story
-
-RECS = [
-    {"t": 10.0, "type": "you", "text": "draw me the wiring for that", "dur": 3.0},
-    {"t": 16.0, "type": "cyclops", "text": "here it is"},
-    {"t": 40.0, "type": "sketch", "code": "x"},
-    {"t": 50.0, "type": "you", "text": "that is the one", "dur": 2.0},
-]
-BEATS = ((11.0, 14.0), (40.0, 44.0), (50.0, 53.0))
+def test_a_short_hole_between_two_spans_stays_one_unbroken_1x_segment() -> None:
+    assert speeds(cut.segments([(10.0, 12.0), (12.5, 14.0)], 90.0)) == [1.0]
 
 
-def test_a_story_is_three_beats_in_session_order() -> None:
-    found = cut.shape(BEATS, (), 120.0, RECS)
-    assert len(found) == 3
-    assert list(found) == sorted(found)
-    assert all(found[n][1] <= found[n + 1][0] for n in range(2))
+def test_a_long_hole_between_two_spans_plays_fast() -> None:
+    assert speeds(cut.segments([(10.0, 12.0), (15.0, 17.0)], 90.0)) == [1.0, cut.SPEED, 1.0]
 
 
-def test_a_clip_opens_on_the_persons_own_line() -> None:
-    """The first thing anybody notices, and what the crew is routinely a second or two out on."""
-    assert cut.shape(BEATS, (), 120.0, RECS)[0][0] == 10.0
+def test_every_audible_span_is_padded_before_the_gaps_are_measured() -> None:
+    """No word onset is clipped: the gap starts after LEAD_OUT_S and ends LEAD_IN_S early."""
+    assert cut.tighten([(10.0, 12.0), (20.0, 22.0)], 90.0) == [
+        [10.0 - cut.LEAD_IN_S, 12.0 + cut.LEAD_OUT_S],
+        [20.0 - cut.LEAD_IN_S, 22.0 + cut.LEAD_OUT_S],
+    ]
 
 
-def test_the_opening_is_never_pulled_onto_cyclops_talking() -> None:
-    """Only a ``you`` turn, and only backwards. 16.0 is Cyclops answering, 2.5 s away."""
-    assert cut.shape(((17.0, 20.0), (40.0, 44.0), (50.0, 53.0)), (), 120.0, RECS)[0][0] == 17.0
+def test_padding_that_makes_two_spans_touch_merges_them() -> None:
+    hole = cut.LEAD_IN_S + cut.LEAD_OUT_S - 0.05
+    assert len(cut.tighten([(10.0, 12.0), (12.0 + hole, 14.0)], 90.0)) == 1
 
 
-def test_no_shot_in_a_clip_is_shorter_than_a_shot() -> None:
-    """MIN_KEEP_S was 0.6 s, which is what produced twelve seconds of twenty splices."""
-    found = cut.shape(((11.0, 12.0), (40.0, 41.0), (50.0, 50.8)), (), 120.0, RECS)
-    assert found and all(end - start >= cut.MIN_SHOT_S - 1e-9 for start, end in found)
-
-
-def test_the_turn_holds_its_picture_long_enough_to_be_seen() -> None:
-    """A viewer who does not see what arrived has watched nothing at all."""
-    found = cut.shape(((11.0, 14.0), (40.0, 41.0), (50.0, 53.0)), (), 120.0, RECS)
-    assert found[1][1] - found[1][0] >= cut.TURN_HOLD_S - 1e-9
-
-
-def test_a_clip_runs_between_fifteen_and_forty_five_seconds() -> None:
-    short = cut.shape(((11.0, 13.0), (40.0, 44.0), (50.0, 52.0)), (), 120.0, RECS)
-    assert cut.STORY_LOW_S - 0.5 <= sum(b - a for a, b in short) <= cut.STORY_CAP_S
-    long = cut.shape(((10.0, 30.0), (31.0, 55.0), (56.0, 68.0)), (), 200.0, RECS)
-    assert sum(b - a for a, b in long) <= cut.STORY_CAP_S
-
-
-def test_a_clip_never_lands_a_frame_short_of_the_floor() -> None:
-    """Six boundaries rounded to the nearest frame put two clips on the card at 14.93 s."""
-    for beats in (
-        ((11.0, 13.4), (40.0, 44.3), (50.0, 52.7)),
-        ((10.3, 12.77), (30.31, 34.4), (50.09, 52.9)),
-    ):
-        found = cut.shape(beats, (), 120.0, RECS)
-        assert sum(b - a for a, b in found) >= cut.STORY_LOW_S
-
-
-def test_a_beat_with_nowhere_to_grow_still_grows_as_far_as_it_can() -> None:
-    """Best-effort, not all-or-nothing: a payoff against the end still stretches."""
-    found = cut.shape(((11.0, 14.0), (40.0, 44.0), (50.0, 53.0)), (), 56.0, RECS)
-    assert found[-1][1] > 53.0
-    assert sum(b - a for a, b in found) >= cut.STORY_LOW_S
-
-
-def test_beats_on_top_of_each_other_are_not_a_story() -> None:
-    assert cut.shape(((40.0, 44.0), (11.0, 14.0), (50.0, 53.0)), (), 120.0, RECS) == ()
-    assert cut.shape(((11.0, 45.0), (40.0, 44.0), (50.0, 53.0)), (), 120.0, RECS) == ()
-
-
-def test_a_story_reaching_across_more_of_the_session_than_a_story_can_is_dropped() -> None:
-    assert cut.shape(((11.0, 14.0), (40.0, 44.0), (150.0, 155.0)), (), 300.0, RECS) == ()
-
-
-# ------------------------------------------------------------------ the ranges
-
-
-def test_a_range_that_runs_past_the_end_of_the_recording_is_clamped_to_it() -> None:
-    assert cut.sanitize([[80.0, 500.0]], 90.0)[-1][1] == 90.0
-
-
-def test_an_overlap_is_resolved_without_two_beats_becoming_one() -> None:
-    """The version before this merged anything closer than a quarter second. A range is a beat now.
-
-    Merging would silently turn three shots into two, and the beat labels beside them - which say
-    which one holds the picture - would then describe the wrong seconds.
-    """
-    found = cut.sanitize([[10.0, 30.0], [25.0, 40.0]], 120.0)
-    assert len(found) == 2
-    assert found[0][1] <= found[1][0]
-
-
-def test_two_beats_that_touch_stay_two_beats() -> None:
-    found = cut.sanitize([[10.0, 20.0], [20.0, 30.0]], 120.0)
-    assert len(found) == 2
-
-
-def test_ranges_come_back_sorted_however_they_were_ordered() -> None:
-    found = cut.sanitize([[40.0, 50.0], [10.0, 30.0]], 120.0)
-    assert list(found) == sorted(found)
-    assert found[0][0] < found[1][0]
-
-
-def test_a_range_written_backwards_still_meant_a_range() -> None:
-    found = cut.sanitize([[30.0, 10.0]], 120.0)
-    assert found and found[0][0] < found[0][1]
-
-
-def test_a_range_too_short_to_be_a_shot_is_dropped() -> None:
-    assert cut.sanitize([[10.0, 10.1]], 120.0) == ()
-
-
-def test_a_clip_never_spans_more_of_the_session_than_one_story() -> None:
-    """WINDOW_S is the only enforceable definition of "one story" there is."""
-    found = cut.sanitize([[10.0, 20.0], [200.0, 210.0]], 300.0)
-    assert found and found[-1][1] - found[0][0] <= cut.WINDOW_S
-
-
-def test_a_boolean_is_not_a_number_however_much_python_thinks_it_is() -> None:
-    assert cut.sanitize([[True, 30.0]], 120.0) == ()
+def test_padding_never_reaches_outside_the_recording() -> None:
+    assert cut.tighten([(0.05, 2.0), (88.0, 89.95)], 90.0) == [[0.0, 2.25], [87.85, 90.0]]
 
 
 def test_every_boundary_lands_on_a_frame() -> None:
-    for start, end in cut.sanitize([[10.31, 30.77]], 120.0):
+    for start, end, _ in cut.segments([(10.31, 12.77), (20.02, 30.4)], 90.0):
         assert abs(start * cut.FPS - round(start * cut.FPS)) < 1e-9
         assert abs(end * cut.FPS - round(end * cut.FPS)) < 1e-9
 
 
-def test_nothing_usable_is_an_empty_answer_and_not_a_bad_cut() -> None:
-    assert cut.sanitize([], 90.0) == ()
-    assert cut.sanitize([[10.0, 30.0]], 0.0) == ()
+def test_a_recording_nobody_can_be_heard_in_has_no_segments() -> None:
+    assert cut.segments((), 90.0) == ()
 
 
-# ------------------------------------------------------------------ trimming the edges only
+# ------------------------------------------------------------------ listening
+
 
 SILENCE = """\
 [silencedetect @ 0x1] silence_start: 0
@@ -328,79 +204,29 @@ def test_a_recording_with_no_silence_in_it_is_audible_throughout() -> None:
     assert cut.read_silence("", 40.0) == ((0.0, 40.0),)
 
 
-def test_a_beat_is_trimmed_at_its_edges_and_never_split_at_a_hole() -> None:
-    """The other half of the repair. This used to come back as two shots with the pause removed.
-
-    The pause it removed was somebody looking at a picture that had just arrived, which is the
-    shot the clip exists for.
-    """
-    assert cut.tighten([(10.0, 30.0)], [(10.0, 15.0), (25.0, 30.0)]) == ((10.0, 30.0),)
-
-
-def test_the_dead_air_at_the_ends_of_a_beat_still_goes() -> None:
-    assert cut.tighten([(10.0, 30.0)], [(14.0, 22.0)]) == ((14.0, 22.0),)
-
-
-def test_no_silence_measured_means_the_beats_pass_through_untouched() -> None:
-    """The whole "a quality multiplier, not a dependency" claim, in one assertion."""
-    assert cut.tighten([(10.0, 30.0)], ()) == ((10.0, 30.0),)
-
-
-def test_tightening_keeps_a_silent_hold_on_a_picture() -> None:
-    """A beat with nobody talking in it is the payoff shot, not dead air, and it survives whole."""
-    assert cut.tighten([(40.0, 48.0)], [(10.0, 20.0)]) == ((40.0, 48.0),)
-    # Nobody speaks over the drawing at all, and the beat still opens where the crew put it.
-    turn = cut.shape(BEATS, [(9.0, 14.5), (50.0, 53.5)], 120.0, RECS)[1]
-    assert turn[0] == 40.0 and turn[1] - turn[0] >= cut.TURN_HOLD_S
-
-
-def test_a_boundary_near_one_of_the_persons_turns_is_pulled_onto_it() -> None:
-    assert cut.opens_on_a_person(12.0, RECS) == 10.0
-
-
-def test_a_boundary_far_from_any_turn_is_left_alone() -> None:
-    assert cut.opens_on_a_person(80.0, RECS) == 80.0
-
-
 # ------------------------------------------------------------------ naming it
+
+
+def test_the_video_is_titled_with_the_summarys_first_line(tmp_path) -> None:
+    folder = make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY)
+    assert cut.naming(folder) == "How tight the bolt goes"
 
 
 def test_a_session_with_no_summary_still_gets_a_title(tmp_path) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08_bolt-torque", log=LOG, summary=None)
-    assert cut.naming(folder, "") == "Bolt torque"
-
-
-def test_an_empty_title_falls_back_to_the_one_the_list_would_show(tmp_path) -> None:
-    folder = make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY)
-    assert cut.naming(folder, "") == "How tight the bolt goes"
+    assert cut.naming(folder) == "Bolt torque"
 
 
 def test_a_folder_nobody_has_named_yet_still_gets_a_title(tmp_path) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, summary=None)
-    assert cut.naming(folder, "").startswith("Session ")
-
-
-def test_the_models_own_title_outranks_the_summary(tmp_path) -> None:
-    folder = make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY)
-    assert cut.naming(folder, "The pads were glazed") == "The pads were glazed"
-
-
-# ------------------------------------------------------------------ where a moment ends up
-
-
-def test_time_moves_with_the_cut() -> None:
-    ranges = ((10.0, 20.0), (50.0, 60.0))
-    assert cut.shift(10.0, ranges) == 0.0
-    assert cut.shift(15.0, ranges) == 5.0
-    assert cut.shift(50.0, ranges) == 10.0
-    assert cut.shift(30.0, ranges) is None, "a moment that was cut out is nowhere"
-
-
-def a_clip(ranges=tuple(tuple(r) for r in STORY), title="A bolt"):
-    return cut.Clip(title=title, ranges=ranges)
+    assert cut.naming(folder).startswith("Session ")
 
 
 # ------------------------------------------------------------------ the command
+
+
+def a_clip(ranges=tuple(tuple(r) for r in WHOLE), title="A bolt"):
+    return cut.Clip(title=title, ranges=ranges)
 
 
 def test_the_command_is_one_encode_of_one_input() -> None:
@@ -409,30 +235,10 @@ def test_the_command_is_one_encode_of_one_input() -> None:
     assert argv[-1] == "1.mp4.tmp"
 
 
-def test_the_command_seeks_to_the_clip_and_rebases_every_timestamp() -> None:
-    """Input seeking is what keeps the decode proportional to the clip, not to the session."""
-    argv = cut.clip_command(a_clip(((80.0, 92.0),)), "1.mp4.tmp")
-    assert argv[argv.index("-ss") + 1] == "80.000"
+def test_nothing_but_numbers_reaches_the_filtergraph() -> None:
+    argv = cut.clip_command(a_clip(title="a/b:c'd,[e]"), "1.mp4.tmp")
     graph = argv[argv.index("-filter_complex") + 1]
-    assert "trim=start=0.000:end=12.000" in graph
-
-
-def test_nothing_a_model_wrote_reaches_the_filtergraph() -> None:
-    """The burn is gone, so the escaping surface is gone with it rather than being guarded."""
-    graph = cut.clip_command(a_clip(title="a/b:c'd,[e]"), "1.mp4.tmp")[
-        cut.clip_command(a_clip(), "1.mp4.tmp").index("-filter_complex") + 1
-    ]
-    assert "subtitles=" not in graph
-    # [v0]/[vb] are the graph's own pad labels; what must not be in there is the title.
     assert "a/b" not in graph and "c'd" not in graph
-
-
-def test_the_command_folds_the_two_voices_together_and_pads_no_cards_on() -> None:
-    graph = cut.clip_command(a_clip(), "1.mp4.tmp")[
-        cut.clip_command(a_clip(), "1.mp4.tmp").index("-filter_complex") + 1
-    ]
-    assert "pan=stereo" in graph
-    assert "tpad" not in graph and "loudnorm" not in graph
 
 
 # ------------------------------------------------------------------ the state on the card
@@ -444,10 +250,10 @@ def test_a_session_nobody_has_looked_at_is_waiting(tmp_path) -> None:
 
 
 def test_three_clips_with_one_made_is_still_owed(tmp_path) -> None:
+    """Every plan now holds one; a hand edit may hold more, and the counts still add up."""
     folder = make(
         tmp_path, "2026-09-01_18-13-08", log=LOG,
-        plan=a_plan(clips=clips_of(("A", STORY, ""), ("B", STORY, ""),
-                                   ("C", ((50.0, 62.0),), ""))),
+        plan=a_plan(clips=clips_of(("A", WHOLE, ""), ("B", WHOLE, ""), ("C", WHOLE, ""))),
         made=(1,),
     )
     assert cut.progress(folder) == cut.Progress("asked", 1, 3, 0)
@@ -460,7 +266,6 @@ def test_a_scratch_file_beside_the_target_means_a_render_is_running(tmp_path) ->
 
 
 def test_a_plan_with_no_clips_in_it_is_a_finished_answer(tmp_path) -> None:
-    """"Looked at, nothing there" is the ordinary outcome and must never look like an error."""
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan(clips=[]))
     assert cut.state(folder) == "none"
     assert cut.work(tmp_path) is None, "and it is never offered again"
@@ -469,7 +274,7 @@ def test_a_plan_with_no_clips_in_it_is_a_finished_answer(tmp_path) -> None:
 def test_a_clip_carrying_a_reason_is_skipped_and_the_next_one_offered(tmp_path) -> None:
     folder = make(
         tmp_path, "2026-09-01_18-13-08", log=LOG,
-        plan=a_plan(clips=clips_of(("A", STORY, "ffmpeg said no"), ("B", STORY, ""))),
+        plan=a_plan(clips=clips_of(("A", WHOLE, "ffmpeg said no"), ("B", WHOLE, ""))),
     )
     assert cut.work(tmp_path) == cut.Work(folder, 2)
 
@@ -478,6 +283,13 @@ def test_a_zero_byte_clip_is_not_a_clip(tmp_path) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan())
     cut.clip_path(folder, 1).write_bytes(b"")
     assert cut.state(folder) == "asked"
+
+
+def test_a_plan_from_before_the_speeds_plays_at_1x(tmp_path) -> None:
+    """Ninety-six plans on the card hold pairs. A pair is a segment at normal speed."""
+    folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG,
+                  plan=a_plan(clips=clips_of(("A", [[12.0, 20.0]], ""))))
+    assert cut.read_plan(folder).clips[0].ranges == ((12.0, 20.0, 1.0),)
 
 
 # ------------------------------------------------------------------ the queue
@@ -513,7 +325,6 @@ def test_a_session_still_recording_is_never_looked_at(tmp_path, monkeypatch) -> 
 
 
 def test_a_plan_nobody_can_read_is_replaced_rather_than_decided_again(tmp_path) -> None:
-    """Otherwise a broken file costs a model call on every bell for as long as it is broken."""
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG)
     (folder / card.CLIPS).mkdir(exist_ok=True)
     cut.plan_path(folder).write_text("{ not json", encoding="utf-8")
@@ -537,12 +348,18 @@ def only_one(monkeypatch, done=None):
     asked = []
 
     def one_render(folder, clip, n, root):
-        asked.append((folder, n))
+        asked.append((folder, n, clip))
         cut.clip_path(folder, n).write_bytes(b"mp4")
         return done
 
     monkeypatch.setattr(cut, "render", one_render)
     return asked
+
+
+def _never(what):
+    def refuse(*a, **kw):
+        raise AssertionError(f"{what} should not have been reached")
+    return refuse
 
 
 def test_a_session_that_is_still_recording_stops_the_whole_sweep(tmp_path, monkeypatch) -> None:
@@ -551,7 +368,7 @@ def test_a_session_that_is_still_recording_stops_the_whole_sweep(tmp_path, monke
     make(tmp_path, "2026-09-02_18-13-08_live", log=LOG)
     monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
     asked = only_one(monkeypatch)
-    assert "conversation" in cut.one(settings_for(tmp_path))
+    cut.one(settings_for(tmp_path))
     assert asked == []
 
 
@@ -560,19 +377,15 @@ def test_a_hot_board_is_left_to_cool(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(cut.card, "locked", lambda f: False)
     monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 86.0)
     asked = only_one(monkeypatch)
-    assert "too hot" in cut.one(settings_for(tmp_path))
+    cut.one(settings_for(tmp_path))
     assert asked == []
 
 
 def test_only_one_clip_is_made_per_sweep(tmp_path, monkeypatch) -> None:
     """The finished file rings the index service's own bell, which schedules the next one."""
-    make(
-        tmp_path, "2026-09-01_18-13-08", log=LOG,
-        plan=a_plan(clips=clips_of(("A", STORY, ""), ("B", [[50.0, 58.0], [60.0, 68.0],
-                                                             [70.0, 78.0]], ""))),
-    )
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    make(tmp_path, "2026-09-01_18-13-08", log=LOG,
+         plan=a_plan(clips=clips_of(("A", WHOLE, ""), ("B", WHOLE, ""))))
+    calm(monkeypatch)
     asked = only_one(monkeypatch)
     cut.one(settings_for(tmp_path))
     assert len(asked) == 1
@@ -586,79 +399,82 @@ def test_switching_it_off_does_nothing_at_all(tmp_path) -> None:
 def test_a_session_too_thin_to_bother_with_costs_nothing_but_a_read(
     tmp_path, monkeypatch
 ) -> None:
-    """Marco: "make sure that empty sessions don't waste resources". No ffprobe, no model."""
+    """Marco: "make sure that empty sessions don't waste resources". No ffprobe, no ffmpeg."""
     thin = '{"t": 0.0, "type": "session"}\n{"t": 4.0, "type": "end", "seconds": 4.0}\n'
     folder = make(tmp_path, "2026-09-01_18-13-08", log=thin)
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    calm(monkeypatch)
     monkeypatch.setattr(cut, "probe", _never("probe"))
     monkeypatch.setattr(cut, "listen", _never("listen"))
-    assert "tier 1, free" in cut.one(settings_for(tmp_path))
+    cut.one(settings_for(tmp_path))
     assert cut.state(folder) == "none", "and it is never considered again"
-    assert cut.read_plan(folder).tier == 1, "and the plan says which tier stopped it"
 
 
-def test_a_session_with_no_new_picture_in_it_costs_no_model_call(tmp_path, monkeypatch) -> None:
-    """Twenty of the eighty-seven on this card, and no client is ever built for one of them."""
-    talk = "\n".join(
-        line for line in LOG.strip().splitlines() if '"type": "photo"' not in line
-    ) + "\n"
-    folder = make(tmp_path, "2026-09-01_18-13-08", log=talk)
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
-    monkeypatch.setattr(cut, "probe", _never("probe"))
-    monkeypatch.setattr(cut, "listen", _never("listen"))
-    assert "tier 1, free" in cut.one(settings_for(tmp_path))
-    assert cut.read_plan(folder).tier == 1
-    assert cut.state(folder) == "none"
+def test_deciding_plans_exactly_one_video_of_the_measured_speech(tmp_path, monkeypatch) -> None:
+    folder = make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY)
+    calm(monkeypatch)
+    heard = ((12.0, 20.0), (59.0, 66.0))
+    monkeypatch.setattr(cut, "probe", lambda folder, records: (90.0, True))
+    monkeypatch.setattr(cut, "listen", lambda folder, seconds: heard)
+    cut.one(settings_for(tmp_path))
+    plan = cut.read_plan(folder)
+    assert [c.title for c in plan.clips] == ["How tight the bolt goes"]
+    assert plan.clips[0].ranges == cut.segments(heard, 90.0)
 
 
 def test_a_recording_with_no_picture_in_it_never_reaches_ffmpeg(tmp_path, monkeypatch) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, summary=SUMMARY)
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    calm(monkeypatch)
     monkeypatch.setattr(cut, "probe", lambda folder, records: (90.0, False))
     asked = only_one(monkeypatch)
-    assert "no picture" in cut.one(settings_for(tmp_path))
+    cut.one(settings_for(tmp_path))
     assert asked == [] and cut.read_plan(folder).why
     assert cut.work(tmp_path) is None, "and it is never retried"
 
 
-def test_no_key_writes_no_plan_so_the_backlog_survives_the_night(tmp_path, monkeypatch) -> None:
-    """"Nobody looked" and "somebody looked and there was nothing" must be different files."""
+def test_a_recording_nobody_can_be_heard_in_is_not_retried(tmp_path, monkeypatch) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, summary=SUMMARY)
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    calm(monkeypatch)
     monkeypatch.setattr(cut, "probe", lambda folder, records: (90.0, True))
     monkeypatch.setattr(cut, "listen", lambda folder, seconds: ())
-    assert "no answer" in cut.one(settings_for(tmp_path))
-    assert cut.read_plan(folder) is None
-    assert cut.work(tmp_path) == cut.Work(folder, -1), "still pending for a sweep with a key"
-
-
-def test_a_plan_that_exists_is_never_decided_twice(tmp_path, monkeypatch) -> None:
-    """What makes a deploy that kills a render cost the encode and never the model call."""
-    make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan())
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
-    only_one(monkeypatch)
     cut.one(settings_for(tmp_path))
+    assert cut.state(folder) == "failed"
+    assert cut.work(tmp_path) is None
+
+
+def test_a_plan_that_exists_is_never_measured_twice(tmp_path, monkeypatch) -> None:
+    """What makes a deploy that kills a render cost the encode and nothing else."""
+    make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan())
+    calm(monkeypatch)
+    monkeypatch.setattr(cut, "probe", _never("probe"))
+    monkeypatch.setattr(cut, "listen", _never("listen"))
+    asked = only_one(monkeypatch)
+    cut.one(settings_for(tmp_path))
+    assert len(asked) == 1, "it went straight to the render"
+
+
+def test_a_hand_edited_plan_is_held_to_what_can_render(tmp_path, monkeypatch) -> None:
+    """Out of order, overlapping and past the end: rendered in order, back to back, inside."""
+    make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan(clips=clips_of(
+        ("A", [[40.0, 80.0, 8.0], [10.0, 45.0, 1.0], [80.0, 500.0, 0.5]], ""))))
+    calm(monkeypatch)
+    asked = only_one(monkeypatch)
+    cut.one(settings_for(tmp_path))
+    ranges = asked[0][2].ranges
+    assert ranges == ((10.0, 45.0, 1.0), (45.0, 80.0, 8.0), (80.0, 90.0, 1.0))
 
 
 def test_a_render_that_actually_failed_stops_being_retried(tmp_path, monkeypatch) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan())
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    calm(monkeypatch)
     monkeypatch.setattr(cut, "render", lambda f, c, n, root: cut.Cut(False, "no such filter"))
-    assert "could not clip" in cut.one(settings_for(tmp_path))
+    cut.one(settings_for(tmp_path))
     assert cut.read_plan(folder).clips[0].why == "no such filter"
     assert cut.work(tmp_path) is None
 
 
 def test_a_pause_leaves_the_clip_owed(tmp_path, monkeypatch) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG, plan=a_plan())
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    calm(monkeypatch)
     monkeypatch.setattr(
         cut, "render", lambda f, c, n, root: cut.Cut(False, "paused for a conversation")
     )
@@ -667,60 +483,37 @@ def test_a_pause_leaves_the_clip_owed(tmp_path, monkeypatch) -> None:
     assert cut.work(tmp_path) == cut.Work(folder, 1)
 
 
-def test_a_clip_that_evaporates_after_tightening_is_never_offered_again(
-    tmp_path, monkeypatch
-) -> None:
+def test_a_plan_with_nothing_renderable_left_is_never_offered_again(tmp_path, monkeypatch) -> None:
     """Otherwise it sits at the head of a newest-first queue and starves everything behind it."""
-    folder = make(
-        tmp_path, "2026-09-01_18-13-08", log=LOG,
-        plan=a_plan(clips=clips_of(("A", ((12.0, 13.0),), ""))),
-    )
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG,
+                  plan=a_plan(clips=clips_of(("A", [[120.0, 130.0, 1.0]], ""))))
+    calm(monkeypatch)
     monkeypatch.setattr(cut, "render", _never("render"))
     cut.one(settings_for(tmp_path))
     assert cut.read_plan(folder).clips[0].why
     assert cut.work(tmp_path) is None
 
 
-def _never(what):
-    def refuse(*a, **kw):
-        raise AssertionError(f"{what} should not have been reached")
-    return refuse
-
-
 # ------------------------------------------------------------------ the ledger
 
 
 def test_a_render_killed_by_a_deploy_stops_claiming_to_be_running(tmp_path, monkeypatch) -> None:
-    """Marco read the header eight minutes after a deploy and asked whether it was true.
-
-    push.sh kills renders by design, and the ledger row goes with the process - nothing writes
-    "this process died". Holding CUT_LOCK is what makes a running row of ours provably stale.
-    """
+    """push.sh kills renders by design, and the ledger row goes with the process."""
     from cyclops import tasks
 
     orphan = tasks.start("Cutting the video of something that was killed…")
     assert [one.id for one in tasks.running()] == [orphan]
 
     make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY, plan=a_plan())
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    calm(monkeypatch)
     only_one(monkeypatch)
     cut.one(settings_for(tmp_path))
 
     closed = {one.id: one for one in tasks.read()}
     assert closed[orphan].state == tasks.FAILED
-    assert closed[orphan].result == "interrupted"
 
 
 def test_a_stranded_row_is_closed_even_with_nothing_left_to_render(tmp_path) -> None:
-    """The half of that bug the first fix missed.
-
-    A killed render leaves a card with nothing owed on it, so a sweep that tidied up only on its
-    way to rendering something never ran, and the header went on saying "Cutting the video of…"
-    until the row aged out fifteen minutes later.
-    """
     from cyclops import tasks
 
     orphan = tasks.start("Cutting the video of a render nobody is running…")
@@ -730,13 +523,11 @@ def test_a_stranded_row_is_closed_even_with_nothing_left_to_render(tmp_path) -> 
 
 
 def test_somebody_elses_row_is_left_alone(tmp_path, monkeypatch) -> None:
-    """The lock says nothing about a diagram being drawn in another process."""
     from cyclops import tasks
 
     theirs = tasks.start("Drawing a diagram of the wiring…")
     make(tmp_path, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY, plan=a_plan())
-    monkeypatch.setattr(cut.card, "locked", lambda f: False)
-    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: 50.0)
+    calm(monkeypatch)
     only_one(monkeypatch)
     cut.one(settings_for(tmp_path))
 
@@ -756,9 +547,9 @@ def test_a_missing_ffmpeg_is_a_reason_and_not_a_crash(tmp_path, monkeypatch) -> 
 
 def test_a_failed_run_leaves_no_scratch_and_no_clip(tmp_path, monkeypatch) -> None:
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG)
-    monkeypatch.setattr(cut.subprocess, "Popen", _fake_popen(1, b"could not open 1.ass"))
+    monkeypatch.setattr(cut.subprocess, "Popen", _fake_popen(1, b"no such filter"))
     done = cut.render(folder, a_clip(), 1, tmp_path)
-    assert not done.ok and done.why == "could not open 1.ass"
+    assert not done.ok and done.why == "no such filter"
     assert not card.tmp_for(cut.clip_path(folder, 1)).exists()
     assert not cut.clip_path(folder, 1).exists()
 
@@ -821,16 +612,19 @@ def test_the_reel_holds_the_finished_clips_newest_session_first(tmp_path) -> Non
     make(tmp_path, "2026-09-01_10-00-00_early", log=LOG, summary=SUMMARY,
          plan=a_plan(), made=(1,))
     make(tmp_path, "2026-09-03_10-00-00_late", log=LOG, summary=SUMMARY,
-         plan=a_plan(clips=clips_of(("A", STORY, ""), ("B", [[50.0, 58.0], [60.0, 68.0],
-                                                             [70.0, 78.0]], ""))),
-         made=(1, 2))
+         plan=a_plan(), made=(1,))
     made, _ = cut.clips(tmp_path)
-    assert [one.id.split("_")[-1] for one in made] == ["late/1", "late/2", "early/1"]
+    assert [one.id.split("_")[-1] for one in made] == ["late/1", "early/1"]
     assert all(one.src.startswith("/media/") and "/clips/" in one.src for one in made)
 
 
+def test_the_reel_says_how_long_the_finished_video_runs(tmp_path) -> None:
+    make(tmp_path, "2026-09-01_10-00-00", log=LOG, summary=SUMMARY, plan=a_plan(), made=(1,))
+    made, _ = cut.clips(tmp_path)
+    assert made[0].seconds == round(8.4 + 38.6 / cut.SPEED + 7.4, 2)
+
+
 def test_a_clip_that_is_not_rendered_yet_is_not_on_the_reel(tmp_path) -> None:
-    """Reverses the old listing on purpose: nobody arrives here having just pressed a button."""
     make(tmp_path, "2026-09-01_10-00-00", log=LOG, summary=SUMMARY, plan=a_plan())
     made, _ = cut.clips(tmp_path)
     assert made == []
@@ -854,7 +648,6 @@ def test_a_folder_holding_clips_is_not_a_surprise(tmp_path) -> None:
 
 
 def test_a_folder_holding_the_old_design_is_still_a_folder_that_can_be_removed(tmp_path) -> None:
-    """Ninety-eight folders on the card hold these names. Dropping them strands every one."""
     folder = make(tmp_path, "2026-09-01_18-13-08", log=LOG)
     for name in (card.CUT_REQUEST, card.CUT_PLAN, card.CUT_SUBS, card.CUT):
         (folder / name).write_bytes(b"x")
@@ -869,3 +662,62 @@ def test_a_session_holding_clips_is_actually_removed(tmp_path) -> None:
                   plan=a_plan(), made=(1,))
     said = session._remove(folder)
     assert "removed" in said and not folder.exists(), said
+
+
+# ------------------------------------------------------------------ one real render
+
+
+# Left channel: you, 0.6-1.6 s and 5-5.8 s. Right channel: Cyclops, 1.8-2.6 s. Silence around and
+# between, so the plan is 1x, one long quiet stretch at SPEED, 1x - and a head and tail to trim.
+SYNTH_S = 8
+SYNTH = [
+    "ffmpeg", "-v", "error", "-y",
+    "-f", "lavfi", "-i", f"testsrc2=size=160x96:rate=15:duration={SYNTH_S}",
+    "-f", "lavfi", "-i",
+    "aevalsrc=exprs='if(between(t,0.6,1.6)+between(t,5,5.8),sin(2*PI*440*t)/2,0)"
+    f"|if(between(t,1.8,2.6),sin(2*PI*660*t)/2,0)':s=48000:d={SYNTH_S}",
+    "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", card.VIDEO,
+]
+
+
+@pytest.fixture(scope="module")
+def rendered(tmp_path_factory):
+    """One synthetic session, decided and rendered by two real sweeps with no model reachable."""
+    if not shutil.which("ffmpeg"):
+        pytest.skip("no ffmpeg on this box")
+    import openai
+
+    from cyclops import tasks
+
+    root = tmp_path_factory.mktemp("sessions")
+    folder = make(root, "2026-09-01_18-13-08_bolt", log=LOG, summary=SUMMARY, video=None)
+    subprocess.run(SYNTH, cwd=folder, check=True, capture_output=True, timeout=60)  # noqa: S603
+
+    def no_model(*a, **kw):
+        raise AssertionError("the cut built an OpenAI client")
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(tasks, "TASKS_FILE", root / "tasks.yaml")
+        mp.setattr(tasks, "TASKS_LOCK", root / "tasks.lock")
+        mp.setattr(tasks, "_memo", None)
+        mp.setattr(openai.OpenAI, "__init__", no_model)
+        mp.setattr(openai.AsyncOpenAI, "__init__", no_model)
+        calm(mp)
+        cut.one(settings_for(root))
+        cut.one(settings_for(root))
+    return folder
+
+
+def test_a_session_renders_a_finished_video_with_no_model_to_ask(rendered) -> None:
+    assert cut.state(rendered) == "done"
+    assert speeds(cut.read_plan(rendered).clips[0].ranges) == [1.0, cut.SPEED, 1.0]
+
+
+def test_the_rendered_video_runs_as_long_as_the_arithmetic_says(rendered) -> None:
+    done = subprocess.run(  # noqa: S603
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+         str(cut.clip_path(rendered, 1))],
+        capture_output=True, check=True, timeout=30,
+    )
+    predicted = cut.read_plan(rendered).clips[0].seconds
+    assert abs(float(done.stdout) - predicted) <= 1.0 / cut.FPS

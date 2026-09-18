@@ -13,7 +13,7 @@ sessions/
     video.mp4         the recording - the panel, or the camera (kiosk only)
     clips/
       plan.json       what was decided about this session, and when
-      1.mp4           the moments worth watching, best first - see "Clips" below
+      1.mp4           the whole session, quiet stretches played fast - see "Clips" below
     photos/
       14-33-12_you.jpg
       14-33-05_edit.jpg      one redrawn with a change - see tools.md
@@ -120,35 +120,34 @@ pruned; delete what you don't want.
 
 ## Clips
 
-A recording is an archive, not something anybody watches. So the index service looks at each
-finished session once and asks what — if anything — in it is worth showing to somebody who was
-not there, and writes what it finds to `clips/`: between **zero and three** clips of about
-fifteen seconds each, every one a single moment. They are what the **HIGHLIGHTS** screen plays.
+A recording is an archive, not something anybody watches: most of its running time is somebody
+working with nobody talking. So the index service turns each finished session into **one video**,
+`clips/1.mp4` — everything from the first word to the last, with every stretch where nobody is
+talking played at **8×**. Nothing is chosen and nothing is cut out, no model is asked anything,
+and it needs no key and no network, so the same recording always comes out the same way. It is
+what the **HIGHLIGHTS** screen plays, titled with the first line of `summary.md`.
 
-**Zero is the ordinary answer.** Two filters stand between a session and an encode, and both are
-meant to say no:
+**Who gets one.** The log is read first, for free. A session with no turns from you, fewer than
+two from Cyclops, under thirty seconds, or barely any words in it gets no video and costs no
+`ffprobe` and no `ffmpeg` — that is a button pressed to check the microphone.
 
-1. **The log, free.** A session with fewer than two turns each way, under thirty seconds long, or
-   with barely any words in it is never asked about at all — no `ffprobe`, no model, no network.
-   On the card this was built against that answered for **55 of 98 sessions**, which is what a
-   drawer full of "does the microphone work" looks like.
-2. **The model, once.** The other 43 get one call, and the prompt spends most of its length
-   making `NOTHING` an easy answer. A session that was genuinely just a torque figure being read
-   out gets an empty plan and is never asked about again.
+**Where the talking is.** `silencedetect` runs over each channel at its own floor — the mic on the
+left at −38 dB, Cyclops on the right at −50 dB — and either one being audible counts. That is
+about half a second for a six-minute recording, because `-vn` means the video is never decoded.
+Every audible span is widened by 0.15 s in front and 0.25 s behind so no word is clipped, and the
+empty head and tail are trimmed off. A quiet stretch under 1.2 s is a breath and stays at normal
+speed; anything longer plays at 8×. The sound is sped up with it rather than dropped, so picture
+and sound cannot drift apart.
 
-**What makes a clip tight is the audio, not the transcript.** `session.jsonl` knows when each
-*turn* started, but a thirteen-second answer is really eight bursts of speech with 2.7 seconds of
-pause inside it. So `silencedetect` is run over each channel — 0.55 s of work for a six-minute
-recording, because `-vn` means the video is never decoded — and the moments the model named are
-trimmed down onto the spans where somebody was actually audible. Across this card that removes
-**65% of the running time**. Filler words are *not* removed and cannot be: the transcription
-model normalises them out, so 220 real turns hold one "uh" and no "um" at all. What reads as the
-"um"s going is the holes around them closing.
+**What it costs.** One `ffmpeg` pass that decodes the whole recording, so a long session takes
+longer than a short one. It waits for a live conversation to end and for the board to be under
+80 °C, and stands down if either changes mid-encode; one video per wake of the index service.
 
-`clips/plan.json` being there is the whole "this one has been considered" marker, which is what
-makes a render killed mid-way — by a deploy, say — cost the encode and never the model call. To
-make it look again, press **Find clips** on the session screen; to fix a bad cut by hand, edit
-the ranges in `plan.json`, delete that clip's `.mp4`, and the next sweep renders what you wrote.
+`clips/plan.json` being there is the whole "this one has been considered" marker, so a render
+killed mid-way — by a deploy, say — is simply rendered again on the next sweep. To make it look
+again, press **Find clips** on the session screen. To fix a cut by hand, edit the segments in
+`plan.json` — `[start, end, speed]`, in seconds of the recording — delete `clips/1.mp4`, and the
+next sweep renders what you wrote.
 
 ## If a session is cut off
 
