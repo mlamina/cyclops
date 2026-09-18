@@ -1005,11 +1005,27 @@ def _render_record(record: dict) -> str:
         return f"*Drew on the scratchpad* ({at}) — {_sketch_gist(record.get('code', ''))}"
     if kind == "data":
         return _render_data(record, at)
+    if kind == "tutorial":
+        return _render_tutorial(record, at)
     if kind == "transcript_failed":
         return f"*You said something that could not be transcribed* ({at})"
     if kind == "error":
         return f"*Something went wrong* ({at}) — {record.get('message', '')}"
     return ""
+
+
+def _render_tutorial(record: dict, at: str) -> str:
+    """A walkthrough: the list it set out, each step it moved on to, and how it ended."""
+    action = record.get("action")
+    if action == "started":
+        steps = record.get("steps") or []
+        return f"*Started walking you through {len(steps)} steps* ({at}) — " + "; ".join(steps)
+    if action == "advanced":
+        step = f"Step {record.get('step')} of {record.get('of')}"
+        return f"*{step}* ({at}) — {record.get('label', '')}"
+    if action == "finished":
+        return f"*Finished the walkthrough* ({at})"
+    return f"*Stopped the walkthrough at step {record.get('step')} of {record.get('of')}* ({at})"
 
 
 SCRATCHPAD_GIST_CHARS = 70  # a line in a transcript, not the markup

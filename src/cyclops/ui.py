@@ -247,6 +247,9 @@ class SessionController:
             "level": round(level, 3),
             "detail": self._detail(state),
             "elapsed": None if started is None else round(time.monotonic() - started, 1),
+            # The walkthrough on the glass, if one is running. The agent's, so it goes with the
+            # session: a teardown that drops the agent drops the bar in the same frame.
+            "tutorial": None if agent is None else agent.tutorial,
         }
 
     @property

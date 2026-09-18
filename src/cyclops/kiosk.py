@@ -2160,6 +2160,10 @@ class Kiosk:
                     # `tasks.line()` memoises on the file's stat, so asking every frame is a
                     # stat and nothing else.
                     detail=self._saying() or str(status["detail"]) or job,
+                    # A walkthrough: its bar on the top row, and its step's label under it
+                    # whenever nothing above has anything to say - so a search mid-walkthrough
+                    # still shows, and the step comes back once it is done.
+                    tutorial=status.get("tutorial"),
                     # One instant for the whole frame, taken at the top of the loop. The caption
                     # breathes and blinks its cursor off this rather than off a clock of its own,
                     # so the animation cannot drift between elements or with the frame rate.

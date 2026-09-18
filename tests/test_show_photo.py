@@ -29,6 +29,7 @@ class FakeAgent:
             self.ready.set()
         self.connected = connected
         self.activity = ""  # the detail line asks every agent this, including a fake one
+        self.tutorial = None  # ...and so does the status line's bar
         self.photos: list[object] = []
 
     def queue_photo(self, capture: object) -> None:

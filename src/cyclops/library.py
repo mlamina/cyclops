@@ -66,6 +66,7 @@ SPOKEN = frozenset(
         "recall",
         "screen",
         "watched",
+        "tutorial",
         "transcript_failed",
         "error",
     }

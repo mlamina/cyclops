@@ -3,6 +3,7 @@
 
     uv run python tools/talk_probe.py --runs 10 --out runs.jsonl
     uv run python tools/talk_probe.py --tally runs.jsonl
+    uv run python tools/talk_probe.py --script tutorial --runs 10 --out walk.jsonl
 
 No mic, no speaker, no camera and no session folder: ``VoiceAgent`` + ``send_text``, the way
 ``cyclops-smoke`` does its text turns. Every run is a fresh session, so the first turn is a real
@@ -56,6 +57,21 @@ SCRIPT = (
     "Okay, going to count the standoffs, hang on.",
     "What did we say about the LED voltage?",
 )
+
+# A walkthrough asked for, moved on twice, and stopped halfway - with two turns in the middle that
+# are NOT "that step is done": a pause and a question about the step. Those two are the ones that
+# say whether it waits, and the tally lays out the tools per turn so a wrong advance stands out.
+TUTORIAL_SCRIPT = (
+    "Hey.",
+    "I'm replacing the cartridge in my kitchen mixer tap. Can you walk me through it step by "
+    "step?",
+    "Okay, the water's off.",
+    "Hang on, let me find a screwdriver.",
+    "Which way does the big nut undo?",
+    "Right, done that.",
+    "Actually, forget it, stop this. I'll call a plumber.",
+)
+SCRIPTS = {"bench": SCRIPT, "tutorial": TUTORIAL_SCRIPT}
 
 # Candidates only. A line that matches is printed for a human to read; one that does not can
 # still be a reference, which is why the tally prints every turn of every run as well.
@@ -127,13 +143,13 @@ async def _await_or_fail(agent_task: asyncio.Task, event: asyncio.Event, limit_s
     raise TimeoutError(f"no response within {limit_s:.0f}s")
 
 
-async def _one_run(run: int, out) -> None:
+async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
     settings = load_settings()
     agent = VoiceAgent(settings)
     agent_task = asyncio.create_task(agent.run())
     try:
         await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
-        for index, line in enumerate(SCRIPT, start=1):
+        for index, line in enumerate(script, start=1):
             turn = Turn()
             agent.on_event = turn
             await agent.send_text(line)
@@ -155,11 +171,11 @@ async def _one_run(run: int, out) -> None:
         await asyncio.gather(agent_task, return_exceptions=True)
 
 
-async def _probe(runs: int, out_path: Path) -> int:
+async def _probe(runs: int, out_path: Path, script: tuple[str, ...] = SCRIPT) -> int:
     with out_path.open("a", encoding="utf-8") as out:
         for run in range(1, runs + 1):
             try:
-                await _one_run(run, out)
+                await _one_run(run, out, script)
             except (TimeoutError, RuntimeError) as exc:
                 print(f"run {run} failed: {exc}", file=sys.stderr)
                 return 1
@@ -377,6 +393,13 @@ def tally(path: Path) -> None:
         f"max={max(spoken)}"
     )
     print(f"turns costing != 1 response: {len(multi)}   turns with tool calls: {len(tools)}")
+    print("tools per turn, across runs:")
+    for turn in sorted({r["turn"] for r in records}):
+        called = Counter(" + ".join(r["tools"]) or "-" for r in records if r["turn"] == turn)
+        you = next(r["you"] for r in records if r["turn"] == turn)
+        print(f"  t{turn} {you[:48]!r}")
+        for calls, n in called.most_common():
+            print(f"      {n}x {calls}")
     print(f"distinct greetings: {len(greetings)} of {len(runs)}")
     for line, n in greetings.most_common():
         print(f"  {n}x {line!r}")
@@ -435,6 +458,8 @@ def main() -> None:
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--out", type=Path, help="JSONL to append each turn to")
     parser.add_argument("--tally", type=Path, help="tally a JSONL written earlier and exit")
+    parser.add_argument("--script", choices=sorted(SCRIPTS), default="bench",
+                        help="which conversation to type at it")
     parser.add_argument("--blind", type=Path, nargs=3, metavar=("A", "B", "OUT"),
                         help="shuffle two JSONLs into one anonymous list to read")
     parser.add_argument("--score", type=Path, nargs=2, metavar=("KEY", "MARKS"),
@@ -470,7 +495,7 @@ def main() -> None:
     if not args.out:
         parser.error("--out is required unless --tally is given")
     try:
-        sys.exit(asyncio.run(_probe(args.runs, args.out)))
+        sys.exit(asyncio.run(_probe(args.runs, args.out, SCRIPTS[args.script])))
     except ConfigError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
