@@ -50,16 +50,17 @@ boot mark brought to life - :mod:`cyclops.eye` draws the splash's iris-inside-HU
 rings turning and the iris breathing, and :data:`MOODS` says how, one row per state. Tapping him
 opens what the box has kept, because what you ask a face is what it remembers.
 
-His bracket's rail leaves the straight, goes round him and comes back. That shoulder is the
-join: it is what makes him part of the bracket rather than a badge sitting on it, and it is why
-his corner is the big one - a face wants room, and the two instruments opposite are bolted
-straight through their rail and take a third of the space. Those two were a shutter and a
-microphone until the box grew a button of its own, which does both without anybody having to
-find a 12 mm target on glass; they are a volume knob and a heat gauge now, which is the pair of
-things this panel could not otherwise be told or asked. While he is asleep the only thing on
-this panel that moves is his own breath: no ring turns, nothing blinks, no readout changes, and
-nothing beckons - there is nothing left in that corner to press. That is what makes any of the
-rest of it read as awake: the *mechanism* stopping, rather than the creature holding its breath.
+His bracket's rail runs along its ramp into his housing, and is bolted to its brass on either
+side of him. That is the join: it is what makes him part of the bracket rather than a badge
+sitting on it, and it is why his corner is the big one - a face wants room, and the two
+instruments opposite are bolted straight through their rail and take a third of the space. Those
+two were a shutter and a microphone until the box grew a button of its own, which does both
+without anybody having to find a 12 mm target on glass; they are a volume knob and a heat gauge
+now, which is the pair of things this panel could not otherwise be told or asked. While he is
+asleep the only thing on this panel that moves is his own breath: no ring turns, nothing blinks,
+no readout changes, and nothing beckons - there is nothing left in that corner to press. That is
+what makes any of the rest of it read as awake: the *mechanism* stopping, rather than the
+creature holding its breath.
 
 Everything that holds still while the state does - the halo, the brackets and their bolts, the
 reticle, the pod's heat lamp, the switches at rest - is built once and cached, keyed on the state.
@@ -1718,11 +1719,11 @@ SHEEN_REACH = 0.62  # how far the lamp carries along the rim, in pane heights. S
 # measurable 40% over the field at the far end, which is what the reference does.
 # The eye. He rides the left bracket's ramp, sunk into it - `EYE_SEAT` is that depth as a
 # fraction of the swell's radius, and acos(0.3) is a 72-degree shoulder, which is where the rail
-# leaves the straight and goes round him. Part of him is in the bracket and part is over the
+# meets his collar on either side. Part of him is in the bracket and part is over the
 # picture, which is the same join the tab row used to make and the reason he reads as part of the
 # machine rather than as a badge stuck on it.
 EYE_R = 0.1375  # 66 px at 800x480. It was 88, and took up too much of the screen
-EYE_SHOULDER = 16.0  # reference px between his rim and the rail's centreline round him
+EYE_SHOULDER = 16.0  # reference px between his rim and his swell, the collar's outer edge
 EYE_SEAT = 0.3  # less deep than half, so his rim keeps clear of the border's glow on both edges
 EYE_PLATE_ALPHA = 255  # the body behind him, and the one thing on this panel that is not a hole
 # in a housing. It sat at the terminal's own 205 for a while on the porthole argument - that a
@@ -2104,8 +2105,8 @@ GLAND_AT = 135.0
 LOOM_N = 3
 LOOM_FAN = 11.0  # degrees between one cable and the next
 LOOM_REACH = 70.0  # reference px, which is past the corner: they are meant to leave the panel
-# The mount points, in the arc the bracket's rail does not already cover - it comes round him
-# from -105 to +15, and these two are what say the rest of the collar is bolted down as well.
+# The mount points round the collar besides the two where the bracket's rail meets it, over his
+# shoulders at about -118 and +28. These two say the rest of the collar is bolted down as well.
 COLLAR_BOLTS = (72.0, 198.0)
 
 # The two instruments, bolted straight through the small bracket's rail rather than sitting in a
@@ -2678,8 +2679,8 @@ class Seat:
 
     ``depth`` is how far its centre is sunk below the rail's centreline. Zero puts the rail
     straight through it - which is what the two switches want, because a rail that parted round
-    a 36 px disc twice in 170 px would be more swell than rail. The eye is sunk half its swell
-    instead, so the rail leaves the straight at 60 degrees, goes round him and comes back.
+    a 36 px disc twice in 170 px would be more swell than rail. The eye is sunk EYE_SEAT of its
+    swell instead, and the rail runs into his collar on either side.
     """
 
     centre: tuple[float, float]
@@ -2733,8 +2734,12 @@ class Bracket:
         return p0, p1, a0, a1
 
     def path(self) -> list[tuple[float, float]]:
-        """The rail's centreline: in from one edge, round whatever is seated on it, out to the
-        other.
+        """The mount's outline along its rail: in from one edge, round the swell of whatever is
+        seated on it, out to the other.
+
+        What the clamps and the screen's clearance are measured against. The rail itself is drawn
+        straight along the spine and runs in behind a seat's housing (see Overlay._draw_bracket),
+        so round a seat this is the collar's outer edge rather than any steel.
 
         Anything seated rides the ramp, which is always the segment between the first two knees -
         the pod has four knees and nothing seated, the mounts have two and up to one.
@@ -3666,7 +3671,7 @@ class Overlay:
         self._labels: dict[str, tuple[Image.Image, int]] = {}  # see _label_tile
 
         # Him, riding the big bracket's ramp. Everything about where he is comes off that ramp,
-        # so moving the bracket moves him and the rail still goes round him.
+        # so moving the bracket moves him and the rail still meets his collar either side.
         self.eye_r = max(10, round(EYE_R * height))
         eye_swell = self.eye_r + max(2, px(EYE_SHOULDER))
         self.brackets["bl"].seats = [
@@ -3867,8 +3872,8 @@ class Overlay:
         """Where mount *name*'s rail centreline crosses the horizontal line *y*.
 
         Walked along :meth:`Bracket.path` rather than solved, because that path is not always a
-        straight line where it is asked about: on the left the terminal's rail meets it on the arc
-        that goes round his housing, a dozen pixels above where the ramp picks up again. Whichever
+        straight line where it is asked about: on the left, high enough up, a clamp meets the arc
+        of his housing's edge rather than the ramp. Whichever
         crossing is nearest the middle of the panel is the one that bounds the terminal, so a
         bracket that grew a second seat would still answer this correctly.
         """
@@ -4571,10 +4576,8 @@ class Overlay:
         # is what buries an end of it. Order is the whole illusion: drawn last this is a box lying
         # on the panel, and drawn first it is a box behind it.
         self._draw_terminal(layer)
-        # ...then his collar, and only then the mounts, so the left one's rail straps *over* the
-        # barrel where the two share an arc. The other way round the collar's own rings are
-        # written across the inner half of the rail and the joint comes apart.
-        self._draw_collar(layer)
+        # ...then the mounts, and his collar with the left one - see _draw_bracket, which lays it
+        # between that mount's rail and its bolts.
         for bracket in self.brackets.values():
             self._draw_bracket(layer, bracket)
         # The loom after the mounts and not before them, which is the opposite of the terminal's
@@ -5166,7 +5169,10 @@ class Overlay:
         over the thing that says the corner is stiff. `seats` is what asks the question, because
         the left mount is the only bracket that has one.
         """
-        self._draw_rail(layer, bracket.path())
+        # Straight along the ramp even where he is seated on it. The rail used to bend round him
+        # at his swell, and a 17 px half-round round a 66 px face was more rail than face; it runs
+        # behind his housing now, and the collar goes on over it below.
+        self._draw_rail(layer, bracket.spine)
         # Where a leg comes down onto the foot rail, the rail swells round it. That swell is the
         # clamp: no bolt, no plate, no second part - the silhouette alone says the two are gripped
         # together, and the section stays the section it was everywhere else.
@@ -5175,6 +5181,10 @@ class Overlay:
             if y >= self.height - 1:
                 self._draw_rail(layer, [(x - grip, self._spine_y()), (x + grip, self._spine_y())],
                                 max(5, round(SPINE_W * SPINE_SADDLE * self.scale)))
+        # ...then his housing, over the rail and under the bolts: the rail runs into the collar,
+        # its brass edge goes all the way round him, and the bolts are what fix the two together.
+        if bracket.seats:
+            self._draw_collar(layer)
         d = ImageDraw.Draw(layer)
         # Every place the rail turns: two knees on a mount, four on the pod.
         for knee in bracket.spine[1:-1]:
@@ -5254,7 +5264,7 @@ class Overlay:
         thickness. What makes him a thing sunk into the panel is the band round the outside of
         him, and it is built the way every bar on the panel now is: fields off one distance, the
         normals of a rolled edge, and the lamp deciding which side is lit. The housing and the
-        mount that straps over it are lit by the same lamp, which is what keeps the join reading
+        mount that runs into it are lit by the same lamp, which is what keeps the join reading
         as one assembly even though they are two metals.
 
         Four passes, in the order a real one is looked at. The shadow the ring drops onto the
@@ -8515,22 +8525,23 @@ class Overlay:
         so while it is happening: without this, a long press is a second of a panel doing nothing
         followed by a menu, which reads as a fault that resolved itself.
 
-        It is drawn *on the rail that is already round him* rather than beside it - the same
-        radius, in full phosphor instead of the rail's own steel - so nothing new appears on the
-        screen while you hold him. A line you already stopped seeing lights up from one end, and
-        when it reaches the far side the menu is open. That also keeps it out of the picture:
-        this panel has no room for a progress bar, and a ring drawn further out would cross the
-        rail running away to either edge.
+        It is drawn *on the brass that is already round him* rather than beside it - the same
+        band, in full phosphor instead of the metal - so nothing new appears on the screen while
+        you hold him. A line you already stopped seeing lights up from one end, and when it
+        reaches the far side the menu is open. That also keeps it out of the picture: this panel
+        has no room for a progress bar. It runs between the two bolts where the mount's rail
+        meets the collar, over the top of him, which is the arc the rail used to take.
         """
         seat = self.eye_seat
         cx, cy = self.eye
-        radius = seat.swell
+        out = seat.swell
+        brass_in = out * COLLAR_IN + max(1.5, COLLAR_LIP * self.scale)
+        radius = (brass_in + out) / 2.0
         _, _, a0, a1 = self.brackets["bl"].shoulder(seat)
         start, sweep = a0, (a1 - a0) * max(0.0, min(1.0, hold))
-        # Heavier than the hairline this used to land on, and now it has a 17 px rail to be seen
-        # against: at the panel's own stroke it would be a brightness change on two pixels of
-        # seventeen, which from a bench is no change at all.
-        stroke = max(3, round(self.rail_w * 0.45))
+        # The brass's whole width: anything narrower is a brightness change on a band that is
+        # already thin, which from a bench is no change at all.
+        stroke = max(2, round(out - brass_in))
         span = round(radius) + stroke
 
         def paint(t: ImageDraw.ImageDraw) -> None:

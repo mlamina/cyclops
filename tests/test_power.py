@@ -111,19 +111,19 @@ def test_the_choices_are_opaque() -> None:
 
 
 def _collar(chrome: np.ndarray, ov: overlay.Overlay) -> int:
-    """How much of the rail that goes round him is lit in full phosphor, in pixels.
+    """How much of the brass round him is lit in full phosphor, in pixels.
 
-    The whole square he stands in, not the top half of it: the rail leaves the straight below his
-    equator on one side and rejoins it below on the other, so a band cut at his centre would miss
-    both ends of the sweep and see the fill only in the middle of the press.
+    The whole square he stands in, not the top half of it: the fill runs between the two bolts
+    where the rail meets his collar, one below his equator on either side, so a band cut at his
+    centre would miss both ends of the sweep and see the fill only in the middle of the press.
     """
     cx, cy = ov.eye
     reach = ov.shoulder + ov.rail_w
     band = chrome[max(0, cy - reach) : cy + reach, max(0, cx - reach) : cx + reach, :3]
-    # Full phosphor, not merely bright: the rail he is mounted in has a lit lip of its own a
-    # couple of pixels outside this arc, and a threshold loose enough to include that is a
-    # threshold measuring a constant. He sits in a corner now, so the band is clamped to the
-    # panel as well - a negative slice would quietly measure the wrong side of the screen.
+    # Full phosphor, not merely bright: the brass carries a blown line of the lamp in the same
+    # band, and a threshold loose enough to include that is a threshold measuring a constant.
+    # He sits in a corner now, so the band is clamped to the panel as well - a negative slice
+    # would quietly measure the wrong side of the screen.
     return int((band[:, :, 1] > 240).sum())
 
 

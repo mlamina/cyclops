@@ -1390,7 +1390,7 @@ def test_he_rides_the_ramp_and_his_rim_is_off_the_bezel(width: int, height: int)
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
 def test_his_swell_stays_on_the_panel(width: int, height: int) -> None:
-    # The rail goes round him at `shoulder`, so that is the circle that has to fit - not his rim.
+    # His collar's outer edge is at `shoulder`, so that is the circle that has to fit - not his rim.
     # A swell running off the edge is a bracket with a piece missing out of it.
     ov = overlay.Overlay(width, height)
     for axis, edge in ((0, width), (1, height)):
