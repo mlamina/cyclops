@@ -102,16 +102,15 @@ def repeats(named: dict[str, str]) -> list[tuple[str, list[str]]]:
                     continue
                 where[" ".join(run)].update((first, second))
     # A passage in three blocks is found as three pairs, and a slightly shorter version of it
-    # may be found too. Fold anything contained in a longer run into that longer run.
+    # may be found too. Fold a shorter run into the longer one that contains it - but only the
+    # blocks that carry the whole of the longer run, or a block sharing one clause of a long
+    # passage is reported as carrying all of it, which reads as a verbatim copy that is not there.
     kept: list[tuple[str, list[str]]] = []
     for run in sorted(where, key=len, reverse=True):
-        for seen, carried in kept:
-            if run in seen:
-                carried.extend(n for n in where[run] if n not in carried)
-                break
-        else:
-            kept.append((run, sorted(where[run])))
-    return [(run, sorted(found)) for run, found in kept]
+        if any(run in seen for seen, _ in kept):
+            continue
+        kept.append((run, sorted(n for n in named if run in " ".join(words[n]))))
+    return kept
 
 
 def ceiling() -> int:
