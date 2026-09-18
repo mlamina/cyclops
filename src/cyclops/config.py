@@ -187,6 +187,7 @@ class Settings:
     scratchpad: bool = True  # offer write_on_scratchpad, so he can write on the panel himself
     cut: bool = True  # offer the Make a video button, and render what it asks for (cyclops.cut)
     pointing: bool = True  # offer point_at, so he can mark their photo instead of describing it
+    look: bool = True  # offer take_a_look, so asking it to look takes the photo - no SNAP needed
     # offer sketch, which draws while he is still writing it - and takes the scratchpad's
     # place rather than sitting beside it, because two doors onto the same glass is a choice
     # the model would have to make mid-sentence, every time.
@@ -391,6 +392,7 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         scratchpad=_flag("CYCLOPS_SCRATCHPAD", Settings.scratchpad),
         cut=_flag("CYCLOPS_CUT", Settings.cut),
         pointing=_flag("CYCLOPS_POINTING", Settings.pointing),
+        look=_flag("CYCLOPS_LOOK", Settings.look),
         sketch=_flag("CYCLOPS_SKETCH", Settings.sketch),
         record=_flag("CYCLOPS_RECORD", Settings.record),
         record_source=_record_source("CYCLOPS_RECORD_SOURCE"),

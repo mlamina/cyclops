@@ -45,7 +45,7 @@ from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
 from .config import Settings
 from .search import SearchError, search_web
 from .watch import Watch, WatchError, find_video, restream
-from .webcam import Capture
+from .webcam import Capture, WebcamError, capture_image_async
 
 if TYPE_CHECKING:  # the projects package pulls in pydantic_ai; the tools import it when called
     from .projects.data import Book
@@ -71,6 +71,10 @@ TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_QUERY_CHARS = 300
+# take_a_look in the kiosk borrows a frame the preview already has, which takes milliseconds. This
+# is for everywhere else - `uv run cyclops` opens the camera for the shot, and on a Mac that can
+# sit behind a permission prompt for as long as nobody clicks it.
+CAPTURE_TIMEOUT_S = 12.0
 # A screenful of markup and no more. The argument IS the latency here - nothing can appear until
 # the model has finished writing it - and 800x480 read at arm's length holds a number, a short
 # list or a small drawing, none of which need more than this.
@@ -151,6 +155,29 @@ WEB_SEARCH_TOOL: RealtimeFunctionToolParam = {
             }
         },
         "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+TAKE_A_LOOK_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "take_a_look",
+    "description": (
+        "Take a photo with their camera right now and look at it. Call it whenever they ask you "
+        "to look at or see something, in any words and any language - they say take a look, "
+        "have a look, what do you see, can you see this, or ask what this is about something "
+        "in front of them that you have not been shown. Every call is a fresh photo, so call it "
+        "again each time they ask you to look again. Call it straight away and say nothing "
+        "first: the camera clicks, the photo arrives a moment later, and then you answer off "
+        "it, going straight to what you see. Only when they ask: never on your own initiative, "
+        "never to check on something, never to round off a turn, never on a stray word or "
+        "after they told you to stop. If they have just pressed SNAP and are asking about that "
+        "photo, answer from it instead of taking another."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
         "additionalProperties": False,
     },
 }
@@ -318,7 +345,7 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
         "carries a name, and naming one changes that picture instead: they photograph a ball, "
         "then a shelf, then a desk, and 'make the ball red' is the ball's picture and not what "
         "is in front of them now. Any picture from this session still works - none of them "
-        "expire. If they have not taken one yet, ask them to hit SNAP. "
+        "expire. If there is no picture yet, take a look first. "
         "It fills the panel "
         "when it arrives. You are shown the result when "
         "it lands, but so are they: do not narrate it back at them unprompted. Volunteer "
@@ -380,8 +407,8 @@ POINT_AT_TOOL: RealtimeFunctionToolParam = {
         "picture it is - no 'top left', no 'the third one along', no 'just above the bracket'. "
         "The mark is what says where; saying it too is the one thing that makes pointing "
         "pointless. "
-        "It points at a picture you were shown, so there has to be one: if they have not taken "
-        "a photo yet, ask them to hit SNAP instead of guessing at coordinates."
+        "It points at a picture you were shown, so there has to be one: if there is no photo "
+        "yet, take a look first instead of guessing at coordinates."
     ),
     "parameters": {
         "type": "object",
@@ -824,8 +851,8 @@ DATA_TOOLS = frozenset({"save_data", "find_data", "forget_data"})
 BASE_INSTRUCTIONS = """\
 You are Cyclops, a workshop droid: a one-eyed robot that works alongside someone who is making
 or fixing something. They switch you on, point you at the job, and switch you off when they
-are done. The eye is their webcam, and they hold the shutter: you see what they show you, when
-they show it.
+are done. The eye is their webcam: you see what they show you, and you look when they ask you
+to.
 
 WHAT YOU ARE FOR
 You exist so their hands stay free and their phone stays in their pocket. Help this project
@@ -936,9 +963,9 @@ HOW YOU TALK
 - Do not read out URLs, file paths, or JSON.
 
 USING THE EYE
-- You cannot take photos. They take them, by pressing the SNAP button on the panel, and the
-  photo reaches you the moment they do, silently.
-- A photo arriving is not a question. They press that button to put something in front of you,
+- Photos reach you two ways. They press the SNAP button, and the photo arrives silently. Or
+  they ask you to look, and you take one yourself with take_a_look and answer off it.
+- A SNAP photo arriving is not a question. They press that button to put something in front of you,
   often several shots in a row, and then they talk. Stay quiet when one lands: do not describe
   it, do not remark on it, do not say that it arrived. They held the thing up themselves and
   know what is in the picture.
@@ -946,21 +973,17 @@ USING THE EYE
   straight to what you actually see, briefly. No preamble: never open with "look at this",
   "let me see", or by narrating which photo you are looking at.
 - Pointing works on the photo, not on the room. The mark lands on the picture as it was when
-  they pressed SNAP, and their screen holds that picture while they look - so aim at where the
+  it was taken, and their screen holds that picture while they look - so aim at where the
   thing is in the photo you were shown, not where it has got to since.
 - Every picture you are shown arrives with a name of its own, and that name is how you say which
   one you mean when a tool asks. It is yours and not theirs: never say a name out loud and never
   ask them for one, because nothing on their screen shows one. They say "the ball one" and you
   are the one who knows which picture that was.
-- When they hold something up or ask what you can see, and no photo has arrived, ask them for
-  one - once, in a few words. "Hit SNAP and I'll look." Only there. Not as a way to round off a
-  turn, not in a greeting, and not tacked onto an answer that never needed the eye.
-- Ask once and then let it go. If no photo comes, carry on without it; never nag for one, and
-  never claim to see something you have not been shown.
-- If the image is dark, blurry, or empty, say so ONCE and wait. Do not ask for another.
-- Do not explain how you work unless they ask. That you cannot press the button, that you only
-  see what they show you, that a photo has to arrive first - that is your plumbing, not their
-  problem. Answer the question they asked.
+- Never claim to see something you have not been shown.
+- If the image is dark, blurry, or empty, say so ONCE and wait. Do not take another.
+- Do not explain how you work unless they ask. That you only see what they show you, that a
+  photo has to arrive first - that is your plumbing, not their problem. Answer the question they
+  asked.
 
 LOOKING THINGS UP
 - When they ask something factual you are not sure about - a spec, a size, a torque value,
@@ -1522,6 +1545,7 @@ class VoiceAgent:
             },
             "tools": [
                 WEB_SEARCH_TOOL,
+                *_look_tools(self.settings),
                 *_video_tools(self.settings),
                 *_diagram_tools(self.settings),
                 *_scratchpad_tools(self.settings),
@@ -2048,6 +2072,9 @@ class VoiceAgent:
         if call.name == "web_search":
             await self._run_web_search(call)
             return
+        if call.name == "take_a_look":
+            await self._run_take_a_look(call)
+            return
         if call.name in {"open_project", "track_project"}:
             await self._run_project_tool(call)
             return
@@ -2080,6 +2107,83 @@ class VoiceAgent:
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
         await self._send_tool_output(call.call_id, {"ok": False, "error": "unknown tool"})
         await self._request_response()
+
+    async def _run_take_a_look(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Take a photo because they asked Cyclops to look, and answer off it straight away.
+
+        The same camera, folder, flash and click as the SNAP button. What differs is the reply:
+        a SNAP photo waits silently for them to speak, and this one was asked for out loud, so
+        the answer follows at once. The trigger is still theirs - the schema says never
+        unprompted.
+
+        The output first and the picture after it, in the order :meth:`_run_recall` uses: an
+        image cannot ride in a function_call_output, and one response.create covers both.
+        """
+        self._log("[tool] take_a_look")
+        save_dir, keep_as = session.photo_target(self.settings, by="cyclops")
+        self.tool_active = True
+        try:
+            async with asyncio.timeout(CAPTURE_TIMEOUT_S):
+                capture = await capture_image_async(
+                    self.settings.camera_index, save_dir=save_dir, keep_as=keep_as
+                )
+        except TimeoutError:
+            error = f"the camera did not answer within {CAPTURE_TIMEOUT_S:.0f}s"
+        except WebcamError as exc:
+            error = str(exc)
+        except Exception as exc:  # never leave the model waiting for a tool result
+            error = f"{type(exc).__name__}: {exc}"
+        else:
+            error = ""
+        finally:
+            self.tool_active = False
+        if error:
+            # No flash and no click: those mean a photo was taken.
+            self._log(f"[tool] take_a_look failed: {error}", stream=sys.stderr)
+            await self._send_tool_output(call.call_id, {
+                "ok": False,
+                "error": error,
+                "note": "No photo was taken. Say so in a few words; do not guess what is there.",
+            })
+            await self._request_response()
+            return
+
+        if not panel.shutter():
+            self.cues.play("shutter")  # no panel to flash, so the click is the whole of it
+        session.note(
+            "photo",
+            by="cyclops",
+            file=f"{session.PHOTOS}/{capture.path.name}",
+            width=capture.width,
+            height=capture.height,
+            bytes=capture.jpeg_bytes,
+            shown=True,
+        )
+        name = self._put_on_panel(capture.path, "photo")
+        await self._send_tool_output(
+            call.call_id, {"ok": True, "note": "The photo follows as an image."}
+        )
+        await self._send_item(
+            {
+                "type": "message",
+                "role": "user",
+                "content": [
+                    {
+                        "type": "input_text",
+                        # Flat on purpose, as add_photo's is: a caption written as speech comes
+                        # back out of the speaker verbatim.
+                        "text": f"[Photo you just took, because they asked you to look. "
+                        f"It is called {name}.]",
+                    },
+                    {"type": "input_image", "image_url": capture.data_url, "detail": "auto"},
+                ],
+            }
+        )
+        await self._request_response()
+        self._log(
+            f"[tool] photo {capture.width}x{capture.height}, "
+            f"{capture.jpeg_bytes // 1024} KB → {capture.path}"
+        )
 
     async def _run_web_search(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Bridge the Realtime session to the Responses API's hosted web_search tool.
@@ -2436,7 +2540,7 @@ class VoiceAgent:
             await self._send_tool_output(call.call_id, {
                 "ok": False,
                 "error": "no picture to point at",
-                "note": "Ask them to hit SNAP, in a few words. Do not guess at coordinates.",
+                "note": "Take a look first, then point. Do not guess at coordinates.",
             })
             await self._request_response()
             return
@@ -3019,7 +3123,7 @@ class VoiceAgent:
                 "ok": False,
                 "error": "no photo to edit",
                 "note": (
-                    "They have not shown you a photo yet. Ask them to hit SNAP, in a few words."
+                    "There is no photo yet. Take a look first, then edit that."
                 ),
             })
             await self._request_response()
@@ -3033,7 +3137,7 @@ class VoiceAgent:
             await self._send_tool_output(call.call_id, {
                 "ok": False,
                 "error": "what is on the panel was never kept",
-                "note": "Say so in a few words and ask them to hit SNAP.",
+                "note": "Say so in a few words, and take a look if they want a new one.",
             })
             await self._request_response()
             return
@@ -3450,6 +3554,12 @@ def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [DRAW_DIAGRAM_TOOL] if settings.diagrams else []
 
 
+def _look_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The tool that takes a photo when they ask it to look, or nothing. ``CYCLOPS_LOOK=0``
+    leaves SNAP as the only shutter, which is how it was from 2026-08-29 until this came back."""
+    return [TAKE_A_LOOK_TOOL] if settings.look else []
+
+
 def _video_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The tool that plays a video, or nothing. Left out rather than refused, as ever.
 
@@ -3697,6 +3807,8 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
     args = call.arguments
     if call.name == "web_search":
         return _phrase("searching for", _tool_query(args), "searching the web")
+    if call.name == "take_a_look":
+        return "taking a look…"
     if call.name == "draw_diagram":
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
     # Barely seen - the browser covers this strip about a second later - but the chain wants no

@@ -472,12 +472,11 @@ def test_two_pictures_with_one_stem_do_not_answer_to_one_name(voice) -> None:
     assert made._picture_named(made._pictures[0].name) is made._pictures[0]
 
 
-def test_nothing_shown_yet_still_asks_for_the_shutter(voice) -> None:
+def test_nothing_shown_yet_is_refused(voice) -> None:
     made, _ = voice
     assert made._on_panel is None, "a session starts with nothing in front of them"
     output = edit_result(made)
     assert output["ok"] is False
-    assert "SNAP" in output["note"], "the one thing they can do about it"
 
 
 def test_a_drawing_on_the_panel_is_edited_like_any_other_picture(voice) -> None:
@@ -502,7 +501,6 @@ def test_a_picture_that_was_never_written_down_is_not_edited(voice) -> None:
     made._on_panel = agent.Panel(None, "drawn")
     output = edit_result(made)
     assert output["ok"] is False
-    assert "SNAP" in output["note"], "the one thing they can do about it"
 
 
 def test_nothing_is_sent_once_the_socket_has_gone(voice) -> None:

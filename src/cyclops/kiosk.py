@@ -1094,9 +1094,17 @@ class Kiosk:
         if self._snap_busy.is_set():
             return
         self._snap_busy.set()
+        self.shutter()
+        threading.Thread(target=self._capture, name="kiosk-snap", daemon=True).start()
+
+    def shutter(self) -> None:
+        """Flash the screen and click: a photo was taken. The button's and take_a_look's alike.
+
+        Called from the button's thread and from the agent's loop. Both writes are one store the
+        render thread reads a frame later, which is the bargain the rest of this class makes.
+        """
         self._flash_until = time.monotonic() + FLASH_SECONDS
         self._cues.play("shutter")  # the flash, said out loud - same moment, same event
-        threading.Thread(target=self._capture, name="kiosk-snap", daemon=True).start()
 
     def _capture(self) -> None:
         settings = self.controller.settings

@@ -79,6 +79,18 @@ def show() -> bool:
     return bool(kiosk is not None and kiosk.show_picture())  # type: ignore[attr-defined]
 
 
+def shutter() -> bool:
+    """Flash the panel and click, for a photo Cyclops took itself. False if there is no panel.
+
+    Under ``uv run cyclops`` there is no screen to flash, so the caller clicks on its own.
+    """
+    kiosk = _kiosk
+    if kiosk is None:
+        return False
+    kiosk.shutter()  # type: ignore[attr-defined]
+    return True
+
+
 _announce = False  # whether the picture waiting for the panel should make a sound; see announces
 _hold_s = 0.0  # how long the panel should keep what is waiting; see hold_s
 

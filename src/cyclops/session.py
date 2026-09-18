@@ -1112,8 +1112,8 @@ def _render_photo(record: dict, at: str) -> str:
         line = f'*Imagined a change* ({at}) — "{request}"'
         label = "Imagined"
     elif record.get("by") == "cyclops":
-        # Historical: Cyclops used to hold its own shutter. Kept because --fix re-renders old
-        # logs, and a card full of them would otherwise lose half its pictures' captions.
+        # take_a_look: they asked it to look. Older logs have these too, from when Cyclops held
+        # its own shutter, some with a `focus`.
         line = f"*Cyclops took a photo* ({at})"
         if record.get("focus"):
             line += f" — asked to focus on: {record['focus']}"

@@ -155,6 +155,19 @@ async def _main() -> int:
         latest = settings.captures_dir / "latest.jpg"
         if not latest.exists():
             failures.append(f"{latest} was not written")
+
+        # Asked to look, it takes the photo itself and answers off it in the same turn.
+        turn.reset()
+        await agent.send_text("Take a look. What do you see? One short sentence.")
+        await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
+        print(
+            f"· turn 2b: tools={turn.tool_calls}, {turn.seconds_of_audio:.1f}s audio, "
+            f"transcript={turn.transcripts!r}"
+        )
+        if "take_a_look" not in turn.tool_calls:
+            failures.append("model did not call take_a_look when asked to look")
+        elif turn.audio_bytes == 0:
+            failures.append("take_a_look returned no audio")
         turn.reset()
         await agent.send_text(
             "Search the web for the torque spec of a Shimano Hollowtech II crank arm bolt, "
