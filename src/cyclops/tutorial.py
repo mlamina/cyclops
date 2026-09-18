@@ -93,12 +93,13 @@ def note(tutorial: Tutorial) -> str:
     up = f"Step {tutorial.number} of {tutorial.total} is on their screen"
     if tutorial.index == 0:
         return (
-            f"{up}. Say only this step, in one or two sentences, and only what the screen does "
-            "not already say. Then stop talking and wait: they will tell you when it is done, "
-            "and only then call advance_tutorial. A question mid-step gets an answer and the "
-            "step stays where it is. Do not read the steps out, and do not say how many there "
-            "are unless they ask."
+            f"{up}. Go straight into it, no preamble: one or two sentences, and only what the "
+            "screen does not already say. Then stop talking and wait: they will tell you when it "
+            "is done, and only then call advance_tutorial. A question mid-step gets an answer and "
+            "the step stays where it is. Do not read the steps out, and do not say how many there "
+            "are unless they ask. The steps stay on their screen until you call end_tutorial, so "
+            "call it as soon as they want to stop."
         )
     if tutorial.number == tutorial.total:
-        return f"{up}, the last one. Say it, then wait."
-    return f"{up}. Say it, then wait."
+        return f"{up}, the last one. Go straight into it, then wait."
+    return f"{up}. Go straight into it, then wait."

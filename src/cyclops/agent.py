@@ -851,7 +851,8 @@ START_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "start_tutorial",
     "description": (
-        "Put the steps on their screen when they ask to be walked through something step by step."
+        "They asked to be walked through something step by step. Puts the steps on their screen "
+        "one at a time - for that, use this and not the scratchpad."
     ),
     "parameters": {
         "type": "object",
@@ -859,7 +860,7 @@ START_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
             "steps": {
                 "type": "array",
                 "items": {"type": "string"},
-                "description": "In order, a few words each, as they will read on screen.",
+                "description": "In order, a few words each.",
             }
         },
         "required": ["steps"],
@@ -876,7 +877,9 @@ ADVANCE_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
 END_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "end_tutorial",
-    "description": "They want to stop the walkthrough before the end.",
+    "description": (
+        "They want to stop the walkthrough early. It stays on their screen until you call this."
+    ),
     "parameters": {"type": "object", "properties": {}},
 }
 
