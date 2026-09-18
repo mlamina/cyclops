@@ -27,7 +27,7 @@ from PIL import Image
 from cyclops import overlay
 from cyclops.eye import COVER_OPEN_S, COVER_SHUT_S, EyeEngine
 
-SIZE = 176  # what he is on the 800x480 panel: eye_r of 88, edge to edge and no bigger
+SIZE = 132  # what he is on the 800x480 panel: eye_r of 66, edge to edge and no bigger
 AWAKE = overlay.LISTENING  # the state on the other side of the line from asleep
 PHASE = 100.0  # far enough in that nothing here is watching the panel's first second
 LAG = 0.04  # one frame at the kiosk's rate, and the beat the panel really does lose here: the

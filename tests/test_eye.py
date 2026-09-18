@@ -1073,7 +1073,7 @@ def test_the_face_outshines_the_lid_while_there_is_still_a_face() -> None:
     Below a tenth of him the aperture has no face in it - the pupil is not even drawn - and past
     that the steel may be as bright as it needs to be.
     """
-    r = 88  # his size on the panel, so this is the drawing that actually ships
+    r = 66  # his size on the panel, so this is the drawing that actually ships
     engine = eye.EyeEngine(r, 2, overlay.SCREEN, overlay.MOODS[overlay.LISTENING])
     engine.look(overlay.IDLE, overlay.MOODS[overlay.IDLE], 100.0)
     ys, xs = np.ogrid[-r : r + 1, -r : r + 1]
@@ -1445,12 +1445,10 @@ def test_the_screen_stands_clear_of_both_mounts() -> None:
             f"the {name} mount's rail reaches within {gap:.1f}px of the case - the monitor is "
             "buried in it again rather than standing clear"
         )
-        assert gap < ov.term.h / 2, (
-            f"{gap:.1f}px between the case and the {name} mount is a monitor adrift in the bay, "
-            "not one bracketed into it"
-        )
     # ...and an ear across each of those gaps, touching the case at one end and the rail at the
     # other. An ear that reaches neither is a tab drawn beside the joint rather than making it.
+    # This is what says "bracketed in" rather than any cap on the gap: the screen is a fixed width
+    # in the middle of the panel now, so the gap is whatever the mounts leave and the ears span it.
     for ear, name, edge in zip(ov.ears, ("bl", "br"), (ov.term.x, ov.term.right), strict=True):
         near, far = min(ear.x, ear.right), max(ear.x, ear.right)
         assert near <= edge <= far, f"the {name} ear does not reach the case"

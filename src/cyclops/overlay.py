@@ -75,10 +75,12 @@ ms of a 15.5 ms frame, which is the single largest thing this loop does and is m
 the only part of the panel anybody looks at. He grew from r60 to r88 when he moved into the
 corner and took about 3.5 ms with him, which is the whole of the difference between this and the
 tab row; the board sat at 59 C and 0x0 throttled afterwards, so it is a price that is being paid
-out of headroom rather than out of frames. The number is worth keeping honest, because it was
-wrong here for a long time: this line once claimed a tenth of a millisecond, which was the figure
-before he was ever supersampled. Re-measure with `deploy/push.sh && ssh cyclops@cyclops.local`
-and a timing loop around `Overlay.render`, not by reasoning about it.
+out of headroom rather than out of frames. He came back down to r66 when r88 turned out to take
+up too much of the screen, and the Pi figures above are r88's until somebody re-measures them;
+on the Mac the smaller eye is about a fifth cheaper. The number is worth keeping honest, because
+it was wrong here for a long time: this line once claimed a tenth of a millisecond, which was
+the figure before he was ever supersampled. Re-measure with `deploy/push.sh && ssh
+cyclops@cyclops.local` and a timing loop around `Overlay.render`, not by reasoning about it.
 """
 
 from __future__ import annotations
@@ -1279,7 +1281,7 @@ MARK_ALPHABET = {
     "Y": (((.0, .0), (.48, .46)), ((.95, .0), (.48, .46)), ((.48, .46), (.48, 1.))),
 }
 
-BOT_L = 250.0  # the bottom-left bracket's reach along both edges
+BOT_L = 170.0  # the bottom-left bracket's reach along both edges - BOT_R_OUT's, so the two mirror
 BOT_L_STEP = 38.0  # its square landings
 BOT_R_OUT = 170.0  # the bottom-right bracket's reach in from the right edge...
 BOT_R_STEP = 38.0  # ...its landing on the bottom edge...
@@ -1332,6 +1334,10 @@ TERM_FOOT = 4.0  # how far the case stands off the panel's own bottom edge. It s
 # would otherwise have carried the whole screen and the line printed on it up the panel with it
 # - and the eye's own table of where the panel's landmarks are (eye.LANDMARKS) says where the
 # caption is. The case grew two px each way instead, and the line's own rows did not move.
+TERM_W = 352.0  # the case's width, reference px, and it stands in the middle of the panel. It used
+# to be solved from the two rails, which was off-centre the moment the two mounts stopped being
+# the same size and moved every time either one did. It shrinks, rather than cross TERM_CLEAR,
+# on a window too narrow for it.
 TERM_CLEAR = 7.0  # how far the monitor's case stands clear of each mount's rail, so that
 # all four of its corners are its own. It used to run from the middle of one mount's bottom rail
 # to the middle of the other's, buried at both ends for the lower half of its depth - which read
@@ -1710,14 +1716,14 @@ SHEEN_STRIP = 0.11  # what the rim keeps where the lamp does not reach it - the 
 SHEEN_REACH = 0.62  # how far the lamp carries along the rim, in pane heights. Short - the blowout
 # is a corner and not a stripe - but long enough that the strip under the top lip is still a
 # measurable 40% over the field at the far end, which is what the reference does.
-# The eye. He rides the left bracket's ramp, sunk halfway into it - `EYE_SEAT` is that depth as a
-# fraction of the swell's radius, and acos(0.5) is a 60-degree shoulder, which is where the rail
-# leaves the straight and goes round him. Half of him is in the bracket and half is over the
+# The eye. He rides the left bracket's ramp, sunk into it - `EYE_SEAT` is that depth as a
+# fraction of the swell's radius, and acos(0.3) is a 72-degree shoulder, which is where the rail
+# leaves the straight and goes round him. Part of him is in the bracket and part is over the
 # picture, which is the same join the tab row used to make and the reason he reads as part of the
 # machine rather than as a badge stuck on it.
-EYE_R = 0.1833  # 88 px at 800x480, against 60 in the row this replaced
+EYE_R = 0.1375  # 66 px at 800x480. It was 88, and took up too much of the screen
 EYE_SHOULDER = 16.0  # reference px between his rim and the rail's centreline round him
-EYE_SEAT = 0.5
+EYE_SEAT = 0.3  # less deep than half, so his rim keeps clear of the border's glow on both edges
 EYE_PLATE_ALPHA = 255  # the body behind him, and the one thing on this panel that is not a hole
 # in a housing. It sat at the terminal's own 205 for a while on the porthole argument - that a
 # window you cannot see through is not a window - and the argument was about the wrong object.
@@ -2091,9 +2097,9 @@ LOOM_GLOSS = 0.42  # ...and how much of the material's highlight a braided sleev
 # specular on this panel belongs to the bars; the loom in front of them has a sheen
 GLAND_ROLL = 2.0  # reference px of the gland's edges that roll
 # Where the loom leaves him, in PIL's degrees - straight at the panel's own corner, because that
-# is the only direction with any run in it. His swell comes within three pixels of both the left
+# is the only direction with any run in it. His swell comes within five pixels of both the left
 # edge and the bottom one, so the pocket between him and the corner is the whole cable budget:
-# about 47 px at 800x480, which is enough for a gland and three cables and nothing else.
+# about 41 px at 800x480, which is enough for a gland and three cables and nothing else.
 GLAND_AT = 135.0
 LOOM_N = 3
 LOOM_FAN = 11.0  # degrees between one cable and the next
@@ -3722,14 +3728,16 @@ class Overlay:
         bezel = max(2, px(TERM_BEZEL))
         floor_ = self.height - max(2, px(TERM_FOOT))
         roof = floor_ - CAPTION_LINES * self.caption_h - 2 * pad - 2 * bezel
-        # Solved off where each mount's rail actually is at the monitor's own mid-height rather
-        # than off the spine table, which is what puts the clearance where somebody looking at it
-        # would measure it - and what keeps it right if either mount is ever moved.
+        # TERM_W wide and centred, but never closer than TERM_CLEAR to either mount's rail -
+        # measured where each rail actually is at the monitor's own mid-height rather than off the
+        # spine table, which is what puts the clearance where somebody looking at it would see it.
         middle = (roof + floor_) / 2.0
         self.ear_y = middle
         clear = max(4, px(TERM_CLEAR)) + self.rail_w / 2.0
-        left = round(self._rail_at("bl", middle) + clear)
-        right = round(self._rail_at("br", middle) - clear)
+        half_w = min(px(TERM_W) / 2.0, width / 2.0 - (self._rail_at("bl", middle) + clear),
+                     self._rail_at("br", middle) - clear - width / 2.0)
+        left = round(width / 2.0 - half_w)
+        right = width - left
         self.term = Rect(left, roof, right - left, floor_ - roof)
         # ...and the glass inside it, inset by the moulding on every side. Both rectangles are
         # kept: the chassis is what the plate mask and the two bolts are measured from, and the
