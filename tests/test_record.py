@@ -145,10 +145,10 @@ def test_the_recorder_takes_a_panel_wherever_it_takes_a_camera() -> None:
 
 
 class CameraStandIn:
-    """A FrameSource that is plainly not the panel."""
+    """A camera whose recording view is plainly not the panel."""
 
-    def frame(self):
-        return None
+    def __init__(self) -> None:
+        self.film = SimpleNamespace(frame=lambda: None)
 
 
 class FakeController:
@@ -200,7 +200,7 @@ def test_the_tap_hands_over_the_camera_when_the_switch_says_camera(tmp_path, mon
     note = tmp_path / "record-source"
     filming.request(filming.CAMERA, note)
     frames, kiosk = tap(ENV_SCREEN, note, monkeypatch)
-    assert frames is kiosk.camera
+    assert frames is kiosk.camera.film
 
 
 def test_with_no_note_the_tap_follows_the_environment(tmp_path, monkeypatch) -> None:
@@ -208,7 +208,7 @@ def test_with_no_note_the_tap_follows_the_environment(tmp_path, monkeypatch) -> 
     frames, kiosk = tap(ENV_SCREEN, note, monkeypatch)
     assert frames is kiosk.panel
     frames, kiosk = tap(ENV_CAMERA, note, monkeypatch)
-    assert frames is kiosk.camera
+    assert frames is kiosk.camera.film
 
 
 # ---- the microphone track ----
