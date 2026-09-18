@@ -557,12 +557,29 @@ WIDE.addEventListener('change', () => {
   else if (!WIDE.matches) talk.innerHTML = '';
 });
 
-// One session, one file. The clips this session produced are on the reel and are not opened
-// here - a session screen is the recording it was made from, which is the thing a transcript
-// can be scrubbed against.
+// The shortened video's segments: [source start, source end, speed], back to back. Empty means
+// the full recording is playing and its clock is the transcript's own.
+let shortRanges = [];
+
+// Where a moment of the recording lands in the shortened video. The quiet stretches play fast,
+// so a transcript line's t is walked through the segments to find its place.
+function shortAt(t) {
+  if (!shortRanges.length) return t;
+  let out = 0;
+  for (const [a, b, speed] of shortRanges) {
+    if (t < a) break;
+    if (t <= b) return out + (t - a) / speed;
+    out += (b - a) / speed;
+  }
+  return out;
+}
+
+// One session, one file: the shortened video, silence played fast. A session that has none -
+// not cut yet, or too short to be worth cutting - plays its full recording instead.
 async function showSession(name) {
   openName = name;
   talk.innerHTML = '';
+  shortRanges = [];
   solo(!WIDE.matches);
   try {
     const one = await grab('/api/session/' + encodeURIComponent(name));
@@ -575,7 +592,8 @@ async function showSession(name) {
     smeta.textContent = bits.join(' · ');
     ssum.textContent = one.summary;
     if (one.video) {
-      video.src = '/media/' + encodeURIComponent(name) + '/video.mp4';
+      shortRanges = one.short ? one.short_ranges : [];
+      video.src = one.short || '/media/' + encodeURIComponent(name) + '/video.mp4';
       video.hidden = false;
       // Every recording asks for sound again. The muting below is about one refused attempt and
       // never about the screen: the refusal is temporary and nothing tells us when it lifts, so
@@ -617,7 +635,7 @@ function letGo() {
 talk.addEventListener('click', (e) => {
   const el = e.target.closest('.line[data-t]');
   if (!el || !video.src) return;
-  video.currentTime = parseFloat(el.dataset.t) || 0;
+  video.currentTime = shortAt(parseFloat(el.dataset.t) || 0);
   video.play().catch(() => {});
 });
 

@@ -594,10 +594,16 @@ def session(request: HttpRequest, name: str) -> JsonResponse:
     # field on Entry would make that a circle. It is also a stat and, where there is a video, one
     # small read - which is affordable for one session and would not be for a listing of seventy.
     folder = library.resolve(settings.sessions_dir, name)
-    extra: dict = {"cut": "", "cut_made": 0, "cut_total": 0}
+    extra: dict = {"cut": "", "cut_made": 0, "cut_total": 0, "short": "", "short_ranges": []}
     if folder is not None:
         got = cut.progress(folder)
-        extra = {"cut": got.state, "cut_made": got.made, "cut_total": got.total}
+        extra |= {"cut": got.state, "cut_made": got.made, "cut_total": got.total}
+        # The shortened video is what the session screen plays, and its segments are how a
+        # transcript line's clock - the recording's - finds its place in it.
+        plan = cut.read_plan(folder)
+        if plan and plan.clips and card.written(cut.clip_path(folder, 1)):
+            extra["short"] = f"/media/{folder.name}/{card.CLIPS}/1.mp4"
+            extra["short_ranges"] = [list(r) for r in plan.clips[0].ranges]
     return JsonResponse(asdict(found) | extra)
 
 

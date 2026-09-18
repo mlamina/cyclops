@@ -56,12 +56,9 @@ room for. That is the one question here answered by the stylesheet rather than b
     <span class="bar"></span>
     <nav class="nav">
       {% if local %}
-      <!-- The panel: five tabs in 766 px of header. The reel earns the fifth because a
-           highlights reel you cannot watch on the machine that made it is pointless, and an
-           overflow is caught rather than guessed at - layout_check.mjs measures this screen at
-           800x480 for exactly that reason. -->
+      <!-- The panel: four tabs in 766 px of header. An overflow is caught rather than guessed
+           at - layout_check.mjs measures this screen at 800x480 for exactly that reason. -->
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
-      <button class="tab" type="button" data-go="/highlights">Highlights</button>
       <button class="tab" type="button" data-go="/projects">Projects</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
@@ -84,7 +81,6 @@ room for. That is the one question here answered by the stylesheet rather than b
            step: data-go and option value are both read straight into location.hash. -->
       <button class="tab" type="button" data-go="/live">Live</button>
       <button class="tab" type="button" data-go="/sessions">Sessions</button>
-      <button class="tab" type="button" data-go="/highlights">Highlights</button>
       <button class="tab" type="button" data-go="/projects">Projects</button>
       <button class="tab" type="button" data-go="/manuals">Manuals</button>
       <button class="tab" type="button" data-go="/media">Media</button>
@@ -104,15 +100,9 @@ room for. That is the one question here answered by the stylesheet rather than b
              need to watch itself - which is also the four tabs' worth of header, spent. -->
         <option value="/live">LIVE</option>
         <option value="/sessions">SESSIONS</option>
-        <!-- Also not on the panel, and the same argument LIVE makes above: the header has
-             four tabs' worth of room and this is a fifth screen. It is no loss. This screen
-             exists to hand a title and a description to whatever you are uploading from,
-             which is this device and never the one bolted to the bench. -->
-        <option value="/highlights">HIGHLIGHTS</option>
         <option value="/projects">PROJECTS</option>
-        <!-- Not on the panel either, and the plainest case of the argument LIVE and HIGHLIGHTS
-             make above: this screen exists to take a PDF off the machine you downloaded it on,
-             and the Pi is never that machine. -->
+        <!-- Not on the panel either, for the argument LIVE makes above: this screen exists to
+             take a PDF off the machine you downloaded it on, and the Pi is never that machine. -->
         <option value="/manuals">MANUALS</option>
         <option value="/media">MEDIA</option>
         <option value="/">SYSTEM</option>
