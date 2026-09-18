@@ -116,6 +116,7 @@ from .eye import (
 )
 from .point import PanelMark
 from .stats import HOT_C, WARN_C, temp_band, temp_percent
+from .tutorial import Tutorial
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
     "idle",
@@ -625,6 +626,11 @@ CAPTION_LINES = 2  # how far a sentence may wrap before it is cut short instead,
 # was trimmed to a stub ending in an ellipsis with most of the panel's width still free beside
 # it. Two is where it stops: a third is a screen deep enough to start eating the picture, and a
 # caption that big is a dialogue box rather than something said in passing.
+# While a walkthrough is up, the top row of the glass is its bar and the sentence has what is left
+# - elided rather than wrapped, so a long search line can never climb into the bar. The case stays
+# the height it is: the bar goes *in* a row, not over the terminal.
+BAR_ROWS = 1
+BAR_WELL = 0.55  # how much black is over the glass in an empty step's cell - a well, not a lamp
 CAPTION_ALPHA = 253
 BLOOM_R = 2.6  # reference px of skirt round a lit glyph. 1.3 ms a frame on the Pi...
 BLOOM_ALPHA = 0.80  # ...and how much of the letter's own alpha goes into it. Both are held well
@@ -3781,6 +3787,9 @@ class Overlay:
         # One signal-bar tile per (segments lit, accent), built the first time that reading is
         # shown and kept: the glow round a lit segment is a blur, and a blur is not a frame cost.
         self._meters: dict[tuple[int, tuple[int, int, int]], tuple[Image.Image, int]] = {}
+        # ...and the walkthrough's bar, the same idea: one tile per (steps, steps lit), halation
+        # baked in, so what a frame pays for it is one composite. Ten by ten at most.
+        self._bars: dict[tuple[int, int], Image.Image] = {}
         # ...and one tile per character of the clock, for the same reason and a harder one: the
         # digits change every second, so they cannot be baked into the strip, and PIL's stroked
         # text - which is how a glyph gets its halation - costs three times a plain one. Twelve
@@ -5970,6 +5979,7 @@ class Overlay:
         marks_fade: float = 0.0,
         look_at: tuple[int, int] | None = None,
         handed_over: bool = False,
+        tutorial: Tutorial | None = None,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -6019,6 +6029,10 @@ class Overlay:
         the kiosk takes no presses on it either. Whenever the claim is held, session or not, the
         case worth catching is the glance at the panel *before* you start talking, when the voice
         is already routed away and this is the only thing that could tell you.
+
+        ``tutorial`` is a walkthrough in progress. It takes the terminal's top row for a bar - one
+        cell per step, lit up to and including the one being done - and its step's label becomes
+        the sentence under it whenever ``detail`` has nothing to say.
         """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording, heat).copy()
@@ -6026,7 +6040,7 @@ class Overlay:
 
         self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat),
                             self._taping(state, recording), phase)
-        self._draw_caption(layer, state, halo, detail, phase)
+        self._draw_caption(layer, state, halo, detail, phase, tutorial)
         held = pressed == "eye"
         # The pointers, over the faces the chrome laid down once. Neither inverts under a thumb
         # the way the switches here used to: you do not press an instrument, you turn one and
@@ -6941,7 +6955,8 @@ class Overlay:
         layer.alpha_composite(tile, (math.floor(self._meter_x(meter_right)) - self._skirt, row))
 
     def _draw_caption(
-        self, layer: Image.Image, state: str, halo: tuple, detail: str, phase: float
+        self, layer: Image.Image, state: str, halo: tuple, detail: str, phase: float,
+        tutorial: Tutorial | None = None,
     ) -> None:
         """Plain English across the bottom of the panel, printed on the terminal's screen.
 
@@ -6960,8 +6975,17 @@ class Overlay:
         being opened and how far the teardown has got, and CAPTIONS is what is left to say when
         it knows nothing finer. Reversed, every one of those sentences would be swallowed by a
         state word during exactly the states worth narrating.
+
+        A walkthrough's step sits between the two: anything the controller has to say still wins
+        the row, and the step comes back once it has said it. The bar above never moves for it.
         """
-        text = detail or CAPTIONS.get(state, "")
+        rows, first = CAPTION_LINES, 0
+        step = ""
+        if tutorial is not None:
+            layer.alpha_composite(self._bar(tutorial.total, tutorial.number),
+                                  (self.caption_left, self.caption_top))
+            rows, first, step = CAPTION_LINES - BAR_ROWS, BAR_ROWS, tutorial.current
+        text = detail or step or CAPTIONS.get(state, "")
         if not text:
             # Cleared, and the typist has to hear about it: whatever turns up next is new text
             # appearing on an empty screen, even if it is the same sentence as before.
@@ -6978,7 +7002,7 @@ class Overlay:
         # that fills the screen at rest putting its cursor under the bracket half the time.
         cursor_w = self._cursor_w if busy else 0.0
         limit = self.caption_right - x - cursor_w
-        lines = self._wrap(MARKER + text, font, limit, CAPTION_LINES)
+        lines = self._wrap(MARKER + text, font, limit, rows)
         if busy and lines[-1].endswith(BUSY_MARK):
             # Cut short *and* about work in flight, which used to come out as "an M8 s…_": the
             # ellipsis the trim leaves behind, and then a cursor that was already standing in for
@@ -6995,7 +7019,7 @@ class Overlay:
         whole = "\n".join(lines)
         printed = len(whole) if state == ERROR else self._typist.printed(whole, phase)
         typing = printed < len(whole)
-        top = self.caption_top
+        top = self.caption_top + first * self.caption_h
         # The breath runs under every caption of a session that is up - it is what makes the line
         # read as a live tube rather than a printed label - and the cursor after any line that
         # ends in an ellipsis, where it means the thing everybody already reads it to mean.
@@ -7050,6 +7074,40 @@ class Overlay:
         if (typing or (busy and lit)) and at + self._cursor_w <= self.caption_right:
             ops.append((at, y, CURSOR, (*colour, CAPTION_ALPHA)))
         self._print(layer, ops, font)
+
+    def _bar(self, count: int, lit: int) -> Image.Image:
+        """The walkthrough's bar: *count* cells across the top row, the first *lit* of them lit.
+
+        The signal meter's idiom at the terminal's scale - a lit cell is the phosphor at full and
+        an empty one a dark well with a dim rim - and its economics: one tile per reading, with
+        the halation blurred in once rather than per frame, the way :meth:`_print` lays a glyph's.
+        Drawn into its own tile and composited, never onto the layer: ImageDraw writes, and a
+        cell drawn straight onto the chrome would punch a hole through the glass under it.
+        """
+        key = (count, lit)
+        cached = self._bars.get(key)
+        if cached is not None:
+            return cached
+        width = self.caption_right - self.caption_left
+        _, cell_h, gap = self._seg
+        pitch = (width - gap * (count - 1)) / count
+        top = (self.caption_h - cell_h) // 2
+        wells = Image.new("RGBA", (width, self.caption_h), (0, 0, 0, 0))
+        lamps = wells.copy()
+        for index in range(count):
+            x0 = round(index * (pitch + gap))
+            box = [x0, top, round(index * (pitch + gap) + pitch) - 1, top + cell_h - 1]
+            if index < lit:
+                ImageDraw.Draw(lamps).rectangle(box, fill=(*GREEN, 255))
+            else:
+                ImageDraw.Draw(wells).rectangle(box, fill=(0, 0, 0, round(255 * BAR_WELL)),
+                                                outline=(*GREEN_DIM, 255))
+        glow = lamps.filter(ImageFilter.GaussianBlur(self.bloom_r))
+        glow.putalpha(glow.getchannel("A").point(lambda a: round(a * BLOOM_ALPHA)))
+        wells.alpha_composite(glow)
+        wells.alpha_composite(lamps)
+        self._bars[key] = wells
+        return wells
 
     def _print(self, layer: Image.Image, ops: Sequence[tuple[float, float, str, tuple]],
                font: ImageFont.FreeTypeFont) -> None:

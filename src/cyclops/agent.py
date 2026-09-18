@@ -39,6 +39,7 @@ from . import (
     sfx,
     sketch,
     tasks,
+    tutorial,
     youtube,
 )
 from .audio import SAMPLE_RATE, EchoGuard, Microphone, Speaker, resolve_device
@@ -844,6 +845,44 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
     },
 }
 
+# The three walkthrough tools. Their descriptions say only WHEN; how to walk somebody through a
+# job arrives in what each call returns, one step at a time (see cyclops.tutorial).
+START_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "start_tutorial",
+    "description": (
+        "Put the steps on their screen when they ask to be walked through something step by step."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "steps": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "In order, a few words each, as they will read on screen.",
+            }
+        },
+        "required": ["steps"],
+    },
+}
+
+ADVANCE_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "advance_tutorial",
+    "description": "They said the current step is done.",
+    "parameters": {"type": "object", "properties": {}},
+}
+
+END_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "end_tutorial",
+    "description": "They want to stop the walkthrough before the end.",
+    "parameters": {"type": "object", "properties": {}},
+}
+
+TUTORIAL_TOOLS = (START_TUTORIAL_TOOL, ADVANCE_TUTORIAL_TOOL, END_TUTORIAL_TOOL)
+TUTORIAL_TOOL_NAMES = frozenset(tool["name"] for tool in TUTORIAL_TOOLS)
+
 DATA_TOOLS = frozenset({"save_data", "find_data", "forget_data"})
 
 # The static half of what the model is told. The other half - what the last few sessions were
@@ -1375,6 +1414,11 @@ class VoiceAgent:
         self._sketch_text = ""
         self._sketch_timer: asyncio.TimerHandle | None = None  # a compile on its way
         self._sketch_shown = False  # whether the panel has been asked for this one yet
+        # A walkthrough in progress, which the kiosk draws as a bar over the step it is on. Dies
+        # with this agent and so with the session: nothing about it is ever written to the card
+        # but the record. Rebound whole, never mutated, for the reason _doing is - the render
+        # thread reads it every frame with no lock.
+        self._tutorial: tutorial.Tutorial | None = None
         self._background: set[asyncio.Task[None]] = set()
         # Cues sound on their own stream (see cyclops.sfx), but on the same device as the voice
         # rather than whatever the system calls default - those are not always the same speaker.
@@ -1434,6 +1478,11 @@ class VoiceAgent:
             if now < job.until:
                 return job.line
         return ""
+
+    @property
+    def tutorial(self) -> tutorial.Tutorial | None:
+        """The walkthrough on the glass, or None. Read once a frame by the kiosk."""
+        return self._tutorial
 
     @property
     def unacked_item_ids(self) -> frozenset[str]:
@@ -1554,6 +1603,7 @@ class VoiceAgent:
                 *_imagine_tools(self.settings),
                 *_project_tools(self.settings),
                 *_recall_tools(self.settings),
+                *TUTORIAL_TOOLS,
             ],
             "tool_choice": "auto",
         }
@@ -2102,6 +2152,9 @@ class VoiceAgent:
         if call.name == "watch_video":
             await self._run_watch_video(call)
             return
+        if call.name in TUTORIAL_TOOL_NAMES:
+            await self._run_tutorial(call)
+            return
         # Every name still gets an output. A tool the model invents, or one it remembers from a
         # session config that has since changed, must be answered or it waits for it forever.
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
@@ -2558,6 +2611,59 @@ class VoiceAgent:
             ),
         })
         await self._request_response()
+
+    async def _run_tutorial(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Start, move on or stop a walkthrough, and tell the model what to do next.
+
+        What comes back is the whole of the teaching: the note is composed from the step that is
+        now up (:func:`cyclops.tutorial.note`), so the model reads the waiting rule as the step
+        it is about goes up, and a session with no walkthrough in it reads nothing about them.
+        """
+        if call.name == "start_tutorial":
+            output = self._start_tutorial(_tool_steps(call.arguments))
+        elif call.name == "advance_tutorial":
+            output = self._advance_tutorial()
+        else:
+            output = self._end_tutorial()
+        self._log(f"[tool] {call.name} -> {output.get('step', '-')}/{output.get('of', '-')}")
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    def _start_tutorial(self, steps: list[str]) -> dict[str, Any]:
+        """Put *steps* up at the first one, or refuse and leave the glass as it was."""
+        if not tutorial.MIN_STEPS <= len(steps) <= tutorial.MAX_STEPS:
+            return {"ok": False, "error": f"{len(steps)} steps",
+                    "note": tutorial.refused(len(steps))}
+        self._tutorial = tutorial.Tutorial(tuple(steps))
+        session.note("tutorial", action="started", steps=steps)
+        return self._step_output(self._tutorial)
+
+    def _advance_tutorial(self) -> dict[str, Any]:
+        """The next step up, or the walkthrough over once the last one is done."""
+        running = self._tutorial
+        if running is None:
+            return {"ok": False, "error": "no tutorial running", "note": tutorial.NONE_RUNNING}
+        self._tutorial = running.advanced()
+        if self._tutorial is None:
+            session.note("tutorial", action="finished", of=running.total)
+            return {"ok": True, "finished": True, "note": tutorial.FINISHED}
+        session.note("tutorial", action="advanced", step=self._tutorial.number,
+                     of=self._tutorial.total, label=self._tutorial.current)
+        return self._step_output(self._tutorial)
+
+    def _end_tutorial(self) -> dict[str, Any]:
+        """Take the walkthrough off the glass wherever it had got to."""
+        running = self._tutorial
+        if running is None:
+            return {"ok": False, "error": "no tutorial running", "note": tutorial.NONE_RUNNING}
+        self._tutorial = None
+        session.note("tutorial", action="ended", step=running.number, of=running.total)
+        return {"ok": True, "ended": True, "note": tutorial.ENDED}
+
+    @staticmethod
+    def _step_output(up: tutorial.Tutorial) -> dict[str, Any]:
+        return {"ok": True, "step": up.number, "of": up.total, "now": up.current,
+                "note": tutorial.note(up)}
 
     async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Set a drawing going, answer at once, and let :meth:`_draw` finish it.
@@ -3733,6 +3839,15 @@ def _tool_data_query(arguments: str | None) -> str:
     return _tool_string(arguments, "query", MAX_DATA_QUERY_CHARS)
 
 
+def _tool_steps(arguments: str | None) -> list[str]:
+    """start_tutorial's 'steps' argument, read the way :func:`_tool_entries` reads its rows."""
+    try:
+        args = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return []
+    return tutorial.clean(args.get("steps")) if isinstance(args, dict) else []
+
+
 def _tool_entries(arguments: str | None) -> list[tuple[str, str, str]]:
     """save_data's 'entries' argument, as (key, value, note) triples.
 
@@ -3848,4 +3963,12 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return _phrase("finding a video of", _tool_request(args), "finding a video")
     if call.name == "forget_data":
         return _phrase("forgetting", _tool_key(args), "rubbing that out")
+    # A frame or two at most - the step's own label takes the row back the moment the call
+    # returns - but the chain wants no silent branches.
+    if call.name == "start_tutorial":
+        return "setting out the steps…"
+    if call.name == "advance_tutorial":
+        return "next step…"
+    if call.name == "end_tutorial":
+        return "putting the steps away…"
     return "working…"  # a tool the model invented; it still gets an answer, so it still gets a line

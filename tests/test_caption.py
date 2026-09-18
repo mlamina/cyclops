@@ -19,7 +19,7 @@ from dataclasses import dataclass
 import numpy as np
 import pytest
 
-from cyclops import agent, overlay, ui
+from cyclops import agent, overlay, tutorial, ui
 from cyclops.config import Settings
 
 
@@ -86,9 +86,10 @@ def test_every_tool_the_model_is_offered_has_something_to_say() -> None:
             *agent._imagine_tools(settings),
             *agent._project_tools(settings),
             *agent._recall_tools(settings),
+            *agent.TUTORIAL_TOOLS,
         ]
     }
-    assert len(offered) == 9, "the tool list changed; the caption table probably needs to as well"
+    assert len(offered) == 12, "the tool list changed; the caption table probably needs to as well"
     for name in sorted(offered):
         line = agent._activity_line(Call(name, "{}"))
         assert line != "working…", f"{name} falls through to the line meant for invented tools"
@@ -394,3 +395,79 @@ def test_the_wrapper_always_lets_the_line_go(
         asyncio.run(voice._run_tool(Call("open_project", '{"name": "Kitchen Tap"}')))
     assert seen == ["opening Kitchen Tap…"], "the line has to be up while the tool runs"
     assert voice.activity == "", "and gone once it is not"
+
+
+# ---------------------------------------------------------------- a walkthrough on the glass
+#
+# One Overlay for the lot: it is the expensive thing here, and every frame below is settled with
+# _typed, which is what makes a shared one safe - the typist's memory of the last sentence is
+# the only state that carries between renders, and a breath later it has finished typing.
+
+SEVEN = tuple(f"step number {n}" for n in range(1, 8))
+LONG = "editing the picture to paint the doors matt black and the handles brushed brass…"
+
+
+@pytest.fixture(scope="module")
+def ov() -> overlay.Overlay:
+    return overlay.Overlay(800, 480)
+
+
+def _walk(ov: overlay.Overlay, up: int, detail: str = "", steps=SEVEN) -> np.ndarray:
+    return _typed(ov, 0.0, state=overlay.LISTENING, level=0.0, detail=detail,
+                  tutorial=tutorial.Tutorial(steps, up - 1))
+
+
+def _lamps(frame: np.ndarray, ov: overlay.Overlay) -> list[tuple[int, int]]:
+    """The lit runs across the top row, read the way _ink reads a letter: one per lit cell."""
+    top = int(ov.caption_top)
+    band = frame[top + 2 : top + ov.caption_h - 2, ov.caption_left - 2 : ov.caption_right + 2]
+    on = ((band[:, :, :3].astype(int).sum(axis=2) > 300) & (band[:, :, 3] > 150)).any(axis=0)
+    edges = np.flatnonzero(np.diff(np.concatenate(([0], on.astype(int), [0]))))
+    return [(int(a), int(b)) for a, b in zip(edges[::2], edges[1::2], strict=True)]
+
+
+def _row(frame: np.ndarray, ov: overlay.Overlay, line: int) -> np.ndarray:
+    top = int(ov.caption_top + line * ov.caption_h)
+    return frame[top : top + ov.caption_h, ov.caption_left - 2 : ov.caption_right + 2]
+
+
+def test_the_bar_lights_one_cell_per_step_up_to_the_one_being_done(ov: overlay.Overlay) -> None:
+    every = _lamps(_walk(ov, 7), ov)
+    assert len(every) == 7, f"seven steps, seven cells: {every}"
+    third = _walk(ov, 3)
+    lit = _lamps(third, ov)
+    assert lit == every[:3], "the first three are lit and they are the first three cells"
+    assert _ink(third, ov, 0)[1] < every[3][0] + ov.caption_left - 2, (
+        "and nothing is lit over the four still to do"
+    )
+
+
+def test_the_step_is_on_the_second_row_and_moves_with_the_bar(ov: overlay.Overlay) -> None:
+    frames = [_walk(ov, up) for up in range(1, 8)]
+    for up, frame in enumerate(frames, start=1):
+        assert len(_lamps(frame, ov)) == up
+        assert _ink(frame, ov, 1) is not None, f"no step under the bar at {up} of 7"
+    for before, after in zip(frames, frames[1:], strict=False):
+        assert not np.array_equal(_row(before, ov, 1), _row(after, ov, 1)), (
+            "the bar moved on and the step under it did not"
+        )
+
+
+def test_a_long_line_mid_walkthrough_stays_off_the_bar(ov: overlay.Overlay) -> None:
+    quiet, busy = _walk(ov, 4), _walk(ov, 4, LONG)
+    assert np.array_equal(_row(quiet, ov, 0), _row(busy, ov, 0)), "the line climbed into the bar"
+    assert not np.array_equal(_row(quiet, ov, 1), _row(busy, ov, 1)), "and it is showing"
+    assert _ink(busy, ov, 1)[1] <= ov.caption_right, "cut short on its one row, not run off it"
+
+
+def test_with_the_walkthrough_gone_a_long_line_wraps_across_both_rows(
+    ov: overlay.Overlay,
+) -> None:
+    frame = _typed(ov, 0.0, state=overlay.LISTENING, level=0.0, detail=LONG, tutorial=None)
+    assert _lamps(frame, ov) != [] and _ink(frame, ov, 1) is not None, "two rows of words again"
+    assert len(_lamps(frame, ov)) > 7, "and the top one is letters, not cells"
+
+
+def test_ten_steps_still_count(ov: overlay.Overlay) -> None:
+    ten = tuple(f"s{n}" for n in range(10))
+    assert len(_lamps(_walk(ov, 10, steps=ten), ov)) == 10

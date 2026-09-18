@@ -410,6 +410,19 @@ function aside(record) {
   if (kind === 'transcript_failed') {
     return 'You said something that could not be transcribed';
   }
+  if (kind === 'tutorial') {
+    // A walkthrough, in session.md's words. In SPOKEN, so without this branch every step would
+    // read "Something went wrong — ", which is the trap `recall` fell into first.
+    if (record.action === 'started') {
+      const steps = record.steps || [];
+      return 'Started walking you through ' + steps.length + ' steps — ' + esc(steps.join('; '));
+    }
+    if (record.action === 'advanced') {
+      return 'Step ' + record.step + ' of ' + record.of + ' — ' + esc(record.label || '');
+    }
+    if (record.action === 'finished') return 'Finished the walkthrough';
+    return 'Stopped the walkthrough at step ' + record.step + ' of ' + record.of;
+  }
   if (kind === 'project') {
     const verb = record.action === 'tracked' ? 'Started keeping notes on' : 'Looked up its notes on';
     return verb + ' — <b>' + esc(record.name || '') + '</b>';

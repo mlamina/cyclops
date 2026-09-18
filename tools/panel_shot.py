@@ -10,6 +10,7 @@ same photo, the same state, and the only thing that differs between two shots is
     uv run python tools/panel_shot.py --bg photo.jpg --state speaking --level 0.6 --out shot.png
     uv run python tools/panel_shot.py --bg photo.jpg --state listening --strip 8 --seconds 4 --out eye.png
     uv run python tools/panel_shot.py --handed-over --out away.png
+    uv run python tools/panel_shot.py --tutorial 7 --step 3 --out steps.png
     uv run python tools/panel_shot.py --bench
 
 ``--strip`` crops the eye and lays N frames of it across a row, which is how motion is looked at
@@ -28,11 +29,24 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from cyclops import eye, overlay, point
+from cyclops import eye, overlay, point, tutorial
 
 WIDTH, HEIGHT = 800, 480
 STRIP_PAD = 12  # picture kept around the eye in each strip cell, so the bezel's shadow is in it
 AWAKE_ELAPSED = 12.0  # a session twelve seconds old, which is what the clock readouts show
+# A real job's steps, as the model would set them out, for --tutorial to take the first N of.
+SAMPLE_STEPS = (
+    "Turn the water off under the sink",
+    "Open the tap to drain the line",
+    "Prise off the red and blue cap",
+    "Undo the screw under the cap",
+    "Pull the handle off",
+    "Unscrew the cartridge nut, 17 mm",
+    "Swap in the new cartridge",
+    "Nut back on, hand tight plus a quarter",
+    "Handle, screw and cap back on",
+    "Water on, check for drips",
+)
 
 
 def gesture(args: argparse.Namespace) -> point.Gesture | None:
@@ -65,6 +79,8 @@ def shown(args: argparse.Namespace, src: tuple[int, int] = (WIDTH, HEIGHT)) -> d
     shape = gesture(args)
     if shape is not None:
         kw.update(point.frame_args(shape, args.point_age, *src, WIDTH, HEIGHT))
+    if args.tutorial:
+        kw["tutorial"] = tutorial.Tutorial(SAMPLE_STEPS[: args.tutorial], args.step - 1)
     return kw
 
 
@@ -150,6 +166,9 @@ def main() -> None:
                     r"'ring X Y label\nn N X Y\ntag X Y label\narrow X1 Y1 X2 Y2 label'")
     ap.add_argument("--point-age", type=float, default=1.0,
                     help="seconds since the gesture was made; past the hold it is fading")
+    ap.add_argument("--tutorial", type=int, default=0,
+                    help="a walkthrough of N steps (2-10) on the terminal's top row")
+    ap.add_argument("--step", type=int, default=1, help="which of its steps is up, from 1")
     ap.add_argument("--out", type=Path, default=Path("panel.png"))
     args = ap.parse_args()
 
