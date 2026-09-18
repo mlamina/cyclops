@@ -1419,14 +1419,18 @@ document.addEventListener('keydown', (e) => {
 // kernel's legacy mousedev emulation, and anywhere that wins, a finger arrives as a *mouse*
 // drag - which selects, or drags, or does nothing at all, but never scrolls. So for pointers
 // that are not touch, the drag is turned into a scroll here.
-function dragScroll(el) {
+//
+// `when` is for an element that only scrolls some of the time: panel.js hands it the stage,
+// which scrolls a page of a manual and must leave every other picture - and the seeker under a
+// video, which has a drag of its own - exactly as it was.
+function dragScroll(el, when = () => true) {
   const SLOP = 6;          // below this it was a tap with a shaky hand, not a drag
   let id = null, y0 = 0, top0 = 0, far = 0, last = 0, lastAt = 0, vel = 0, glide = 0;
   const halt = () => { cancelAnimationFrame(glide); glide = 0; };
 
   el.addEventListener('pointerdown', (e) => {
     halt(); id = null; far = 0;
-    if (e.pointerType === 'touch' || e.button) return;
+    if (e.pointerType === 'touch' || e.button || !when()) return;
     id = e.pointerId; y0 = last = e.clientY; lastAt = e.timeStamp;
     top0 = el.scrollTop; vel = 0;
   });

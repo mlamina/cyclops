@@ -174,6 +174,8 @@ MAX_ASPECT = 3.0
 # What goes to the panel. See for_panel.
 PANEL_MAX_EDGE = 1024
 PANEL_JPEG_QUALITY = 82
+# ...and what a manual page goes to it as: the panel's full width, height following. See for_page.
+PAGE_PANEL_WIDTH = 800
 
 EDIT_PROMPT = """\
 Edit the attached photograph as instructed, and change nothing else.
@@ -400,6 +402,30 @@ def for_panel(jpeg: bytes) -> bytes:
             scale = PANEL_MAX_EDGE / max(width, height)
             small = image.convert("RGB").resize(
                 (max(1, round(width * scale)), max(1, round(height * scale))), Image.LANCZOS
+            )
+            out = io.BytesIO()
+            small.save(out, format="JPEG", quality=PANEL_JPEG_QUALITY)
+            return out.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError):
+        return jpeg
+
+
+def for_page(jpeg: bytes) -> bytes:
+    """A manual page for the panel: exactly as wide as the panel, however tall that makes it.
+
+    :func:`for_panel` caps the long edge, which for a portrait page is the height - an A4 page
+    came out 724x1024, and the page stretches it across 800 px of glass. Capping the width
+    instead means filling the width never upscales: a 150 dpi A4 page leaves as 800x1132 and
+    scrolls. Never raises, and never enlarges a page that is already narrower than the panel.
+    """
+    try:
+        with Image.open(io.BytesIO(jpeg)) as image:
+            width, height = image.size
+            if width <= PAGE_PANEL_WIDTH:
+                return jpeg
+            scale = PAGE_PANEL_WIDTH / width
+            small = image.convert("RGB").resize(
+                (PAGE_PANEL_WIDTH, max(1, round(height * scale))), Image.LANCZOS
             )
             out = io.BytesIO()
             small.save(out, format="JPEG", quality=PANEL_JPEG_QUALITY)

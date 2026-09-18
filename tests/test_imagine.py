@@ -259,6 +259,35 @@ def test_the_panel_is_told_which_arrivals_are_worth_a_sound(panel_file) -> None:
     assert panel.announces() is False, "...and a photo back over that is quiet again"
 
 
+def test_a_manual_page_leaves_panel_wide_and_a_photo_does_not(
+    panel_file, tmp_path, monkeypatch
+) -> None:
+    """A page is laid across the whole 800 px and scrolled, so it travels 800 wide and says so.
+
+    Everything else keeps ``for_panel``'s 1024 on the long edge and no marker, which is what keeps
+    it contained in the bezel and put away on a press.
+    """
+    monkeypatch.setattr(panel, "show", lambda: True)
+    found = agent.VoiceAgent(Settings(api_key=""))
+
+    def offered(name: str, size: tuple[int, int], page: bool) -> tuple[tuple[int, int], dict]:
+        path = tmp_path / name
+        path.write_bytes(jpeg(*size))
+        assert found._show_found(path, page=page)[0]
+        payload = json.loads(panel_file.read_text())
+        data = base64.b64decode(payload["image"].split(",", 1)[1])
+        with Image.open(io.BytesIO(data)) as sent:
+            return sent.size, payload
+
+    size, payload = offered("p0042.jpg", (1240, 1754), page=True)
+    assert size == (800, 1132)
+    assert payload["page"] is True
+
+    size, payload = offered("14-32-40_you.jpg", (1920, 1080), page=False)
+    assert size == (1024, 576)
+    assert "page" not in payload
+
+
 def test_show_without_a_panel_is_false_not_an_error(monkeypatch) -> None:
     """``uv run cyclops`` has a conversation and no screen. That is ordinary, not a failure."""
     monkeypatch.setattr(panel, "_kiosk", None)
