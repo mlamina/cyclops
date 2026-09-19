@@ -114,18 +114,6 @@ def test_a_mic_storm_is_not_a_conversation() -> None:
     assert cut.worth_asking(storm)
 
 
-def test_a_long_session_of_almost_no_words_is_not_worth_a_video() -> None:
-    """Two turns of "yeah" over three minutes passes every count but the character one."""
-    thin = [
-        {"t": 10.0, "type": "you", "text": "yeah", "dur": 1.0},
-        {"t": 20.0, "type": "cyclops", "text": "ok"},
-        {"t": 30.0, "type": "you", "text": "sure", "dur": 1.0},
-        {"t": 40.0, "type": "cyclops", "text": "right"},
-        {"t": 180.0, "type": "end", "seconds": 180.0},
-    ]
-    assert cut.worth_asking(thin)
-
-
 def test_a_conversation_gets_a_video_whether_or_not_the_picture_changed() -> None:
     """The story needed a new picture to hold its turn. There is no story any more."""
     talk = records_of()

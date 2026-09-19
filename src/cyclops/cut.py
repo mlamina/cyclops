@@ -58,7 +58,6 @@ BRIDGE_S = 0.30    # a hole this small between two audible spans is a breath, no
 WORTH_YOU = 1
 WORTH_CYCLOPS = 2
 WORTH_SECONDS = 30.0
-WORTH_CHARS = 300  # of transcript, both voices. Kills a mic storm: thirty turns in four seconds
 
 SETTLE_S = 600.0   # a folder with no summary is one cyclops.after may be about to rename
 MAX_TITLE_CHARS = 70
@@ -289,9 +288,6 @@ def worth_asking(records: list[dict]) -> str:
     said = _logged_seconds(records)
     if spoken < WORTH_SECONDS and said < WORTH_SECONDS:
         return "that one was over too quickly to hold a moment"
-    chars = sum(len(str(r.get("text", "") or "")) for r in (*you, *cyclops))
-    if chars < WORTH_CHARS:
-        return "there is barely any conversation in that one"
     return ""
 
 
