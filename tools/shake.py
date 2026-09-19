@@ -19,6 +19,7 @@ stabilizer, both written out as mp4 and both scored.
 from __future__ import annotations
 
 import argparse
+import itertools
 import subprocess
 import time
 from pathlib import Path
@@ -27,10 +28,12 @@ import cv2
 import numpy as np
 
 from cyclops import camera, overlay, steady
+from cyclops.record import DEFAULT_FPS as RECORD_FPS
 from cyclops.webcam import FRAME_HEIGHT, FRAME_RATE, FRAME_WIDTH
 
 PANEL = (800, 480)
-WINDOW = FRAME_RATE  # the moving average: one second of frames
+WINDOW = RECORD_FPS  # the moving average: one second of a recording's frames
+STRIDE = FRAME_RATE // RECORD_FPS  # camera frames per recorded frame
 ENLARGE = 1.6  # the photo is blown up this much so a 1280x720 window has room to wander
 TARGET_JITTER = 30.0  # the stapler session's score, which the synthetic clip is sized to
 SWAY_HZ, TREMOR_HZ = (0.5, 2.0), (4.0, 8.0)
@@ -106,9 +109,9 @@ def handheld(frames: int, seed: int) -> np.ndarray:
 
 
 def sized(path: np.ndarray) -> np.ndarray:
-    """The path scaled so the panel would see TARGET_JITTER of it (1 panel px = 1.5 camera px)."""
+    """The path scaled so a recording would see TARGET_JITTER of it (1 panel px = 1.5 camera px)."""
     per_panel = FRAME_HEIGHT / PANEL[1]
-    return path * TARGET_JITTER / np.percentile(jitter(path / per_panel), 90)
+    return path * TARGET_JITTER / np.percentile(jitter(path[::STRIDE] / per_panel), 90)
 
 
 def camera_frames(photo: np.ndarray, path: np.ndarray):
@@ -135,7 +138,7 @@ def write(frames, out: Path):
     """Encode as the recorder does, and pass the frames through so they can be scored too."""
     enc = subprocess.Popen(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "rawvideo",
-         "-pix_fmt", "bgr24", "-s", f"{PANEL[0]}x{PANEL[1]}", "-framerate", str(FRAME_RATE),
+         "-pix_fmt", "bgr24", "-s", f"{PANEL[0]}x{PANEL[1]}", "-framerate", str(RECORD_FPS),
          "-i", "-", "-c:v", "libx264", "-preset", "ultrafast", "-crf", "26",
          "-pix_fmt", "yuv420p", str(out)],
         stdin=subprocess.PIPE,
@@ -155,7 +158,10 @@ def synthetic(out: Path, photo_path: Path, seconds: float, seed: int) -> None:
     np.save(out / "path.npy", path)
     for name, steadied in (("before", False), ("after", True)):
         video = out / f"{name}.mp4"
-        list(write(panel(camera_frames(photo, path), steadied), video))
+        # The stabilizer sees every camera frame; the recording keeps one in STRIDE, as the
+        # recorder's own clock does.
+        shown = panel(camera_frames(photo, path), steadied)
+        list(write(itertools.islice(shown, 0, None, STRIDE), video))
         print(f"{name:7s} {score(read(video)):5.1f} px   {video}")
 
 

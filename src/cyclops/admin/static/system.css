@@ -33,15 +33,16 @@ body:not(.kiosk) .meters { padding-left: 0; }
    what the fourth of them was spent on. */
 .controls {
   display: grid;
-  grid-template-rows: repeat(4, auto);
+  grid-template-rows: repeat(5, auto);
   /* space-between rather than three equal thirds, so the top of VOL sits level with the top of
      CPU and the bottom of INTERRUPT with the bottom of the disk bar. Two alignments across the
      rule for nothing, and they are the two anybody actually sees. */
   align-content: space-between;
-  /* 14 u until VOICE arrived. Four rows and a 46 u thumb on three of them do not leave a fourth
-     of the column to spend on air, and space-between has no negative space to give back - a
-     row that does not fit is simply drawn under the close bar, with nothing said. */
-  gap: calc(10 * var(--u));
+  /* 14 u until VOICE arrived, 10 u until STABILIZE did. Five rows are 78 u of volume and four
+     46 u switches, so 8 u gaps leave ~3 px of the column over - and space-between has no
+     negative space to give back: a row that does not fit is simply drawn under the close bar,
+     with nothing said. */
+  gap: calc(8 * var(--u));
   /* The rule down the middle *is* the split. On this column's own border rather than between
      the two, so it leaves when the settings do: a laptop must never be left with a line down
      an empty half. */
@@ -133,6 +134,9 @@ body:not(.kiosk) .meters { padding-left: 0; }
    that a switch has somewhere to sit; reserving it here was 24 px of nothing above the slider,
    and 24 px is most of what the fourth control needed. */
 .cslim { min-height: 0; }
+/* A switch's name with its hint under it, both beside the switch - 13 u and 16 u of text in the
+   46 u the switch is tall anyway, so a hint costs no height of its own. */
+.cname { display: grid; gap: calc(4 * var(--u)); min-width: 0; }
 .vlabel {
   font-size: calc(13 * var(--u));
   line-height: 1;

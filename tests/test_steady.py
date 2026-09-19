@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 from cyclops import camera, overlay, steady
+from cyclops.webcam import FRAME_RATE
 
 W, H = 1280, 720
 SMALL = (camera.FOCUS_WIDTH, camera.FOCUS_HEIGHT)
@@ -84,8 +85,16 @@ def test_a_camera_recording_frame_never_contains_fill() -> None:
         assert (shot == GREY).all(), f"fill in the recording at {(sx, sy)}"
 
 
+def test_a_steady_pan_is_followed_once_it_stops() -> None:
+    pan = np.linspace(-300, 300, 2 * FRAME_RATE)  # 300 camera px/s on both axes, for two seconds
+    hold = round(1.5 * FRAME_RATE)
+    shifts = run([(p, p) for p in pan] + [(300, 300)] * hold)
+    assert np.allclose(np.abs(shifts[len(pan) - 1]), REACH), "the pan should have used the reach"
+    assert (np.abs(shifts[-1]) < 5).all(), f"still {shifts[-1]} off centre 1.5 s after the pan"
+
+
 def test_losing_track_drains_the_shift_without_a_lurch() -> None:
-    path = [(0, 0)] * 3 + [(100, 60)] * 4 + [None] * 45
+    path = [(0, 0)] * 3 + [(100, 60)] * 4 + [None] * (3 * FRAME_RATE)
     shifts = run(path)
     assert np.abs(shifts[6]).max() > 20, "the jolt should have left something to drain"
     assert np.abs(np.diff(shifts[6:], axis=0)).max() <= steady.DRAIN_PX + 1e-9
@@ -93,10 +102,14 @@ def test_losing_track_drains_the_shift_without_a_lurch() -> None:
 
 
 class _Frames:
-    """A camera that delivers a jolted bench once and then stops the reader."""
+    """A camera that delivers a jolted bench once and then stops the reader.
 
-    def __init__(self, source: camera.CameraSource, path) -> None:
+    *before* maps a frame's index to something to do just before that frame is read.
+    """
+
+    def __init__(self, source: camera.CameraSource, path, before=None) -> None:
         self._source, self._frames = source, [self._frame(*p) for p in path]
+        self._before = before or {}
         self.sent = []
 
     @staticmethod
@@ -105,6 +118,8 @@ class _Frames:
         return cv2.cvtColor(grey, cv2.COLOR_GRAY2BGR)
 
     def read(self):
+        if len(self.sent) in self._before:
+            self._before[len(self.sent)]()
         if not self._frames:
             self._source._stop.set()
             return False, None
@@ -112,8 +127,9 @@ class _Frames:
         return True, self.sent[-1]
 
 
-def test_photos_are_raw_while_the_live_picture_is_shifted() -> None:
+def test_photos_are_raw_while_the_live_picture_is_shifted(tmp_path) -> None:
     source = camera.CameraSource()
+    source.steady_note = tmp_path / "steady"  # never switched: on
     cap = _Frames(source, [(0, 0), (0, 0), (40, 20)])
     source._read_loop(cap, source._generation)
 
@@ -121,3 +137,25 @@ def test_photos_are_raw_while_the_live_picture_is_shifted() -> None:
     centred = steady.window(cap.sent[-1], (0, 0), steady.LIVE_CROP)
     assert live.shape == centred.shape and (live != centred).any(), "the live picture is not moved"
     assert any(photo is sent for sent in cap.sent), "the photo must be a raw frame, untouched"
+
+
+def test_the_switch_lands_mid_stream_and_outlives_a_restart(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(steady, "NOTE_POLL_S", 0.0)  # look every frame, not twice a second
+    note = tmp_path / "steady"
+    steady.request(False, note)  # switched off before this process was started
+    source = camera.CameraSource()
+    source.steady_note = note
+    off = {}
+
+    def switch_on() -> None:
+        off["live"], off["film"] = source.frame(), source.film.frame()
+        steady.request(True, note)
+
+    jolt = [(0, 0), (0, 0), (40, 20)]
+    cap = _Frames(source, jolt + jolt, before={len(jolt): switch_on})
+    source._read_loop(cap, source._generation)
+
+    raw = cap.sent[len(jolt) - 1]
+    assert off["live"] is raw and off["film"] is raw, "off, everything gets the raw frame, whole"
+    live, centred = source.frame(), steady.window(cap.sent[-1], (0, 0), steady.LIVE_CROP)
+    assert live.shape == centred.shape and (live != centred).any(), "on again, it is steadied"

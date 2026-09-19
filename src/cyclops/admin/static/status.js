@@ -92,6 +92,26 @@ if (barge) {
   });
 }
 
+// Whether the camera picture is held still. The same note again; the camera's reader looks at it
+// twice a second, so the panel behind this page has changed before the page is closed.
+const steady = document.getElementById('steady');
+if (steady) {
+  const hint = document.getElementById('steadyhint');
+  steady.addEventListener('click', async () => {
+    const on = steady.getAttribute('aria-checked') !== 'true';
+    steady.setAttribute('aria-checked', on ? 'true' : 'false');   // drawn before the round trip
+    steady.textContent = on ? 'ON' : 'OFF';
+    hint.textContent = on ? 'holds the picture still' : 'the raw picture, shake and all';
+    try {
+      await fetch('/steady', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: 'on=' + (on ? '1' : '0'),
+      });
+    } catch (e) { /* the service is gone; the next render says what actually stuck */ }
+  });
+}
+
 // What a session's video is of. The same note-and-pick-up as the two above, with one honest
 // difference the hint has to carry: an encoder is opened once, at one frame size, so this lands
 // on the next session rather than on any recording already running.

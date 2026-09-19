@@ -91,7 +91,8 @@ class CameraSource:
         self._lock = threading.Lock()
         self._frame = None  # the newest decoded frame, BGR, raw
         self._live = None  # ...and the steadied window of it the panel is shown
-        self._shift = (0.0, 0.0)  # where that window is centred, off the frame's own centre
+        self._shift = (0.0, 0.0)  # where that window is centred off the frame's; None: raw
+        self.steady_note = steady.STEADY_FILE  # the settings screen's STABILIZE switch
         self._stamp = 0.0  # time.monotonic() when it arrived
         self._recent: deque[tuple[object, float, float]] = deque(maxlen=HISTORY)
         self.last_pick: tuple[float, float, float] | None = None  # (score, newest_score, age_s)
@@ -190,7 +191,9 @@ class CameraSource:
         """The newest frame as a CAMERA recording frames it - see :class:`Film`."""
         with self._lock:
             raw, shift = self._frame, self._shift
-        return None if raw is None else steady.film(raw, shift)
+        if raw is None or shift is None:
+            return raw  # switched off: the whole frame, as a recording was before stabilizing
+        return steady.film(raw, shift)
 
     def snapshot(self):
         """The sharpest frame from the last moment, or None if the camera has gone stale.
@@ -326,9 +329,11 @@ class CameraSource:
         a second timeout to notice the first.
 
         Every entry is a fresh open - a framing change, a reconnect, a wake - so the stabilizer
-        starts from zero here too: the last device's shake says nothing about this one's.
+        starts from zero here too: the last device's shake says nothing about this one's. So does
+        switching it back on: the frames it missed while off say nothing about where the hand is.
         """
         steadier = steady.Steady()
+        steadying, looked = steady.enabled(self.steady_note), time.monotonic()
         failing_since = 0.0
         while not self._stop.is_set() and self._generation == token and self._framing == framing:
             attempted = time.monotonic()
@@ -345,10 +350,18 @@ class CameraSource:
                 time.sleep(0.02)
                 continue
             failing_since = 0.0
+            if attempted - looked >= steady.NOTE_POLL_S:
+                looked, wanted = attempted, steady.enabled(self.steady_note)
+                if wanted != steadying:
+                    steadier, steadying = steady.Steady(), wanted
+                    print(f"· stabilize {'on' if wanted else 'off'}", flush=True)
             small = thumbnail(frame)
             score = focus_score(small)
-            shift = steadier.update(small, frame.shape[1], frame.shape[0])
-            shown = steady.live(frame, shift)
+            if steadying:
+                shift = steadier.update(small, frame.shape[1], frame.shape[0])
+                shown = steady.live(frame, shift)
+            else:
+                shift, shown = None, frame
             now = time.monotonic()
             with self._lock:
                 self._frame, self._live, self._shift, self._stamp = frame, shown, shift, now

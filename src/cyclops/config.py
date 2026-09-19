@@ -98,6 +98,11 @@ RECORD_SOURCE_FILE = Path.home() / ".cache" / "cyclops" / "record-source"
 # said, and CYCLOPS_VOICE is left to decide - see :mod:`cyclops.voice`.
 VOICE_FILE = Path.home() / ".cache" / "cyclops" / "voice"
 
+# And where it leaves the answer to "hold the picture still?" - see :mod:`cyclops.steady`. The page
+# is not the process holding the camera, so it is the same note-and-pick-up again; the camera's
+# reader looks at it twice a second. Absent means nobody has ever said, and that is on.
+STEADY_FILE = Path.home() / ".cache" / "cyclops" / "steady"
+
 # And beside it, the one note here that is a request rather than a state: play that voice now, so
 # whoever is standing at the panel can hear what they are choosing between. Written by the page,
 # consumed *and deleted* by the kiosk - the only process on this box with a /dev/snd - which is

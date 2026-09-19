@@ -15,15 +15,22 @@ strip or under opaque metal and nowhere else.
 It owns the measurement, the smoothing and the cutting. It never writes into a raw frame: the
 photos the model is shown are the raw frames, whole and unshifted, and the windows handed out
 here are views of them (or, at the very edge of the reach, copies).
+
+And the switch. STABILIZE on the settings screen turns all of it off - the panel, both kinds of
+recording and the admin page get the raw frame again, as they did before any of this. Two halves,
+like :mod:`cyclops.barge`: the page writes the note, the camera's reader picks it up, so it lands
+within half a second and outlives a restart.
 """
 
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import cv2
 import numpy as np
 
+from .config import STEADY_FILE
 from .webcam import FRAME_RATE, FRAME_WIDTH
 
 # The one knob: how long the smoothed path takes to catch up with the hand. Longer is steadier
@@ -45,6 +52,26 @@ MIN_TRACKED = 10  # fewer agreeing corners than this and the frame is not believ
 # A step past this share of the width in one frame is a whip pan, a hand over the lens or a new
 # scene - not shake, and not something to hold the picture against.
 MAX_STEP = 0.1
+
+
+NOTE_POLL_S = 0.5  # how often the camera's reader looks at the switch
+
+_OFF = {"off", "0", "false", "no"}
+
+
+def enabled(path: Path = STEADY_FILE) -> bool:
+    """The switch's position. On unless the page has said off - including an unreadable note."""
+    try:
+        return path.read_text().strip().lower() not in _OFF
+    except OSError:
+        return True
+
+
+def request(on: bool, path: Path = STEADY_FILE) -> bool:
+    """Leave the answer for the camera to pick up, and return what was written."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("on\n" if on else "off\n")
+    return on
 
 
 def steadiable(width: int, height: int) -> bool:
@@ -146,4 +173,3 @@ class Steady:
             return None
         centre = np.array([(small.shape[1] - 1) / 2, (small.shape[0] - 1) / 2, 1.0])
         return fit @ centre - centre[:2]
-

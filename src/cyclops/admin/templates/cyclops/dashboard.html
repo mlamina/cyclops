@@ -140,23 +140,40 @@ room for. That is the one question here answered by the stylesheet rather than b
         <input class="vslider" id="vol" type="range" min="0" max="100" step="5" value="{{ volume|default:80 }}"
                aria-label="Speaker volume">
       </section>
+      <!-- A switch is one row: its name with the hint under it, and the switch beside them. The
+           hint had a line of its own until STABILIZE made five, and that line was the room. -->
       <section class="ctl">
         <div class="chead">
-          <span class="vlabel">RECORD</span>
+          <span class="cname">
+            <span class="vlabel">RECORD</span>
+            <span class="shint" id="rechint">{% if record_screen %}this screen, chrome and all{% else %}the camera alone, full size{% endif %}</span>
+          </span>
           <button class="sw" id="rec" type="button" role="switch"
                   aria-label="Record the screen rather than the camera"
                   aria-checked="{% if record_screen %}true{% else %}false{% endif %}">{% if record_screen %}SCREEN{% else %}CAMERA{% endif %}</button>
         </div>
-        <span class="shint" id="rechint">{% if record_screen %}this screen, chrome and all{% else %}the camera alone, full size{% endif %}</span>
       </section>
       <section class="ctl">
         <div class="chead">
-          <span class="vlabel">INTERRUPT</span>
+          <span class="cname">
+            <span class="vlabel">STABILIZE</span>
+            <span class="shint" id="steadyhint">{% if steady %}holds the picture still{% else %}the raw picture, shake and all{% endif %}</span>
+          </span>
+          <button class="sw" id="steady" type="button" role="switch"
+                  aria-label="Hold the camera picture still"
+                  aria-checked="{% if steady %}true{% else %}false{% endif %}">{% if steady %}ON{% else %}OFF{% endif %}</button>
+        </div>
+      </section>
+      <section class="ctl">
+        <div class="chead">
+          <span class="cname">
+            <span class="vlabel">INTERRUPT</span>
+            <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}tap the screen to cut in{% endif %}</span>
+          </span>
           <button class="sw" id="barge" type="button" role="switch"
                   aria-label="Let me interrupt Cyclops"
                   aria-checked="{% if barge_in %}true{% else %}false{% endif %}">{% if barge_in %}ON{% else %}OFF{% endif %}</button>
         </div>
-        <span class="shint" id="bargehint">{% if barge_in %}talk over Cyclops to cut in{% else %}tap the screen to cut in{% endif %}</span>
       </section>
       <!-- Who answers you. Ten voices is too many to argue about on paper and none of them can be
            told apart by name, so every one of these three buttons plays one: the arrows step and
