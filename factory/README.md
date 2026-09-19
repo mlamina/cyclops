@@ -4,8 +4,8 @@ You say what you want. It gets built while you do something else. You look at th
 
 ```
 /capture ──► ready ──► (the loop builds it) ──► review ──► /ship ──► done
-                ▲                                 │
-                └──────────── /rework ────────────┘
+                ▲                              or stopped
+                └──────────── /rework ─────────────┘
 ```
 
 `/run-factory` starts it and leaves it: the loop builds and watches, and the command watching the
@@ -74,8 +74,16 @@ a build that gave up halfway both leave a log and no process, and a build that i
 and one that is hung both write nothing. The loop writes down which, rather than leaving `/board`
 to guess.
 
-The job still sits at `ready` and the loop won't try again — that's deliberate, so a broken job
-can't burn an afternoon in a loop nobody is watching. `/rework N` sends it round again.
+There is a third ending, and it took two jobs in one afternoon to notice it was missing. A build
+that finds the plan cannot meet a criterion is told to stop and say so rather than quietly improve
+the plan — that is the build working correctly, and it sets `state: stopped`, which the loop records
+as `STOPPED`. It is a decision waiting on you, not a fault: `/review N` to see the numbers, then
+`/rework N` with a plan that can get there, or `/ship N` if what it did prove is enough. Before
+this, both of those arrived as `STALLED` — the word for a crash.
+
+A stalled job still sits at `ready` and the loop won't try again — that's deliberate, so a broken
+job can't burn an afternoon in a loop nobody is watching. A stopped one sits at `stopped`, which the
+loop never takes at all. Either way `/rework N` sends it round again.
 
 A build that writes nothing for ninety minutes is presumed hung and killed; one that is working,
 however long it takes, is left alone.

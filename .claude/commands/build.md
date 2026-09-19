@@ -24,9 +24,9 @@ belongs to master, and a page written in here dies with the worktree.
 
 The plan and the criteria are in the job file. They were agreed with Marco. **Follow them; don't
 re-explore and don't redesign.** If the plan turns out to be wrong — the code doesn't look the way
-it was described, a criterion can't be met — **stop, say so in the job file, and leave the state
-at `ready`**. A wrong plan quietly replaced with a better one, in a worktree nobody is watching,
-is the worst thing this command can do.
+it was described, a criterion can't be met — **stop, say so in the job file, and set
+`state: stopped`** (see *Leave two things*). A wrong plan quietly replaced with a better one, in a
+worktree nobody is watching, is the worst thing this command can do.
 
 Otherwise it's normal work under `CLAUDE.md` and `.claude/rules/`: surgical changes, follow the
 patterns already there, `uv run pytest` passes. Vibe the code — nobody is going to read it.
@@ -74,8 +74,8 @@ long, write as it goes — results into `$MAIN/factory/html/NNN/` line by line r
 end — and the wait takes care of itself. And never wait on something that may never arrive: a
 retry loop around a machine that is not there is not work, it is the build failing slowly.
 
-If the work genuinely cannot fit, that is a wrong plan: say so in the job file and leave the state
-at `ready`.
+If the work genuinely cannot fit, that is a wrong plan: say so in the job file and set
+`state: stopped`.
 
 ## Leave two things
 
@@ -96,3 +96,12 @@ factory/html/NNN.html
 
 Then change the one line `state: ready` to `state: review`. That is the signal Marco is waiting
 for, and it goes last — after the page exists, after the criteria are ticked.
+
+**Or `state: stopped`, if the plan was wrong.** Leave the page and the evidence anyway — everything
+you did prove is worth looking at, and the numbers are usually what shows the plan was wrong. Tick
+the criteria you did meet, and under your `## Built` heading say plainly which criterion cannot be
+met and what would be needed instead. Then `state: stopped`, last, exactly as above.
+
+Use it only for that. `stopped` means *this plan cannot get there* and it puts the job in front of
+Marco for a decision; it is not somewhere to put a build you ran out of room in. If you simply did
+not finish, that is the ending nobody wants and it needs no help from you — leave the state alone.

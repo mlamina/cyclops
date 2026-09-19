@@ -59,7 +59,8 @@ Every line the watcher prints is one of these. Nothing else is.
 |---|---|
 | `BUILDING N <slug>` | the loop took the job and started it. Say it in one line — after a `/capture`, "it started" and "it never started" look identical for four minutes otherwise, and that is the one silence worth breaking |
 | `REVIEW N` | the build set `state: review`. Marco's cue, and the only good news you pass on |
-| `STALLED N <reason>` | the build ended without reaching `review`, reason as loop.sh wrote it |
+| `STOPPED N <reason>` | the build finished what it could and **refused to pass itself** — the plan cannot meet a criterion. Deliberate, correct, and Marco's decision. Not a fault, and never re-sent |
+| `STALLED N <reason>` | the build died without reaching `review` or `stopped`, reason as loop.sh wrote it |
 | `WEDGED N <reason>` | ninety minutes silent, killed |
 | `EXIT N <code>` | `claude -p` itself failed |
 | `STRANDED N <pid>` | the log ends at `PID` and that process is gone — nothing wrote an ending |
@@ -77,6 +78,10 @@ change nothing. You get a verdict; its reading stays in its own context.
 
 `BUILDING` and `REVIEW` need no subagent. Say the line and move on.
 
+`STOPPED` needs no subagent to *attribute* — the build has already told you whose call it is — but
+it does need reading, because what Marco needs is which criterion cannot be met and what would be
+needed instead. Send that to a subagent and relay its answer: the numbers, the fork, and the exit.
+
 ## Whose fault it is
 
 This is the only judgement you make, and everything else follows from it.
@@ -93,9 +98,13 @@ round again.
 | wedged on cache churn | `last_write()` prunes `.venv`, `.git` and `__pycache__` but not `.ruff_cache` — a build stuck in a retry loop that runs a linter looks busy for ever |
 
 **The job's** — the plan was wrong, a criterion cannot be met, the work does not fit. `build.md`
-tells a build to say so in the job file and leave the state at `ready`, and that is a build doing
-its job correctly, not a fault. **Do not fix it and do not send it round.** Say what it said, name
-`/rework N` or `/review N`, and leave it.
+tells a build to say so in the job file and set `state: stopped`, which arrives here as `STOPPED`
+rather than `STALLED`, and that is a build doing its job correctly, not a fault. **Do not fix it and
+do not send it round.** Say what it said, name `/review N`, and leave it.
+
+A `STALLED` that turns out to be one of these is now a bug in the build, not in the pipeline: it
+stopped for the right reason and failed to say so in the one line that records it. Worth a sentence
+to Marco, and nothing else.
 
 **Neither, and out of your reach** — a broken `tools/` script, a missing dependency, anything under
 `src/`. Report it in one line and let the pipeline wait. **A job is never re-sent into an unfixed

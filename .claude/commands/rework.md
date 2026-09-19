@@ -8,9 +8,14 @@ Another round on job `$ARGUMENTS` — the number, then what's wrong in Marco's w
 Append his words to the job file under `## Feedback — <date>`, verbatim. **Never edit the earlier
 rounds** — the history of a job is the job, and he should be able to see it converging, or not.
 
-Then set `state: ready` and **delete `factory/logs/NNN.log`**. That log is the loop's record that
-it already took a swing; removing it is what makes the job eligible again. The branch and the
-worktree stay, so the next build continues rather than starting over.
+Then set `state: ready` and **delete `factory/logs/NNN.log` and `factory/logs/NNN.state`**. The log
+is the loop's record that it already took a swing; removing it is what makes the job eligible again.
+The state file is the last frontmatter state the loop saw, and a stale one left behind swallows the
+next round's first `STATE` line — so it goes with the log. The branch and the worktree stay, so the
+next build continues rather than starting over.
+
+This works from `stopped` as much as from `review`: a job whose plan was wrong comes back round the
+same way, and the thing that makes it a different round is what you wrote in **Done when**, below.
 
 If what he said changes what *done* means, update the **Done when** list and say which line you
 changed. Criteria that quietly drift to match whatever got built are worse than none.

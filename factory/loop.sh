@@ -180,16 +180,29 @@ start() {  # $1 number, $2 slug, $3 absolute log path
     # this subshell with it, and the ending would go unwritten in exactly the case that needs it.
     code=0; wait "$cpid" || code=$?
     say "$3" "EXIT $code"
-    if [ "$(state_of "$1")" = review ]; then
-      say "$3" "DONE - waiting on Marco"
-      echo "· $1 done — /review $1"
-    else
-      # The build's own contract: the page, then the ticks, then `state: review`, in that order
-      # and last. Exiting without it means it stopped somewhere in the middle, whatever its exit
-      # status says - a model that ends its turn to describe what it is about to do next exits 0.
-      say "$3" "STALLED - exited at 'state: $(state_of "$1")' without setting review"
-      echo "· $1 STALLED — /rework $1 to send it round again" >&2
-    fi
+    # Three endings, because there are three, and the first version of this had two. `review` is
+    # the build's contract met: the page, then the ticks, then the state, in that order and last.
+    # `stopped` is build.md's other ending - a plan that cannot meet a criterion, which a build is
+    # told to stop on rather than quietly improve. Anything else is a build that died somewhere in
+    # the middle, whatever its exit status says, because a model that ends its turn to describe
+    # what it is about to do next exits 0.
+    #
+    # Jobs 011 and 012 both stopped correctly on the same afternoon and both were written down as
+    # STALLED, which is the word for a crash. Telling them apart cost a full reading of each log.
+    # Two things that look identical from outside must not read the same - the rule this file was
+    # built on, broken here until they made it obvious.
+    st=$(state_of "$1")
+    case $st in
+      review)
+        say "$3" "DONE - waiting on Marco"
+        echo "· $1 done — /review $1" ;;
+      stopped)
+        say "$3" "STOPPED - the plan cannot meet a criterion"
+        echo "· $1 stopped — the plan needs your word. /review $1" ;;
+      *)
+        say "$3" "STALLED - exited at 'state: $st' without setting review"
+        echo "· $1 STALLED — /rework $1 to send it round again" >&2 ;;
+    esac
   ) &
   echo "· $1 building — $2"
 }
@@ -249,7 +262,9 @@ pass() {
         printf '%s' "$st" > "$LOGS/$n.state"
       fi
     fi
-    if [ "$st" = review ]; then waiting="$waiting $n"; fi
+    # Both endings wait on Marco, so both belong in the idle line. `stopped` was missing from it
+    # for as long as `stopped` existed, which was about ten minutes.
+    case $st in review|stopped) waiting="$waiting $n" ;; esac
 
     # Alive is the pid written into the log when the build started, never a pattern. `pgrep -f`
     # matches any shell whose argv carries the string, which includes the one asking - that is
