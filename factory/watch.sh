@@ -11,6 +11,10 @@
 # no ending, that a ready job is not being started, that a build ended badly, and that the loop
 # itself has gone.
 #
+# STOPPED and STALLED are relayed as the two different endings they are. A stop is a build that
+# finished what it could and refused to pass itself on a plan that cannot meet a criterion; a stall
+# is one that died in the middle. Conflating them cost a full reading of two logs on 2026-09-18.
+#
 # `set -u` and deliberately not `set -e`. A watcher that exits on a transient `ps` failure goes
 # quiet, and quiet is exactly what it looks like when everything is fine - the one failure mode
 # this must not have.
@@ -106,6 +110,7 @@ scan() {  # $1 number, $2 log
     case $rest in
       START*)   echo "BUILDING $1 ${rest#START * - }" ;;
       DONE*)    echo "REVIEW $1" ;;
+      STOPPED*) echo "STOPPED $1 ${rest#STOPPED - }" ;;
       STALLED*) echo "STALLED $1 ${rest#STALLED - }" ;;
       WEDGED*)  echo "WEDGED $1 ${rest#WEDGED - }" ;;
       'EXIT '*) c=${rest#EXIT }; [ "$c" = 0 ] || echo "EXIT $1 $c" ;;
