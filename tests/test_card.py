@@ -154,7 +154,6 @@ def test_a_session_nobody_spoke_in_is_empty_whatever_it_recorded(tmp_path):
     "record",
     [
         '{"t": 1.0, "type": "you", "text": "hand me the 10mm"}',
-        '{"t": 1.0, "type": "cyclops", "text": "that is the brake line"}',
         # Proof somebody spoke when the realtime API could not transcribe them. A session whose
         # transcription failed throughout has a real conversation and a real recording and not
         # one `you` record, and nothing downstream could catch it: transcript_text reads only
@@ -169,6 +168,21 @@ def test_a_session_nobody_spoke_in_is_empty_whatever_it_recorded(tmp_path):
 def test_one_record_of_something_happening_keeps_the_folder(tmp_path, record):
     folder = make(tmp_path, "2026-09-09_19-17-05", log=BOOKKEEPING + record + "\n")
     assert card.triage(folder).verdict != "empty"
+
+
+def test_a_wake_where_only_cyclops_spoke_is_empty_until_they_answer(tmp_path):
+    """The greeting on its own is a tap-and-stop. One word back from them makes it a session."""
+    greeted = BOOKKEEPING + (
+        '{"t": 1.9, "type": "cyclops", "text": "Fifth time today; the solder must be winning."}\n'
+    )
+    end = '{"t": 6.0, "type": "end", "reason": "stopped", "seconds": 6.0, "photos": 0}\n'
+    alone = make(tmp_path, "2026-09-18_16-40-00", log=greeted + end, page="# p")
+    answered = make(
+        tmp_path, "2026-09-18_16-50-00", page="# p",
+        log=greeted + '{"t": 4.0, "type": "you", "text": "it is"}\n' + end,
+    )
+    assert card.triage(alone).verdict == "empty"
+    assert card.triage(answered).verdict == "finished"
 
 
 def test_a_picture_that_never_landed_is_not_a_picture(tmp_path):

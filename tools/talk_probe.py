@@ -5,6 +5,7 @@
     uv run python tools/talk_probe.py --tally runs.jsonl
     uv run python tools/talk_probe.py --script tutorial --runs 10 --out walk.jsonl
     uv run python tools/talk_probe.py --script manual --runs 5 --out oxi.jsonl
+    uv run python tools/talk_probe.py --script smiley --runs 10 --out smiley.jsonl
 
 ``--script manual`` sets its own bench up: the OXI One manual from the fixtures folder and nothing
 else on the card, with the recall index, the panel file and the task ledger all in a scratch
@@ -15,8 +16,13 @@ each question's first look. ``--script manual-cold`` is the same
 bench with only the notes-below-the-grid question, asked before anything has been read.
 
 No mic, no speaker, no camera and no session folder: ``VoiceAgent`` + ``send_text``, the way
-``cyclops-smoke`` does its text turns. Every run is a fresh session, so the first turn is a real
-first turn and the greeting is a real greeting. Point the card somewhere scratch with the
+``cyclops-smoke`` does its text turns. Every run is a fresh session, so the greeting is a real
+greeting: it arrives on its own as the session comes up, nobody types anything to get it, and it
+is written down as turn 0, timed from the session being ready rather than from a question.
+
+``--script smiley`` is the one question that used to come back with the greeting glued to the
+front of its answer, asked into a busy day on a scratch card - so the tally can say whether the
+answer still talks about the clock. Point the card somewhere scratch with the
 ``CYCLOPS_*_DIR`` variables before running, or the model will open his real projects.
 
 What it measures is what a prompt change to HOW YOU TALK can quietly buy: words per turn,
@@ -33,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import random
@@ -59,7 +66,6 @@ TURN_TIMEOUT_S = 60.0
 # in a robot's head), a method to bless, a finished job held up, a pause, and a recall. The
 # rhyme is there once so the tally can see whether it gets taken; everything else is plain.
 SCRIPT = (
-    "Hey.",
     "I'm putting a big red LED in the head of this robot arm build, it's the power light. "
     "Three point three volts or five?",
     "I'm going to run the wires down the arm and zip tie them every few centimetres. "
@@ -73,7 +79,6 @@ SCRIPT = (
 # are NOT "that step is done": a pause and a question about the step. Those two are the ones that
 # say whether it waits, and the tally lays out the tools per turn so a wrong advance stands out.
 TUTORIAL_SCRIPT = (
-    "Hey.",
     "I'm replacing the cartridge in my kitchen mixer tap. Can you walk me through it step by "
     "step?",
     "Okay, the water's off.",
@@ -87,7 +92,7 @@ TUTORIAL_SCRIPT = (
 # then asking to see the page and asking where the answer came from. Only the last one may name
 # the manual or a page, and only the one before it may put a page on the screen.
 MANUAL_SCRIPT = (
-    "Hey. I've got the OXI One out tonight.",
+    "I've got the OXI One out tonight.",
     "How do I add a slide between two notes?",
     "How do I get to the notes below the ones that are lit on the grid?",
     "Which one is the Div button?",
@@ -98,11 +103,15 @@ MANUAL_SCRIPT = (
 # The notes-below-the-grid question with nothing read before it. In MANUAL_SCRIPT the slide
 # question usually reads page 12 first, so the page is already in hand by the time it is asked.
 MANUAL_COLD_SCRIPT = MANUAL_SCRIPT[:1] + MANUAL_SCRIPT[2:3]
+# The question the greeting was glued onto on the Pi ("Seventh run today; keep it tidy."), asked
+# after a greeting that now has a turn of its own. Its answer is about a smiley face or it failed.
+SMILEY_SCRIPT = ("Hey, can you draw a smiley face on this scratchpad?",)
 SCRIPTS = {
     "bench": SCRIPT,
     "tutorial": TUTORIAL_SCRIPT,
     "manual": MANUAL_SCRIPT,
     "manual-cold": MANUAL_COLD_SCRIPT,
+    "smiley": SMILEY_SCRIPT,
 }
 
 # Where --script manual finds its one manual, and where it keeps everything it would otherwise
@@ -145,6 +154,8 @@ class Turn:
 
     ``answer_s`` is from the question going out to the first sound of the response that answers
     it - the one with no tool call in it - which is the wait somebody at the bench actually has.
+    Both times are kept as instants and measured from ``started`` when read, because the greeting
+    has no question: its ``started`` is the session being ready, which is only known afterwards.
     """
 
     def __init__(self) -> None:
@@ -155,8 +166,8 @@ class Turn:
         self.recalls: list[dict] = []
         self.started = time.monotonic()
         self.heard: dict[str, float] = {}  # response id -> when its first audio arrived
-        self.answer_s = 0.0
-        self.first_sound_s = 0.0
+        self.answer_at: float | None = None
+        self.first_sound_at: float | None = None
         # (response id, output index, transcript), so what was said before a call can be told
         # from what was said after it: a spoken line and a call in one response are two items.
         self.spoken: list[tuple[str, int, str]] = []
@@ -168,7 +179,7 @@ class Turn:
                 self.responses += 1
             case "response.output_audio.delta":
                 if not self.heard:
-                    self.first_sound_s = round(time.monotonic() - self.started, 2)
+                    self.first_sound_at = time.monotonic()
                 self.heard.setdefault(event.response_id, time.monotonic())
             case "response.output_audio_transcript.done":
                 self.transcripts.append(event.transcript)
@@ -185,9 +196,19 @@ class Turn:
                         if rid != event.response.id or index < at
                     )
                 if not calls:  # a tool-call response is followed by the real answer
-                    spoke = self.heard.get(event.response.id, time.monotonic())
-                    self.answer_s = round(spoke - self.started, 2)
+                    self.answer_at = self.heard.get(event.response.id, time.monotonic())
                     self.done.set()
+
+    def _since(self, at: float | None) -> float:
+        return round(at - self.started, 2) if at is not None else 0.0
+
+    @property
+    def answer_s(self) -> float:
+        return self._since(self.answer_at)
+
+    @property
+    def first_sound_s(self) -> float:
+        return self._since(self.first_sound_at)
 
     @property
     def text(self) -> str:
@@ -222,19 +243,31 @@ def _spy_on_recall(agent: VoiceAgent, current: list[Turn]) -> None:
     agent._recall = spy  # type: ignore[method-assign]
 
 
+async def _greeting(agent: VoiceAgent, agent_task: asyncio.Task, turn: Turn) -> None:
+    """Wait for the session, then for the line it opens with. *turn* must already be listening."""
+    await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
+    assert agent.ready_at is not None
+    turn.started = agent.ready_at
+    await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
+
+
 async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
     settings = load_settings()
     agent = VoiceAgent(settings)
     current = [Turn()]
     _spy_on_recall(agent, current)
+    agent.on_event = current[0]  # before the connect: the greeting comes with the session
     agent_task = asyncio.create_task(agent.run())
     try:
-        await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
-        for index, line in enumerate(script, start=1):
-            turn = current[0] = Turn()
-            agent.on_event = turn
-            await agent.send_text(line)
-            await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
+        for index, line in enumerate(("", *script)):
+            turn = current[0]
+            if index == 0:
+                await _greeting(agent, agent_task, turn)
+            else:
+                turn = current[0] = Turn()
+                agent.on_event = turn
+                await agent.send_text(line)
+                await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
             record = {
                 "run": run,
                 "turn": index,
@@ -292,6 +325,8 @@ async def _manual_bench() -> None:
 async def _probe(runs: int, out_path: Path, script: tuple[str, ...] = SCRIPT) -> int:
     if script in (MANUAL_SCRIPT, MANUAL_COLD_SCRIPT):
         await _manual_bench()
+    if script == SMILEY_SCRIPT:
+        return await _smiley(runs, out_path)
     with out_path.open("a", encoding="utf-8") as out:
         for run in range(1, runs + 1):
             try:
@@ -354,34 +389,71 @@ def _lay_the_card(root: Path, history: tuple[tuple[datetime, int], ...]) -> Path
     return sessions
 
 
-async def _one_wake(name: str, when: datetime, sessions: Path, take: int, out) -> None:
-    """Switch on once into a fabricated moment and keep only the first thing it says."""
+@contextlib.contextmanager
+def _moment(when: datetime, sessions: Path):
+    """Point the card at *sessions* and stop the clock at *when*. Yields what it is told."""
     os.environ["CYCLOPS_SESSIONS_DIR"] = str(sessions)
-    settings = load_settings()
-    told = session.now_context(settings, now=when)
     real = session.now_context
+    told = real(load_settings(), now=when)
     session.now_context = lambda s, now=None: real(s, now=when)  # type: ignore[assignment]
-    agent = VoiceAgent(settings)
-    agent_task = asyncio.create_task(agent.run())
     try:
-        await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
-        turn = Turn()
-        agent.on_event = turn
-        await agent.send_text("Hey.")
-        await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
-        out.write(json.dumps({
-            "situation": name,
-            "take": take,
-            "told": told.note,
-            "greeting": turn.text,
-            "words": len(turn.text.split()),
-        }) + "\n")
-        out.flush()
-        print(f"· {name} #{take}: [{told.note}] {turn.text!r}", flush=True)
+        yield told
     finally:
         session.now_context = real  # type: ignore[assignment]
-        await agent.close()
-        await asyncio.gather(agent_task, return_exceptions=True)
+
+
+async def _one_wake(name: str, when: datetime, sessions: Path, take: int, out) -> None:
+    """Switch on once into a fabricated moment and keep only the first thing it says."""
+    with _moment(when, sessions) as told:
+        agent = VoiceAgent(load_settings())
+        turn = Turn()
+        agent.on_event = turn  # nobody types anything: the greeting comes with the session
+        agent_task = asyncio.create_task(agent.run())
+        try:
+            await _greeting(agent, agent_task, turn)
+            out.write(json.dumps({
+                "situation": name,
+                "take": take,
+                "told": told.note,
+                "greeting": turn.text,
+                "words": len(turn.text.split()),
+                "first_sound_s": turn.first_sound_s,
+            }) + "\n")
+            out.flush()
+            print(f"· {name} #{take}: [{told.note}] {turn.text!r}", flush=True)
+        finally:
+            await agent.close()
+            await asyncio.gather(agent_task, return_exceptions=True)
+
+
+# The busy days the smiley is asked into, taken in turn: one where the count is the odd thing
+# about today and one where the gap is. Those two are what the answer used to open with.
+SMILEY_SITUATIONS = ("fri-fifth-wake", "straight-back")
+
+
+async def _smiley(runs: int, out_path: Path) -> int:
+    """The smiley question, once per run, each run switched on into a busy day on a scratch card.
+
+    The scratchpad is real, so its file goes somewhere scratch as well as the card does.
+    """
+    root = Path(tempfile.mkdtemp(prefix="cyclops-smiley-"))
+    for name in ("PROJECTS", "CAPTURES"):
+        os.environ[f"CYCLOPS_{name}_DIR"] = str(root / name.lower())
+    panel.PANEL_FILE = root / "panel.json"
+    tasks.TASKS_FILE, tasks.TASKS_LOCK = root / "tasks.yaml", root / "tasks.lock"
+    situations = {name: (when, history) for name, when, history in SITUATIONS}
+    with out_path.open("a", encoding="utf-8") as out:
+        for run in range(1, runs + 1):
+            name = SMILEY_SITUATIONS[(run - 1) % len(SMILEY_SITUATIONS)]
+            when, history = situations[name]
+            with _moment(when, _lay_the_card(root / f"run-{run}", history)) as told:
+                print(f"· run {run}: {name} [{told.note}]", flush=True)
+                try:
+                    await _one_run(run, out, SMILEY_SCRIPT)
+                except (TimeoutError, RuntimeError) as exc:
+                    print(f"run {run} failed: {exc}", file=sys.stderr)
+                    return 1
+    return 0
 
 
 async def _wakes(repeat: int, out_path: Path) -> int:
@@ -435,7 +507,7 @@ def _greetings(paths: list[Path]) -> list[str]:
     for path in paths:
         for row in (json.loads(x) for x in path.read_text().splitlines() if x.strip()):
             said = row.get("greeting") if "greeting" in row else (
-                row["cyclops"] if row.get("turn") == 1 else None
+                row["cyclops"] if row.get("turn") == 0 else None
             )
             if said and said.strip():
                 lines.append(said.strip())
@@ -575,17 +647,57 @@ def manual_tally(records: list[dict]) -> None:
         print(f"  run {r['run']} t{r['turn']} {h}: {r['cyclops']!r}")
 
 
+# What the smiley's answer must not be about: the moment the greeting was about. A hit is a
+# candidate, printed for reading - "two eyes" is a number and is not the clock.
+CLOCK_WORDS = TIME_WORDS | frozenset("""
+first second third fourth fifth sixth seventh eighth ninth tenth again run runs round rounds
+reboot boot time times ago since break gap already
+""".split())
+
+
+def smiley_tally(records: list[dict]) -> None:
+    """Every run's greeting and the answer after it, and any clock word in the answer."""
+    by_run: dict[int, dict[int, dict]] = {}
+    for r in records:
+        by_run.setdefault(r["run"], {})[r["turn"]] = r
+    flagged = 0
+    for run, turns in sorted(by_run.items()):
+        greeting, answer = turns.get(0, {}), turns.get(1, {})
+        hits = sorted({w for w in _words(answer.get("cyclops", "")) if w in CLOCK_WORDS}
+                      | set(re.findall(r"\d+", answer.get("cyclops", ""))))
+        flagged += bool(hits)
+        print(f"run {run}")
+        print(f"  greeting: {greeting.get('cyclops', '')!r}")
+        print(f"  answer:   {answer.get('cyclops', '')!r}  tools={answer.get('tools')}"
+              + (f"  CLOCK? {hits}" if hits else ""))
+    print(f"\nanswers with a clock word in them: {flagged} of {len(by_run)}")
+
+
+def timing(records: list[dict]) -> None:
+    """Seconds to the first sound, per turn: the greeting from ready, the rest from the question."""
+    print("seconds to first sound (turn 0 from ready, the rest from the question):")
+    for turn in sorted({r["turn"] for r in records}):
+        sounds = [r["first_sound_s"] for r in records if r["turn"] == turn]
+        print(f"  t{turn}  median={statistics.median(sounds):.2f}  worst={max(sounds):.2f}"
+              f"  best={min(sounds):.2f}  n={len(sounds)}")
+
+
 def tally(path: Path) -> None:
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    if records and records[0]["you"] == MANUAL_SCRIPT[0]:
+    said = {r["you"] for r in records}
+    if MANUAL_SCRIPT[0] in said:
         manual_tally(records)
+        return
+    if SMILEY_SCRIPT[0] in said:
+        smiley_tally(records)
+        timing(records)
         return
     runs = sorted({r["run"] for r in records})
     spoken = [r["words"] for r in records if r["words"] > 0]
     silent = sum(1 for r in records if r["words"] == 0)
     multi = [r for r in records if r["responses"] != 1]
     tools = [r for r in records if r["tools"]]
-    greetings = Counter(r["cyclops"] for r in records if r["turn"] == 1)
+    greetings = Counter(r["cyclops"] for r in records if r["turn"] == 0)
     print(f"runs={len(runs)} turns={len(records)} silent={silent}")
     print(
         f"words/turn: median={statistics.median(spoken)} mean={statistics.mean(spoken):.1f} "
@@ -599,6 +711,7 @@ def tally(path: Path) -> None:
         print(f"  t{turn} {you[:48]!r}")
         for calls, n in called.most_common():
             print(f"      {n}x {calls}")
+    timing(records)
     print(f"distinct greetings: {len(greetings)} of {len(runs)}")
     for line, n in greetings.most_common():
         print(f"  {n}x {line!r}")
@@ -624,7 +737,7 @@ def blind(a: Path, b: Path, out: Path) -> None:
     rows = []
     for arm, path in (("A", a), ("B", b)):
         for r in (json.loads(line) for line in path.read_text().splitlines() if line.strip()):
-            if r["turn"] != 1 and r["cyclops"].strip():  # the greeting has its own criterion
+            if r["turn"] != 0 and r["cyclops"].strip():  # the greeting has its own criterion
                 rows.append({"arm": arm, "turn": r["turn"], "text": r["cyclops"]})
     random.seed(2)
     random.shuffle(rows)

@@ -23,6 +23,7 @@ from openai.types.realtime import (
     RealtimeError,
     RealtimeFunctionToolParam,
     RealtimeResponse,
+    RealtimeResponseCreateParamsParam,
     RealtimeServerEvent,
     RealtimeSessionCreateRequestParam,
 )
@@ -70,6 +71,9 @@ KEEPALIVE_S = 15.0
 RECONNECT_ATTEMPTS = 0
 TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
+# What the first response of a session is asked for with: words, and nothing that could turn the
+# first thing they hear into a search or a drawing nobody asked for. Nobody has said anything yet.
+GREETING: RealtimeResponseCreateParamsParam = {"tool_choice": "none"}
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_QUERY_CHARS = 300
 # take_a_look in the kiosk borrows a frame the preview already has, which takes milliseconds. This
@@ -1448,6 +1452,10 @@ class VoiceAgent:
         self._current_item_id: str | None = None  # assistant item whose audio is being played
         self._dead_item_ids: set[str] = set()  # interrupted items: drop their in-flight output
         self._assistant_line_open = False
+        # Voice that arrived while the lid was still sounding, in order, with the item each piece
+        # belongs to. None whenever nothing is being held - which is every moment but the first
+        # second and a half of a session. See _hold_for_the_lid.
+        self._held: list[tuple[str, bytes]] | None = None
         # A sketch being typed. The only tool here whose arguments are acted on before they
         # have finished arriving, so it needs somewhere to accumulate them; see
         # ``_on_sketch_delta``. One at a time, because there is one screen.
@@ -2016,10 +2024,44 @@ class VoiceAgent:
         sounding = self.cues.play("iris_open")
         if self.mic is not None:
             self._spawn(self._listen(after_s=sounding))
+        self._hold_for_the_lid(sounding)
+        # And it speaks first. Server VAD only answers a turn, so without this the greeting waited
+        # for his first question and came out glued to the front of its answer. Asked for here,
+        # once: a second session.updated has already returned above.
+        self._spawn(self._greet())
         # The UI framework's import, bought now rather than on the first delta of the first
         # sketch - which is the one moment in that path where somebody is watching nothing.
         if self.settings.sketch:
             self._spawn(asyncio.to_thread(sketch.warm))
+
+    def _hold_for_the_lid(self, sounding: float) -> None:
+        """Keep his voice off the speaker until the lid sound has finished.
+
+        The greeting is asked for on the same event that opens the lid, and the model answers in
+        about a second - measured, 0.8 to 1.2 s from ready to the first sound over ten sessions -
+        while the lid sounds for 1.67. Cues have no mixer (see cyclops.sfx), so without this the
+        two would be on one speaker at once. It is released on the mic's own schedule, the lid
+        plus :data:`sfx.SETTLE_S`, so he starts talking at the moment he could start listening.
+        """
+        if not sounding or self.speaker is None:
+            return
+        self._held = []
+        asyncio.get_running_loop().call_later(sounding + sfx.SETTLE_S, self._release_held)
+
+    def _release_held(self) -> None:
+        held, self._held = self._held or [], None
+        for item_id, pcm in held:
+            self._feed(item_id, pcm)
+
+    async def _greet(self) -> None:
+        """Ask for the opening line, with no user turn in front of it.
+
+        Marked active the way :meth:`_maybe_create_response` marks its own, so anything else that
+        wants a response in the meantime queues behind this one rather than racing it.
+        """
+        self._response_active = True
+        self._create_event_id = uuid.uuid4().hex
+        await self.conn.response.create(event_id=self._create_event_id, response=GREETING)
 
     def _on_error(self, err: RealtimeError) -> None:
         if err.code == "conversation_already_has_active_response":
@@ -2111,10 +2153,19 @@ class VoiceAgent:
     def _play(self, item_id: str, delta_b64: str) -> None:
         if self.speaker is None or item_id in self._dead_item_ids:
             return
+        pcm = base64.b64decode(delta_b64)
+        if self._held is not None:  # the lid is still sounding; see _hold_for_the_lid
+            self._held.append((item_id, pcm))
+            return
+        self._feed(item_id, pcm)
+
+    def _feed(self, item_id: str, pcm: bytes) -> None:
+        if self.speaker is None or item_id in self._dead_item_ids:
+            return
         if item_id != self._current_item_id:
             self._current_item_id = item_id
             self.speaker.begin_item()
-        self.speaker.feed(base64.b64decode(delta_b64))
+        self.speaker.feed(pcm)
 
     async def _on_response_done(self, response: RealtimeResponse) -> None:
         self._response_active = False
