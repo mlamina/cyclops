@@ -369,7 +369,7 @@ async function show(id) {
       ]);
     }
   } else if (found.sketch) {
-    // Nothing to paint. The renderer in #sketchframe has been running since page load and has
+    // Nothing to paint. The renderer in #sketchframe was loaded by the sketch's first frame and has
     // been drawing frames off the companion stream for a few hundred milliseconds already - see
     // sketch.js. All this does is stop covering it up, which is why there is no await here and
     // why the kiosk is told it may uncover on the very next line.

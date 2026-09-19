@@ -37,22 +37,30 @@ if (frame) {
   // machine somebody could be sitting in front of.
   const ORIGIN = location.origin;
 
+  let loaded = false;
   let ready = false;
   let pending = null;   // the last frame that arrived before the renderer said it was listening
+
+  // The renderer runs only while there is a sketch. Left loaded with nothing to draw it
+  // re-renders without end and holds a whole core of the Pi - see dashboard.html.
+  function load() {
+    if (loaded) return;
+    loaded = true;
+    frame.src = frame.dataset.src;
+  }
+
+  function unload() {
+    loaded = ready = false;
+    pending = null;
+    frame.src = 'about:blank';
+  }
 
   function post(message) {
     if (frame.contentWindow) frame.contentWindow.postMessage(message, ORIGIN);
   }
 
   function deliver(wire) {
-    // A null wire is the sketch being taken down. The renderer has no "show nothing" message, so
-    // it is handed an empty tree - which is what it draws for a program that has not got anywhere
-    // yet, and is exactly right for one that has been put away.
-    post({
-      jsonrpc: '2.0',
-      method: 'ui/notifications/tool-result',
-      params: { structuredContent: wire || { $prefab: { version: '0.3' }, view: null } },
-    });
+    post({ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: { structuredContent: wire } });
   }
 
   window.addEventListener('message', (event) => {
@@ -108,6 +116,8 @@ if (frame) {
   feed.onmessage = (event) => {
     let wire = null;
     try { wire = JSON.parse(event.data).wire; } catch (e) { return; }
+    if (!wire) { if (loaded) unload(); return; }  // the sketch was put away
+    load();
     if (!ready) { pending = wire; return; }
     deliver(wire);
   };
