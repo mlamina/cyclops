@@ -114,9 +114,9 @@ KNOWN = frozenset(
 # they are two different arguments for keeping a folder and whoever adds the next record type
 # needs to know which one they are adding to: somebody spoke, or something was made.
 #
-# Everything not in either - `session`, `video`, `end`, `error` - is bookkeeping *about* a
-# session rather than anything that happened *in* one. So is every file the folder holds except
-# its photos: `video.mp4`, `session.md` and `summary.md` are all made from the log.
+# Everything not in either - `session`, `recording`, `video`, `end`, `error` - is bookkeeping
+# *about* a session rather than anything that happened *in* one. So is every file the folder holds
+# except its photos: `video.mp4`, `session.md` and `summary.md` are all made from the log.
 #
 # `transcript_failed` is in SPOKEN and that is the whole reason this comment is long. It is what
 # the log gets when the realtime API cannot transcribe a turn (`session._observe`), so a session

@@ -29,6 +29,7 @@ from .audio import (
 )
 from .config import Settings
 from .record import FrameSource
+from .screen import ScreenSource
 from .session import SessionLog
 from .webcam import Capture
 
@@ -48,12 +49,12 @@ LEVEL_FULL_SCALE = 3000.0  # int16 RMS that maps to a full meter
 class SessionController:
     """Starts/stops a VoiceAgent on its own thread and reports a thread-safe status snapshot.
 
-    ``frames`` is what the session's video is a recording of, and only the kiosk has one: either
-    the camera it is already holding open for the preview, or the panel that preview ends up on
-    (see :mod:`cyclops.filming`). It is settable, because which of the two is a switch on the
-    settings screen - see :meth:`set_record_source`. Every session is logged either way;
-    ``entrypoint`` is what goes in the log, and it is passed rather than inferred from ``frames``
-    because that would only be right by accident.
+    ``screen`` and ``frames`` are what the session's video can be a recording of, and only the
+    kiosk has them: the whole screen, taken off the compositor (:mod:`cyclops.screen`), and the
+    camera it is already holding open for the preview, which is recorded instead whenever the
+    screen cannot be captured. Every session is logged either way; ``entrypoint`` is what goes in
+    the log, and it is passed rather than inferred from ``frames`` because that would only be
+    right by accident.
     """
 
     def __init__(
@@ -61,10 +62,12 @@ class SessionController:
         settings: Settings,
         *,
         frames: FrameSource | None,
+        screen: ScreenSource | None = None,
         entrypoint: str,
     ) -> None:
         self.settings = settings
         self._frames = frames
+        self._screen = screen
         self._entrypoint = entrypoint
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -139,20 +142,6 @@ class SessionController:
             speaker = self._speaker
         if speaker is not None:
             speaker.on_air = on
-
-    def set_record_source(self, frames: FrameSource | None) -> None:
-        """Say what the *next* session's video should be of - see :mod:`cyclops.filming`.
-
-        Unlike :meth:`set_barge_in` this deliberately does not reach into a running session, and
-        could not usefully: the encoder is opened once, at the frame size its first frame had, so
-        a source swapped mid-recording would at best be stretched to the shape of the other one.
-        The kiosk calls this on the tap that starts a session, which is the moment the answer is
-        needed and the last moment it can still be changed for free.
-
-        One store of one name, from the kiosk's thread, read by the session thread a beat later
-        in :meth:`_session` - the same bargain the rest of this class makes.
-        """
-        self._frames = frames
 
     def show_photo(self, capture: Capture) -> bool:
         """Hand a photo to the running agent. False when there is nothing live to hand it to.
@@ -383,9 +372,10 @@ class SessionController:
         speaker.start()
         mic.start()
         # The log is the one thing every entry point shares, so it does its own wiring: it hooks
-        # the agent's events, starts the recorder when there is a camera, and finishes the folder
-        # on the way out - including when the session dies rather than stops. The inner `finally`
-        # still runs first, so the recorder is stopped only once the audio callbacks have ceased.
+        # the agent's events, starts the recorder when there is something to film, and finishes
+        # the folder on the way out - including when the session dies rather than stops. The inner
+        # `finally` still runs first, so the recorder is stopped only once the audio callbacks
+        # have ceased.
         with SessionLog(
             live,
             agent,
@@ -393,6 +383,7 @@ class SessionController:
             mic=mic,
             speaker=speaker,
             frames=self._frames,
+            screen=self._screen,
             on_phase=self._say_phase,
         ):
             try:

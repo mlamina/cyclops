@@ -43,11 +43,7 @@ class Panel:
         self._cues = Cues()
         self.threads: list[str] = []
 
-    # The two things the real method starts. Recorded rather than run: one would open a browser
-    # and the other would shell out to ffmpeg.
-    def _restill(self) -> None:
-        self.threads.append("restill")
-
+    # The one thing the real method starts. Recorded rather than run: it would open a browser.
     def _picture_session(self) -> None:
         self.threads.append("session")
 
@@ -84,7 +80,7 @@ def test_a_picture_already_up_is_swapped_rather_than_refused(panel) -> None:
 
     answer = panel.show_picture()
     assert answer is True, "saying False would deny a picture that is about to be on the glass"
-    assert panel.threads == ["restill"], "no second session; the first one still owns the teardown"
+    assert panel.threads == [], "no second session; the first one still owns the teardown"
 
 
 def test_a_photograph_going_up_makes_no_sound(panel, monkeypatch) -> None:

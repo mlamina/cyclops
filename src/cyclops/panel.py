@@ -14,10 +14,6 @@ screen until it does. The page branches on which key is there and on nothing els
 between here and there - not ``_leave``, not ``/api/picture``, not the kiosk - looks inside the
 payload at all. Whatever is up, a press anywhere puts it away.
 
-The scratchpad door has a way back through it, and only that one needs one. What travels out as
-markup has to come home as pixels for a recording to see it, so the page posts its own picture
-of what it painted and :func:`keep_still` writes it down beside the offer.
-
 The picture travels *in* the file rather than as a path to one, and that is deliberate. The page
 is served by the admin process, which shares no memory with whoever made the picture, and a
 picture made with no session running was never written to the card at all - there would be
@@ -43,10 +39,9 @@ import uuid
 from typing import Any
 
 from . import card
-from .config import PANEL_FILE, PANEL_STILL_FILE
+from .config import PANEL_FILE
 
-# What a picture looks like on the way through here and in the still beside it. One spelling,
-# because :func:`keep_still` has to recognise what :func:`offer_image` writes.
+# What a picture looks like on the way through here.
 JPEG_URL = "data:image/jpeg;base64,"
 
 _kiosk: object | None = None  # a cyclops.kiosk.Kiosk while one is running; see set_kiosk
@@ -152,9 +147,8 @@ def offer_image(jpeg: bytes, title: str, *, announce: bool = False, page: bool =
     The exception is ``page``: a page of a manual. Fitted inside the panel like a photograph, a
     portrait page is a strip of small print between two black bars, so the page lays it across
     the whole width instead and lets a finger scroll it - which means a press has to be allowed
-    to become a drag, and only a tap puts it away. The picture still travels under ``image``,
-    so :mod:`cyclops.still` and the recording take it exactly as they take any other. The caller
-    sizes it with :func:`cyclops.imagine.for_page` rather than ``for_panel``.
+    to become a drag, and only a tap puts it away. The picture travels under ``image`` like any
+    other; the caller sizes it with :func:`cyclops.imagine.for_page` rather than ``for_panel``.
 
     Downscale it first. The caller does that, because the caller knows what the full-size copy is
     for - see :func:`cyclops.imagine.for_panel`.
@@ -185,8 +179,8 @@ def offer_scratchpad(html: str) -> bool:
     decide between a corner square and a press anywhere, and a scratchpad gets the press: it is one
     thing to look at and be done with rather than a diagram to point at while you argue about it.
 
-    No title either, unlike :func:`offer_image`. Nothing has ever read that field - not the page,
-    not :mod:`cyclops.still` - and here it would be a second argument the model has to write before
+    No title either, unlike :func:`offer_image`. Nothing has ever read that field on the page, and
+    here it would be a second argument the model has to write before
     anything can appear, which is the one cost this feature exists to avoid. The session log names
     it from the words in what he wrote (see ``cyclops.session._render_record``).
     """
@@ -224,13 +218,11 @@ def offer_video(url: str, title: str, start_s: int, thumb: bytes, hold: float) -
 
     The fourth door, and the only one that makes a noise for a while after it is opened.
 
-    ``thumb`` rides along under ``image``, the same key :func:`offer_image` uses, and that is
-    not a convenience - it is what keeps a video out of the session's recording as a black
-    stretch. The kiosk paints nothing while the browser is uncovered, so the recorder asks
-    :func:`cyclops.still.of_panel` what is on the glass, and that reads ``image`` and nothing
-    else. Without a picture here a ten-minute video is ten minutes of black in ``video.mp4``.
-    The page therefore has to check ``video`` *before* ``image``, or it paints the title card
-    and never starts anything: see the branch order in ``admin/static/panel.js``.
+    ``thumb`` rides along under ``image``, the same key :func:`offer_image` uses. It was put there
+    for the recording, back when the video of a session was rebuilt from what the page was handed
+    rather than taken off the glass; the recording no longer needs it. While it is there, the page
+    has to check ``video`` *before* ``image``, or it paints the title card and never starts
+    anything: see the branch order in ``admin/static/panel.js``.
 
     ``hold`` is read back by the kiosk through :func:`hold_s`, not by anything in between.
     The panel normally takes itself back after fifteen minutes, which is right for a picture
@@ -246,35 +238,6 @@ def offer_video(url: str, title: str, start_s: int, thumb: bytes, hold: float) -
     return _leave({"title": title, "video": url, "start": max(0, int(start_s)), "image": picture})
 
 
-def keep_still(url: str, ident: str) -> bool:
-    """Keep the page's own picture of the scratchpad it just painted. False if it could not.
-
-    The way back for the one thing on the panel that is markup rather than pixels. A recording of
-    the screen samples what the kiosk paints, and the kiosk paints nothing while the browser has
-    the glass - so everything else on the panel reaches the video out of the offer file, and a
-    scratchpad had nothing there to reach it with. The page draws it a second time onto a canvas
-    and posts the result here on its way past; :mod:`cyclops.still` is the reader.
-
-    Nothing here rasterises anything, and nothing here can. An ``<iframe sandbox="">`` has an
-    origin of its own, so the page around it cannot read what it drew either - what it re-renders
-    is the same markup it was handed. This end only writes it down.
-
-    ``ident`` is the offer this is a picture of, and it is read back before the picture is used.
-    A still that names a different offer is one the page drew for something already put away.
-
-    Never raises. A still that cannot be written costs a black stretch of recording, which is
-    exactly where this started.
-    """
-    if not url.startswith(JPEG_URL):
-        return False
-    try:
-        card.write_text(PANEL_STILL_FILE, json.dumps({"id": ident, "image": url}))
-    except OSError as exc:
-        print(f"· could not keep the panel's own picture ({exc})", file=sys.stderr, flush=True)
-        return False
-    return True
-
-
 def withdraw() -> None:
     """Take back whatever was last offered, so the page falls back to the dashboard.
 
@@ -287,18 +250,12 @@ def withdraw() -> None:
 
     Never raises. A payload that cannot be removed is not a reason to refuse a tap.
     """
-    # The offer first and its still second: the still is only ever read against an offer, so an
-    # offer that is gone already makes it unreachable. The reverse order would leave a window in
-    # which a live offer has no picture of itself.
-    for path in (PANEL_FILE, PANEL_STILL_FILE):
-        try:
-            path.unlink(missing_ok=True)
-        except OSError as exc:
-            print(
-                f"· could not take the panel's last picture back ({exc})",
-                file=sys.stderr,
-                flush=True,
-            )
+    try:
+        PANEL_FILE.unlink(missing_ok=True)
+    except OSError as exc:
+        print(
+            f"· could not take the panel's last picture back ({exc})", file=sys.stderr, flush=True
+        )
 
 
 def _leave(payload: dict[str, Any]) -> bool:

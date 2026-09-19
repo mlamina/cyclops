@@ -269,7 +269,6 @@ async def _manual_bench() -> None:
     os.environ["CYCLOPS_ABOUT_FILE"] = str(MANUAL_BENCH / "about-you.md")
     recall.RECALL_FILE = MANUAL_BENCH / "recall.npz"
     panel.PANEL_FILE = MANUAL_BENCH / "panel.json"
-    panel.PANEL_STILL_FILE = MANUAL_BENCH / "panel-still.json"
     tasks.TASKS_FILE = MANUAL_BENCH / "tasks.yaml"
     tasks.TASKS_LOCK = MANUAL_BENCH / "tasks.lock"
     # The Pi's kiosk, as far as the agent can tell: a page asked for goes "up", so the model is

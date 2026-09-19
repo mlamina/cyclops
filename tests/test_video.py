@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from cyclops import agent, card, panel, session, still
+from cyclops import agent, card, panel, session
 from cyclops.config import Settings
 
 STATIC = Path(agent.__file__).parent / "admin" / "static"
@@ -13,7 +13,6 @@ STATIC = Path(agent.__file__).parent / "admin" / "static"
 
 def _offer(tmp_path, monkeypatch, **over):
     monkeypatch.setattr(panel, "PANEL_FILE", tmp_path / "panel.json")
-    monkeypatch.setattr(panel, "PANEL_STILL_FILE", tmp_path / "panel-still.json")
     kw = dict(
         url="https://x.invalid/v.mp4",
         title="A title",
@@ -35,27 +34,6 @@ def test_a_video_offer_carries_a_url_and_a_picture_of_it(tmp_path, monkeypatch) 
     assert "scratchpad" not in found and "sketch" not in found
 
 
-def test_the_recording_gets_the_picture_rather_than_black(tmp_path, monkeypatch) -> None:
-    """still.of_panel reads `image` and nothing else, and a video is black without one.
-
-    The kiosk paints nothing while the browser is uncovered, so this is the whole of what
-    reaches video.mp4 for as long as a video runs.
-    """
-    import io
-
-    import numpy as np
-    from PIL import Image
-
-    buf = io.BytesIO()
-    Image.new("RGB", (64, 48), (10, 200, 10)).save(buf, "JPEG")
-    _offer(tmp_path, monkeypatch, thumb=buf.getvalue())
-    monkeypatch.setattr(still, "PANEL_FILE", tmp_path / "panel.json")
-    monkeypatch.setattr(still, "PANEL_STILL_FILE", tmp_path / "panel-still.json")
-    frame = still.of_panel(80, 48, payload_path=tmp_path / "panel.json")
-    assert frame is not None and frame.shape == (48, 80, 3)
-    assert np.any(frame)  # not an all-black frame
-
-
 def test_the_panel_is_held_open_only_for_a_video(tmp_path, monkeypatch) -> None:
     """A photograph after a video must not inherit its clock."""
     _offer(tmp_path, monkeypatch, hold=1800.0)
@@ -67,7 +45,7 @@ def test_the_panel_is_held_open_only_for_a_video(tmp_path, monkeypatch) -> None:
 def test_the_page_looks_for_a_video_before_it_looks_for_a_picture() -> None:
     """A lint that earns its place: reorder the branches and the video silently never plays.
 
-    A video offer carries a thumbnail under `image` too (the test above says why), so testing
+    A video offer carries a thumbnail under `image` too (see ``panel.offer_video``), so testing
     the picture first would paint a title card and start nothing. There is no way to catch
     that without Chromium except by reading the source, so this reads the source.
     """

@@ -12,6 +12,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh   # if you don't have uv
 cd ~/cyclops && cp .env.example .env         # paste your OPENAI_API_KEY
 uv sync                                       # fetches Python 3.12 + aarch64 wheels
 uv run cyclops-smoke                          # camera + API check, no audio needed
+deploy/install-screen-capture.sh              # wf-recorder, which a session's video is taken with
 ```
 
 Then set the audio devices — see [audio.md](audio.md#picking-devices), which a Pi always needs.

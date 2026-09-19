@@ -10,7 +10,7 @@ sessions/
     session.jsonl     the same events, one JSON object per line, for a program
     summary.md        one sentence and one paragraph: what this session was
     project.md        which project this got filed under, or why it didn't
-    video.mp4         the recording - the panel, or the camera (kiosk only)
+    video.mp4         the recording - the whole screen, or the camera (kiosk only)
     clips/
       plan.json       what was decided about this session, and when
       1.mp4           the whole session, quiet stretches played fast - see "Clips" below
@@ -84,39 +84,43 @@ back, nothing clips. It sits ahead of everything, so what the model hears and wh
 keeps are the same audio. `CYCLOPS_MIC_COMPRESS=0` turns it off; `CYCLOPS_MIC_GAIN_DB` adds a
 fixed gain in front of it.
 
-**What it records is a switch on the settings screen** — tap the eye, under INTERRUPT. It settles
-what the *next* session records: an encoder is opened once, at one frame size, so a recording
-already running cannot be handed something else halfway through.
+**What it records is the whole screen, exactly as it was on the glass**, at 30 fps: the camera
+with its halo, timer, caption and tab row, and then whatever covered it — a diagram, a photo, a
+scratchpad, a sketch, a manual page scrolling under your finger, the settings screen. Nothing is
+rebuilt afterwards and nothing goes black. `wf-recorder` takes each frame off the compositor as
+it is drawn (`cyclops.screen`) and the recorder samples the newest one on the wall clock, so the
+sound lines up with the picture the same way it always has.
 
-| | what lands in `video.mp4` |
-| --- | --- |
-| **SCREEN** *(the default)* | The panel, 1:1 at 800×480 — the sharpened preview with the halo, the timer, the caption, the REC tag and the tab row composited on it. Watching it back is watching the session happen: when Cyclops was thinking, when you cut in, where the shutter went off. |
-| **CAMERA** | The sensor alone, at its own resolution and shape, nothing drawn over it and nothing trimmed off the sides. The one to reach for when the recording is evidence rather than a memory — a part number, a wiring colour, a serial you will squint at later. |
+If the screen cannot be captured — `wf-recorder` is not installed, or no frame arrives within
+the first second — the session records **the camera** instead, and `session.jsonl` says why in a
+`recording` line:
 
-`CYCLOPS_RECORD_SOURCE` decides it on a box where nobody has touched the switch. Photos are
-unaffected either way: SNAP, the look tool and everything in `photos/` come off the raw camera.
-Nothing on the box is mirrored, so text held up to the lens reads the right way round wherever it
-turns up later.
+```
+{"type": "recording", "source": "camera", "why": "wf-recorder is not installed"}
+```
 
-Two consequences of recording the screen. A session with **no camera** still produces a video —
-the panel saying `No camera found`, chrome and full stereo audio. And while a diagram, a
-scratchpad or the admin page covers the panel the recording goes **black**, because the screen is
-no longer the kiosk's to hand over; the audio carries on throughout.
+`deploy/install-screen-capture.sh` installs it, once per box. Photos are unaffected either way:
+SNAP, the look tool and everything in `photos/` come off the raw camera. Nothing on the box is
+mirrored, so text held up to the lens reads the right way round wherever it turns up later.
+
+A session with **no camera** still produces a video — the panel saying `No camera found`, and
+full stereo audio.
 
 Needs `ffmpeg` on `PATH`. Without it the session runs exactly as before and says once that it
 isn't recording — nothing here ever blocks a conversation.
 
-Measured on a Pi 5 at 15 fps, against the ~93% of one core the panel already spends drawing
-itself at 25 fps whether anything is recording or not:
+What it costs, measured on the Pi 5 before it was built (2026-09-18), on top of the ~93% of one
+core the panel already spends drawing itself:
 
-| | frame | over drawing alone | on the card |
-| --- | --- | --- | --- |
-| **SCREEN** | 800×480 | **+18%** of one core | **2.5 MB/min** |
-| **CAMERA** | the sensor's own — 1280×720 on a C920 | **+35%** of one core | **8.5 MB/min** |
+| | over not recording |
+| --- | --- |
+| `wf-recorder` capturing the screen, ~29 fps, no encode | ~15% of one core |
+| encoding 800×480 at 30 fps | ~18% of one core |
+| **together** | **~33% of one core** |
 
-Two thirds of each figure is the kiosk handing frames over rather than ffmpeg taking them.
-`CYCLOPS_RECORD_WIDTH` caps it if the card matters more than the detail does. Nothing is ever
-pruned; delete what you don't want.
+At 15 fps the old stitched recording cost about 18%. What it costs on the card at 30 fps has not
+been measured yet. `CYCLOPS_RECORD_WIDTH` caps the size if the card matters more than the
+detail does. Nothing is ever pruned; delete what you don't want.
 
 ## Clips
 

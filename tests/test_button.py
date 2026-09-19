@@ -26,7 +26,6 @@ All of it is pure: no GPIO, no camera, no window.
 from __future__ import annotations
 
 import time
-from types import SimpleNamespace
 
 import pytest
 
@@ -73,9 +72,6 @@ class Controller:
     def status(self) -> dict[str, object]:
         return {"state": self.state}
 
-    def set_record_source(self, frames: object) -> None:
-        pass
-
     def start(self) -> None:
         self.started += 1
 
@@ -102,8 +98,6 @@ def _panel(monkeypatch: pytest.MonkeyPatch, *, real_toggle: bool = False) -> kio
         # The gears live inside _toggle_session, in the branch that knows a session is starting,
         # so the one test about them has to let the real thing run.
         kiosk.controller = Controller()
-        kiosk.camera, kiosk.panel = SimpleNamespace(film=None), None
-        monkeypatch.setattr(kiosk_module.filming, "chosen", lambda settings: "camera")
     else:
         monkeypatch.setattr(kiosk, "_toggle_session", lambda: kiosk.did.append("toggle"))
     return kiosk

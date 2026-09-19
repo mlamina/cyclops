@@ -29,7 +29,6 @@ from .. import (
     barge,
     card,
     cut,
-    filming,
     library,
     manuals,
     mixer,
@@ -53,10 +52,6 @@ from ..config import (
     Settings,
     load_settings,
 )
-
-# The function and not the module: there is a view called panel() below, and the /api/panel
-# route is the name worth keeping.
-from ..panel import keep_still
 from ..projects import store
 
 LOOPBACK = {"127.0.0.1", "::1"}
@@ -131,11 +126,6 @@ ASSET_VERSION = _asset_version()
 # kilobytes and a phone photo is single-digit megabytes; this is a ceiling, not a budget, and it
 # is here so that a mis-drag of something enormous is refused rather than written to the card.
 MAX_UPLOAD_BYTES = 128 * 1024 * 1024
-# And for the page's own picture of a scratchpad, posted back so the recording is not blind while
-# one is up (see picture_painted). An 800x480 sheet of mostly-white JPEG measures about 30 KB, so
-# this is a ceiling and not a budget: it is here so a bug on the page cannot post a megabyte a
-# second at the card, not because anything is expected to come near it.
-MAX_STILL_BYTES = 1024 * 1024
 # What may come out of a session folder, and as what. An allow-list by suffix for the same reason
 # STATIC_FILES is one: the set of legal answers is short enough to write down, and writing it down
 # is the end of every argument about what some other name might resolve to.
@@ -214,7 +204,6 @@ def _payload(request: HttpRequest) -> dict:
         local=_is_local(request),
         volume=mixer.requested(),
         barge_in=barge.enabled(_settings()),
-        record_screen=filming.on_screen(_settings()),
         steady=steady.enabled(),
         voice=voice.chosen(_settings()),
         # Absolute, so "0 sessions" is self-diagnosing: the count is relative to the CWD the
@@ -407,36 +396,17 @@ def picture(request: HttpRequest, ident: str) -> JsonResponse:
 
 @require_POST
 def picture_painted(request: HttpRequest) -> HttpResponse:
-    """The page has painted the picture: tell the kiosk it may uncover, and keep what it drew.
+    """The page has painted the picture: tell the kiosk it may uncover.
 
     The kiosk is waiting on ``PANEL_PAINTED_FLAG`` before it drops its window, and this is the
-    page saying it has something to uncover onto.
-
-    A scratchpad also arrives with a body: the JPEG the page drew of it, for the recording. That
-    rides in *this* request rather than one of its own, and the ordering is the reason. The kiosk
-    reads ``still.of_panel`` exactly once, the instant this flag appears (``_picture_session``),
-    and never again while the picture is up - so a still posted separately would be a race against
-    a reader that has already been and gone. Written here before the touch below, it cannot be.
-
-    This is the job it used to do for diagrams and lost. When a diagram was a JointJS scene laid
-    out in the browser, the page was the only thing that knew what it looked like, so it posted
-    the rendered SVG back here. A diagram is a jpg now, made before it is ever offered - but a
-    scratchpad is markup to the last moment, and the page is again the only thing that has seen it.
-
-    A body that is not a JPEG data URL, or that names nothing, is dropped by ``panel.keep_still``
-    rather than refused: the picture is on the glass either way, and the cost is a black stretch
-    of recording. Nothing here may fail a paint.
+    page saying it has something to uncover onto. The body is empty. It used to carry the page's
+    own picture of a scratchpad, for a recording that was rebuilt from what the page was handed;
+    the recording is taken off the glass now, and sees the scratchpad the way anybody does.
     """
     if not _is_local(request):
         return HttpResponseForbidden("only the kiosk's own browser paints the panel")
-    found = _pending()
-    if found is None:
+    if _pending() is None:
         return HttpResponseBadRequest("nothing is waiting for the panel")
-    # The id is this side's, never the request's. The page says what it drew; what it drew it for
-    # is whatever is actually waiting, and a still that names the wrong one is simply ignored.
-    kept = request.body[:MAX_STILL_BYTES].decode("ascii", "ignore")
-    if kept:
-        keep_still(kept, str(found.get("id", "")))
     try:
         PANEL_PAINTED_FLAG.parent.mkdir(parents=True, exist_ok=True)
         PANEL_PAINTED_FLAG.touch()
@@ -536,26 +506,6 @@ def set_barge_in(request: HttpRequest) -> HttpResponse:
     if wanted not in {"0", "1"}:
         return HttpResponseBadRequest("on must be 0 or 1")
     return JsonResponse({"barge_in": barge.request(wanted == "1")})
-
-
-@require_POST
-def set_record_source(request: HttpRequest) -> HttpResponse:
-    """Say what a session's video should be of - the panel, or the camera alone.
-
-    Loopback only, like the volume and the interrupt switch, and for the same reason as the
-    latter: everything this page shows the LAN is a copy of what is already on the card, and
-    the screen that can change how the box behaves is the one bolted to it.
-
-    The note is all this does, and unlike barge-in nobody reads it until the next tap on WAKE
-    UP: a recording already running was given its source when its encoder was opened, and
-    cannot be handed another one halfway through. See :mod:`cyclops.filming`.
-    """
-    if not _is_local(request):
-        return HttpResponseForbidden("what is recorded is set from the panel")
-    wanted = request.POST.get("source", "")
-    if wanted not in {filming.CAMERA, filming.SCREEN}:
-        return HttpResponseBadRequest("source must be 'camera' or 'screen'")
-    return JsonResponse({"record_source": filming.request(wanted)})
 
 
 @require_POST

@@ -44,7 +44,7 @@ SPEED = 8.0        # what a quiet stretch plays at. A pick, not a measurement: 4
 GAP_MIN_S = 1.2    # shorter than this is a breath, and a breath sped up reads as a dropped frame
 LEAD_IN_S = 0.15   # measured audio has no onset in it; this keeps the first consonant
 LEAD_OUT_S = 0.25
-FPS = 15.0         # what the panel records at; boundaries snap to it, and so does the output
+FPS = 30.0         # what the screen records at; boundaries snap to it, and so does the output
 
 # Silence detection - see listen(). Two floors because they are two instruments: the mic is an
 # open mic in a workshop, the right channel is the speaker's own zero-filled output.

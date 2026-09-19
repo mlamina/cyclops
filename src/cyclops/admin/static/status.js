@@ -112,27 +112,6 @@ if (steady) {
   });
 }
 
-// What a session's video is of. The same note-and-pick-up as the two above, with one honest
-// difference the hint has to carry: an encoder is opened once, at one frame size, so this lands
-// on the next session rather than on any recording already running.
-const rec = document.getElementById('rec');
-if (rec) {
-  const hint = document.getElementById('rechint');
-  rec.addEventListener('click', async () => {
-    const screen = rec.getAttribute('aria-checked') !== 'true';
-    rec.setAttribute('aria-checked', screen ? 'true' : 'false');   // drawn before the round trip
-    rec.textContent = screen ? 'SCREEN' : 'CAMERA';
-    hint.textContent = screen ? 'this screen, chrome and all' : 'the camera alone, full size';
-    try {
-      await fetch('/record-source', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: 'source=' + (screen ? 'screen' : 'camera'),
-      });
-    } catch (e) { /* the service is gone; the next render says what actually stuck */ }
-  });
-}
-
 // Who answers you. The three buttons are one gesture: every press sends the voice it lands on,
 // and the route both writes the setting and asks the kiosk to sound it - so stepping is listening
 // and there is nothing extra to press to hear what you just chose.

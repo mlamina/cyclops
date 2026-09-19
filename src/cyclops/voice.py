@@ -11,7 +11,7 @@ other eight are older and shared with the text-to-speech endpoint. ``marin`` is 
 the one this box has always used, so an untouched Pi sounds exactly as it did before this module
 existed.
 
-Two halves, exactly like :mod:`cyclops.filming` and :mod:`cyclops.barge`. The settings screen
+Two halves, exactly like :mod:`cyclops.steady` and :mod:`cyclops.barge`. The settings screen
 writes down what it wants; the process that opens the conversation picks it up. Here the seam is
 not a choice but a fact about the protocol: the voice rides in the ``session.update`` that opens
 a websocket and there is no event that changes it afterwards, so a voice chosen mid-sentence is

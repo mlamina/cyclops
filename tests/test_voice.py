@@ -90,7 +90,7 @@ def test_a_typo_in_the_environment_is_caught_at_startup(monkeypatch) -> None:
 
 def test_the_config_module_knows_the_same_ten(monkeypatch) -> None:
     """``config`` writes the names out again rather than importing them, because ``voice``
-    imports ``config`` - the same duplication ``_record_source`` has. This is the seam."""
+    imports ``config``. This is the seam."""
     for name in voice.VOICES:
         monkeypatch.setenv("CYCLOPS_VOICE", name)
         assert _voice("CYCLOPS_VOICE") == name
