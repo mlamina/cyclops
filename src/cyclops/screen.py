@@ -9,7 +9,9 @@ which is the whole seam: this is one more thing with a ``frame()``.
 
 The command is the one measured on the Pi before this was built (2026-09-18): ``rawvideo`` in
 ``bgr0``, which is the compositor's own layout, so ``wf-recorder`` converts nothing and encodes
-nothing - about 15% of a core at the ~29 fps the screen repaints at. A frame carries no header, so
+nothing - about 15% of a core at the ~29 fps the screen repaints at. Whatever the name says, the
+bytes arrive red first (R, G, B, X - checked against a ``grim`` shot of the same screen), so a
+frame is read as RGBA; read as BGRA, every red on the panel came out blue. A frame carries no header, so
 its size is the panel's and has to be told; the kiosk knows it from the DRM mode.
 
 The pipe is a FIFO in a scratch directory rather than stdout, because ``wf-recorder`` talks on
@@ -40,7 +42,7 @@ PROGRAM = "wf-recorder"
 FIRST_FRAME_S = 1.0  # past this with nothing on the pipe, the session records the camera
 POLL_S = 0.02
 STOP_S = 2.0  # how long SIGINT gets before the capture is killed
-BYTES_PER_PIXEL = 4  # bgr0
+BYTES_PER_PIXEL = 4  # R, G, B, X - see the module docstring
 
 
 def command(program: str, fifo: Path) -> list[str]:
@@ -176,7 +178,7 @@ class ScreenSource:
         pixels = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, BYTES_PER_PIXEL)
         with open(read_end, "rb", buffering=0) as pipe:
             while _fill(pipe, raw):
-                self._frame = cv2.cvtColor(pixels, cv2.COLOR_BGRA2BGR)
+                self._frame = cv2.cvtColor(pixels, cv2.COLOR_RGBA2BGR)
                 first.set()
 
 

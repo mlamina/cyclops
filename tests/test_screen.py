@@ -1,7 +1,7 @@
 """The whole screen as a session's video: the capture, the camera it falls back to, and the end.
 
 No compositor here, so ``wf-recorder`` is played by a few lines of Python that take the same
-arguments and write the same thing - raw ``bgr0`` frames into the file named after ``-f``, after
+arguments and write the same thing - raw frames, red byte first as the Pi's writes them, into the file named after ``-f``, after
 reading the answer to "overwrite?" off stdin. Everything on this side of the pipe is the real
 thing: the FIFO, the reader, the recorder, ffmpeg and the mux.
 
@@ -31,7 +31,7 @@ import signal, sys, time
 signal.signal(signal.SIGINT, lambda *_: sys.exit(0))
 path = sys.argv[sys.argv.index("-f") + 1]
 sys.stdin.readline()
-frame = bytes([{b}, {g}, {r}, 0]) * ({w} * {h})
+frame = bytes([{r}, {g}, {b}, 0]) * ({w} * {h})
 with open(path, "wb", buffering=0) as out:
     while True:
         out.write(frame)
