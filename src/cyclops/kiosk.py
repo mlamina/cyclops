@@ -39,16 +39,13 @@ import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 from . import (  # noqa: E402
     barge,
     companion,
-    filming,
     mixer,
     panel,
     point,
     power,
     session,
     sfx,
-    sketch,
     stats,
-    still,
     tasks,
     voice,
     webcam,
@@ -87,7 +84,7 @@ from .overlay import (  # noqa: E402
     session_up,
     working_over,
 )
-from .record import PanelSource  # noqa: E402
+from .screen import ScreenSource  # noqa: E402
 from .ui import ERROR, SessionController  # noqa: E402
 from .webcam import WebcamError  # noqa: E402
 
@@ -248,16 +245,6 @@ BROWSER_SETTLE_S = 2.0
 # ~400 ms poll plus a JointJS layout, because the cost of being wrong is asymmetric: uncovering
 # early shows the dashboard for a moment, and never uncovering loses the picture entirely.
 PAINT_WAIT_S = 8.0
-# And how long a *swap* waits for the page's own picture of what it swapped to. Only a
-# scratchpad has one and only a scratchpad needs one: everything else is already whole in the
-# offer file, so _restill answers from that on its first look and never reaches this. A poll,
-# a paint and a canvas draw is the better part of a second, and this is the ceiling on it.
-STILL_WAIT_S = 2.0
-# How long after a sketch changes the screen is still worth photographing for the recording.
-# Mermaid lays itself out in about five seconds and is the slowest thing on the panel; every
-# other component is painted by the next frame. See Kiosk._keep_sketch_still.
-SKETCH_SETTLE_S = 8.0
-SKETCH_STILL_EVERY_S = 0.7  # ...and how often inside that window. grim is ~25 ms at -t ppm.
 VOLUME_POLL_S = 0.4  # how often we look for a volume, or a barge-in switch, the page left us
 # ...and how often we check that the window still fills the panel. See _keep_fullscreen: this is
 # a compositor's answer being verified rather than a value being read, so it can be lazy.
@@ -449,13 +436,6 @@ class Kiosk:
     ):
         self.controller = controller
         self.camera = camera
-        # Where every painted frame is published, for a session that is recording the screen
-        # rather than the camera. Its own object rather than a handle back to this one, because
-        # the recorder is given it directly and must not be able to reach anything else here.
-        # Empty until the first paint, and that cannot matter: the only thing that starts a
-        # session is a tap, taps are dispatched from inside waitKey, and the callback that
-        # catches them is not installed until the window's first frame is already up.
-        self.panel = PanelSource()
         self.fullscreen = fullscreen
         self.overlay: Overlay | None = None
         self.backlight = Backlight()  # the panel's light, off while it sleeps
@@ -555,11 +535,6 @@ class Kiosk:
         self._reveal = threading.Event()  # asks the render loop to uncover the admin page
         self._retake = threading.Event()  # ... and to take the panel back off it
         self._hidden = False  # the admin page has the panel; nothing we draw can be seen
-        # What is on that panel while it is not ours, for a session recording the screen to
-        # sample - see cyclops.still. None whenever there is nothing to say, which is the
-        # dashboard and every failure; the render loop publishes black for it as it always did.
-        self._page_still: np.ndarray | None = None
-        self._sketch_shot_at = 0.0  # monotonic; paces _keep_sketch_still's captures
         self._window_up = False  # whether highgui currently has a window for us
         # Whether the panel's light has been turned on for this run. It comes on with the first
         # fully drawn frame rather than at startup, because everything before that - the browser
@@ -626,26 +601,11 @@ class Kiosk:
 
         Rebuilding is the only way back on top of the browser: a window that is merely redrawn
         keeps the place in the stack it already had, which is underneath.
-
-        Everything that reaches the glass comes through here, which is why this is where a
-        session recording the screen takes its frames from - the dark panel and the "No camera
-        found" card included, since those are as much what you were looking at as the picture is.
         """
-        self.panel.publish(image)  # a recording of the screen samples this; see PanelSource
         if self._window_up:
             cv2.imshow(WINDOW, image)
         else:
             self.open_window(image, width, height)
-
-    def _panel_size(self) -> tuple[int, int]:
-        """The size a frame has to be to stand in for the panel, before or after the first one.
-
-        (0, 0) is what ``self._size`` says until the loop has drawn once, and a 0x0 frame is one
-        the recorder cannot resize and gives up over - so it is answered with the panel's own
-        size rather than passed on. ``all`` and not ``or``: a truthy tuple of zeroes would sail
-        straight through.
-        """
-        return self._size if all(self._size) else NO_CAMERA_SIZE
 
     def _apply_fullscreen(self) -> None:
         cv2.setWindowProperty(
@@ -1009,9 +969,8 @@ class Kiosk:
 
         The switch that starts and ends a conversation is a 12 mm target you have to look at,
         and the moment you want to start talking to him is the moment both hands are full. This
-        is the same :meth:`_toggle_session` the switch itself calls - the record source, the
-        printed line, the gears and the optimistic ``_pending`` all come with it - so
-        there is no second way for a session to begin.
+        is the same :meth:`_toggle_session` the switch itself calls - the gears and the
+        optimistic ``_pending`` come with it - so there is no second way for a session to begin.
 
         Unlike the tap, a hold on a dark panel is not spent waking it: the tap is ambiguous
         under a black screen and this cannot be, so it lands. It has to light the glass itself,
@@ -1371,50 +1330,10 @@ class Kiosk:
         """
         proc = self._browser
         deadline = time.monotonic() + max(ADMIN_MAX_S, hold_s)
-        drawn: object = object()  # the sketch frame we last photographed; never equal to a wire
-        settle = 0.0
         while proc is not None and proc.poll() is None:
             if _noted_since(BROWSER_CLOSE_FLAG, shown_at) or time.monotonic() > deadline:
                 break
-            drawn, settle = self._keep_sketch_still(drawn, settle)
             time.sleep(ADMIN_POLL_S)
-
-    def _keep_sketch_still(self, drawn: object, settle: float) -> tuple[object, float]:
-        """Photograph a sketch for the recording while it is still moving.
-
-        The capture itself is :func:`cyclops.still.of_screen`.
-
-        A picture and a scratchpad both reach the video out of what the page was handed, because
-        both are one finished thing somebody sent. A sketch is neither: it arrives a frame at a
-        time and then its charts and diagrams lay themselves out on their own clock - Mermaid
-        takes about five seconds - so there is no moment on this side that means "it is done".
-
-        The rule is therefore time, not completion: every change starts a window, and while the
-        window is open the screen is photographed a few times a second. Outside one this costs a
-        comparison of two object identities per poll. It also means the recording shows the thing
-        assembling rather than one frozen frame of it, which is what it looked like to be there.
-        """
-        if not self._panel_showing.is_set():
-            return drawn, settle
-        wire = sketch.current()
-        if wire is None:
-            return drawn, settle
-        now = time.monotonic()
-        started = wire is drawn
-        if not started:
-            drawn, settle = wire, now + SKETCH_SETTLE_S
-        if now > settle or now - self._sketch_shot_at < SKETCH_STILL_EVERY_S:
-            return drawn, settle
-        self._sketch_shot_at = now
-        frame = still.of_screen(*self._panel_size())
-        if frame is None:
-            return drawn, settle
-        self._publish_still(frame)
-        if not started:
-            # Once per sketch, not once per capture. It is the one line that says the recording
-            # can see what is on the glass - the thing that was silently black before.
-            print("· sketch: photographing the panel for the recording", flush=True)
-        return drawn, settle
 
     # ---- pictures on the panel ----
 
@@ -1436,61 +1355,12 @@ class Kiosk:
             if panel.announces():
                 self._cues.play("shown")  # a drawing arriving is news; see _picture_session
             print("· picture swapped on the panel", flush=True)
-            # A recording is being handed the picture on the panel rather than the black the
-            # kiosk is painting behind the browser (see cyclops.still), and that hand-off happens
-            # once, at the reveal. A swap never goes past the reveal, so without this the video
-            # would hold the first picture for as long as the panel kept showing others. Off on
-            # a thread of its own because rasterising a drawing shells out to ffmpeg, and this
-            # method is called from the agent's and promises to do nothing slow.
-            threading.Thread(target=self._restill, name="kiosk-restill", daemon=True).start()
             return True
         if self._page_busy.is_set():
             return False  # the admin page is up, or a picture is on its way; do not stack them
         self._page_busy.set()
         threading.Thread(target=self._picture_session, name="kiosk-picture", daemon=True).start()
         return True
-
-    def _restill(self) -> None:
-        """Rebuild the panel's stand-in frame after a picture was swapped for another.
-
-        Reads the offer file, which the caller has already written, so it does not have to wait
-        for the page to repaint to know what the page is about to show. That holds for everything
-        whose pixels travel in the offer - which is everything except a scratchpad, whose picture
-        the page has to draw and post before there is anything here to read (:mod:`cyclops.still`).
-        A swap happens before the page has even polled, so on the first look that picture is never
-        there yet; hence the wait below.
-
-        **Black first, and then the picture.** Not black-after-two-seconds: keeping the frame we
-        already had would put the *previous* picture in the recording for as long as the new thing
-        is up, and a frozen picture over a running timer watches back as a hung encoder rather than
-        as what happened. So the honest answer goes out immediately and is replaced if a better one
-        arrives.
-
-        The wait is also spent in full whenever there is genuinely nothing coming - an offer with
-        no picture in it either way. That is ten stats on a daemon thread and no reason to
-        complicate this; the thread exists in the first place because this was allowed to be slow.
-
-        Checks the latch each time: a picture that came down while this was waiting would otherwise
-        republish itself over the black that replaced it.
-        """
-        width, height = self._panel_size()
-        frame = still.of_panel(width, height)
-        self._publish_still(frame if frame is not None else _black(width, height))
-        if frame is not None:
-            return
-        deadline = time.monotonic() + STILL_WAIT_S
-        while time.monotonic() < deadline and self._panel_showing.is_set():
-            time.sleep(ADMIN_POLL_S)
-            frame = still.of_panel(width, height)
-            if frame is not None:
-                self._publish_still(frame)
-                return
-
-    def _publish_still(self, frame: np.ndarray) -> None:
-        """Hand one stand-in frame to the recording, if a picture is still up to stand in for."""
-        if self._panel_showing.is_set():
-            self._page_still = frame
-            self.panel.publish(frame)
 
     def _picture_session(self) -> None:
         """The whole life of one picture: wait for the page to paint it, show it, then take it
@@ -1515,12 +1385,6 @@ class Kiosk:
                 # Uncover anyway. The page polls, so it is probably a slow layout rather than a
                 # dead browser, and a picture arriving a moment late beats one that never comes.
                 print("· panel: the page was slow to paint; showing anyway", flush=True)
-            # Before the reveal and on this thread, not the render loop's. By now the page has
-            # posted what it painted - for a scratchpad, literally: the JPEG it drew of itself
-            # rode in the request that touched the flag we just waited on, so it is on the card
-            # before this line runs and there is no race to lose. That is the whole reason we
-            # waited, and why the swap path in _restill is the one that has to poll.
-            self._page_still = still.of_panel(*self._panel_size())
             shown_at = time.time()
             shown = True
             self._panel_showing.set()  # from here a second picture swaps rather than being refused
@@ -1593,15 +1457,6 @@ class Kiosk:
             # cue on this box that is *about* a long press landing was the only thing that did
             # not land with it.
             self._cues.play("gears")
-            # What this session's video will be of, settled here because here is the last moment
-            # it is free: the encoder is opened at a fixed frame size a second or two from now.
-            # A switch flipped after this lands on the next session, which is what the settings
-            # screen says it does. See cyclops.filming.
-            wanted = filming.chosen(self.controller.settings)
-            self.controller.set_record_source(
-                self.panel if wanted == filming.SCREEN else self.camera.film
-            )
-            print(f"· recording the {wanted}", flush=True)
             self.controller.start()
         else:
             # The same gears, on the same edge, for the same reason: ending a session and
@@ -1981,22 +1836,10 @@ class Kiosk:
                 self._reveal.clear()
                 self._drop_window()  # the warm browser has been behind us all along
                 self._hidden = True
-                # A session recording the screen is still sampling, and the screen is no longer
-                # ours to hand it. What is on it, when the page was handed a picture and we could
-                # rebuild it (see cyclops.still), and black otherwise. Black rather than the frame
-                # we happened to stop on: a picture can hold the panel for a quarter of an hour
-                # mid-session, and a frozen halo over a running timer watches back as a hung
-                # encoder rather than as what happened.
-                self.panel.publish(
-                    self._page_still
-                    if self._page_still is not None
-                    else _black(*self._panel_size())
-                )
             if self._retake.is_set():
                 self._retake.clear()
                 self._drop_window()  # ... and the next frame builds a window on top of it again
                 self._hidden = False
-                self._page_still = None  # the panel is ours again; it speaks for itself
                 self._touched_at = time.monotonic()  # closing the page is a touch like any other
             self._sync_handover()  # ...unless a phone has taken his voice, which reads first
             self._sync_volume()  # the page sets the volume, so keep reading it while it is up
@@ -2288,12 +2131,16 @@ def main() -> None:
 
     _phase("camera settled" if camera.connected else "camera absent; carrying on")
     webcam.set_live_source(camera)  # the shutter shoots from this same camera, always
-    # Whichever of the two the tap picks, the recorder gets a source even when nothing is plugged
-    # in: it waits its own moment for a first frame and says so in the session log if none comes,
-    # and a camera present by the time the next session starts is then recorded without anything
-    # being rewired. The camera is the constructor's answer only so a session started by anything
-    # but _toggle_session still has one; _toggle_session always says which of the two it wants.
-    controller = SessionController(settings, frames=camera.film, entrypoint="kiosk")
+    # A session's video is of the whole screen, taken off the compositor - see cyclops.screen. The
+    # camera is what it records instead when the screen cannot be captured, and it is handed over
+    # even with nothing plugged in: the recorder waits its own moment for a first frame, and a
+    # camera present by the time the next session starts is then recorded without any rewiring.
+    controller = SessionController(
+        settings,
+        frames=camera.film,
+        screen=ScreenSource(screen or NO_CAMERA_SIZE),
+        entrypoint="kiosk",
+    )
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     panel.set_kiosk(kiosk)  # so a finished picture can find a panel to appear on
     # Nothing can be waiting for a panel that has only just come up, so anything here is a

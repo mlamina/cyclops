@@ -145,17 +145,6 @@ room for. That is the one question here answered by the stylesheet rather than b
       <section class="ctl">
         <div class="chead">
           <span class="cname">
-            <span class="vlabel">RECORD</span>
-            <span class="shint" id="rechint">{% if record_screen %}this screen, chrome and all{% else %}the camera alone, full size{% endif %}</span>
-          </span>
-          <button class="sw" id="rec" type="button" role="switch"
-                  aria-label="Record the screen rather than the camera"
-                  aria-checked="{% if record_screen %}true{% else %}false{% endif %}">{% if record_screen %}SCREEN{% else %}CAMERA{% endif %}</button>
-        </div>
-      </section>
-      <section class="ctl">
-        <div class="chead">
-          <span class="cname">
             <span class="vlabel">STABILIZE</span>
             <span class="shint" id="steadyhint">{% if steady %}holds the picture still{% else %}the raw picture, shake and all{% endif %}</span>
           </span>

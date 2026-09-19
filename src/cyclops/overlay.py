@@ -8766,9 +8766,6 @@ def composite(frame_bgr: np.ndarray, rgba: np.ndarray) -> np.ndarray:
     width and there are more of them: 19.5 ms a frame against 4.9 ms, measured on the Pi with a
     real overlay, and this runs 25 times a second. Seven bits of alpha rather than eight costs
     at most one level on about 6% of pixels, on chrome drawn in three flat greens.
-
-    Still allocates - see :meth:`cyclops.record.PanelSource.publish`, which hands the returned
-    frame to an encoder on another thread and needs it to be nobody else's buffer.
     """
     import cv2  # local import keeps this module importable without a camera stack
 

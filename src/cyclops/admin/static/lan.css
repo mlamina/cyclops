@@ -335,7 +335,7 @@ body:not(.kiosk) ::-webkit-scrollbar-thumb { background: var(--dim); }
   /* `auto` first, so the box takes the recording's own shape once the metadata lands and the
      ratio after it is only what to hold before that. It has to be both: a session recorded from
      the screen is 5:3 like the panel, one recorded from the camera is 4:3 like the sensor, and
-     the card holds a mix of the two forever. See cyclops.filming. */
+     the card holds a mix of the two forever. See cyclops.screen. */
   body:not(.kiosk) .video { height: auto; max-height: min(52vh, 100%); aspect-ratio: auto 5 / 3;
                             border: calc(1 * var(--u)) solid var(--dim); }
   body:not(.kiosk) .stitle { font-size: calc(20 * var(--u)); -webkit-line-clamp: 3; }

@@ -28,9 +28,8 @@
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_REMEMBER`     | `1`            | Keep `about-you.md` up to date from what you say, and hand it to Cyclops at the start of a session; `0` turns the whole feature off and writes nothing about you. |
 | `CYCLOPS_RECORD`       | `1`            | Record the session into its folder; `0` disables. |
-| `CYCLOPS_RECORD_SOURCE`| `screen`       | What a session's video is of: `screen` for the panel, chrome and all, or `camera` for the raw picture. The switch on the settings screen wins over this; it only decides on a box where nobody has ever touched it. |
-| `CYCLOPS_RECORD_FPS`   | `15`           | Frame rate of the recorded video. |
-| `CYCLOPS_RECORD_WIDTH` | `0`            | Cap the recorded width, never upscaling. `0` keeps whatever the source is — the panel 1:1 at 800 wide, a camera at its own resolution. |
+| `CYCLOPS_RECORD_FPS`   | `30`           | Frame rate of the recorded video. The screen repaints at about 29 fps, so more buys nothing. |
+| `CYCLOPS_RECORD_WIDTH` | `0`            | Cap the recorded width, never upscaling. `0` keeps whatever the source is — the screen 1:1 at 800 wide, or the camera at its own resolution when the screen cannot be captured. |
 | `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |
 | `CYCLOPS_ADMIN_PORT`   | `80`           | Port for the admin page. Tapping the eye on the panel opens the same port. |
 

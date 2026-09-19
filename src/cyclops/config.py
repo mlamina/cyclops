@@ -40,22 +40,6 @@ PAGE_ALIVE_FLAG = Path.home() / ".cache" / "cyclops" / "page-alive"
 # dashboard".
 PANEL_FILE = Path.home() / ".cache" / "cyclops" / "panel.json"
 
-# And beside it, the page's own picture of the scratchpad it is showing - the one thing on the
-# panel that arrives as markup rather than as pixels, and so the one thing a recording cannot get
-# from the offer above. The page draws it a second time onto a canvas and posts the JPEG back; see
-# :func:`cyclops.panel.keep_still` and :mod:`cyclops.still`.
-#
-# Beside the offer and not inside it, deliberately. PANEL_FILE has exactly one writer, which
-# replaces it whole and mints a new id each time. A raster merged into it would make the admin
-# process a second writer doing a read-modify-write on the file that decides what is on the glass:
-# one landing after a withdraw would put a dismissed picture back up, and one landing after a
-# newer offer would revert its id - and the id is the whole repaint trigger, so the page would
-# never learn about the new picture at all. A picture *of* an offer is not an offer.
-#
-# The id says which offer it is a picture of. A stale one is ignored, which costs a black frame
-# in the recording and nothing on the glass. Removed with the offer, by ``panel.withdraw``.
-PANEL_STILL_FILE = Path.home() / ".cache" / "cyclops" / "panel-still.json"
-
 # And where the page says it has actually painted that picture. The kiosk waits for this before
 # uncovering the browser, exactly as it waits on PAGE_SERVED_FLAG at startup - without it the
 # panel would show the dashboard for as long as the picture takes to decode, which is the one
@@ -85,17 +69,11 @@ VOLUME_FILE = Path.home() / ".cache" / "cyclops" / "volume"
 # CYCLOPS_BARGE_IN_DB is left to decide - see :mod:`cyclops.barge`.
 BARGE_IN_FILE = Path.home() / ".cache" / "cyclops" / "barge-in"
 
-# And where it leaves the answer to "what is a session's video a recording of?" - the panel, or
-# the camera on its own. The same note-and-pick-up shape again, for the plainest reason of the
-# three: the page is not the process holding either one. Absent means nobody has ever said, and
-# CYCLOPS_RECORD_SOURCE is left to decide - see :mod:`cyclops.filming`.
-RECORD_SOURCE_FILE = Path.home() / ".cache" / "cyclops" / "record-source"
-
 # And where it leaves the answer to "who should be answering me?" - one of the ten voices the
-# Realtime API offers. The same note-and-pick-up shape as the three above, and for the same
-# reason as the record source: the page is not the process that opens the conversation, and the
-# voice can only be set in the ``session.update`` that opens one. Absent means nobody has ever
-# said, and CYCLOPS_VOICE is left to decide - see :mod:`cyclops.voice`.
+# Realtime API offers. The same note-and-pick-up shape as the two above, for its own reason: the
+# page is not the process that opens the conversation, and the voice can only be set in the
+# ``session.update`` that opens one. Absent means nobody has ever said, and CYCLOPS_VOICE is left
+# to decide - see :mod:`cyclops.voice`.
 VOICE_FILE = Path.home() / ".cache" / "cyclops" / "voice"
 
 # And where it leaves the answer to "hold the picture still?" - see :mod:`cyclops.steady`. The page
@@ -197,9 +175,8 @@ class Settings:
     # place rather than sitting beside it, because two doors onto the same glass is a choice
     # the model would have to make mid-sentence, every time.
     sketch: bool = False
-    record: bool = True  # record the session to its folder (needs a camera, or a panel)
-    record_source: str = "screen"  # "screen": the panel, UI and all; "camera": the raw picture
-    record_fps: int = 15  # video sampling rate; ~5% of a Pi 5 core at 800x480
+    record: bool = True  # record the session to its folder: the whole screen, else the camera
+    record_fps: int = 30  # video sampling rate; the screen repaints at ~29 fps
     record_width: int = 0  # cap the recorded width, never upscaling; 0 keeps the source's own
     sleep_after_s: int = 60  # untouched for this long the panel goes dark; 0 keeps it awake
     button_pin: int | None = 17  # BCM17 (physical 11): the shutter button beside the panel
@@ -307,31 +284,15 @@ def _volume(name: str) -> float:
     return max(0.0, min(1.0, percent / 100.0))
 
 
-def _record_source(name: str) -> str:
-    """Which of the two things a session's video is of. See :mod:`cyclops.filming`.
-
-    Spelled out rather than made a flag because "record the screen: off" does not say what you
-    get instead, and the two words are the whole feature.
-    """
-    raw = _env(name)
-    if raw is None:
-        return Settings.record_source
-    if raw.lower() not in {"camera", "screen"}:
-        raise ConfigError(f"{name} must be 'camera' or 'screen', got {raw!r}")
-    return raw.lower()
-
-
 def _voice(name: str) -> str:
     """One of the ten the Realtime API will accept. See :mod:`cyclops.voice`.
 
-    Validated here rather than left to OpenAI for the reason ``_record_source`` is: a box that
-    will not do what you meant should say so while you are watching, and the alternative is a
-    session that opens, is refused, and closes again with the reason three layers down in a
-    websocket error.
+    Validated here rather than left to OpenAI: a box that will not do what you meant should say
+    so while you are watching, and the alternative is a session that opens, is refused, and
+    closes again with the reason three layers down in a websocket error.
 
     The names are written out here rather than imported from ``cyclops.voice``, which imports
-    this module - ``_record_source`` has the same duplication for the same reason, and
-    ``tests/test_voice.py`` is what holds the two lists to each other.
+    this module - ``tests/test_voice.py`` is what holds the two lists to each other.
     """
     raw = _env(name)
     if raw is None:
@@ -400,7 +361,6 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         look=_flag("CYCLOPS_LOOK", Settings.look),
         sketch=_flag("CYCLOPS_SKETCH", Settings.sketch),
         record=_flag("CYCLOPS_RECORD", Settings.record),
-        record_source=_record_source("CYCLOPS_RECORD_SOURCE"),
         record_fps=_int("CYCLOPS_RECORD_FPS") or Settings.record_fps,
         # _count, not `or`: 0 means "whatever the source is", which `or` would read as unset.
         record_width=_count("CYCLOPS_RECORD_WIDTH", Settings.record_width),

@@ -6,7 +6,7 @@ model has read the transcript - for what it was about::
     sessions/2026-08-26_14-32-05_lego-falcon/
         session.md        the conversation, with the photos in it, for a person
         session.jsonl     the same events, one JSON object per line, for a program
-        video.mp4         the recording, when there was a camera to record (kiosk only)
+        video.mp4         the recording: the whole screen, or the camera (kiosk only)
         photos/14-32-40_cyclops.jpg
 
 Hyphens in the time and never colons: FAT32 and exFAT forbid ``:``, and this card is meant to
@@ -70,6 +70,7 @@ if TYPE_CHECKING:  # importing these for real would be a cycle - agent.py import
     from .agent import VoiceAgent
     from .audio import Microphone, Speaker
     from .record import FrameSource
+    from .screen import ScreenSource
     from .slug import Description
 
 # Re-exported rather than redefined: cyclops.card owns what a session folder is called, so that
@@ -199,9 +200,9 @@ class SessionLog:
     """One session's folder, and the log of what happened in it.
 
     Built around whatever the entry point already has - the agent for its event stream, the mic
-    and speaker for the recording's two audio tracks, and a camera if one is being held open.
-    Used as a context manager, so the folder is finished exactly once and on every path out: a
-    normal stop, a Ctrl+C, or a session that fell over.
+    and speaker for the recording's two audio tracks, and the screen and a camera if there is a
+    panel to film. Used as a context manager, so the folder is finished exactly once and on every
+    path out: a normal stop, a Ctrl+C, or a session that fell over.
     """
 
     def __init__(
@@ -212,7 +213,8 @@ class SessionLog:
         entrypoint: str,  # "cli" | "ui" | "kiosk" - recorded, not inferred
         mic: Microphone | None = None,
         speaker: Speaker | None = None,
-        frames: FrameSource | None = None,  # only the kiosk has one; only it gets a video.mp4
+        frames: FrameSource | None = None,  # the camera; only the kiosk has one
+        screen: ScreenSource | None = None,  # the whole glass, filmed in preference to the camera
         # Somewhere to say which step of the teardown is running. Optional because only the
         # kiosk has a panel to say it on - the CLI passes nothing and is unchanged. All that is
         # left to narrate is the mux, which gets up to record.MUX_TIMEOUT_S; it used to share one
@@ -229,6 +231,7 @@ class SessionLog:
         self._mic = mic
         self._speaker = speaker
         self._frames = frames
+        self._screen = screen
         self._on_phase = on_phase
         self._t0 = time.monotonic()
         self._lock = threading.Lock()
@@ -273,7 +276,10 @@ class SessionLog:
                 model=self.settings.model,
                 voice=self.settings.voice,
                 lang=self.settings.transcribe_lang,
-                record=bool(self.settings.record and self._frames is not None),
+                record=bool(
+                    self.settings.record
+                    and (self._frames is not None or self._screen is not None)
+                ),
             )
             self._start_recorder()
             self._agent.on_event = self.observe
@@ -323,27 +329,62 @@ class SessionLog:
             self._after()  # named, remembered and filed in another process, on its own time
 
     def _start_recorder(self) -> None:
-        """Tap the mic and the speaker for this session's video, if there is a camera for one."""
-        if self._frames is None or not self.settings.record:
+        """Tap the mic and the speaker for this session's video, if there is anything to film."""
+        if not self.settings.record or self._mic is None or self._speaker is None:
             return
-        if self._mic is None or self._speaker is None:
+        frames = self._filmed()
+        if frames is None:
             return
         recorder = SessionRecorder(
-            self._frames,
+            frames,
             self.dir,
             fps=self.settings.record_fps,
             width=self.settings.record_width,
         )
         if not recorder.start():  # it has said why; a session is never blocked on recording
+            if self._screen is not None:
+                self._screen.stop()  # nothing is going to sample it
             return
         self._mic.on_block = recorder.on_mic_block
         self._speaker.on_block = recorder.on_speaker_block
         self._recorder = recorder
 
+    def _filmed(self) -> FrameSource | None:
+        """The screen, once it has delivered a frame; the camera when it cannot. Logged either way.
+
+        The first frame is the test because it is the only one that means anything: a capture
+        that is installed but refused by the compositor, or pointed at the wrong output, fails
+        there and nowhere earlier. It gets :data:`cyclops.screen.FIRST_FRAME_S`, which is the
+        same second the recorder has always given its source to produce one.
+
+        The reason goes in the log as well as on stderr because the log is what is still there
+        next week, beside a video that is unexpectedly of the camera.
+        """
+        screen = self._screen
+        if screen is None:
+            return self._frames
+        why = screen.start()
+        if not why:
+            self.event("recording", source="screen")
+            print("· recording the screen", flush=True)
+            return screen
+        screen.stop()
+        self.event("recording", source="camera", why=why)
+        print(f"· [record] {why}; recording the camera instead", file=sys.stderr, flush=True)
+        return self._frames
+
     def _stop_recorder(self) -> None:
         recorder, self._recorder = self._recorder, None
-        if recorder is None:
-            return
+        try:
+            if recorder is not None:
+                self._finish(recorder)
+        finally:
+            # Whatever happened above, and whether or not a recorder ever started: the capture
+            # is a process of its own, and nothing else is going to end it.
+            if self._screen is not None:
+                self._screen.stop()
+
+    def _finish(self, recorder: SessionRecorder) -> None:
         # Named on the panel because this is the long pole of a teardown - ffmpeg gets up to
         # record.MUX_TIMEOUT_S, and even the usual couple of seconds is a couple of seconds the
         # caption used to spend saying nothing more useful than "closing the link".

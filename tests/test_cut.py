@@ -175,10 +175,13 @@ def test_padding_never_reaches_outside_the_recording() -> None:
     assert cut.tighten([(0.05, 2.0), (88.0, 89.95)], 90.0) == [[0.0, 2.25], [87.85, 90.0]]
 
 
-def test_every_boundary_lands_on_a_frame() -> None:
-    for start, end, _ in cut.segments([(10.31, 12.77), (20.02, 30.4)], 90.0):
-        assert abs(start * cut.FPS - round(start * cut.FPS)) < 1e-9
-        assert abs(end * cut.FPS - round(end * cut.FPS)) < 1e-9
+def test_every_boundary_lands_on_a_thirtieth_of_a_second() -> None:
+    """The recording's own frames, so no cut falls between two of them - and a thirtieth, not
+    the fifteenth the screen used to be recorded at."""
+    speech = [(10.31, 12.77), (20.02, 30.4), (40.0 + 1 / 30 + cut.LEAD_IN_S, 45.0)]
+    bounds = [t for start, end, _ in cut.segments(speech, 90.0) for t in (start, end)]
+    assert all(abs(t * 30 - round(t * 30)) < 1e-9 for t in bounds)
+    assert any(abs(t * 15 - round(t * 15)) > 1e-9 for t in bounds), "and not only fifteenths"
 
 
 def test_a_recording_nobody_can_be_heard_in_has_no_segments() -> None:
@@ -672,7 +675,7 @@ def test_a_session_holding_clips_is_actually_removed(tmp_path) -> None:
 SYNTH_S = 8
 SYNTH = [
     "ffmpeg", "-v", "error", "-y",
-    "-f", "lavfi", "-i", f"testsrc2=size=160x96:rate=15:duration={SYNTH_S}",
+    "-f", "lavfi", "-i", f"testsrc2=size=160x96:rate=30:duration={SYNTH_S}",
     "-f", "lavfi", "-i",
     "aevalsrc=exprs='if(between(t,0.6,1.6)+between(t,5,5.8),sin(2*PI*440*t)/2,0)"
     f"|if(between(t,1.8,2.6),sin(2*PI*660*t)/2,0)':s=48000:d={SYNTH_S}",
@@ -721,3 +724,12 @@ def test_the_rendered_video_runs_as_long_as_the_arithmetic_says(rendered) -> Non
     )
     predicted = cut.read_plan(rendered).clips[0].seconds
     assert abs(float(done.stdout) - predicted) <= 1.0 / cut.FPS
+
+
+def test_the_rendered_video_plays_at_thirty_frames_a_second(rendered) -> None:
+    done = subprocess.run(  # noqa: S603
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=r_frame_rate", "-of", "csv=p=0", str(cut.clip_path(rendered, 1))],
+        capture_output=True, check=True, timeout=30,
+    )
+    assert done.stdout.strip() == b"30/1"

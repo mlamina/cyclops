@@ -173,7 +173,7 @@ rather than at the end of the turn — which is the point, since you reach for i
 cut off by your own voice.
 
 STABILIZE holds the camera picture still in the hand (`cyclops.steady`): **ON**, the default,
-the panel, both kinds of recording and the admin page's camera stream get a steadied window of
+the panel (and so the recording), and the admin page's camera stream get a steadied window of
 the frame; **OFF**, they get the raw frame, as before stabilizing existed. Photos for the model
 are raw either way. It is a note (`~/.cache/cyclops/steady`) the camera's reader looks at twice a
 second, so it lands while you are still on the page and outlives a restart.
