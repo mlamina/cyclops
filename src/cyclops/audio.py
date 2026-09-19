@@ -32,6 +32,17 @@ BLOCK_FRAMES = 480  # 20 ms per callback: small enough for snappy barge-in, larg
 MIC_QUEUE_MAX = 250  # ~5 s of audio before we start dropping (loop stalled)
 AUDIBLE_TAIL_S = 0.3  # audio already handed to CoreAudio keeps sounding after our buffer empties
 OUTPUT_HISTORY_S = 1.0  # how long the speaker remembers its output level (for echo estimation)
+# How long his voice goes on sounding in the room *after* this box has finished playing it,
+# when a companion on the LAN is the speaker (Speaker.on_air False). The phone holds a jitter
+# buffer of its own - 0.45 s at rest, trimmed back whenever it passes DEEP in
+# admin/static/stream.js - then a 4096-frame callback (170 ms) and whatever its own output
+# costs. Every clock the EchoGuard owns is the local one, and there is no reference signal at
+# all for audio we did not play, so the only honest answer is to hold the mic shut until the
+# phone has certainly finished. That makes this pure dead air after every sentence, which is
+# why DEEP is 0.7 s rather than the 1.5 it was: this number is *set by* that one, and shrinking
+# the queue is the only way to shrink the wait. Measured against a session that fed Cyclops his
+# own voice for 25 minutes on 2026-09-19.
+COMPANION_LAG_S = 1.0
 
 
 def _rms(pcm: bytes) -> float:
@@ -441,11 +452,16 @@ class Speaker:
 
     @property
     def is_audible(self) -> bool:
-        """True while audio is buffered or was output within the last AUDIBLE_TAIL_S."""
+        """True while audio is buffered or was output within the last AUDIBLE_TAIL_S.
+
+        Plus COMPANION_LAG_S while a phone is the speaker, because then the sound leaves the
+        room on somebody else's clock and this buffer emptying says nothing about it.
+        """
         with self._lock:
+            tail = AUDIBLE_TAIL_S if self.on_air else AUDIBLE_TAIL_S + COMPANION_LAG_S
             if self._buffer:
                 return True
-            return time.monotonic() - self._last_output_at < AUDIBLE_TAIL_S
+            return time.monotonic() - self._last_output_at < tail
 
     def start(self) -> None:
         self._stream.start()
@@ -551,15 +567,22 @@ class EchoGuard:
 
     def admit(self, block: bytes) -> list[bytes]:
         """Audio-thread hook: return the mic blocks to forward for this 20 ms input block."""
-        if not self._half and self._margin is not None:
-            return [block]  # headphones, barge-in on: there is no echo to guard against
         speaker = self._speaker
+        # A phone is the speaker. Both ways out of the gate below assume the room is hearing
+        # what this box is playing, and neither holds: headphones say nothing about a speaker
+        # in somebody's hand, and the echo ratio is measured against a reference that ran
+        # COMPANION_LAG_S ahead of the sound - so once our own buffer drains the predicted
+        # echo is zero and every word he says reads as you talking over him. Half-duplex on
+        # the lengthened tail is the only claim left that is true.
+        elsewhere = not speaker.on_air
+        if not self._half and self._margin is not None and not elsewhere:
+            return [block]  # headphones, barge-in on: there is no echo to guard against
         if not speaker.is_audible or speaker.item_serial == self._open_serial:
             self._audible_blocks = 0
             self._consec = 0
             return [block]
-        if self._margin is None:
-            return []  # plain half-duplex
+        if self._margin is None or elsewhere:
+            return []  # plain half-duplex; k is left alone, so barge-in resumes calibrated
 
         self._audible_blocks += 1
         if self._audible_blocks <= self.WARMUP_BLOCKS:

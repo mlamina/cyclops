@@ -71,9 +71,10 @@ def test_an_unreadable_note_is_not_an_answer(tmp_path: Path) -> None:
 class FakeSpeaker:
     """Just enough Speaker for the guard: is it audible, and how loud was it lately."""
 
-    def __init__(self, audible: bool) -> None:
+    def __init__(self, audible: bool, on_air: bool = True) -> None:
         self.is_audible = audible
         self.item_serial = 1
+        self.on_air = on_air  # False is a companion holding his voice: see COMPANION_LAG_S
 
     def recent_output_level(self, window_s: float) -> float:
         return 4000.0 if self.is_audible else 0.0
@@ -82,10 +83,17 @@ class FakeSpeaker:
         return 0
 
 
-def guard(*, half_duplex: bool, margin_db: float | None, audible: bool = True) -> EchoGuard:
+def guard(
+    *,
+    half_duplex: bool,
+    margin_db: float | None,
+    audible: bool = True,
+    on_air: bool = True,
+) -> EchoGuard:
     loop = asyncio.new_event_loop()
     loop.close()  # never run: nothing here triggers, which is what the assertions say
-    return EchoGuard(loop, FakeSpeaker(audible), half_duplex=half_duplex, margin_db=margin_db)
+    speaker = FakeSpeaker(audible, on_air)
+    return EchoGuard(loop, speaker, half_duplex=half_duplex, margin_db=margin_db)
 
 
 def test_barge_in_off_shuts_the_mic_while_cyclops_talks() -> None:
@@ -141,3 +149,34 @@ def test_the_mic_opens_once_the_tap_has_made_the_room_quiet() -> None:
     shut.cut()
     speaker.is_audible = False  # AUDIBLE_TAIL_S later: the room is genuinely quiet
     assert shut.admit(SILENCE) == [SILENCE], "he was stopped; the next thing said must be heard"
+
+
+LOUD = b"\x00\x40" * BLOCK_FRAMES  # int16 16384: far over anything this room could predict
+
+
+def _armed(*, on_air: bool = True) -> EchoGuard:
+    """A guard past warmup and calibrated on a quiet room, which is where barge-in can fire."""
+    ready = guard(half_duplex=True, margin_db=8.0, on_air=on_air)
+    for _ in range(EchoGuard.WARMUP_BLOCKS + EchoGuard.LEARN_BLOCKS):
+        ready.admit(SILENCE)
+    return ready
+
+
+def test_a_companion_holding_his_voice_is_never_you_talking_over_him() -> None:
+    """The bug of 2026-09-19, and the control that proves the same blocks would otherwise fire.
+
+    Barge-in measures the room against what this box is playing *now*. A companion plays the
+    same audio up to COMPANION_LAG_S later, so once our buffer drains the predicted echo is
+    nothing at all and his own voice, arriving late off a phone, reads as several times over
+    it. He answered himself for twenty-five minutes. There is no reference signal for audio we
+    did not play, so the only honest answer while a phone has his voice is to stop guessing.
+    """
+    phone = _armed(on_air=False)
+    heard = [block for _ in range(EchoGuard.CONSEC_BLOCKS * 10) for block in phone.admit(LOUD)]
+    assert heard == [], "his own voice, late, off a phone: none of it may go up as you"
+    assert phone.triggers == 0
+
+    panel = _armed()
+    over = [block for _ in range(EchoGuard.CONSEC_BLOCKS) for block in panel.admit(LOUD)]
+    assert over, "the same room on this box's own amp: that is a barge-in, and it must still cut"
+    assert panel.triggers == 1

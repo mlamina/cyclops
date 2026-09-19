@@ -247,3 +247,43 @@ def test_a_session_that_could_not_be_logged_is_never_handed_over(talkative, monk
         talkative._give_up("the card went read-only")
 
     assert handed == [], "a folder we could not write is not one to name, remember or file"
+
+
+# ---- when a turn was spoken, which is not when its text came back ----
+
+SPOKE = "input_audio_buffer.speech_started"
+STOPPED = "input_audio_buffer.speech_stopped"
+TRANSCRIBED = "conversation.item.input_audio_transcription.completed"
+
+
+class Ping:
+    """Just enough of a realtime server event for `_observe` to match on."""
+
+    def __init__(self, type_: str, **fields):
+        self.type = type_
+        for name, value in fields.items():
+            setattr(self, name, value)
+
+
+def test_a_transcript_that_came_back_empty_does_not_wear_the_next_turn_s_clock(log):
+    """A turn is stamped from a queue of speech windows, so a window left behind moves them all.
+
+    The empty branch used to return before popping, and the queue is a FIFO: one transcript
+    that came back with nothing and every turn after it is stamped with somebody else's clock,
+    until at maxlen the tail of the session sits sixteen turns out of place. That is the log of
+    2026-09-19 - answers filed before the questions that caused them, and a nine-second
+    sentence recorded as lasting 0.75. Echo off a companion's speaker is what produced empties
+    by the dozen; this is why they scrambled the page rather than just being dropped.
+    """
+    with log:
+        clock = iter([1.0, 2.0, 10.0, 14.0])  # two windows: a short one, then a longer one
+        log._elapsed = lambda: next(clock, 99.0)
+        for event in (SPOKE, STOPPED, SPOKE, STOPPED):
+            log._observe(Ping(event))
+        log._observe(Ping(TRANSCRIBED, transcript="   ", item_id="nothing"))
+        log._observe(Ping(TRANSCRIBED, transcript="the brakes are dragging", item_id="said"))
+
+    said = [r for r in log._records if r["type"] == "you"]
+    assert len(said) == 1, "the empty one is dropped, as it always was"
+    assert said[0]["t"] == 10.0, "stamped when it was spoken, not when the empty one was"
+    assert said[0]["dur"] == 4.0

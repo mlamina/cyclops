@@ -544,6 +544,20 @@ class SessionLog:
         except Exception as exc:  # a malformed event must not reach the session's event loop
             self._give_up(f"observe: {type(exc).__name__}: {exc}")
 
+    def _spoken(self) -> tuple[float, float]:
+        """The window the oldest un-transcribed turn was spoken in, and always take it.
+
+        One queued window per transcription, consumed whatever comes back - text, empty or a
+        failure. Leaving it behind on the two that say nothing is what scrambled the log of
+        2026-09-19: the deque is a FIFO, so every entry never popped stamps *all* the turns
+        after it with somebody else's clock, and at ``maxlen`` the whole tail of the session
+        sits sixteen turns out of place, answers before questions and a nine-second sentence
+        recorded as lasting 0.75. Echo off a companion's speaker is what produced the empties
+        in bulk (see ``audio.COMPANION_LAG_S``); the drift was ours.
+        """
+        now = self._elapsed()
+        return self._speech.popleft() if self._speech else (now, now)
+
     def _observe(self, event: RealtimeServerEvent) -> None:
         match event.type:
             case "input_audio_buffer.speech_started":
@@ -554,11 +568,10 @@ class SessionLog:
                 # otherwise the page shows Cyclops answering before you asked.
                 self._speech.append((self._speech_at, self._elapsed()))
             case "conversation.item.input_audio_transcription.completed":
+                started, stopped = self._spoken()
                 text = (event.transcript or "").strip()
                 if not text:
                     return
-                now = self._elapsed()
-                started, stopped = self._speech.popleft() if self._speech else (now, now)
                 self._write(
                     started,
                     "you",
@@ -569,6 +582,7 @@ class SessionLog:
                     },
                 )
             case "conversation.item.input_audio_transcription.failed":
+                self._spoken()
                 self.event(
                     "transcript_failed",
                     item=getattr(event, "item_id", None),

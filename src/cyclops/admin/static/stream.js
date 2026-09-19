@@ -99,7 +99,14 @@ if (cam) {
   // and 130 ms - under one block - and ran dry about twice a second, which is exactly what chop
   // is. Two blocks plus a couple of chunks, and it stops touching the floor.
   const HOLD = Math.round(RATE * 0.45);
-  const DEEP = Math.round(RATE * 1.5);   // ...and never more, or this lags the room audibly
+  // ...and never more. This used to be 1.5 s, on the grounds that anything the listener does
+  // not notice is free. It was not: the kiosk holds its mic shut for however long this phone
+  // might still be talking (audio.COMPANION_LAG_S), so every sample of slack here is time you
+  // wait before Cyclops can hear you answer. Trimming to HOLD costs a skip of DEEP-HOLD, and
+  // the service streams silence between turns, so the queue grows and is cut while nobody is
+  // saying anything - which is why this can be tightened almost for free and the cushion
+  // underneath it cannot.
+  const DEEP = Math.round(RATE * 0.7);
   const ring = new Float32Array(RATE * 3);
   let wrote = 0;         // samples ever written
   let read = 0;          // ...and ever played. A float: see the step below
