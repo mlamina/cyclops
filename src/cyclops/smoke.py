@@ -1,7 +1,8 @@
 """Headless smoke test: ``uv run cyclops-smoke``.
 
 No microphone or speakers. Sends typed turns through the very same session config the voice
-app uses, and checks that (1) audio + transcript come back, (2) a photo handed to the model
+app uses, and checks that (1) it greets unprompted as the session comes up, with audio and a
+transcript, (2) a photo handed to the model
 the way the shutter hands it one comes back described, (3) the model calls the web_search tool
 and answers from what it found, and (4) it draws a diagram that lands on the card.
 
@@ -125,8 +126,8 @@ async def _main() -> int:
         await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
         print("· session ready")
 
-        turn.reset()
-        await agent.send_text("Say hello in one short sentence.")
+        # Nothing typed: the greeting is asked for by the session coming up, and `turn` has been
+        # listening since before the connect, so it is already collecting it.
         await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
         print(f"· turn 1: {turn.seconds_of_audio:.1f}s audio, transcript={turn.transcripts!r}")
         if turn.audio_bytes == 0:
