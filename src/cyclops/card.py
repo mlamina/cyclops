@@ -112,7 +112,12 @@ KNOWN = frozenset(
 
 # What a record has to be for something to have happened here. Two sets rather than one, because
 # they are two different arguments for keeping a folder and whoever adds the next record type
-# needs to know which one they are adding to: somebody spoke, or something was made.
+# needs to know which one they are adding to: they spoke, or something was made.
+#
+# `cyclops` is in neither. Cyclops greets every wake before anybody has said a word, so a line of
+# its own is what a tap-and-stop looks like now, and counting it would keep every accidental tap
+# as a session - named, summarised, and counted into "the nth time today". Until the greeting it
+# only ever spoke after a `you` turn, so leaving it out cannot empty a folder that was kept.
 #
 # Everything not in either - `session`, `recording`, `video`, `end`, `error` - is bookkeeping
 # *about* a session rather than anything that happened *in* one. So is every file the folder holds
@@ -129,7 +134,7 @@ KNOWN = frozenset(
 # the whole card, and true of all 84 folders on it. So they would add nothing to the first
 # question and would blunt the second, where MADE is what outranks a model saying this was a mic
 # check.
-SPOKEN = frozenset({"you", "cyclops", "transcript_failed"})
+SPOKEN = frozenset({"you", "transcript_failed"})
 MADE = frozenset({"photo", "screen", "project", "data"})
 
 
