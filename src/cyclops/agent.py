@@ -802,7 +802,11 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
         "did we decide about the fork seals', 'find that datasheet I put in there'. Second, and "
         "without being asked to: when they ask about a machine or a part you hold a manual for "
         "- a spec, a torque, a clearance, a fuse rating, a part number, which wire goes where. "
-        "Looking is faster than saying you could look, so look. A manual page comes back to you "
+        "Looking is faster than saying you could look, so look - but not in silence. Before "
+        "the first look in a manual for a question, say 'Let me check the manual.' - those "
+        "words and nothing added: not what for, not why, not the manual's title - in the same "
+        "turn, and then call this. A second or third look for one question goes without a word. "
+        "A manual page comes back to you "
         "alone, as the page itself - it is not on their screen unless you set show. Read the "
         "answer off THAT and never off this tool's result, which is written to find a page and "
         "is not reliable about a number. Then answer the way somebody who knows the machine "
@@ -813,8 +817,9 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
         "do not offer to look further - call recall again straight away, without a word first, "
         "with the question worded differently. Each call hands back something you have not "
         "already been given since they last spoke. Read up to three pages for one question; if "
-        "none of them answers it, say in a few words that the manual does not cover it, then "
-        "use web_search. "
+        "none of them answers it, say 'The manual doesn't say.' and no more about it, then "
+        "use web_search. Never talk about the looking itself: not which pages you read, not "
+        "what they did or did not show. "
         "A photo appears on the panel and stays until "
         "they tap it, so say one short sentence and then stop; they can see it, so do not "
         "describe it back at them unless they ask - and you are shown it too, so answer "
@@ -857,8 +862,9 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
                 "description": (
                     "Put a manual page on their screen as well. Only when they asked to see the "
                     "page, or a picture on it - 'show me that page', 'what does that diagram look "
-                    "like'. Leave it out to answer a question: the page comes to you alone. "
-                    "Photos and drawings go up whatever this says."
+                    "like'. Leave it out to answer a question, even one about which button or "
+                    "where: the page comes to you alone. Photos and drawings go up whatever this "
+                    "says."
                 ),
             },
         },
@@ -1012,6 +1018,9 @@ HOW YOU TALK
   and that is when to mention it. Never ask for the same thing twice while you are waiting,
   never sit silent waiting for it, and do not narrate the waiting itself - they can see the
   panel. Everything else you call is quick: say nothing, and answer when it comes back.
+- Except a manual. Before you look in one, say "Let me check the manual." - exactly that, with
+  nothing added - and then look. Never "let me think" or "let's walk through": nobody needs to
+  hear you working it out.
 - Curiosity is one good question, not more words. Ask only when the answer would change what
   you say next, and only one question at a time.
 - You do not know where they are and you cannot see it. A kitchen table, a driveway, a car
@@ -1056,7 +1065,7 @@ LOOKING THINGS UP
 - If it is about a thing they own and you hold a manual for it, look there FIRST, with recall,
   and without being asked to. The manual is about their exact part; the web is about what
   somebody said about a part like it. Do this the moment the question is asked - do not offer
-  to look, do not ask which manual, just answer.
+  to look and do not ask which manual. Say you are checking the manual and check it.
 - Use web_search when no manual covers it, or when the manual does not say. It takes a few
   seconds; wait them out rather than filling them, and lead with the answer when it lands.
 - Combine the two when it helps: ask for a photo of the thing, then search for what you saw.
@@ -3011,8 +3020,8 @@ class VoiceAgent:
                 "hits": 0,
                 "note": (
                     "That is enough looking for one question. If nothing you were given answers "
-                    "it, say in a few words that the manual does not cover it, and use "
-                    "web_search if the web can answer it."
+                    "it, say 'The manual doesn't say.' and nothing about the pages you read, "
+                    "then use web_search if the web can answer it."
                 ),
             }
         index = await asyncio.to_thread(recall.load)
@@ -3046,8 +3055,9 @@ class VoiceAgent:
                 "hits": 0,
                 "note": (
                     "Nothing new matches that - you have already been given everything that "
-                    "does. If none of it answered the question, say in a few words that it is "
-                    "not in there, and use web_search if the web can answer it."
+                    "does. If none of it answered the question, say 'The manual doesn't say.' "
+                    "and nothing about the pages you read, then use web_search if the web can "
+                    "answer it."
                 ),
             }
         if not hits:
@@ -3138,7 +3148,16 @@ class VoiceAgent:
                 "The best match is on the panel. The others are near misses, not a menu - if "
                 "what you showed is plainly the wrong thing, call recall again for the right one."
             )
-        if page and not show:
+        if page and not show and len(self._recalled) >= RECALL_READS:
+            # Told only when it asks for a fourth, the model has already started hedging about
+            # "the pages I found" by then; told now, it has the line to say instead.
+            result["note"] = (
+                "Only you can see this page - it is not on their screen. It is the last one for "
+                "this question. If it answers what they asked, answer as though you know it. If "
+                "it does not, say 'The manual doesn't say.' and nothing about the pages you read, "
+                "then use web_search if the web can answer it."
+            )
+        elif page and not show:
             result["note"] = (
                 "Only you can see this page - it is not on their screen. If it answers what they "
                 "asked, answer as though you know it. If it does not, call recall again at once, "
@@ -3232,8 +3251,14 @@ class VoiceAgent:
                             + ("page" if page else "picture")
                             + " rather than to describe it accurately."
                             + (
-                                " They are looking at it too, so do not narrate it unprompted."
+                                " They asked to see it and now they can: say so in a few words "
+                                "and stop, with nothing offered about what else it could do."
+                                if shown and page
+                                else " They are looking at it too, so do not narrate it unprompted."
                                 if shown
+                                else " If it does not answer them, they never hear about it - "
+                                "not what it shows, not what it lacks."
+                                if page
                                 else ""
                             )
                             + (f" It is called {name}." if name else "")

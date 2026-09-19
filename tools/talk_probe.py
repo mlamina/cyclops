@@ -10,7 +10,8 @@
 else on the card, with the recall index, the panel file and the task ledger all in a scratch
 folder rather than ``~/.cache/cyclops``. Its tally is per question: every recall and the page it
 read, whether it asked for the page on the screen, seconds to the answer, and any line that names
-the manual or a page, or owns up to a page that missed. ``--script manual-cold`` is the same
+the manual's title or a page number, or owns up to a page that missed, and the line spoken before
+each question's first look. ``--script manual-cold`` is the same
 bench with only the notes-below-the-grid question, asked before anything has been read.
 
 No mic, no speaker, no camera and no session folder: ``VoiceAgent`` + ``send_text``, the way
@@ -155,18 +156,34 @@ class Turn:
         self.started = time.monotonic()
         self.heard: dict[str, float] = {}  # response id -> when its first audio arrived
         self.answer_s = 0.0
+        self.first_sound_s = 0.0
+        # (response id, output index, transcript), so what was said before a call can be told
+        # from what was said after it: a spoken line and a call in one response are two items.
+        self.spoken: list[tuple[str, int, str]] = []
+        self.before_recall: str | None = None  # None until the first recall call of the turn
 
     def __call__(self, event: RealtimeServerEvent) -> None:
         match event.type:
             case "response.created":
                 self.responses += 1
             case "response.output_audio.delta":
+                if not self.heard:
+                    self.first_sound_s = round(time.monotonic() - self.started, 2)
                 self.heard.setdefault(event.response_id, time.monotonic())
             case "response.output_audio_transcript.done":
                 self.transcripts.append(event.transcript)
+                self.spoken.append((event.response_id, event.output_index, event.transcript))
             case "response.done":
                 calls = [call.name for call in function_calls(event.response)]
                 self.tools.extend(calls)
+                if "recall" in calls and self.before_recall is None:
+                    output = event.response.output or []
+                    at = next(i for i, item in enumerate(output)
+                              if item.type == "function_call" and item.name == "recall")
+                    self.before_recall = " ".join(
+                        text.strip() for rid, index, text in self.spoken
+                        if rid != event.response.id or index < at
+                    )
                 if not calls:  # a tool-call response is followed by the real answer
                     spoke = self.heard.get(event.response.id, time.monotonic())
                     self.answer_s = round(spoke - self.started, 2)
@@ -228,6 +245,8 @@ async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
                 "tools": turn.tools,
                 "recalls": turn.recalls,
                 "answer_s": turn.answer_s,
+                "first_sound_s": turn.first_sound_s,
+                "before_recall": turn.before_recall,
             }
             out.write(json.dumps(record) + "\n")
             out.flush()
@@ -481,8 +500,12 @@ def _hits(text: str, words: tuple[str, ...]) -> list[str]:
     return [w for w in words if re.search(rf"(?<![a-z0-9]){re.escape(w)}(?![a-z0-9])", low)]
 
 
-# A line that names where the answer came from. Only "where's that from?" should have one.
-CITATION = re.compile(r"\bmanual\b|\bpages?\b|\buser guide\b|\bp\.\s*\d", re.IGNORECASE)
+# A line that names where the answer came from: the manual's title or a page number. Only
+# "where's that from?" should have one. "Let me check the manual" is the announcement, not this.
+CITATION = re.compile(
+    r"\bpages?\s+\d|\bp\.\s*\d|\boxi\s*one\W+(user\s+)?(manual|guide)|\buser\s+(manual|guide)",
+    re.IGNORECASE,
+)
 # A line that owns up to a page that missed, or offers to look instead of looking.
 MISS_WORDS = (
     "didn't have", "doesn't have", "did not have", "does not have", "wasn't on", "isn't on",
@@ -490,9 +513,14 @@ MISS_WORDS = (
     "didn't say", "want me to", "i can look", "i could look", "shall i", "should i look",
     "look further", "look for that", "keep looking", "look again", "if you want, i",
     "not seeing", "can't find", "couldn't find", "can't reliably", "pages i've", "none of them",
-    "if you can put", "ask me to look",
+    "if you can put", "ask me to look", "doesn't show", "does not show", "isn't documented",
+    "not documented", "doesn't clearly", "pages we", "page here", "pages i", "wrong page",
 )
 PAGE_NUMBER = re.compile(r"page (\d+)")
+# Saying it is going to the manual. Once before the first look is the whole allowance.
+ANNOUNCE = re.compile(
+    r"\b(let me|let's|i'll|i will|checking|looking|check|look)\b[^.!?]*\bmanual\b", re.IGNORECASE
+)
 
 
 def _page(title: str) -> str:
@@ -502,6 +530,10 @@ def _page(title: str) -> str:
 
 def manual_tally(records: list[dict]) -> None:
     """Per question: what it read, whether it asked for the screen, how long, and what it said."""
+    for r in records:  # the transcripts say "doesn’t"; every word list here says "doesn't"
+        r["cyclops"] = r["cyclops"].replace("\u2019", "'")
+        if r.get("before_recall"):
+            r["before_recall"] = r["before_recall"].replace("\u2019", "'")
     runs = sorted({r["run"] for r in records})
     print(f"runs={len(runs)} turns={len(records)}")
     for turn in sorted({r["turn"] for r in records}):
@@ -509,9 +541,14 @@ def manual_tally(records: list[dict]) -> None:
         waits = [r["answer_s"] for r in mine]
         shows = sum(call["show"] for r in mine for call in r["recalls"])
         calls = sum(len(r["recalls"]) for r in mine)
+        looked = [r for r in mine if r["recalls"]]
+        announced = [r for r in looked if ANNOUNCE.search(r.get("before_recall") or "")]
+        sounds = [r["first_sound_s"] for r in mine if "first_sound_s" in r] or [0.0]
         print(f"\nt{turn} {mine[0]['you']!r}")
         print(f"  seconds to answer: median={statistics.median(waits):.1f} max={max(waits):.1f}"
-              f"   recalls={calls}  with show={shows}")
+              f"   to first sound: median={statistics.median(sounds):.1f}"
+              f"   recalls={calls}  with show={shows}"
+              f"   announced before the first look: {len(announced)} of {len(looked)}")
         for r in mine:
             read = " -> ".join(
                 _page(c["title"]) + ("[show]" if c["show"] else "") for c in r["recalls"]
@@ -521,12 +558,17 @@ def manual_tally(records: list[dict]) -> None:
                 flags.append("NAMES")
             if _hits(r["cyclops"], MISS_WORDS):
                 flags.append("MISS?")
+            if len(ANNOUNCE.findall(r["cyclops"])) > 1:
+                flags.append("TWICE")
             print(f"  run {r['run']} {r['answer_s']:4.1f}s  read {read}  {' '.join(flags)}")
+            if r["recalls"] and "before_recall" in r:
+                said = r["before_recall"] or ""
+                print(f"      before the first look ({len(said.split())}w): {said!r}")
             print(f"      {r['cyclops']!r}")
     cited = [r for r in records if CITATION.search(r["cyclops"])]
     missed = [(r, _hits(r["cyclops"], MISS_WORDS)) for r in records]
     missed = [(r, h) for r, h in missed if h]
-    print(f"\nlines naming the manual or a page: {len(cited)}")
+    print(f"\nlines naming the manual's title or a page number: {len(cited)}")
     for r in cited:
         print(f"  run {r['run']} t{r['turn']}: {r['cyclops']!r}")
     print(f"lines owning up to a miss or offering to look: {len(missed)}")
