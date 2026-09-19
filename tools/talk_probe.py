@@ -4,6 +4,15 @@
     uv run python tools/talk_probe.py --runs 10 --out runs.jsonl
     uv run python tools/talk_probe.py --tally runs.jsonl
     uv run python tools/talk_probe.py --script tutorial --runs 10 --out walk.jsonl
+    uv run python tools/talk_probe.py --script manual --runs 5 --out oxi.jsonl
+
+``--script manual`` sets its own bench up: the OXI One manual from the fixtures folder and nothing
+else on the card, with the recall index, the panel file and the task ledger all in a scratch
+folder rather than ``~/.cache/cyclops``. Its tally is per question: every recall and the page it
+read, whether it asked for the page on the screen, seconds to the answer, and any line that names
+the manual's title or a page number, or owns up to a page that missed, and the line spoken before
+each question's first look. ``--script manual-cold`` is the same
+bench with only the notes-below-the-grid question, asked before anything has been read.
 
 No mic, no speaker, no camera and no session folder: ``VoiceAgent`` + ``send_text``, the way
 ``cyclops-smoke`` does its text turns. Every run is a fresh session, so the first turn is a real
@@ -31,13 +40,15 @@ import re
 import statistics
 import sys
 import tempfile
+import time
 from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from openai import AsyncOpenAI
 from openai.types.realtime import RealtimeServerEvent
 
-from cyclops import card, session
+from cyclops import card, panel, recall, session, tasks
 from cyclops.agent import VoiceAgent, function_calls
 from cyclops.config import ConfigError, load_settings
 
@@ -71,7 +82,33 @@ TUTORIAL_SCRIPT = (
     "Right, done that.",
     "Actually, forget it, stop this. I'll call a plumber.",
 )
-SCRIPTS = {"bench": SCRIPT, "tutorial": TUTORIAL_SCRIPT}
+# Yesterday's OXI One session, question by question: a slide, the notes below the grid (page 12
+# has it and page 18 is what three rewordings kept landing on), the Div button, copying a pattern,
+# then asking to see the page and asking where the answer came from. Only the last one may name
+# the manual or a page, and only the one before it may put a page on the screen.
+MANUAL_SCRIPT = (
+    "Hey. I've got the OXI One out tonight.",
+    "How do I add a slide between two notes?",
+    "How do I get to the notes below the ones that are lit on the grid?",
+    "Which one is the Div button?",
+    "How do I copy a pattern?",
+    "Show me that page.",
+    "Where's that from?",
+)
+# The notes-below-the-grid question with nothing read before it. In MANUAL_SCRIPT the slide
+# question usually reads page 12 first, so the page is already in hand by the time it is asked.
+MANUAL_COLD_SCRIPT = MANUAL_SCRIPT[:1] + MANUAL_SCRIPT[2:3]
+SCRIPTS = {
+    "bench": SCRIPT,
+    "tutorial": TUTORIAL_SCRIPT,
+    "manual": MANUAL_SCRIPT,
+    "manual-cold": MANUAL_COLD_SCRIPT,
+}
+
+# Where --script manual finds its one manual, and where it keeps everything it would otherwise
+# write under ~/.cache/cyclops. CYCLOPS_MANUALS_DIR overrides the first.
+FIXTURE_MANUALS = Path.home() / "code" / "cyclops-fixtures" / "manuals"
+MANUAL_BENCH = Path(tempfile.gettempdir()) / "cyclops-probe-manual"
 
 # Candidates only. A line that matches is printed for a human to read; one that does not can
 # still be a reference, which is why the tally prints every turn of every run as well.
@@ -104,24 +141,52 @@ WARMTH_WORDS = (
 
 
 class Turn:
-    """What came back for one typed turn: transcripts, and how many responses it cost."""
+    """What came back for one typed turn: transcripts, how many responses it cost, and when.
+
+    ``answer_s`` is from the question going out to the first sound of the response that answers
+    it - the one with no tool call in it - which is the wait somebody at the bench actually has.
+    """
 
     def __init__(self) -> None:
         self.done = asyncio.Event()
         self.transcripts: list[str] = []
         self.responses = 0
         self.tools: list[str] = []
+        self.recalls: list[dict] = []
+        self.started = time.monotonic()
+        self.heard: dict[str, float] = {}  # response id -> when its first audio arrived
+        self.answer_s = 0.0
+        self.first_sound_s = 0.0
+        # (response id, output index, transcript), so what was said before a call can be told
+        # from what was said after it: a spoken line and a call in one response are two items.
+        self.spoken: list[tuple[str, int, str]] = []
+        self.before_recall: str | None = None  # None until the first recall call of the turn
 
     def __call__(self, event: RealtimeServerEvent) -> None:
         match event.type:
             case "response.created":
                 self.responses += 1
+            case "response.output_audio.delta":
+                if not self.heard:
+                    self.first_sound_s = round(time.monotonic() - self.started, 2)
+                self.heard.setdefault(event.response_id, time.monotonic())
             case "response.output_audio_transcript.done":
                 self.transcripts.append(event.transcript)
+                self.spoken.append((event.response_id, event.output_index, event.transcript))
             case "response.done":
                 calls = [call.name for call in function_calls(event.response)]
                 self.tools.extend(calls)
+                if "recall" in calls and self.before_recall is None:
+                    output = event.response.output or []
+                    at = next(i for i, item in enumerate(output)
+                              if item.type == "function_call" and item.name == "recall")
+                    self.before_recall = " ".join(
+                        text.strip() for rid, index, text in self.spoken
+                        if rid != event.response.id or index < at
+                    )
                 if not calls:  # a tool-call response is followed by the real answer
+                    spoke = self.heard.get(event.response.id, time.monotonic())
+                    self.answer_s = round(spoke - self.started, 2)
                     self.done.set()
 
     @property
@@ -143,14 +208,30 @@ async def _await_or_fail(agent_task: asyncio.Task, event: asyncio.Event, limit_s
     raise TimeoutError(f"no response within {limit_s:.0f}s")
 
 
+def _spy_on_recall(agent: VoiceAgent, current: list[Turn]) -> None:
+    """Note every recall the agent runs - what it asked for, and what it was handed back."""
+    real = agent._recall
+
+    async def spy(query: str, project: str, *, show: bool = False) -> dict:
+        out = await real(query, project, show=show)
+        current[0].recalls.append(
+            {"query": query, "show": show, "title": out.get("title", ""), "hits": out.get("hits")}
+        )
+        return out
+
+    agent._recall = spy  # type: ignore[method-assign]
+
+
 async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
     settings = load_settings()
     agent = VoiceAgent(settings)
+    current = [Turn()]
+    _spy_on_recall(agent, current)
     agent_task = asyncio.create_task(agent.run())
     try:
         await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
         for index, line in enumerate(script, start=1):
-            turn = Turn()
+            turn = current[0] = Turn()
             agent.on_event = turn
             await agent.send_text(line)
             await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
@@ -162,6 +243,10 @@ async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
                 "words": len(turn.text.split()),
                 "responses": turn.responses,
                 "tools": turn.tools,
+                "recalls": turn.recalls,
+                "answer_s": turn.answer_s,
+                "first_sound_s": turn.first_sound_s,
+                "before_recall": turn.before_recall,
             }
             out.write(json.dumps(record) + "\n")
             out.flush()
@@ -171,7 +256,43 @@ async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
         await asyncio.gather(agent_task, return_exceptions=True)
 
 
+async def _manual_bench() -> None:
+    """One manual on the card and nothing else, and nothing written under ~/.cache/cyclops.
+
+    The index is built here rather than by ``cyclops-index``, which would also read and caption,
+    and it is kept between runs: 162 embeddings are cheap, but not free every time.
+    """
+    MANUAL_BENCH.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("CYCLOPS_MANUALS_DIR", str(FIXTURE_MANUALS))
+    for name in ("SESSIONS", "PROJECTS", "CAPTURES"):
+        os.environ[f"CYCLOPS_{name}_DIR"] = str(MANUAL_BENCH / name.lower())
+    os.environ["CYCLOPS_ABOUT_FILE"] = str(MANUAL_BENCH / "about-you.md")
+    recall.RECALL_FILE = MANUAL_BENCH / "recall.npz"
+    panel.PANEL_FILE = MANUAL_BENCH / "panel.json"
+    panel.PANEL_STILL_FILE = MANUAL_BENCH / "panel-still.json"
+    tasks.TASKS_FILE = MANUAL_BENCH / "tasks.yaml"
+    tasks.TASKS_LOCK = MANUAL_BENCH / "tasks.lock"
+    # The Pi's kiosk, as far as the agent can tell: a page asked for goes "up", so the model is
+    # told they can see it - exactly what it would be told on the glass - instead of "no panel".
+    panel.show = lambda: True
+    settings = load_settings()
+    items = recall.corpus(settings)
+    if not any(item.kind == "page" for item in items):
+        raise ConfigError(f"no manual pages under {settings.manuals_dir}")
+    if [i.key for i in recall.load(recall.RECALL_FILE).items] == [i.key for i in items]:
+        return
+    client = AsyncOpenAI(api_key=settings.api_key)
+    try:
+        vectors = await recall.embed([item.text for item in items], client)
+    finally:
+        await client.close()
+    card.write_bytes(recall.RECALL_FILE, recall.dump(recall.Index(items=items, vectors=vectors)))
+    print(f"· indexed {len(items)} items into {recall.RECALL_FILE}", flush=True)
+
+
 async def _probe(runs: int, out_path: Path, script: tuple[str, ...] = SCRIPT) -> int:
+    if script in (MANUAL_SCRIPT, MANUAL_COLD_SCRIPT):
+        await _manual_bench()
     with out_path.open("a", encoding="utf-8") as out:
         for run in range(1, runs + 1):
             try:
@@ -379,8 +500,87 @@ def _hits(text: str, words: tuple[str, ...]) -> list[str]:
     return [w for w in words if re.search(rf"(?<![a-z0-9]){re.escape(w)}(?![a-z0-9])", low)]
 
 
+# A line that names where the answer came from: the manual's title or a page number. Only
+# "where's that from?" should have one. "Let me check the manual" is the announcement, not this.
+CITATION = re.compile(
+    r"\bpages?\s+\d|\bp\.\s*\d|\boxi\s*one\W+(user\s+)?(manual|guide)|\buser\s+(manual|guide)",
+    re.IGNORECASE,
+)
+# A line that owns up to a page that missed, or offers to look instead of looking.
+MISS_WORDS = (
+    "didn't have", "doesn't have", "did not have", "does not have", "wasn't on", "isn't on",
+    "not on that page", "doesn't cover", "does not cover", "doesn't say", "does not say",
+    "didn't say", "want me to", "i can look", "i could look", "shall i", "should i look",
+    "look further", "look for that", "keep looking", "look again", "if you want, i",
+    "not seeing", "can't find", "couldn't find", "can't reliably", "pages i've", "none of them",
+    "if you can put", "ask me to look", "doesn't show", "does not show", "isn't documented",
+    "not documented", "doesn't clearly", "pages we", "page here", "pages i", "wrong page",
+)
+PAGE_NUMBER = re.compile(r"page (\d+)")
+# Saying it is going to the manual. Once before the first look is the whole allowance.
+ANNOUNCE = re.compile(
+    r"\b(let me|let's|i'll|i will|checking|looking|check|look)\b[^.!?]*\bmanual\b", re.IGNORECASE
+)
+
+
+def _page(title: str) -> str:
+    found = PAGE_NUMBER.search(title or "")
+    return f"p{found.group(1)}" if found else (title or "nothing")[:24]
+
+
+def manual_tally(records: list[dict]) -> None:
+    """Per question: what it read, whether it asked for the screen, how long, and what it said."""
+    for r in records:  # the transcripts say "doesn’t"; every word list here says "doesn't"
+        r["cyclops"] = r["cyclops"].replace("\u2019", "'")
+        if r.get("before_recall"):
+            r["before_recall"] = r["before_recall"].replace("\u2019", "'")
+    runs = sorted({r["run"] for r in records})
+    print(f"runs={len(runs)} turns={len(records)}")
+    for turn in sorted({r["turn"] for r in records}):
+        mine = [r for r in records if r["turn"] == turn]
+        waits = [r["answer_s"] for r in mine]
+        shows = sum(call["show"] for r in mine for call in r["recalls"])
+        calls = sum(len(r["recalls"]) for r in mine)
+        looked = [r for r in mine if r["recalls"]]
+        announced = [r for r in looked if ANNOUNCE.search(r.get("before_recall") or "")]
+        sounds = [r["first_sound_s"] for r in mine if "first_sound_s" in r] or [0.0]
+        print(f"\nt{turn} {mine[0]['you']!r}")
+        print(f"  seconds to answer: median={statistics.median(waits):.1f} max={max(waits):.1f}"
+              f"   to first sound: median={statistics.median(sounds):.1f}"
+              f"   recalls={calls}  with show={shows}"
+              f"   announced before the first look: {len(announced)} of {len(looked)}")
+        for r in mine:
+            read = " -> ".join(
+                _page(c["title"]) + ("[show]" if c["show"] else "") for c in r["recalls"]
+            ) or "-"
+            flags = []
+            if CITATION.search(r["cyclops"]):
+                flags.append("NAMES")
+            if _hits(r["cyclops"], MISS_WORDS):
+                flags.append("MISS?")
+            if len(ANNOUNCE.findall(r["cyclops"])) > 1:
+                flags.append("TWICE")
+            print(f"  run {r['run']} {r['answer_s']:4.1f}s  read {read}  {' '.join(flags)}")
+            if r["recalls"] and "before_recall" in r:
+                said = r["before_recall"] or ""
+                print(f"      before the first look ({len(said.split())}w): {said!r}")
+            print(f"      {r['cyclops']!r}")
+    cited = [r for r in records if CITATION.search(r["cyclops"])]
+    missed = [(r, _hits(r["cyclops"], MISS_WORDS)) for r in records]
+    missed = [(r, h) for r, h in missed if h]
+    print(f"\nlines naming the manual's title or a page number: {len(cited)}")
+    for r in cited:
+        print(f"  run {r['run']} t{r['turn']}: {r['cyclops']!r}")
+    print(f"lines owning up to a miss or offering to look: {len(missed)}")
+    for r, h in missed:
+        print(f"  run {r['run']} t{r['turn']} {h}: {r['cyclops']!r}")
+
+
 def tally(path: Path) -> None:
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    if records and records[0]["you"] == MANUAL_SCRIPT[0]:
+        manual_tally(records)
+        return
     runs = sorted({r["run"] for r in records})
     spoken = [r["words"] for r in records if r["words"] > 0]
     silent = sum(1 for r in records if r["words"] == 0)
