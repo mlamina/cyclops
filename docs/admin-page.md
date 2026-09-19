@@ -172,6 +172,12 @@ hands to the session holding the microphone, so flipping it lands on the next 20
 rather than at the end of the turn — which is the point, since you reach for it having just been
 cut off by your own voice.
 
+STABILIZE holds the camera picture still in the hand (`cyclops.steady`): **ON**, the default,
+the panel, both kinds of recording and the admin page's camera stream get a steadied window of
+the frame; **OFF**, they get the raw frame, as before stabilizing existed. Photos for the model
+are raw either way. It is a note (`~/.cache/cyclops/steady`) the camera's reader looks at twice a
+second, so it lands while you are still on the page and outlives a restart.
+
 Closing the page returns it to SESSIONS, so the next tap lands where the tab says it will. A
 drawing arriving from the agent outranks whatever you were looking at, takes the whole panel, and
 hands the screen back when it clears. If the panel ever gets stuck showing the browser,

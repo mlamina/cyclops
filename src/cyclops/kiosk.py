@@ -1599,7 +1599,7 @@ class Kiosk:
             # screen says it does. See cyclops.filming.
             wanted = filming.chosen(self.controller.settings)
             self.controller.set_record_source(
-                self.panel if wanted == filming.SCREEN else self.camera
+                self.panel if wanted == filming.SCREEN else self.camera.film
             )
             print(f"· recording the {wanted}", flush=True)
             self.controller.start()
@@ -2293,7 +2293,7 @@ def main() -> None:
     # and a camera present by the time the next session starts is then recorded without anything
     # being rewired. The camera is the constructor's answer only so a session started by anything
     # but _toggle_session still has one; _toggle_session always says which of the two it wants.
-    controller = SessionController(settings, frames=camera, entrypoint="kiosk")
+    controller = SessionController(settings, frames=camera.film, entrypoint="kiosk")
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     panel.set_kiosk(kiosk)  # so a finished picture can find a panel to appear on
     # Nothing can be waiting for a panel that has only just come up, so anything here is a

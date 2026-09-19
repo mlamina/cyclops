@@ -25,7 +25,20 @@ from django.http import (
 from django.shortcuts import render
 from django.views.decorators.http import require_POST
 
-from .. import barge, card, cut, filming, library, manuals, mixer, shelf, stats, tasks, voice
+from .. import (
+    barge,
+    card,
+    cut,
+    filming,
+    library,
+    manuals,
+    mixer,
+    shelf,
+    stats,
+    steady,
+    tasks,
+    voice,
+)
 from ..config import (
     BROWSER_CLOSE_FLAG,
     COMPANION_PORT,
@@ -202,6 +215,7 @@ def _payload(request: HttpRequest) -> dict:
         volume=mixer.requested(),
         barge_in=barge.enabled(_settings()),
         record_screen=filming.on_screen(_settings()),
+        steady=steady.enabled(),
         voice=voice.chosen(_settings()),
         # Absolute, so "0 sessions" is self-diagnosing: the count is relative to the CWD the
         # service was started in (see WorkingDirectory in deploy/cyclops-admin.service).
@@ -542,6 +556,21 @@ def set_record_source(request: HttpRequest) -> HttpResponse:
     if wanted not in {filming.CAMERA, filming.SCREEN}:
         return HttpResponseBadRequest("source must be 'camera' or 'screen'")
     return JsonResponse({"record_source": filming.request(wanted)})
+
+
+@require_POST
+def set_steady(request: HttpRequest) -> HttpResponse:
+    """Say whether the live picture is held still - see :mod:`cyclops.steady`.
+
+    Loopback only, like the other switches. The note is all this does; the camera's reader looks
+    at it twice a second, so the panel changes while you are still looking at the switch.
+    """
+    if not _is_local(request):
+        return HttpResponseForbidden("stabilizing is set from the panel")
+    wanted = request.POST.get("on", "")
+    if wanted not in {"0", "1"}:
+        return HttpResponseBadRequest("on must be 0 or 1")
+    return JsonResponse({"steady": steady.request(wanted == "1")})
 
 
 @require_POST

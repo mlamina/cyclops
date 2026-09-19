@@ -13,6 +13,11 @@ was too blurry to read" - it just answers worse. So the reader scores every fram
 than whatever happened to arrive most recently. The preview still draws the newest frame, so
 what you see stays live.
 
+The newest frame is also steadied (:mod:`cyclops.steady`): the panel, the admin page and a
+CAMERA recording get a window of it that follows the hand's smoothed path rather than its shake.
+Photos never do - :meth:`CameraSource.snapshot` hands out raw frames, whole and unshifted, because
+a mark the model makes is a fraction of the picture it was shown.
+
 The device is also allowed to come and go. A USB camera can be unplugged mid-run and plugged
 back in, so opening it is a supervisor thread's standing job rather than something ``start()``
 does once: it retries until something delivers frames, and returns to retrying the moment the
@@ -28,6 +33,7 @@ from collections import deque
 
 import cv2
 
+from . import steady
 from .webcam import DEFAULT_FRAMING, FRAMINGS, RPICAM, WebcamError, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
@@ -45,16 +51,36 @@ SHARP_WINDOW_S = 0.7  # only frames this fresh compete; older ones may show a di
 FOCUS_WIDTH, FOCUS_HEIGHT = 320, 180  # score on a downscale: same ranking, ~1.5 ms on a Pi 5
 
 
-def focus_score(frame) -> float:
-    """How sharp a frame is: variance of its Laplacian, the standard focus measure.
+def thumbnail(frame):
+    """The frame in grey at 320x180 - what the focus score and the stabilizer both work on."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return cv2.resize(gray, (FOCUS_WIDTH, FOCUS_HEIGHT), interpolation=cv2.INTER_AREA)
+
+
+def focus_score(small) -> float:
+    """How sharp a frame is, from its :func:`thumbnail`: variance of its Laplacian.
 
     Blur suppresses high spatial frequencies, so the second derivative goes flat and its
     variance collapses. Absolute values mean nothing across scenes - only the ranking within
     one burst of frames matters, which is all we use it for.
     """
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    small = cv2.resize(gray, (FOCUS_WIDTH, FOCUS_HEIGHT), interpolation=cv2.INTER_AREA)
     return float(cv2.Laplacian(small, cv2.CV_64F).var())
+
+
+class Film:
+    """What a CAMERA-mode session records: the steadied picture in a fixed 1120x630 window.
+
+    A :class:`cyclops.record.FrameSource` of its own rather than the camera itself, because the
+    panel's window reaches into the edge fill (under the metal, where nobody sees it) and a
+    recording has no metal to hide anything behind.
+    """
+
+    def __init__(self, source: CameraSource) -> None:
+        self._source = source
+
+    def frame(self):
+        """The newest frame's recording window, or None."""
+        return self._source.film_frame()
 
 
 class CameraSource:
@@ -63,7 +89,10 @@ class CameraSource:
     def __init__(self, camera_index: int | None = None) -> None:
         self._preferred = camera_index
         self._lock = threading.Lock()
-        self._frame = None  # the newest decoded frame, BGR
+        self._frame = None  # the newest decoded frame, BGR, raw
+        self._live = None  # ...and the steadied window of it the panel is shown
+        self._shift = (0.0, 0.0)  # where that window is centred off the frame's; None: raw
+        self.steady_note = steady.STEADY_FILE  # the settings screen's STABILIZE switch
         self._stamp = 0.0  # time.monotonic() when it arrived
         self._recent: deque[tuple[object, float, float]] = deque(maxlen=HISTORY)
         self.last_pick: tuple[float, float, float] | None = None  # (score, newest_score, age_s)
@@ -74,6 +103,7 @@ class CameraSource:
         self._framing = DEFAULT_FRAMING  # read by the reader thread, which stands down for it
         self._error = ""
         self._generation = 0  # bumped by start(); a supervisor with a stale one retires itself
+        self.film = Film(self)
 
     @property
     def index(self) -> int | str | None:
@@ -146,16 +176,24 @@ class CameraSource:
         self._thread.start()
 
     def latest(self) -> tuple[object, float] | None:
-        """The newest frame and its monotonic timestamp, or None if none has arrived yet."""
+        """The newest frame, steadied, and its monotonic timestamp, or None if none has arrived."""
         with self._lock:
-            if self._frame is None:
+            if self._live is None:
                 return None
-            return self._frame, self._stamp
+            return self._live, self._stamp
 
     def frame(self):
-        """Just the newest frame, or None. Convenience for the render loop."""
+        """Just the newest frame, steadied, or None. Convenience for the render loop."""
         got = self.latest()
         return None if got is None else got[0]
+
+    def film_frame(self):
+        """The newest frame as a CAMERA recording frames it - see :class:`Film`."""
+        with self._lock:
+            raw, shift = self._frame, self._shift
+        if raw is None or shift is None:
+            return raw  # switched off: the whole frame, as a recording was before stabilizing
+        return steady.film(raw, shift)
 
     def snapshot(self):
         """The sharpest frame from the last moment, or None if the camera has gone stale.
@@ -269,7 +307,8 @@ class CameraSource:
     def _forget(self) -> None:
         """Drop the frames from before the device went away, so none is drawn or photographed."""
         with self._lock:
-            self._frame = None
+            self._frame = self._live = None
+            self._shift = (0.0, 0.0)
             self._stamp = 0.0
             self._recent.clear()
         self.last_pick = None
@@ -288,7 +327,13 @@ class CameraSource:
         Timed from *before* the read for the same reason. The ten seconds a stalled read spends
         waiting are ten seconds with no frame, and starting the clock when it returns would cost
         a second timeout to notice the first.
+
+        Every entry is a fresh open - a framing change, a reconnect, a wake - so the stabilizer
+        starts from zero here too: the last device's shake says nothing about this one's. So does
+        switching it back on: the frames it missed while off say nothing about where the hand is.
         """
+        steadier = steady.Steady()
+        steadying, looked = steady.enabled(self.steady_note), time.monotonic()
         failing_since = 0.0
         while not self._stop.is_set() and self._generation == token and self._framing == framing:
             attempted = time.monotonic()
@@ -305,11 +350,22 @@ class CameraSource:
                 time.sleep(0.02)
                 continue
             failing_since = 0.0
-            score = focus_score(frame)
+            if attempted - looked >= steady.NOTE_POLL_S:
+                looked, wanted = attempted, steady.enabled(self.steady_note)
+                if wanted != steadying:
+                    steadier, steadying = steady.Steady(), wanted
+                    print(f"· stabilize {'on' if wanted else 'off'}", flush=True)
+            small = thumbnail(frame)
+            score = focus_score(small)
+            if steadying:
+                shift = steadier.update(small, frame.shape[1], frame.shape[0])
+                shown = steady.live(frame, shift)
+            else:
+                shift, shown = None, frame
             now = time.monotonic()
             with self._lock:
-                self._frame, self._stamp = frame, now
-                self._recent.append((frame, now, score))
+                self._frame, self._live, self._shift, self._stamp = frame, shown, shift, now
+                self._recent.append((frame, now, score))  # raw: photos are never steadied
 
     def wait_for_frame(self, timeout: float = 5.0) -> None:
         """Block until the first frame arrives, so the UI never opens on a black window."""
