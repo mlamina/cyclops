@@ -161,11 +161,45 @@ class _UseeplusCapture:
         if self._gone:
             return False, None
         ok, frame = self._camera.read()
-        if not ok and not self._still_present():
+        if not ok and not self._present():
             self._gone = True  # unplugged: stop paying the retry timeout on every later read
         return ok, frame
 
+    def _present(self) -> bool:
+        """Is it still on the bus? A probe that cannot answer is answering no.
+
+        The probe walks the bus over libusb, which is the same library that has just had a
+        device pulled out from under it, so it is entitled to raise. Letting that propagate
+        would take the reader thread down mid-loop; and a bus we cannot enumerate is not a bus
+        we are going to find this endoscope on either way.
+        """
+        try:
+            return bool(self._still_present())
+        except Exception:  # noqa: BLE001 - libusb raises its own, and none of them mean "yes"
+            return False
+
     def release(self) -> None:
+        """Hand the device back - unless it is not there any more, in which case do nothing.
+
+        This is the one call on this class that can take the whole kiosk down, and it does not
+        do it by raising. Releasing a libusb handle whose device has been yanked walks into
+
+            usbi_mutex_destroy: Assertion `pthread_mutex_destroy(mutex) == 0' failed.
+
+        which is an ``assert()`` in C: it raises SIGABRT and the process is gone - panel, face,
+        session and all. There is no ``except`` that catches it and no ``finally`` that runs
+        after it. Marco found it on 2026-09-20 by pulling the endoscope out while it was the
+        camera on screen, which is the ordinary way to finish looking at something.
+
+        So the rule is that the handle is only given back while there is something to give it
+        back to. Once :meth:`read` has established the device is off the bus, the handle is
+        simply dropped and the process keeps the few file descriptors libusb had open until it
+        exits - which is the same trade :meth:`CameraSource.stop` already makes for a reader
+        stuck inside a read, and for the same reason: a leaked handle is cheap and a dead kiosk
+        is not.
+        """
+        if self._gone:
+            return
         self._camera.release()
 
 

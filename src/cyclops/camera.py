@@ -51,6 +51,27 @@ SHARP_WINDOW_S = 0.7  # only frames this fresh compete; older ones may show a di
 FOCUS_WIDTH, FOCUS_HEIGHT = 320, 180  # score on a downscale: same ranking, ~1.5 ms on a Pi 5
 
 
+def _let_go(cap) -> None:
+    """Release a capture, and survive a release that does not go well.
+
+    Every close in this file goes through here. Putting a device down is the one job where
+    failing is not allowed to matter: whatever state the handle is in, the thing we actually
+    want next is the supervisor going back round to look for a camera, and an exception out of
+    ``release()`` in a ``finally`` takes that whole loop with it - the panel then sits on "no
+    camera" until somebody restarts the kiosk, for a device that had already gone.
+
+    The other half of this is not here and cannot be. A libusb handle whose device has been
+    yanked aborts the *process* when it is destroyed rather than raising, and no ``except``
+    catches a SIGABRT - so that one is headed off at the source, by
+    :meth:`cyclops.webcam._UseeplusCapture.release`, which declines to hand back a device that
+    is no longer on the bus.
+    """
+    try:
+        cap.release()
+    except Exception as exc:  # noqa: BLE001 - a camera on its way out may raise anything
+        print(f"· camera would not close cleanly ({exc}); letting it go", flush=True)
+
+
 def thumbnail(frame):
     """The frame in grey at 320x180 - what the focus score and the stabilizer both work on."""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -256,7 +277,7 @@ class CameraSource:
                 self._forget()
                 return
         if self._cap is not None:  # no reader ever ran; nobody else can be holding this
-            self._cap.release()
+            _let_go(self._cap)
             self._cap = None
         self._forget()
 
@@ -285,7 +306,7 @@ class CameraSource:
                 self._stop.wait(RECONNECT_EVERY_S)
                 continue
             if self._stop.is_set() or self._generation != token:
-                cap.release()  # retired while that open was blocking; never adopt the device
+                _let_go(cap)  # retired while that open was blocking; never adopt the device
                 return
             if self._error:  # we had been looking, so this is news; a first open is not
                 print(f"· camera {index} found", flush=True)
@@ -296,7 +317,7 @@ class CameraSource:
             finally:
                 with self._lock:
                     self._cap = None
-                cap.release()
+                _let_go(cap)
                 if self._framing == framing:
                     self._forget()  # the device went; what it was showing is now last minute's
                 # Otherwise this is a framing change we asked for, and the frames are kept on

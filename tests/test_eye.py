@@ -577,13 +577,14 @@ def _lit(crop: np.ndarray) -> int:
     return int(((crop[:, :, :3].astype(int).sum(axis=2) > 300) & (crop[:, :, 3] > 150)).sum())
 
 
-# Three things on the head rail, so the sleep test covers them too: a label is the newest thing
-# on this panel that is neither baked into the base nor gated on a session, which is exactly the
-# shape the caption's breath was when it got caught pulsing a resting panel.
+# A full corner - one of each category - so the sleep test covers the USB module too. It is the
+# newest thing on this panel that is neither baked into the base nor gated on a session, which is
+# exactly the shape the caption's breath was when it got caught pulsing a resting panel.
 SLEEPING_BUS = (
     devices.Device("046d", "08e5", "HD Pro Webcam C920", devices.CAMERA),
     devices.Device("1c75", "0288", "MiniLab 3", devices.MUSIC),
     devices.Device("0781", "5581", "Ultra", devices.STORAGE),
+    devices.Device("0403", "6001", "FT232R", devices.OTHER),
 )
 
 

@@ -1080,27 +1080,35 @@ PLATE_WEAR = 0.035  # how much the lift comes and goes across the sheet - a plat
 # not going to be mistaken for anything else, and the word cost a row of depth to say so. The
 # pod is wider for it and much slimmer, which is the right trade for something hanging over the
 # middle of the picture - depth is what it takes away from the room, width is not.
-# ---- what is plugged in, as labels clamped to the head rail either side of the module ----
-# The rail across the top is the only run of the panel with nothing on it, and a USB device is
-# exactly the sort of thing a rail carries: it comes and goes, it belongs to the box rather than
-# to the session, and it must never be somewhere a glance has to hunt for. These sit on the row
-# the readouts are on, so the whole top of the panel is one line of instruments.
+# ---- the USB module, flush into the top-left corner ----
 #
-# They are laid out against the module at its WIDEST - two tags lit - and not against whatever
-# it happens to be now, so nothing on the rail shuffles when REC comes on or the board goes hot.
-DEV_TAGS = 3  # the most any one run of rail shows - the run itself usually stops it sooner
-DEV_H = 22.0  # reference px of label, centred on the readouts' row
-DEV_PAD = 7.0  # inside its ends
-DEV_ICON = 11.0  # the square the category mark is cut in - the knob's mark budget, near enough
-DEV_ICON_GAP = 5.0  # between that mark and the name
-DEV_GAP = 8.0  # between two labels, which is the module's own tag gap
-DEV_INSET = 36.0  # px in from each edge the run starts, which clears the rail's formed corner
-DEV_RADIUS = 3.0  # the label's corners, same former as a tag's
-DEV_LIP = 0.55  # how much of the panel's white the label's top arris keeps. A dark slab laid on
-# a lit bar with no arris at all is a hole in the rail rather than a part on it
-DEV_FACE = 0.82  # how far the label's field is taken from the glass towards black. Darker than
-# the module's pane on purpose: these are read past rather than read, and the one on the rail
-# that matters is whichever one just appeared
+# The one corner of this panel with nothing in it, and the thing that belongs there is what is
+# plugged into the box: it comes and goes, it belongs to the machine rather than to the session,
+# and it must never be somewhere a glance has to hunt for. Built like the status pod and out of
+# the same parts - a plate that runs off the panel's edges, a machined rail along the inner
+# edges only, a bolt at every knee, and the name cut into the rail rather than printed on the
+# green. A first pass as a tall boxed panel was rejected for spending the whole left-hand edge
+# on rails; this is the pod's own depth and nothing more.
+#
+# It runs off the TOP and the LEFT edges with no steel between it and them, which is the whole
+# difference between a chassis part and a box drawn on top of one. Its steel is on the two edges
+# that meet the rest of the machine: the bottom, and the chamfered right-hand end.
+USB_PAD = 10.0  # reference px inside its ends, before the first device and after the last
+USB_GAP = 12.0  # ...and between two of them
+USB_GLYPH = 19.0  # the square a category mark is cut in
+USB_GLYPH_GAP = 3.0  # ...and the air under it, before the name
+USB_TOP = 3.0  # from the panel's top edge down to the top of the glyph
+USB_NAME_W = 92.0  # the most a name may take before it is cut short. A column is as wide as its
+# name, so this is what stops one badly-behaved product string eating the whole corner
+USB_MIN_W = 126.0  # the narrowest the flat ever gets, which the legend in its rail sets and not
+# the contents: a pocket for USB DEVICES has to fit inside the module it names
+USB_CLEAR = 10.0  # px of picture kept between the module's top corner and the pod's plate. The
+# pod is measured at its WIDEST - both tags lit - so nothing up here moves when REC comes on
+USB_EMPTY = "NO USB"  # what it says when there is nothing on the bus. It is always there: a
+# module that vanished would be a part falling off the machine every time a cable came out
+USB_LEGEND = "USB DEVICES"  # cut into the rail along its bottom, the way CYCLOPS is cut into the
+# pod's. Not a label on the green - a label on the green is a sticker, and this is a nameplate
+
 POD_H = 50.0  # its depth, which is one row of readout and the rail under it
 POD_STEP = 16.0  # the square drop off the top edge before the splay starts
 POD_PAD = 16.0  # inside the flat, either side of the readouts
@@ -1308,6 +1316,17 @@ MARK_ALPHABET = {
     "S": (((.95, .24), (.66, .0), (.28, .0), (.0, .22), (.14, .45), (.81, .57), (.95, .78),
            (.66, 1.), (.28, 1.), (.0, .78)),),
     "Y": (((.0, .0), (.48, .46)), ((.95, .0), (.48, .46)), ((.48, .46), (.48, 1.))),
+    # ...and the rest of what the USB module's rail needs cut into it. Same hand: one stroke per
+    # run, counters left open, nothing a six-pixel cap would close up.
+    "B": (((.0, .0), (.0, 1.)), ((.0, .0), (.62, .0), (.88, .24), (.62, .48), (.0, .48)),
+          ((.0, .48), (.68, .48), (.95, .74), (.68, 1.), (.0, 1.))),
+    "D": (((.0, .0), (.0, 1.), (.58, 1.), (.95, .68), (.95, .32), (.58, .0), (.0, .0)),),
+    "E": (((.95, .0), (.0, .0), (.0, 1.), (.95, 1.)), ((.0, .50), (.72, .50))),
+    "I": (((.48, .0), (.48, 1.)),),
+    "N": (((.0, 1.), (.0, .0), (.95, 1.), (.95, .0)),),
+    "U": (((.0, .0), (.0, .70), (.30, 1.), (.65, 1.), (.95, .70), (.95, .0)),),
+    "V": (((.0, .0), (.48, 1.)), ((.95, .0), (.48, 1.))),
+    " ": (),
 }
 
 BOT_L = 170.0  # the bottom-left bracket's reach along both edges - BOT_R_OUT's, so the two mirror
@@ -3636,6 +3655,8 @@ class Overlay:
         # whatever the rounding does to the numbers either side of it.
         depth, step = max(10, px(POD_H)), max(4, px(POD_STEP))
         ramp = depth - step
+        # Kept, because the USB module in the other corner is cut to the same section.
+        self.pod_depth, self.pod_step, self.pod_ramp = depth, step, ramp
         bot, bstep = max(12, px(BOT_L)), max(4, px(BOT_L_STEP))
         blegs = bot - bstep
         rout, rstep = max(12, px(BOT_R_OUT)), max(4, px(BOT_R_STEP))
@@ -3836,11 +3857,11 @@ class Overlay:
         # the whole of what moves it - the word and the colour are constants and the x comes off
         # _readouts - which makes this a cache of at most two small tiles.
         self._rec: dict[int, tuple[Image.Image, tuple[int, int]]] = {}
-        # ...and one label per thing plugged into the box. Keyed on what is drawn rather than on
-        # where it lands - there is no lamp in a label to place - so a device that comes and goes
-        # all afternoon is drawn once. At most three are ever shown and a workshop has a handful
-        # of cables, so this is bounded by the bench rather than by anything here.
-        self._devices: dict[tuple[str, str], Image.Image] = {}
+        # ...the USB module, one per width it comes to, and one tile per thing in it. A width
+        # is a handful of numbers and a bench is a handful of cables, so both are bounded by what
+        # is actually plugged into the box rather than by anything here.
+        self._usb: dict[float, Image.Image] = {}
+        self._usb_entries: dict[tuple[str, str], Image.Image] = {}
         self.glow_r = max(1.0, LAMP_BLOOM_R * scale)
         self.halo_r = max(1.0, LAMP_HALO_R * scale)
         self._skirt = math.ceil(3 * self.halo_r)  # how far a lamp's light reaches past its edge
@@ -6092,10 +6113,10 @@ class Overlay:
 
         self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat),
                             self._taping(state, recording), phase)
-        # ...and what is plugged into the box, on the same row, out on the clear rail either
-        # side of the module. Composited and never baked: a thing arriving is the whole of the
-        # feedback that it arrived, so the base would have to be thrown away to show it.
-        self._draw_devices(layer, plugged_in)
+        # ...and the module in the opposite corner, which says what is plugged into the box.
+        # Composited rather than baked, because a device arriving IS the feedback that it
+        # arrived, and a layer built once per state cannot say so without being thrown away.
+        self._draw_usb(layer, plugged_in)
         self._draw_caption(layer, state, halo, detail, phase, tutorial)
         held = pressed == "eye"
         # The pointers, over the faces the chrome laid down once. Neither inverts under a thumb
@@ -6720,7 +6741,7 @@ class Overlay:
             cached = self._rec[tags] = self._tag_tile("REC", RED, tags, at, self.row)
         return cached
 
-    def _pocket(self, layer: Image.Image, tags: int) -> None:
+    def _pocket(self, layer: Image.Image, cx: float, cy: float, w: float) -> None:
         """The legend pocket milled into the rail under the window: empty, and lit as a socket.
 
         The one thing this module had none of was evidence of manufacture - a critic could
@@ -6746,10 +6767,7 @@ class Overlay:
         passes that happens after it. It is the same numpy a tag already pays for at a bake,
         over a box a tenth the size, and a bake is not a frame.
         """
-        knee_x, spine_y = self.pods[tags].spine[2]  # the lower-right knee, where its rail turns
-        w, h = POCKET_W * self.scale, POCKET_H * self.scale
-        cx = knee_x - POCKET_IN * self.scale - w / 2.0
-        cy = spine_y + POCKET_DROP * self.scale
+        h = POCKET_H * self.scale
         deep = max(1.0, POCKET_DEEP * self.scale)
         m = math.ceil(2.0 * deep)  # room for the shadow the near wall throws, and for the AA
         left, top = math.floor(cx - w / 2.0) - m, math.floor(cy - h / 2.0) - m
@@ -6788,7 +6806,7 @@ class Overlay:
         pocket = _over(pocket, material.STEEL_LIT, POCKET_LIP * wall * facing)
         layer.alpha_composite(_to_image(*pocket), (left, top))
 
-    def _mark(self, layer: Image.Image, tags: int) -> None:
+    def _mark(self, layer: Image.Image, cx: float, cy: float, w: float, word: str) -> None:
         """The name of the machine, engraved into the legend pocket and filled with enamel.
 
         The pocket was milled and left blank, and a slot the exact shape of a nameplate with
@@ -6817,10 +6835,7 @@ class Overlay:
         follows. Baked with the header, right after the floor it is cut into and long before the
         bolts, so nothing here composites over hardware.
         """
-        knee_x, spine_y = self.pods[tags].spine[2]  # the pocket's own knee - see :meth:`_pocket`
-        w, h = POCKET_W * self.scale, POCKET_H * self.scale
-        cx = knee_x - POCKET_IN * self.scale - w / 2.0
-        cy = spine_y + POCKET_DROP * self.scale
+        h = POCKET_H * self.scale
         m = math.ceil(2.0 * max(1.0, POCKET_DEEP * self.scale))
         left, top = math.floor(cx - w / 2.0) - m, math.floor(cy - h / 2.0) - m
         tw = math.ceil(cx + w / 2.0) + m - left
@@ -6835,10 +6850,10 @@ class Overlay:
         # ends rather than the centreline being flush with it and half the stroke over the wall.
         first = cx - w / 2.0 + inset + tool / 2.0
         last = cx + w / 2.0 - inset - tool / 2.0 - wide
-        step = (last - first) / max(1, len(MARK_WORD) - 1)
+        step = (last - first) / max(1, len(word) - 1)
         cap_top = cy - cap / 2.0
         runs: list[list[tuple[float, float]]] = []
-        for index, char in enumerate(MARK_WORD):
+        for index, char in enumerate(word):
             at = first + index * step
             for path in MARK_ALPHABET[char]:
                 runs.append([(at + px * wide, cap_top + py * cap) for px, py in path])
@@ -6888,14 +6903,29 @@ class Overlay:
         picture, which can say "searching the web…" where a word could only say SEARCH.
         """
         count = self._tag_count(state, recording, heat)
-        self._pocket(d._image, count)
-        self._mark(d._image, count)
+        self._pocket(d._image, *self._legend_box(self.pods[count].spine[2], MARK_WORD))
+        self._mark(d._image, *self._legend_box(self.pods[count].spine[2], MARK_WORD), MARK_WORD)
         _, at, _ = self._readouts(count)
         if self._taping(state, recording):
             at += self._tag_w + self._tag_gap  # REC's slot, kept whether it is lit or not
         colour = HEAT_LAMP.get(heat)
         if colour is not None:
             self._tag(d, at, self.row, HEAT_WORD, colour, count)
+
+    def _legend_box(self, knee: tuple[float, float], word: str) -> tuple[float, float, float]:
+        """Where a nameplate cut into a rail sits, given the knee its rail turns at: (cx, cy, w).
+
+        One box for both passes - :meth:`_pocket` mills it and :meth:`_mark` cuts into what was
+        milled - because two boxes that have to agree are two boxes that can disagree, and what
+        they would disagree about is whether the word is inside its own pocket.
+
+        The width follows the word: POCKET_W is what CYCLOPS needs, and the engraving stretches
+        to fill whatever it is given, so a longer legend in a pocket sized for a shorter one is
+        a row of letters at half the pitch of every other one on the panel.
+        """
+        w = POCKET_W * self.scale * len(word) / len(MARK_WORD)
+        return (knee[0] - POCKET_IN * self.scale - w / 2.0,
+                knee[1] + POCKET_DROP * self.scale, w)
 
     def _tag_tile(
         self, word: str, colour: tuple[int, int, int], tags: int, x: float, cy: float,
@@ -6952,142 +6982,207 @@ class Overlay:
 
     # ---- what is plugged in ----
 
-    def _device_run(self) -> tuple[tuple[float, float], tuple[float, float]]:
-        """The two clear runs of head rail, left of the module and right of it.
+    def usb_room(self) -> float:
+        """The rightmost x the module's top corner may reach: the pod at its widest, less air.
 
-        Measured against the module at its widest - :attr:`pod_boxes` at two tags - so a label
-        does not move when REC comes on or the board goes hot. That is the whole reason the runs
-        are computed from the worst case rather than from the pod actually being drawn.
+        Measured against ``pods[2]`` and never against the pod actually being drawn, so the
+        module is the same width whether the tape is running or the board is hot. What that
+        costs is that the corner is only as big as it is - see :meth:`usb_fit`, which drops what
+        will not go in it.
         """
-        box = self.pod_boxes[2]
-        inset = DEV_INSET * self.scale
-        gap = DEV_GAP * self.scale
-        return ((inset, box.x - gap), (box.right + gap, self.width - inset))
+        return min(x for x, _ in self.pods[2].spine) - USB_CLEAR * self.scale
 
-    def device_places(self, found: Sequence[Device]) -> list[tuple[Device, float]]:
-        """Each device and the x its label starts at. Packed left run first, then right.
+    def _usb_col(self, device: Device) -> tuple[str, float]:
+        """One device's name, cut to what a column may take, and how wide that column comes out."""
+        name = self._elide(device.name, self.font_micro, USB_NAME_W * self.scale)
+        return name, max(USB_GLYPH * self.scale, self.font_micro.getlength(name))
 
-        Greedy and in bus order, so the row reads the way the bus does and a label keeps its
-        place for as long as the thing is plugged in. Anything that will not fit in either run
-        is simply not shown: three names is the most this rail can carry and still be read at a
-        glance, and a fourth crammed in is a rail that says nothing.
+    def usb_fit(self, found: Sequence[Device]) -> tuple[list[tuple[Device, str, float]], float]:
+        """The devices the corner can actually show, and the x its flat ends at.
+
+        Greedy and in bus order, so a column keeps its place for as long as the thing is plugged
+        in. The module is as wide as what it is showing and not a pixel wider - the pod's own
+        rule - with two floors under it: the legend cut into its rail has to fit inside it, and
+        with nothing on the bus at all it is still there saying so.
         """
-        places: list[tuple[Device, float]] = []
-        runs = list(self._device_run())
-        cursor = [runs[0][0], runs[1][0]]
-        held = [0, 0]
+        pad, gap = USB_PAD * self.scale, USB_GAP * self.scale
+        room = self.usb_room() - self.pod_ramp - 2 * pad
+        shown: list[tuple[Device, str, float]] = []
+        used = 0.0
         for device in found:
-            width = self._device_w(device)
-            for side, (_, end) in enumerate(runs):
-                if held[side] < DEV_TAGS and cursor[side] + width <= end:
-                    places.append((device, cursor[side]))
-                    cursor[side] += width + DEV_GAP * self.scale
-                    held[side] += 1
-                    break
-        return places
+            name, w = self._usb_col(device)
+            step = w if not shown else w + gap
+            if used + step > room:
+                continue
+            shown.append((device, name, w))
+            used += step
+        if not shown:
+            used = self.font_read.getlength(USB_EMPTY)
+        return shown, max(USB_MIN_W * self.scale, round(used + 2 * pad))
 
-    def _device_w(self, device: Device) -> float:
-        """How wide this one's label comes out: the mark, the name, and the air round both."""
-        return round(
-            2 * DEV_PAD * self.scale + DEV_ICON * self.scale + DEV_ICON_GAP * self.scale
-            + self.font_micro.getlength(device.name)
-        )
+    def usb_spine(self, right: float) -> list[tuple[float, float]]:
+        """Its outline, wound like the pod's so ``(dy, -dx)`` still points out of its own body.
 
-    def _device_tile(self, device: Device) -> Image.Image:
-        """One label as a finished tile, kept for as long as the thing is plugged in.
-
-        Cached on what is drawn and not on where, because unlike :meth:`_rec_tile` there is no
-        lamp in it to place: a label is a dark field with a lit top arris, which is the same
-        wherever along the rail it lands. Three of them are three composites a frame, and they
-        are the only thing on this panel that is not either baked into the base or blinking.
+        The pod's right half, mirrored onto the left edge: square down from the top corner, then
+        a true 45 into the flat, then along the bottom and off the left edge of the panel. Four
+        points and no corner point - :class:`Bracket` closes the polygon against the corner it is
+        given, which for this one is the panel's own top-left.
         """
-        key = (device.category, device.name)
-        cached = self._devices.get(key)
+        return [(right + self.pod_ramp, 0), (right + self.pod_ramp, self.pod_step),
+                (right, self.pod_depth), (0, self.pod_depth)]
+
+    def usb_box(self, right: float) -> Rect:
+        """Everything the module can reach, rail's shadow and all - the tile the frame pastes.
+
+        Wider and deeper than the plate it draws, because a rail on this panel throws a shadow
+        past its own edge and a bolt blooms past its own head. One box for the crop and for the
+        test that nothing outside it moved, so the two cannot come to different answers.
+        """
+        return Rect(0, 0, math.ceil(right) + self.pod_ramp + self._skirt,
+                    self.pod_depth + self.rail_w)
+
+    def _usb_chassis(self, right: float) -> Image.Image:
+        """The module with nothing in it: plate, rail, bolts, and the legend cut into the rail.
+
+        Built once per width and kept, the way :attr:`pods` is built once per tag count. Nothing
+        in here depends on *which* devices are plugged in - only on how much room they came to -
+        so plugging a different stick into the same port costs one dictionary lookup.
+
+        A full-panel layer rather than a tile, because every part of it - the rail's mitres, the
+        bolts' falloff, the pocket's lamp - is laid out in panel coordinates and would otherwise
+        have to be told twice where it is. It is cropped to the module's own box on the way out,
+        so what the frame composites is a couple of hundred pixels wide.
+        """
+        cached = self._usb.get(right)
         if cached is not None:
             return cached
-        w, h = round(self._device_w(device)), round(DEV_H * self.scale)
-        radius = max(1.0, DEV_RADIUS * self.scale)
-        face = mix(SCREEN, (0, 0, 0), DEV_FACE)
-        lip = mix(SCREEN, WHITE, DEV_LIP)
+        module = Bracket((0, 0), self.usb_spine(right))
+        # The plate: the same wash, corner shading and scanlines every other plate on this panel
+        # is cut from, through the module's own footprint. Never an opaque fill - a plate you
+        # cannot see the room through is a lid, and every other plate here is a window.
+        mask = Image.new("L", (self.width, self.height), 0)
+        module.plate(ImageDraw.Draw(mask))
+        # Square into (0, 0), and NOT cut back to the case's rounded corner. It was cut, on the
+        # reasoning that a part running off a corner the case rounds is a part sticking out -
+        # and what that actually left was a quarter-disc of the plate missing and the surround's
+        # brightest corner, the one directly under the lamp, shining through the hole. A grey nub
+        # in the corner of the green is the one thing this module cannot have: it is the reading
+        # that says overlay rather than chassis. The plate covers the surround along the whole
+        # top edge already, so covering it round the corner as well is the same part, finished.
+        cut = np.asarray(mask, np.float32) / 255.0
+        rgb, alpha = self._filter
+        layer = _to_image(rgb, alpha * cut)
+        # ...then the steel, on the two edges that meet the rest of the machine, and a bolt where
+        # it turns - which is the same pass the pod and both mounts go through.
+        self._draw_bracket(layer, module)
+        # ...and the nameplate milled into that rail, after it, because it is cut INTO it.
+        box = self._legend_box(module.spine[2], USB_LEGEND)
+        self._pocket(layer, *box)
+        self._mark(layer, *box, USB_LEGEND)
+        box = self.usb_box(right)
+        cached = self._usb[right] = layer.crop((box.x, box.y, box.right, box.bottom))
+        return cached
 
-        def paint(t: ImageDraw.ImageDraw) -> None:
-            t.rounded_rectangle([at(0), at(0), at(w - 1), at(h - 1)],
-                                radius=round(wide(radius)), fill=linear(face))
-            # The one lit edge, along the top: a part sitting on a bar catches the same lamp the
-            # bar does, and without it the label is a hole cut in the rail.
-            t.rounded_rectangle([at(0), at(0), at(w - 1), at(h - 1)],
-                                radius=round(wide(radius)), outline=linear(lip, 150),
-                                width=round(wide(1.0)))
-            self._device_mark(t, device.category, DEV_PAD * self.scale,
-                              (h - DEV_ICON * self.scale) / 2.0, DEV_ICON * self.scale)
+    def _usb_entry(self, device: Device, name: str, w: float) -> Image.Image:
+        """One device as a column: its category glyph, and its name under it.
 
-        tile = smoothed((w, h), paint)
-        self._text(ImageDraw.Draw(tile),
-                   DEV_PAD * self.scale + DEV_ICON * self.scale + DEV_ICON_GAP * self.scale,
-                   h / 2.0, device.name, self.font_micro, (*GREEN, 255))
-        self._devices[key] = tile
+        Kept per device, like the record light and for the same reason - it is composited by the
+        frame rather than baked into anything, because a thing being plugged in is the whole of
+        the feedback that it was plugged in, and a baked layer cannot say so without being
+        thrown away.
+        """
+        key = (device.category, name)
+        cached = self._usb_entries.get(key)
+        if cached is not None:
+            return cached
+        span = USB_GLYPH * self.scale
+        gap = USB_GLYPH_GAP * self.scale
+        height = round(span + gap + self.font_micro.size + 2)
+        tile = smoothed((round(w), height),
+                        lambda t: self._usb_glyph(t, device.category, (w - span) / 2.0, 0.0, span))
+        self._text(ImageDraw.Draw(tile), w / 2.0, span + gap + self.font_micro.size / 2.0,
+                   name, self.font_micro, (*GREEN, 255), align="c")
+        self._usb_entries[key] = tile
         return tile
 
-    def _device_mark(self, t: ImageDraw.ImageDraw, category: str, x: float, y: float,
-                     span: float) -> None:
-        """The category, as one mark in a *span* square with its corner at (*x*, *y*).
+    def _usb_glyph(self, t: ImageDraw.ImageDraw, category: str, x: float, y: float,
+                   span: float) -> None:
+        """The category, as the mark anybody already knows, in a *span* square at (*x*, *y*).
 
-        Four silhouettes rather than four pictures. At eleven pixels a drawing is a smudge and
-        the only thing that survives is the outline, so each of these is picked for its shape
-        against the other three: the cone is the one that is wider than it is tall and pointed
-        at one end, the lens is a ring with something solid in the middle of it, the disc is a
-        ring with a hole in the middle of it, and the plug is the one with legs.
-
-        Laid out through :func:`at` and coloured through :func:`linear`, like everything else
-        drawn into a supersampled tile.
+        His word on all four, and the argument for taking it: a camera body, an eighth note, a
+        floppy disk and the USB trident are marks people have been reading for thirty years, and
+        a glyph nobody has to learn is the only kind worth nineteen pixels. Drawn as silhouettes
+        rather than as pictures, because at nineteen pixels a picture is a smudge and the outline
+        is all that survives.
         """
         c = GREEN
         cx, cy, r = x + span / 2.0, y + span / 2.0, span / 2.0
-        if category == MUSIC:
-            # A cone and its throat as one silhouette, the same cut the volume knob carries.
-            t.polygon(
-                [(at(cx - r), at(cy - r / 3)), (at(cx - r / 3), at(cy - r / 3)),
-                 (at(cx + r * 0.9), at(cy - r)), (at(cx + r * 0.9), at(cy + r)),
-                 (at(cx - r / 3), at(cy + r / 3)), (at(cx - r), at(cy + r / 3))],
-                fill=linear(c),
-            )
-        elif category == CAMERA:
-            # A barrel with an aperture in it: a thick ring and a solid pupil. The pupil is what
-            # the disc has not got, and it is the whole of the difference between the two.
-            t.ellipse([at(cx - r), at(cy - r), at(cx + r), at(cy + r)],
-                      outline=linear(c), width=round(wide(max(1.0, r * 0.30))))
-            t.ellipse([at(cx - r * 0.42), at(cy - r * 0.42),
-                       at(cx + r * 0.42), at(cy + r * 0.42)], fill=linear(c))
-        elif category == STORAGE:
-            # A stack of discs seen on edge: a drum, with one dark rim cut across it. Drawn round
-            # rather than flat because a disc is what storage has always been, and drawn as a
-            # *stack* because a single platter is the same circle as the lens beside it - at
-            # eleven pixels the silhouette is the only thing that survives, and a cylinder is not
-            # a circle. The rim is what stops the cylinder reading as a pill.
-            lid = r * 0.42
-            t.ellipse([at(cx - r), at(cy - r), at(cx + r), at(cy - r + 2 * lid)], fill=linear(c))
-            t.rectangle([at(cx - r), at(cy - r + lid), at(cx + r), at(cy + r - lid)],
+        if category == CAMERA:
+            # A body with a round lens and the viewfinder bump on its shoulder.
+            t.rectangle([at(cx - r * 0.34), at(y + r * 0.10), at(cx + r * 0.04),
+                         at(y + r * 0.42)], fill=linear(c))
+            t.rounded_rectangle([at(x), at(y + r * 0.36), at(x + span), at(y + span)],
+                                radius=round(wide(r * 0.22)), fill=linear(c))
+            t.ellipse([at(cx - r * 0.42), at(cy + r * 0.24 - r * 0.42),
+                       at(cx + r * 0.42), at(cy + r * 0.24 + r * 0.42)],
+                      fill=linear(SCREEN))
+            t.ellipse([at(cx - r * 0.20), at(cy + r * 0.24 - r * 0.20),
+                       at(cx + r * 0.20), at(cy + r * 0.24 + r * 0.20)], fill=linear(c))
+        elif category == MUSIC:
+            # An eighth note: head, stem, flag. The one mark here that is taller than it is wide.
+            stem = max(1.0, r * 0.20)
+            t.rectangle([at(cx + r * 0.16), at(y), at(cx + r * 0.16 + stem), at(y + span * 0.80)],
                         fill=linear(c))
-            t.ellipse([at(cx - r), at(cy + r - 2 * lid), at(cx + r), at(cy + r)], fill=linear(c))
-            t.line([at(cx - r), at(cy + r * 0.12), at(cx + r), at(cy + r * 0.12)],
-                   fill=linear(mix(SCREEN, (0, 0, 0), DEV_FACE)), width=round(wide(1.0)))
+            t.polygon([(at(cx + r * 0.16 + stem), at(y)),
+                       (at(x + span), at(y + r * 0.44)),
+                       (at(x + span), at(y + r * 0.92)),
+                       (at(cx + r * 0.16 + stem), at(y + r * 0.46))], fill=linear(c))
+            t.ellipse([at(cx - r * 0.86), at(y + span * 0.56),
+                       at(cx + r * 0.22), at(y + span)], fill=linear(c))
+        elif category == STORAGE:
+            # A floppy disk: the shutter across its top and the label across its bottom.
+            t.rounded_rectangle([at(x), at(y), at(x + span), at(y + span)],
+                                radius=round(wide(r * 0.16)), fill=linear(c))
+            t.rectangle([at(cx - r * 0.40), at(y), at(cx + r * 0.40), at(y + r * 0.62)],
+                        fill=linear(SCREEN))
+            t.rectangle([at(cx - r * 0.56), at(y + span - r * 0.66), at(cx + r * 0.56),
+                         at(y + span)], fill=linear(SCREEN))
         else:
-            # A plug: a body with two pins out of the top of it. The one mark here with legs, so
-            # it is told from the other three by silhouette before anything is read into it.
-            pin = r * 0.34
-            for side in (-1, 1):
-                t.rectangle([at(cx + side * r * 0.46 - pin / 2), at(cy - r),
-                             at(cx + side * r * 0.46 + pin / 2), at(cy - r * 0.1)],
-                            fill=linear(c))
-            t.rounded_rectangle([at(cx - r * 0.82), at(cy - r * 0.18),
-                                 at(cx + r * 0.82), at(cy + r)],
-                                radius=round(wide(r * 0.26)), fill=linear(c))
+            # The USB trident, which is on the end of the cable they are holding.
+            shaft = max(1.0, r * 0.20)
+            t.rectangle([at(cx - shaft / 2), at(y + r * 0.22), at(cx + shaft / 2), at(y + span)],
+                        fill=linear(c))
+            t.polygon([(at(cx), at(y)), (at(cx - r * 0.42), at(y + r * 0.50)),
+                       (at(cx + r * 0.42), at(y + r * 0.50))], fill=linear(c))
+            for side, tip in ((-1, "square"), (1, "round")):
+                arm_y = y + span * (0.52 if side < 0 else 0.68)
+                end = cx + side * r * 0.72
+                t.line([at(cx), at(arm_y + r * 0.26)], fill=linear(c), width=round(wide(shaft)))
+                t.line([at(cx), at(arm_y + r * 0.26), at(end), at(arm_y + r * 0.26)],
+                       fill=linear(c), width=round(wide(shaft)))
+                t.line([at(end), at(arm_y + r * 0.26), at(end), at(arm_y)],
+                       fill=linear(c), width=round(wide(shaft)))
+                if tip == "square":
+                    t.rectangle([at(end - r * 0.26), at(arm_y - r * 0.30),
+                                 at(end + r * 0.26), at(arm_y + r * 0.04)], fill=linear(c))
+                else:
+                    t.ellipse([at(end - r * 0.26), at(arm_y - r * 0.28),
+                               at(end + r * 0.26), at(arm_y + r * 0.24)], fill=linear(c))
 
-    def _draw_devices(self, layer: Image.Image, found: Sequence[Device]) -> None:
-        """Every label the rail can hold, composited at the readouts' own row."""
-        half = round(DEV_H * self.scale) // 2
-        for device, x in self.device_places(found):
-            layer.alpha_composite(self._device_tile(device), (round(x), self.row - half))
+    def _draw_usb(self, layer: Image.Image, found: Sequence[Device]) -> None:
+        """The module and whatever is in it, composited onto the frame."""
+        shown, right = self.usb_fit(found)
+        layer.alpha_composite(self._usb_chassis(right), (0, 0))
+        if not shown:
+            self._text(ImageDraw.Draw(layer), (right + USB_PAD * self.scale) / 2.0,
+                       (self.pod_depth - self.rail_w / 2.0) / 2.0,
+                       USB_EMPTY, self.font_read, (*GREEN_DIM, 255), align="c")
+            return
+        at_x = USB_PAD * self.scale
+        for device, name, w in shown:
+            layer.alpha_composite(self._usb_entry(device, name, w),
+                                  (round(at_x), round(USB_TOP * self.scale)))
+            at_x += w + USB_GAP * self.scale
 
     def _draw_readouts(
         self,

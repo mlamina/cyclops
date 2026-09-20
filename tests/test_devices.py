@@ -260,62 +260,116 @@ def test_a_plug_asks_for_a_word_and_an_unplug_does_not() -> None:
     asyncio.run(go())
 
 
-# ---------------------------------------------------------------- where a label lands
+# ---------------------------------------------------------------- the module in the corner
 
 RAIL = (
     devices.Device("2ce3", "3828", "Endoscope", devices.CAMERA),
     devices.Device("1c75", "0288", "MiniLab 3", devices.MUSIC),
     devices.Device("0781", "5581", "SanDisk Ultra", devices.STORAGE),
 )
+SHORT = (
+    devices.Device("2ce3", "3828", "Cam", devices.CAMERA),
+    devices.Device("1c75", "0288", "Synth", devices.MUSIC),
+    devices.Device("0781", "5581", "Card", devices.STORAGE),
+    devices.Device("0403", "6001", "Uno", devices.OTHER),
+)
 PANELS = ((800, 480), (480, 320), (1280, 720))
 
 
-def test_the_module_is_the_width_it_was() -> None:
-    """A device label is not one of the module's tags, and must not widen it.
+def shot(ov: overlay.Overlay, plugged) -> np.ndarray:
+    return ov.render(state=overlay.LISTENING, level=0.2, elapsed=12.0, phase=1.0,
+                     plugged_in=plugged)
 
-    The pod is laid out for at most two tags and its width is its own business. Anything on the
-    rail that changed it would move the clock every time a cable went in.
+
+def test_the_pod_is_the_width_it_was() -> None:
+    """The USB module is not one of the pod's tags and must not widen it.
+
+    The pod is laid out for at most two tags and its width is its own business. Anything in the
+    other corner that changed it would move the clock every time a cable went in.
     """
-    was = {(w, h): dict(overlay.Overlay(w, h).pod_boxes) for w, h in PANELS}
-    for (w, h), boxes in was.items():
+    for w, h in PANELS:
+        was = dict(overlay.Overlay(w, h).pod_boxes)
         ov = overlay.Overlay(w, h)
-        ov.render(state=overlay.LISTENING, level=0.2, elapsed=12.0, phase=1.0, plugged_in=RAIL)
-        assert dict(ov.pod_boxes) == boxes
+        shot(ov, RAIL)
+        assert dict(ov.pod_boxes) == was
 
 
-def test_every_label_lands_clear_of_the_module() -> None:
-    """Both runs of rail, measured against the module at its widest so nothing shuffles."""
+def test_it_is_no_deeper_than_the_pod() -> None:
+    """A shallow strip flush into the corner, not a boxed panel down the left-hand edge."""
     for w, h in PANELS:
         ov = overlay.Overlay(w, h)
-        box = ov.pod_boxes[2]
-        for device, x in ov.device_places(RAIL):
-            right = x + ov._device_w(device)
-            assert x >= 0 and right <= w
-            assert right <= box.x or x >= box.right, f"{device.name} is under the module"
+        assert max(y for _, y in ov.usb_spine(ov.usb_fit(RAIL)[1])) == ov.pod_boxes[0].h
 
 
-def test_the_rail_shows_what_it_can_hold_and_no_more() -> None:
-    """Three ordinary names fit; a crowd does not silently stack up on top of itself."""
+def test_it_clears_the_pod_at_its_widest() -> None:
+    """Measured against two tags lit, so nothing up here moves when REC comes on."""
+    for w, h in PANELS:
+        ov = overlay.Overlay(w, h)
+        pod_left = min(x for x, _ in ov.pods[2].spine)
+        for plugged in ((), RAIL[:1], RAIL, SHORT, RAIL * 3):
+            corner = max(x for x, _ in ov.usb_spine(ov.usb_fit(plugged)[1]))
+            assert corner < pod_left, f"it runs into the pod with {len(plugged)} plugged in"
+
+
+def test_it_is_as_wide_as_its_contents() -> None:
+    """It grows with the list and shrinks back, exactly as the pod widens for its tags."""
     ov = overlay.Overlay(800, 480)
-    assert len(ov.device_places(RAIL)) == 3
-    crowd = RAIL * 4
-    places = ov.device_places(crowd)
-    assert len(places) < len(crowd)
-    spans = sorted((x, x + ov._device_w(d)) for d, x in places)
-    assert all(a[1] <= b[0] for a, b in zip(spans, spans[1:], strict=False)), "two labels overlap"
+    widths = [ov.usb_fit(SHORT[:n])[1] for n in range(5)]
+    assert widths == sorted(widths), widths
+    assert widths[0] < widths[-1], "it never grew at all"
 
 
-def test_the_four_marks_are_four_different_shapes() -> None:
+def test_the_plate_reaches_the_top_and_the_left(tmp_path: Path) -> None:
+    """It is a chassis part flush into the corner, not a box drawn on the panel.
+
+    Read off the polygon rather than off pixels, because the case's own surround runs round the
+    outside of everything on this panel - the pod's plate runs off the top edge under it in
+    exactly the same way.
+    """
+    ov = overlay.Overlay(800, 480)
+    spine = ov.usb_spine(ov.usb_fit(RAIL)[1])
+    assert min(x for x, _ in spine) == 0 and min(y for _, y in spine) == 0
+
+
+def test_it_is_still_there_with_nothing_plugged_in() -> None:
+    """A module that vanished would be a part falling off the machine every time a cable came
+    out."""
+    ov = overlay.Overlay(800, 480)
+    shown, right = ov.usb_fit(())
+    assert not shown and right >= overlay.USB_MIN_W * ov.scale
+    empty, full = shot(ov, ()), shot(ov, RAIL)
+    box = ov.usb_box(right)
+    assert not np.array_equal(empty[: box.bottom, : box.right],
+                              full[: box.bottom, : box.right]), "the two states draw the same"
+
+
+
+def test_nothing_outside_the_module_moved() -> None:
+    """Plugging something in changes the corner it is in and nothing else on the panel."""
+    ov = overlay.Overlay(800, 480)
+    empty, full = shot(ov, ()).copy(), shot(ov, RAIL).copy()
+    box = ov.usb_box(max(ov.usb_fit(())[1], ov.usb_fit(RAIL)[1]))
+    empty[: box.bottom, : box.right] = 0
+    full[: box.bottom, : box.right] = 0
+    assert np.array_equal(empty, full)
+
+
+def test_the_four_glyphs_are_four_different_marks() -> None:
     """Told apart at panel size is Marco's to judge; being *different* is not.
 
-    Cheap and blunt on purpose: four identical-sized tiles, and no two of their marks may be
-    the same pixels. It is the regression that a fifth category copy-pasted from a fourth would
-    otherwise pass.
+    Cheap and blunt on purpose: four tiles of one size, and no two of them the same pixels. It
+    is the regression a fifth category copy-pasted from a fourth would otherwise pass.
     """
     ov = overlay.Overlay(800, 480)
     cut = {}
     for category in (devices.CAMERA, devices.MUSIC, devices.STORAGE, devices.OTHER):
-        tile = ov._device_tile(devices.Device("0000", "0000", "Name", category))
-        cut[category] = np.asarray(tile.crop((0, 0, round(overlay.DEV_PAD + overlay.DEV_ICON),
-                                              tile.height))).tobytes()
+        tile = ov._usb_entry(devices.Device("0000", "0000", "Name", category), "Name", 40.0)
+        cut[category] = np.asarray(tile.crop((0, 0, 40, round(overlay.USB_GLYPH)))).tobytes()
     assert len(set(cut.values())) == 4, "two categories draw the same mark"
+
+
+def test_a_long_name_is_cut_rather_than_eating_the_corner() -> None:
+    ov = overlay.Overlay(800, 480)
+    hog = devices.Device("0000", "0000", "Generic USB Audio In", devices.MUSIC)
+    _, w = ov._usb_col(hog)
+    assert w <= overlay.USB_NAME_W * ov.scale
