@@ -36,28 +36,47 @@ narrow layout does not hide the transcript, it never asks the server for it.
 ## Companion mode
 
 **LIVE is the box on a second screen.** A phone or an iPad on the LAN, propped against the bench
-or carried into the next room: the camera as it sees the room, the conversation as it is spoken,
-and a switch that moves his voice onto the device in your hand. The panel is never sent this
-screen — the screen you would be reading it on is the one Cyclops is talking out of.
+or carried into the next room: **the panel itself**, as it is drawn — the eye, the dials, the
+terminal line, and the photograph, sketch or manual page lying over them — the conversation as it
+is spoken, and a switch that moves his voice onto the device in your hand. The panel is never
+sent this screen; the screen you would be reading it on is the one Cyclops is talking out of.
 
-**The picture is always there, session or no session.** The camera is running whenever the panel
-is awake, so this is a window onto the bench rather than a waiting room: the "nothing running"
-mark moves over beside the picture instead of taking the whole screen. Side by side on a laptop,
-stacked with the picture on top on a phone, and the transcript is never withheld from a narrow
-screen the way the session view withholds it — here it is put underneath instead.
+**It is one stage and two pads.** The picture fills everything under the menu, at the largest 5:3
+the screen will hold, and two pads float in its top-right corner: **AUDIO**, which takes his
+voice, and **TEXT**, which swaps the picture for the transcript in the same frame. Exactly one of
+the picture, the words and the "nothing running" mark is ever on the glass. Both pads remember
+their setting per device. There is no session title strip: a session that is running is a picture
+that is moving and a light travelling under the header, and the strip was the second of two marks
+answering one question.
+
+**The picture is always there, session or no session**, because the panel is always drawn. This
+is a window onto the bench rather than a waiting room.
+
+**It is the compositor's frames, not the camera's.** `cyclops.screen.ScreenSource` — the same
+capture a session's video is made of — is **held** rather than started, so a session beginning
+under a watching phone does not restart it and a session ending does not end it. There is never
+more than one `wf-recorder` whoever is holding it, and a box that cannot capture its own screen
+falls back to the camera exactly as the recording does.
 
 **The two streams come from the kiosk's own port, not from this service.** `cyclops-admin` is two
 gunicorn workers of two threads, and one viewer holding an endless response for the picture and
 another for the voice is half of it. So `cyclops.companion` opens **port 8081** inside the kiosk
-process, where the camera and the speaker already are — no second service, no file to publish
+process, where the screen and the speaker already are — no second service, no file to publish
 through, and no note another process could leave armed. Three routes: `/camera.mjpg`,
-`/camera.jpg` and `/voice.pcm`, plus `/` for what state they are in.
+`/camera.jpg` and `/voice.pcm`, plus `/` for what state they are in, `/listening` for the speaker
+claim and `/sketch.sse` for a drawing arriving.
 
 **Nothing is produced until something connects, and the connection is the whole gate.** With the
-screen shut there is no encoder thread and the speaker's tap is a load and a test. With a viewer
-it is 640x360 at 12 fps, measured at **2.75% of one core** on the Pi — 790 CPU ticks to 812 over
-eight seconds — and about 1.3 Mbit/s. A camera that is unplugged or has stopped answering sends
-the panel's own words on a black card rather than freezing on the last frame it had.
+screen shut there is no capture, no encoder thread, and the speaker's tap is a load and a test.
+Pressing **TEXT** closes the stream too, so the pad that hides the picture stops paying for it;
+the capture is held three seconds past the last viewer so a reload does not blink it. With a
+viewer it is 800x480 at 12 fps, measured on the Pi on 2026-09-19 at **about 24% of one core** —
+19% inside the kiosk (the reader thread's colour conversion, plus the JPEG encode) and 5% for
+`wf-recorder` itself. That is a good deal more than the 2.75% the old 640x360 camera crop cost,
+and it is the price of the whole panel at its own size; during a session the `wf-recorder` half
+is already being paid for the recording. A panel that is not changing is **not** a fault and gets
+no card — asleep, nothing on it moves at all, and every frame is both old and true. A camera that
+is unplugged or has stopped answering still sends the panel's own words on a black card.
 
 **The switch hands the voice over rather than copying it.** Turning it on plays what Cyclops says
 through the device, and the panel's own amp stops playing him — two copies of the same sentence a

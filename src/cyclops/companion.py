@@ -1,8 +1,16 @@
-"""The second port: the room as the camera sees it, and the voice as the speaker plays it.
+"""The second port: the panel as it is drawn, and the voice as the speaker plays it.
 
 A phone or an iPad propped against the bench already gets the conversation as text (the LIVE
 screen, ``admin/static/app.js``). This is the other two senses - the live picture, and the
 answer out loud - handed to that same page over a port of the kiosk's own.
+
+The picture is **the glass**, not the sensor: the eye, the dials, the terminal line, and the
+photograph or the manual page that is lying over them, taken off the compositor through the same
+:class:`cyclops.screen.ScreenSource` a session's video is made of. It used to be the camera, on
+the argument that the composite stops while a page owns the glass - true of the *in-process*
+composite, and the exact reason ``screen.py`` exists. The camera is what this falls back to on a
+box that cannot capture its own screen, which is the same rule the recording follows
+(:meth:`cyclops.session.SessionLog._filmed`), so a phone and the card never disagree.
 
 It owns exactly that, and it must never: touch the panel, do I/O on the audio thread, hear the
 **microphone** (only the agent's own output passes through here), or cost anything at all while
@@ -42,10 +50,23 @@ from .overlay import message
 
 BIND = "0.0.0.0"  # the same reach the admin page has: a phone on the LAN, and nothing wider
 BOUNDARY = "cyclopsframe"
-PREVIEW_FPS = 12  # the panel draws at 30 and the camera delivers 15; a phone wants neither
-PREVIEW_WIDTH = 640  # exactly half a 720p frame, which is cv2.resize's fast path
-PREVIEW_QUALITY = 55  # 1.51 ms a frame at this size on this box, measured 2026-09-06
-PREVIEW_SIZE = (640, 360)  # what a card saying "no camera" is drawn at, when there is no frame
+PREVIEW_FPS = 12  # the panel draws at 30 and the capture delivers 32; a phone wants neither
+# The panel's own width, which makes _shrink() a no-op on a screen frame and still fits the
+# camera's 1280 to the same box. Downscaling the glass would be the one resize worth avoiding:
+# what is worth looking at here is 13-pixel terminal text and dial numerals, and INTER_AREA turns
+# synthetic type to mush faster than it touches anything a lens ever saw.
+PREVIEW_WIDTH = 800
+# 55 was tuned on a camera picture, where ringing hides in texture. The panel is saturated green
+# strokes on near-black, which is the worst case there is for JPEG: at 55 every glyph rang and
+# the caption shimmered between frames that were otherwise identical.
+PREVIEW_QUALITY = 70
+PREVIEW_SIZE = (800, 480)  # what a card is drawn at when nothing has told us the source's shape
+# How long the capture is held past the last viewer. A still off /camera.jpg is a viewer that
+# arrives and leaves in the same breath, so without this a page polling it would start and SIGINT
+# a wf-recorder twice a second; with it, a reload does not blink the picture either. The gate the
+# module is built on survives: watched by nobody for this long and there is no thread, no
+# capture and no cost.
+LINGER_S = 3.0
 STILL_FPS = 1  # ...and how often that card is re-sent: it is a caption, not a picture
 # Both messages are the panel's own words (kiosk.py), repeated rather than imported because
 # importing them would mean importing the kiosk - which owns OpenCV's Qt window - into a module
@@ -128,18 +149,44 @@ def _reason(got, now: float, connected: bool) -> str:
     rule and both words are the panel's (``kiosk.py:1806-1810``): a camera that is enumerated
     but silent is a different fault from one that is not there, and a viewer deserves the same
     distinction the person standing at the box gets.
+
+    A rule about the *camera*, and only ever asked about one - see :func:`_sampled`.
     """
     if got is not None and now - got[1] <= STALE_AFTER_S:
         return ""
     return CAMERA_STALLED if connected else NO_CAMERA
 
 
+def _sampled(screen, camera, now: float) -> tuple[tuple | None, str]:
+    """What this tick has to send: the newest ``(frame, stamp)``, or the line to send instead.
+
+    The session's own rule, word for word (:meth:`cyclops.session.SessionLog._filmed`) - the
+    glass while it can be captured, the camera when it cannot - so a phone in the next room and
+    the recording on the card are never looking at two different things.
+
+    **A captured frame is never carded for being old**, and that is the whole difference between
+    the two sources. An old frame off the camera means the sensor stopped. An old frame off the
+    compositor means nothing on the panel changed, which is a true picture of a panel nothing is
+    happening on - and while Cyclops is asleep that is *every* frame, because the panel is
+    deliberately still to the pixel (see ``docs/panel.md``). Carding that would put "the screen
+    stopped" over a screen that is working perfectly, all night.
+    """
+    if screen is not None and screen.connected:
+        return screen.latest(), ""
+    got = camera.latest() if camera is not None else None
+    return got, _reason(got, now, bool(getattr(camera, "connected", False)))
+
+
 class _Preview:
-    """The camera as JPEG, encoded once however many are watching.
+    """The panel as JPEG, encoded once however many are watching.
 
     One producer thread, one slot, a serial. A viewer waits for a serial it has not seen; a slow
     one simply misses frames, which is what you want from video and what a queue would get
-    wrong. The thread exists only while somebody is watching.
+    wrong. The thread exists only while somebody is watching, and for :data:`LINGER_S` after.
+
+    What it sends is the glass - the eye, the dials, the terminal, and the photo or the page
+    that is over them - taken off the compositor (:mod:`cyclops.screen`), with the camera as the
+    fallback for a box that cannot capture its own screen.
     """
 
     def __init__(self) -> None:
@@ -148,10 +195,12 @@ class _Preview:
         self._serial = 0
         self._watchers = 0
         self._camera: object | None = None
+        self._screen: object | None = None
         self._thread: threading.Thread | None = None
 
-    def bind(self, camera: object) -> None:
+    def bind(self, camera: object, screen: object | None = None) -> None:
         self._camera = camera
+        self._screen = screen
 
     @property
     def watchers(self) -> int:
@@ -199,27 +248,61 @@ class _Preview:
         # voice or stuttering the glass.
         with contextlib.suppress(OSError, AttributeError):
             os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), 10)
-        sent = 0.0  # the camera stamp of the last real frame we encoded
+        # The lease belongs to this thread and not to join(): join() runs under self._cond on an
+        # HTTP handler thread, and acquire() can sit out FIRST_FRAME_S waiting for the capture to
+        # deliver - so a second viewer arriving would stall a full second on a lock it only
+        # wanted in order to add one to a counter. Here the wait costs nobody anything, and the
+        # thread's life is already exactly the subscription the capture should have.
+        screen = self._screen
+        if screen is not None and (why := screen.acquire()):
+            print(f"· companion: {why}; showing the camera", flush=True)
+            screen = None
+        try:
+            self._encode_while_watched(screen)
+        finally:
+            if screen is not None:
+                screen.release()
+
+    def _encode_while_watched(self, screen) -> None:
+        """The loop proper, so the lease above is a plain try/finally around one call."""
+        sent = 0.0  # the stamp of the last real frame we encoded
         said = ""  # the words on the last card, so it is not re-drawn every tick
         card_at = 0.0
-        while self._watchers > 0:
+        idle_from = 0.0  # when the last viewer left; see LINGER_S
+        while True:
             began = time.monotonic()
+            if self._watchers > 0:
+                idle_from = 0.0
+            elif not idle_from:
+                idle_from = began
+            elif began - idle_from > LINGER_S:
+                return
             try:
-                got = self._camera.latest() if self._camera is not None else None
-                why = _reason(got, began, bool(getattr(self._camera, "connected", False)))
-                if why:
-                    # A card, and only when the words change or a second has passed. An <img>
-                    # holds the last part it was sent for ever, so saying nothing at all would
-                    # leave a picture of a room nobody is watching any more.
-                    if why != said or began - card_at > 1.0 / STILL_FPS:
-                        said, card_at = why, began
-                        self._publish(_encode(message(*PREVIEW_SIZE, why)))
-                elif got[1] != sent:  # a frame we have not already sent
-                    said, sent = "", got[1]
-                    self._publish(_encode(_shrink(got[0])))
+                if self._watchers > 0:
+                    got, why = _sampled(screen, self._camera, began)
+                    if why:
+                        # A card, and only when the words change or a second has passed. An <img>
+                        # holds the last part it was sent for ever, so saying nothing at all would
+                        # leave a picture of a room nobody is watching any more.
+                        if why != said or began - card_at > 1.0 / STILL_FPS:
+                            said, card_at = why, began
+                            self._publish(_encode(message(*self._card(screen), why)))
+                    elif got is not None and got[1] != sent:  # one we have not already sent
+                        said, sent = "", got[1]
+                        self._publish(_encode(_shrink(got[0])))
             except Exception as exc:  # noqa: BLE001 - one bad frame must not end the stream
                 print(f"· companion preview: {exc}", flush=True)
             time.sleep(max(0.0, 1.0 / PREVIEW_FPS - (time.monotonic() - began)))
+
+    @staticmethod
+    def _card(screen) -> tuple[int, int]:
+        """What size to draw a "nothing to show" card at: the source's own shape.
+
+        So the <img> does not change shape when the picture drops to a card and back - on a
+        screen where the picture is the whole of the page, that is the layout jumping.
+        """
+        size = getattr(screen, "size", None)
+        return size if size else PREVIEW_SIZE
 
 
 def _shrink(frame):
@@ -366,9 +449,12 @@ class _Handler(BaseHTTPRequestHandler):
     def _state(self) -> None:
         """What the page draws a state from - a stream's status line cannot carry this."""
         camera = preview._camera  # noqa: SLF001 - same module; the attribute is the binding
+        screen = preview._screen  # noqa: SLF001 - likewise
+        showing = "screen" if screen is not None and screen.connected else "camera"
         body = json.dumps(
             {
                 "camera": bool(getattr(camera, "connected", False)),
+                "source": showing,
                 "watching": {"camera": preview.watchers, "voice": voice.listeners},
                 "preview": {"width": PREVIEW_WIDTH, "fps": PREVIEW_FPS},
                 "voice": {"rate": SAMPLE_RATE, "channels": 1, "format": "s16le"},
@@ -533,9 +619,9 @@ class _Handler(BaseHTTPRequestHandler):
             print("· companion closed the voice stream", flush=True)
 
 
-def serve(camera: object, port: int = COMPANION_PORT) -> None:
+def serve(camera: object, screen: object | None = None, port: int = COMPANION_PORT) -> None:
     """Open the port, if it opens. Called once, from the kiosk's ``main``."""
-    preview.bind(camera)
+    preview.bind(camera, screen)
     try:
         server = ThreadingHTTPServer((BIND, port), _Handler)
     except OSError as exc:  # a panel is worth more than a stream

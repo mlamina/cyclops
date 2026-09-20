@@ -415,3 +415,54 @@ def test_the_page_renews_before_the_kiosk_gives_up() -> None:
     """Two beats may be missed. One interval that crept past the other would make the panel snatch
     his voice back mid-sentence, on a phone that is doing nothing wrong."""
     assert companion.LISTEN_BEAT_S * 2 < companion.LISTEN_FRESH_S
+
+
+# ---------------------------------------------------------------- which of the two it shows
+#
+# The picture is the glass now, not the sensor. These are the three claims that makes, and the
+# third is the one that inverts a rule: a captured frame is never a fault for being old.
+
+
+class Source:
+    """A frame source, as either the screen or the camera: ``connected`` and ``latest()``."""
+
+    def __init__(self, *, connected: bool, stamp: float | None = None) -> None:
+        self.connected = connected
+        self.frame = object()
+        self._stamp = stamp
+
+    def latest(self):
+        return None if self._stamp is None else (self.frame, self._stamp)
+
+
+def test_the_picture_is_the_panel_while_the_panel_can_be_captured() -> None:
+    screen = Source(connected=True, stamp=100.0)
+    camera = Source(connected=True, stamp=100.0)
+
+    got, why = companion._sampled(screen, camera, 100.0)
+
+    assert got[0] is screen.frame and not why
+
+
+def test_a_panel_that_cannot_be_captured_falls_back_to_the_camera() -> None:
+    """The session's own rule, so a phone and the recording never disagree about the source."""
+    screen = Source(connected=False)
+    camera = Source(connected=True, stamp=100.0)
+
+    got, why = companion._sampled(screen, camera, 100.0)
+
+    assert got[0] is camera.frame and not why
+
+
+def test_a_panel_that_has_not_changed_is_not_a_fault() -> None:
+    """Asleep, nothing on the panel moves at all - so every frame is old and all of them true.
+
+    The camera's rule read onto the screen would put "stopped responding" over a screen that is
+    working perfectly, all night.
+    """
+    old = 100.0 - companion.STALE_AFTER_S - 10
+    screen = Source(connected=True, stamp=old)
+
+    got, why = companion._sampled(screen, Source(connected=False), 100.0)
+
+    assert got[0] is screen.frame and not why, "a still panel was reported as a fault"

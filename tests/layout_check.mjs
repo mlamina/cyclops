@@ -268,10 +268,11 @@ async function stub(ctx) {
   // The companion's two streams, which come from the kiosk's own port and so from nothing at all
   // on a laptop. Same argument as the stills, one step further: a refused connection is a console
   // *error*, which this file counts as a failure, and it would have failed at all five sizes for
-  // a service that was never meant to be running. 16:9, so the frame is measured the shape the
-  // real one will be. The voice is aborted - ERR_ABORTED is already filtered above.
-  const FRAME = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9">' +
-                '<rect width="16" height="9" fill="#0d2418"/></svg>';
+  // a service that was never meant to be running. 5:3, so the frame is measured the shape the
+  // real one will be: the stream is the panel's own 800x480 screen, not the camera's 16:9.
+  // The voice is aborted - ERR_ABORTED is already filtered above.
+  const FRAME = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 5 3">' +
+                '<rect width="5" height="3" fill="#0d2418"/></svg>';
   await ctx.route('**/camera.mjpg*', (route) =>
     route.fulfill({ status: 200, contentType: 'image/svg+xml', body: FRAME }));
   await ctx.route('**/voice.pcm*', (route) => route.abort());

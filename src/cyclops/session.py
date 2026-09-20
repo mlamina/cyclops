@@ -232,6 +232,11 @@ class SessionLog:
         self._speaker = speaker
         self._frames = frames
         self._screen = screen
+        # Whether *this* session holds the capture, as opposed to somebody else. The screen is
+        # shared with whoever is watching from the next room (cyclops.companion), and its lease
+        # counts holds rather than holders - so releasing one we never took would end a phone's
+        # stream. See _release_screen.
+        self._holding = False
         self._on_phase = on_phase
         self._t0 = time.monotonic()
         self._lock = threading.Lock()
@@ -342,8 +347,7 @@ class SessionLog:
             width=self.settings.record_width,
         )
         if not recorder.start():  # it has said why; a session is never blocked on recording
-            if self._screen is not None:
-                self._screen.stop()  # nothing is going to sample it
+            self._release_screen()  # nothing of ours is going to sample it
             return
         self._mic.on_block = recorder.on_mic_block
         self._speaker.on_block = recorder.on_speaker_block
@@ -363,15 +367,29 @@ class SessionLog:
         screen = self._screen
         if screen is None:
             return self._frames
-        why = screen.start()
+        why = screen.acquire()
         if not why:
+            self._holding = True
             self.event("recording", source="screen")
             print("· recording the screen", flush=True)
             return screen
-        screen.stop()
+        # Nothing to tidy: a refused acquire() has already cleaned up after its own start, and
+        # releasing here would drop a hold this session never took - which somebody else may have.
         self.event("recording", source="camera", why=why)
         print(f"· [record] {why}; recording the camera instead", file=sys.stderr, flush=True)
         return self._frames
+
+    def _release_screen(self) -> None:
+        """Drop this session's hold on the capture, if it took one. Safe any number of times.
+
+        The flag is what makes this honest. ``_start_recorder`` reaches here whenever the
+        recorder would not start - including when :meth:`_filmed` had already fallen back to the
+        camera and this session never held the screen at all - and a hopeful ``release()`` there
+        would decrement a companion's lease and cut its stream mid-view.
+        """
+        if self._holding and self._screen is not None:
+            self._holding = False
+            self._screen.release()
 
     def _stop_recorder(self) -> None:
         recorder, self._recorder = self._recorder, None
@@ -379,10 +397,10 @@ class SessionLog:
             if recorder is not None:
                 self._finish(recorder)
         finally:
-            # Whatever happened above, and whether or not a recorder ever started: the capture
-            # is a process of its own, and nothing else is going to end it.
-            if self._screen is not None:
-                self._screen.stop()
+            # Whatever happened above, and whether or not a recorder ever started: this session's
+            # hold on the capture ends with it. Whether the capture itself ends depends on
+            # whether anybody else is still watching.
+            self._release_screen()
 
     def _finish(self, recorder: SessionRecorder) -> None:
         # Named on the panel because this is the long pole of a teardown - ffmpeg gets up to

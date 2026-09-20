@@ -40,7 +40,14 @@ if (cam) {
   const drawing = () => document.body.classList.contains('drawing');
   const onLive = () => (location.hash || '#/').slice(1) === '/live' &&
                        document.visibilityState === 'visible';
-  const wanted = () => onLive() && !drawing();
+  // ...and whether the picture is the face this screen is showing. A stream into an <img> the
+  // stylesheet has hidden is a stream still arriving: the picture is the one thing here the Pi
+  // pays to send, and the reading face is the one screen where nobody is looking at it. The
+  // attribute is app.js's - it owns the view - and it calls window.__cam below when it changes.
+  // Read rather than cached, for retry()'s reason: a timer that fires for a face you left must
+  // do nothing.
+  const showing = () => !view || view.dataset.face !== 'talk';
+  const wanted = () => onLive() && !drawing() && showing();
 
   const sign = (state) => {
     if (view) view.dataset.cam = state;
@@ -201,12 +208,11 @@ if (cam) {
   // what is drawn: a context that is running, with a stream actually open on it.
   const settled = () => {
     const live = !!(ctx && ctx.state === 'running' && stop);
-    // The switch's own word is the whole of the state now: the label beside it is a fixed
-    // sentence saying what it does. Wanted-but-not-running therefore shows OFF, which is exactly
-    // what is true - a browser will not make a sound on a page nobody has touched, and the tap
-    // that turns it on is the tap it was waiting for.
+    // The pad's fill is the whole of the state now, and the word on it never changes: it is a pad
+    // that says AUDIO, not a switch that says ON. Wanted-but-not-running therefore sits dark,
+    // which is exactly what is true - a browser will not make a sound on a page nobody has
+    // touched, and the tap that lights it is the tap it was waiting for.
     spk.setAttribute('aria-checked', live ? 'true' : 'false');
-    spk.textContent = live ? 'ON' : 'OFF';
   };
 
   const ears = () => {

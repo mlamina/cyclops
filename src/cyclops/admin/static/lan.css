@@ -350,28 +350,6 @@ body:not(.kiosk) ::-webkit-scrollbar-thumb { background: var(--dim); }
     color: var(--dim); font-size: calc(13 * var(--u)); line-height: 1.4;
     margin-top: calc(7 * var(--u));
   }
-  /* ...and companion mode's screen, which is the only rule of it that belongs to a width.
-     Picture left, conversation right - the same order .watch puts them in above, because it is
-     the same pair of things. Everything else about #v-live stays outside this query on purpose
-     (see "companion mode" below): unlike the session view, a narrow client here is not told to
-     do without the transcript, it is told to put it underneath.
-
-     The head spans both columns. It names the session, which is neither column's business, and
-     it is the one thing on this screen that must not scroll away.
-
-     `main#v-live` and not `#v-live`, which is the one thing here that is not obvious: the
-     companion section below is *later in this file* and names the same element at the same
-     specificity, so with the id alone the stacked rule would win at every width and this block
-     would silently do nothing. Moving one of the two would be the other cure, and it would put
-     the rules that belong to a width in among the rules that deliberately do not. One element
-     name is the cheaper answer, and the query stays defined exactly once. */
-  body:not(.kiosk) main#v-live {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: min-content minmax(0, 1fr);
-    grid-template-areas: "head head" "cam talk";
-    column-gap: calc(18 * var(--u));
-    --camh: 62;   /* beside the transcript rather than above it, so height stops being scarce */
-  }
 }
 
 /* ---- companion mode ---- */
@@ -391,66 +369,100 @@ body:not(.kiosk) ::-webkit-scrollbar-thumb { background: var(--dim); }
    all - cannot be reached by it either. See tests/test_panel_css.py. */
 /* minmax(0, 1fr) and not the implicit column, which is the trap base.css already describes for
    the header readout: a grid's implicit track is sized by its content, so one unbreakable line -
-   a long word, a session title, "RECORDING" pinned to the right - makes the screen wider than
-   the phone and everything on it hangs off the edge. tests/layout_check.mjs caught this at four
-   of the five sizes. */
+   a long word, a name, "RECORDING" pinned to the right - makes the screen wider than the phone
+   and everything on it hangs off the edge. tests/layout_check.mjs caught this at four of the
+   five sizes.
+
+   One row, where there were three. The head is gone and the transcript no longer sits under the
+   picture: this screen is one stage holding one box, and what is in the box is a choice. */
 body:not(.kiosk) #v-live {
-  grid-template-rows: min-content min-content minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "head" "cam" "talk";
-  align-content: start;
-  /* How tall the picture may be, as a bare number: the unit is added where it is used, so that
-     the vh/dvh pair can be written there. Stacked, the picture is a third of the screen and the
-     conversation gets the rest - see .cam. */
+  grid-template-rows: minmax(0, 1fr);
+  /* The stage, measured. This is what lets the frame below be the largest 5:3 that actually fits
+     rather than a guessed share of the window - and it has to be `size` and not `inline-size`,
+     because which of the two dimensions runs out first changes with the device: a phone upright
+     has 390 px of width, and a phone sideways has under 300 px of stage height. Only a size
+     container can be asked about both.
+
+     Size containment is a second belt on the minmax above too: nothing inside this element can
+     make it wider than the screen, whatever a line of transcript does.
+
+     An engine that has never heard of container queries drops this and `100cqw` with it, and the
+     frame falls back to the line above its cq line in .glass - see there. */
+  container-type: size;
+  /* What that fallback frame is allowed to be, as a bare number: the unit is added where it is
+     used, so the vh/dvh pair can be written there. A third of the window, which is the height
+     this screen gave the picture before there was anything measuring the stage - never wrong,
+     only small. */
   --camh: 34;
 }
-body:not(.kiosk) .livehead { grid-area: head; }
-body:not(.kiosk) .livetalk { grid-area: talk; display: block; overflow-y: auto; min-height: 0; }
-/* The same cell as the transcript, because they are the same half of the screen and exactly one
-   of them is ever shown. This is what lets [data-idle] be two display rules and nothing else:
-   the mark lands where the conversation was rather than on top of the picture. */
-body:not(.kiosk) #v-live .idle { grid-area: talk; }
+/* The same cell as the picture, one row down when there is a row to be down. This is what keeps
+   the face rules to display and nothing else: the words and the mark land where the picture was
+   rather than on top of it, and the pads above them never move. */
+body:not(.kiosk) .livetalk { grid-area: 2 / 1; display: block; overflow-y: auto; min-height: 0; }
+body:not(.kiosk) .glass .idle { grid-area: 2 / 1; }
 
-/* ---- the camera, as it is ----
-   The block carries the width, not the picture inside it, so the switch beneath is exactly as
-   wide as the frame and its label and its word sit at the two ends of the picture - the shape
-   every control on the panel already has.
+/* ---- the glass ----
+   One box, and whichever of three things you asked for is inside it. It is called the glass and
+   not the camera because it is no longer only the camera: the stream is the panel's own screen
+   now, so what arrives here is literally the other screen of this device, and the words and the
+   boot mark share the frame with it.
 
-   The middle term of that min() is the whole of "the transcript keeps its share". 16:9 across
-   the full width of a phone held sideways - 844x390 - is 463 px of picture in about 310 px of
-   page, and there is no width at which a stacked layout can afford that. So the height is capped
-   first and the width follows it, which shrinks the frame rather than letterboxing it.
+   The block carries the width and the picture inside it carries the ratio, which is the way
+   round it has always been here - it is what lets anything else in the frame be the frame's full
+   width without knowing the picture's shape.
 
-   The vh/dvh pair for base.css's reason: an older engine drops the second and keeps the first,
-   and on iOS the difference is a toolbar's worth of transcript. */
-body:not(.kiosk) .cam {
-  grid-area: cam;
-  display: grid; grid-template-rows: min-content min-content;
-  gap: calc(8 * var(--u));
-  align-self: start;            /* a 1fr column must not stretch the frame to fill it */
-  margin: 0 auto calc(10 * var(--u));
-  width: min(100%, calc(var(--camh) * 1vh * 16 / 9));
-  width: min(100%, calc(var(--camh) * 1dvh * 16 / 9));
+   Three terms, and which one wins is the device:
+     100cqw        - a phone upright, where width runs out first;
+     100cqh * 5/3  - a phone sideways and any laptop, where height does;
+     920u          - a big monitor, where neither does and the source becomes the limit. The
+                     stream is 800x480; past about 920u you are enlarging pixels, which is the
+                     identical argument - and the identical number - as .reelstack below.
+   The declaration above it is the same width worked out from the viewport instead of the stage,
+   for an engine with no container units: the pair, not the second alone, exactly as base.css
+   writes vh and then dvh. That fallback is the old layout - a third of the window - so a browser
+   that misses this gets a smaller picture and never a broken one.
+
+   place-self, not a margin: start so the frame is directly under the menu, which is where it was
+   asked for and also where the words appear when you press TEXT, so nothing jumps; center so a
+   stage wider than 5:3 puts the pillar on both sides. */
+body:not(.kiosk) .glass {
+  grid-area: 1 / 1;
+  place-self: start center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
+  width: min(100%, calc(var(--camh) * 1dvh * 5 / 3), calc(920 * var(--u)));
+  width: min(100cqw, calc(100cqh * 5 / 3), calc(920 * var(--u)));
 }
-/* A hard 16:9, and not `auto 16 / 9` like .video above: there the element *is* the recording and
-   the file's own shape wins the moment it is known, here the height is a promise made to the
-   conversation underneath. A source that is not 16:9 letterboxes inside the promise rather than
-   eating into it. The box is the right shape before the first frame lands, so nothing on the
-   screen moves when one does. */
+/* Reading, which is the same box with the words in it, and is two declarations because of how
+   little has to change. The height stops being the picture's promise and becomes the whole stage
+   - on a 390 px phone that is the difference between a transcript and a rumour of one - and a
+   second row appears under the pads for the lines to scroll in.
+
+   The *width* deliberately does not change. The pads sit in this box's top-right corner, and a
+   box that changed width would move them out from under the finger that had just pressed one. */
+body:not(.kiosk) #v-live[data-face="talk"] .glass {
+  align-self: stretch;
+  grid-template-rows: min-content minmax(0, 1fr);
+}
+/* A hard 5:3, and not `auto 5 / 3` like .video above: there the element *is* the recording and
+   the file's own shape wins the moment it is known, here the shape is known in advance because
+   it is this device's other screen - the 800x480 panel, streamed whole. The box is the right
+   shape before the first frame lands, so nothing moves when one does, and a source that is some
+   other shape letterboxes inside the promise rather than resizing the page. The frame's height
+   is this ratio against .glass's width: this is the one thing in the box that says how tall it
+   is. */
 body:not(.kiosk) .camshot {
   grid-area: 1 / 1;
   display: block; width: 100%;
-  aspect-ratio: 16 / 9; object-fit: contain;
+  aspect-ratio: 5 / 3; object-fit: contain;
   background: #000; border: calc(1 * var(--u)) solid var(--dim);
   /* Over the scanlines, the same lift .video and .inline take in views.css and for base.css's
      reason: this is the room, and the phosphor was between you and the thing you opened the
      screen to look at. The border stays - that is the bezel. */
   position: relative; z-index: 10;
 }
-/* In the picture's own cell rather than over it: a black rectangle that never fills is
-   indistinguishable from a dark room, and this screen is often looked at from across one.
-   Lifted with the picture, or the frame it sits in would now paint over it. */
 body:not(.kiosk) .camoff {
   grid-area: 1 / 1; place-self: center;
   position: relative; z-index: 10;
@@ -458,30 +470,122 @@ body:not(.kiosk) .camoff {
   font-size: calc(13 * var(--u));
 }
 body:not(.kiosk) #v-live:not([data-cam="off"]) .camoff { display: none; }
-/* Two marks saying the screen is awake is one too many, and the live picture is the better. */
-body:not(.kiosk) #v-live[data-cam="on"] .idle-eye { display: none; }
-/* One line, and it is the whole control: what the switch will do, beside the switch that does
-   it. The settings column on the panel pairs a shouted three-letter label with a hint underneath,
-   which is right when four of them are stacked in a column and wrong for a single control - it
-   read as two captions arguing over one button. So the label is the sentence, at a size and a
-   tracking meant to be read rather than scanned, and the switch's own word is the only state.
-   Scoped to .cam because .vlabel is the panel's, and the panel is measured to the pixel. */
-body:not(.kiosk) .cam .vlabel {
-  font-size: calc(15 * var(--u));
-  letter-spacing: .06em;
-  line-height: 1.35;
-  color: var(--mid);
-}
-/* A phone on its side is 390 px tall and the header has already taken a third of it. A share of
-   the screen is the wrong cap there, because the switch and its hint under the frame are a fixed
-   seventy pixels however small the picture gets - so at 34dvh the conversation was left with
-   about fifty pixels to scroll in, which is not a transcript, it is a rumour of one.
-   tests/layout_check.mjs measures exactly this shape, which is why it is a size in the list.
 
-   A height question and not the width one above, so it does not touch --wide-q's single
+/* ---- the two pads ---- */
+/* Hear him, and read him. Two words, and they are the only two things this screen can be told to
+   do - which is why they are pads on the picture and not a row of controls under it: a row of
+   chrome is a row the picture does not get, and on a phone the picture is already short.
+
+   They are grid items in the frame's first cell rather than absolutely positioned, which is the
+   idiom .camoff already uses, and it is what makes the reading face free: there the frame has two
+   rows, this is still row one, and the conversation scrolls in row two - under the pads and never
+   behind them. Nothing about the pads changes between the two faces, and nothing about them
+   moves. A control that jumps when you press it is a control you press twice. */
+body:not(.kiosk) .pads {
+  grid-area: 1 / 1;
+  justify-self: end; align-self: start;
+  display: flex; gap: calc(8 * var(--u));
+  margin: calc(10 * var(--u));
+  /* Over the picture, which is at 10 - and therefore over the scanlines at 9 as well, which makes
+     these the one piece of chrome in the interface not wearing them. It cannot have both: the
+     phosphor is one fixed sheet across the page and the picture is deliberately lifted clear of
+     it, so anything sitting on the picture is lifted with it. A pad that kept them would read as
+     the only control *behind* the glass rather than in front of it.
+
+     11 and not 10-and-later-in-the-document, so the order of the markup is not load-bearing. */
+  position: relative; z-index: 11;
+}
+/* 96u is .sw's width - it holds the longest of these words at this tracking with room over - and
+   52u is taller than the panel's 46u, which was "a thumb with a glove on" for a control you press
+   standing at a bench. This one is pressed one-handed, holding the phone, and it is over a
+   picture rather than in a column of its own, so it is the bigger of the two and not the smaller.
+
+   appearance: none like every other control this file draws for a phone: iOS rounds a <button>'s
+   corners, and there is no border-radius anywhere in this interface. */
+body:not(.kiosk) .pad {
+  appearance: none; -webkit-appearance: none;
+  min-width: calc(96 * var(--u)); height: calc(52 * var(--u));
+  padding: 0 calc(12 * var(--u)); flex: none; white-space: nowrap;
+  border: calc(1 * var(--u)) solid var(--mid);
+  background: var(--screen); color: var(--mid);
+  font: inherit; font-size: calc(15 * var(--u)); letter-spacing: .24em;
+  text-transform: uppercase;
+}
+/* Lit is a solid fill, because that is what on means everywhere else in this interface: the
+   panel's .sw, the header's .tab, the rail's .railtab. Two attributes, one look - AUDIO is a
+   setting that stays (role=switch) and TEXT is a pressed button, and each is the right word for
+   the thing it is. Neither pad's own text ever changes: the word says which of the two it is and
+   the fill says whether it is on, and a control that swapped its label for its state would be the
+   one that made you read it twice.
+
+   --white is not spent here on purpose. On this page it means "a session is running", and a pad
+   is as true between sessions as during one. */
+body:not(.kiosk) .pad[aria-checked="true"],
+body:not(.kiosk) .pad[aria-pressed="true"] {
+  background: var(--green); color: var(--ink); border-color: var(--green);
+}
+body:not(.kiosk) .pad:active { border-color: var(--green); }
+/* A pointer, which is a capability and not a size - see the block above. */
+@media (hover: hover) and (pointer: fine) {
+  body:not(.kiosk) .pad:hover { border-color: var(--green); }
+}
+
+/* ---- which of the three is on the glass ---- */
+/* Two questions, not one: which face you asked for, and whether there is anything to read. They
+   are independent - you can be on the reading face with nothing running - so they are two pairs
+   of display rules over one shared cell rather than one state with four values.
+
+   `:not([data-face="talk"])` and not `[data-face="cam"]`, so the picture needs no attribute to be
+   the answer. It is what this screen is when nobody has asked for anything: the panel is drawn
+   whether or not the button has been pressed, and a window onto the bench is worth more than a
+   page of black.
+
+   Which is also why the boot mark no longer has to stand aside for a live picture - that rule is
+   gone, because the two can never be on screen at once. And why nothing is lost by the mark's
+   instructions being one pad away: what the picture shows now *is* the panel, which puts "press
+   the button" on its own idle screen in its own words. */
+body:not(.kiosk) #v-live:not([data-face="talk"]) .livetalk,
+body:not(.kiosk) #v-live:not([data-face="talk"]) .idle { display: none; }
+body:not(.kiosk) #v-live[data-face="talk"] .camshot,
+body:not(.kiosk) #v-live[data-face="talk"] .camoff { display: none; }
+body:not(.kiosk) #v-live[data-idle] .livetalk { display: none; }
+body:not(.kiosk) #v-live:not([data-idle]) .idle { display: none; }
+
+/* A phone on its side is 390 px tall and the header has already taken a sixth of it, which leaves
+   under 300 px of stage - so the frame is height-limited there, and the pads are a bigger share
+   of it than anywhere else. They come down to the panel's own 46u, which is still a thumb with a
+   glove on, and the words with them. tests/layout_check.mjs measures exactly this shape, which is
+   why 844x390 is in its list of five.
+
+   --camh comes down with them, for the engines still on the fallback width above.
+
+   A height question and not the width one earlier, so it does not touch --wide-q's single
    definition: this asks how much room there is at all, not whether somebody is sitting down. */
 @media (max-height: 30rem) {
   body:not(.kiosk) #v-live { --camh: 30; }
+}
+/* The pads, smaller, on a screen too small to carry them at full size in either direction.
+   Both queries want the same thing for different reasons and neither is the other, so they are
+   one rule with two ways in:
+
+   Short (a phone on its side, 844x390) - the header has taken a sixth of the height and the
+   frame is what is left, so the pads are a bigger share of the picture than anywhere else.
+
+   Narrow (a phone upright, 390 wide) - and this is the one that is easy to miss, because the
+   picture is not short there at all, it is *width*-limited: a 5:3 frame across 371 px of phone is
+   222 px tall however much screen is underneath it. At full size the pair came to 200 px of that
+   371 - over half the picture's width, sitting on the panel's own status pod - and the picture is
+   what you opened this screen to look at.
+
+   46u is the panel's own control height, which is a thumb with a glove on and was never too
+   small to hit; what comes off is the room around the word, not the target. */
+@media (max-height: 30rem), (max-width: 30rem) {
+  body:not(.kiosk) .pad {
+    height: calc(46 * var(--u)); min-width: calc(78 * var(--u));
+    padding: 0 calc(8 * var(--u));
+    font-size: calc(13 * var(--u)); letter-spacing: .14em;
+  }
+  body:not(.kiosk) .pads { margin: calc(7 * var(--u)); gap: calc(6 * var(--u)); }
 }
 
 /* ---- and what it is when nothing is running ---- */
@@ -499,9 +603,8 @@ body:not(.kiosk) .cam .vlabel {
    is running whether or not anybody has pressed the button, and a window onto the bench is
    worth more than a page of black. The mark drops out instead whenever a picture is arriving;
    two things saying "awake" is one too many. */
-body:not(.kiosk) #v-live[data-idle] .livehead,
-body:not(.kiosk) #v-live[data-idle] .livetalk { display: none; }
-body:not(.kiosk) #v-live:not([data-idle]) .idle { display: none; }
+/* Which of the two the reading face shows is decided up in "which of the three is on the glass",
+   beside the face rules it has to agree with. */
 body:not(.kiosk) .idle {
   display: grid; place-content: center; justify-items: center; text-align: center;
   gap: calc(9 * var(--u)); padding: calc(24 * var(--u));
@@ -540,30 +643,20 @@ body:not(.kiosk).offline .idle-what,
 body:not(.kiosk).offline .idle-do,
 body:not(.kiosk).offline .idle-then { display: none; }
 body:not(.kiosk).offline .idle-eye { opacity: .25; }
-/* Who is talking, and the fact that he still is. The head stays put while the lines scroll under
-   it: on a screen you are glancing at, "is this still running" is the question, and an answer
-   that scrolls away is not an answer. */
-body:not(.kiosk) .livehead {
-  display: flex; align-items: baseline; gap: calc(10 * var(--u));
-  padding-bottom: calc(9 * var(--u)); margin-bottom: calc(4 * var(--u));
-  border-bottom: calc(1 * var(--u)) solid var(--dim);
-}
-/* White, and not the page's own green, because white is what Cyclops wears while he is up.
+/* That he is still going, said as a thing that is moving rather than as a word that is not - and
+   on this screen it is now the only thing that says it. There was a white session title in a strip
+   under the menu until the picture took the whole stage; the strip cost a row, named something you
+   could already see, and was the second of two marks answering one question.
+
+   White, and not the page's own green, because white is what Cyclops wears while he is up.
    overlay.py hands the state's accent to the border, the signal meter and the session clock for
    the length of a session and leaves the rest of the chrome green, on the argument that a screen
-   where everything is an accent has none. These two are this page's whole share of that - the
-   title of a session that is running, and the light travelling under the header - and they are
-   the only things here that mean anything only while one is. #e1fff0 is that white to the byte,
-   so the phone in your hand and the panel on the bench answer in the same colour.
-   The lines themselves stay phosphor. They are the conversation rather than chrome, and
-   overlay.py makes the same call about the caption for the same reason: a paragraph of running
-   text in white is harder to read than the same paragraph green. */
-body:not(.kiosk) .livetitle {
-  color: var(--white); font-size: calc(16 * var(--u)); line-height: 1.3;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
-}
-/* That he is still going, said as a thing that is moving rather than as a word that is not.
-   This was the word RECORDING in small red caps beside the title, which is what a *list* of
+   where everything is an accent has none. This is this page's whole share of that, and #e1fff0 is
+   that white to the byte, so the phone in your hand and the panel on the bench answer in the same
+   colour. Nothing else here spends it - the pads are controls, and a control is as true between
+   sessions as during one.
+
+   It was the word RECORDING in small red caps beside the title once, which is what a *list* of
    sessions says about a row - correct there, because a list is a record of what already
    happened. A screen you glance at while you work is not a list, and the question it answers is
    "is this thing on".

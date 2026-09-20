@@ -21,14 +21,15 @@ temperature unchanged. The frames buy two things — a preview that fills most o
 redraws, and half again as many candidates for `CameraSource.snapshot()`, which hands out the
 sharpest frame of the last 0.7 s rather than the newest.
 
-Those frames now have a third consumer: `cyclops.companion` takes the same
-`CameraSource.latest()` the preview draws, shrinks it to 640x360 and encodes it at 12 fps for a
-phone on the LAN (see the [admin page](admin-page.md)). It is measured at 2.75% of one core and
-only runs while somebody has the LIVE screen open — and it takes the *camera* rather than the
-composited panel deliberately, because the composite stops entirely while a page or a picture
-owns the glass and the sensor does not.
+**What a companion is sent is no longer the camera.** It was, until 2026-09-19, on the argument
+that the composite stops while a page or a picture owns the glass and the sensor does not — true
+of the *in-process* composite, and the exact reason `cyclops.screen` exists. A phone on the LIVE
+screen now gets the whole panel off the compositor instead: the eye, the dials, the terminal, and
+the photograph or the manual page lying over them. The camera is what it falls back to on a box
+that cannot capture its own screen, which is the same rule the recording follows, so a phone and
+the card never disagree. See the [admin page](admin-page.md).
 
-That last point ties `FRAME_RATE` in `webcam.py` to `HISTORY` in `camera.py`: the history is a
+The camera's own frame rate still ties `FRAME_RATE` in `webcam.py` to `HISTORY` in `camera.py`: the history is a
 frame *count* and the window it feeds is a *duration*. Twelve frames is 0.8 s at 15 fps, which
 just covers the 0.7 s window. Raise the rate to 30 without raising `HISTORY` and the picker only
 ever sees the last 0.4 s — more frames, but a smaller slice of time to pick from.

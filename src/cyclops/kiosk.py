@@ -2135,10 +2135,14 @@ def main() -> None:
     # camera is what it records instead when the screen cannot be captured, and it is handed over
     # even with nothing plugged in: the recorder waits its own moment for a first frame, and a
     # camera present by the time the next session starts is then recorded without any rewiring.
+    # One capture, two owners: the session that records it and the phone in the next room that
+    # watches it (cyclops.companion). It is held rather than started, so neither ends it under
+    # the other - see ScreenSource.acquire.
+    capture = ScreenSource(screen or NO_CAMERA_SIZE)
     controller = SessionController(
         settings,
         frames=camera.film,
-        screen=ScreenSource(screen or NO_CAMERA_SIZE),
+        screen=capture,
         entrypoint="kiosk",
     )
     kiosk = Kiosk(controller, camera, fullscreen, screen)
@@ -2157,7 +2161,7 @@ def main() -> None:
     kiosk.adopt_volume()
     # The second port: the picture and the voice, for a phone on the LAN. Nothing is produced
     # until something connects, and a port that will not bind costs a stream and not a panel.
-    companion.serve(camera)
+    companion.serve(camera, capture)
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

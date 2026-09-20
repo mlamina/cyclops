@@ -70,9 +70,10 @@ const talk = document.getElementById('talk');
 // Companion mode's three, and they are only on the page away from the panel ({% if not local %}
 // in the template), so everything below null-checks the way the controls in status.js do.
 const liveTalk = document.getElementById('livetalk');
-const liveTitle = document.getElementById('livetitle');
 const liveBar = document.getElementById('livebar');
 const liveView = document.getElementById('v-live');
+// The pad that swaps the picture for the words. Null on the panel, like its three neighbours.
+const facePad = document.getElementById('liveface');
 // The panel navigates with four tabs and every other client with one menu (see dashboard.html).
 // Only one of these is ever on the page, and the code below simply drives whichever it found.
 const tabs = [...document.querySelectorAll('.tab')];
@@ -694,8 +695,10 @@ function liveIdle(on) {
   if (on) liveView.dataset.idle = '1'; else liveView.removeAttribute('data-idle');
 }
 
-function liveHead(title, on) {
-  if (liveTitle) liveTitle.textContent = title;
+// Whether the header's rule is lit, and whether this screen has anything to show. Two things
+// rather than one function's worth, but they are the same fact asked twice and they were always
+// set together. The title this used to write went with the strip that held it.
+function liveLit(on) {
   if (liveBar) {
     // The header's own bottom rule, lit and travelling. Nothing to write and nothing to read: it
     // is either moving or it is not there. See .livebar in lan.css.
@@ -704,13 +707,12 @@ function liveHead(title, on) {
   if (liveTalk) liveIdle(!on && !liveTalk.childElementCount);
 }
 
-// The screen with nothing on it: no session, no lines, no name in the head, and no light on the
-// header's rule. What a companion shows most of the day, and where all three ways out of a
+// The screen with nothing on it: no session, no lines, and no light on the header's rule. What a companion shows most of the day, and where all three ways out of a
 // session land - opening this screen, leaving it, and one ending underneath it.
 //
-// The transcript is emptied before liveHead is asked, and that ordering is the whole of it:
+// The transcript is emptied before liveLit is asked, and that ordering is the whole of it:
 // liveIdle's test is "is there anything to show", so the mark and the button come back only once
-// there is not. The light is liveHead's doing too, and it matters that it is: #livebar rides the
+// there is not. The light is liveLit's doing too, and it matters that it is: #livebar rides the
 // header rule rather than this view, so it is on screen from the Sessions list as readily as from
 // here, and leaving it lit on the way out would leave it sweeping with nothing left polling to
 // ever put it out.
@@ -718,7 +720,7 @@ function liveReset() {
   liveName = null;
   liveHeld = 0;
   if (liveTalk) liveTalk.innerHTML = '';
-  liveHead('', false);
+  liveLit(false);
 }
 
 async function liveTick(mine) {
@@ -747,15 +749,13 @@ async function liveTick(mine) {
       if (liveName) liveReset();
     } else {
       if (s.name !== liveName) {
-        // A different session, or the first one. Start again, and put its name up: /api/session
-        // is the same route the Sessions screen opens with, asked once rather than polled.
+        // A different session, or the first one. Start again. Nothing is asked of /api/session
+        // any more - that call fetched the title for the strip above this screen, and the strip
+        // is gone, so this is one fewer request off the Pi at the start of every session.
         liveName = s.name;
         liveHeld = 0;
         liveTalk.innerHTML = '';
-        liveHead('listening', true);
-        grab('/api/session/' + encodeURIComponent(s.name))
-          .then((one) => { if (liveName === s.name) liveHead(one.title, true); })
-          .catch(() => {});
+        liveLit(true);
       } else if (s.n < liveHeld) {
         // The log got shorter, which only happens when something rewrote it under us
         // (`cyclops-sessions --fix`, which push.sh runs). Our index means nothing now.
@@ -790,6 +790,42 @@ function showLive() {
   // since opening this screen and leaving it arrive at exactly the same blank.
   stopLive();
   liveTick(liveGen);
+}
+
+// ---- which face of the live screen you are on ----
+//
+// The picture or the words, and nothing in between. The attribute is the whole of the state and
+// the stylesheet does the rest: `data-face="talk"` on #v-live swaps which of the three things in
+// the frame is displayed, exactly the way data-idle already swaps two of them. Absent is the
+// picture, because the picture is what this screen is when nobody has asked for anything.
+//
+// Remembered per device, like the speaker is over in stream.js and with the same argument: it is
+// a property of the thing in your hand rather than of the box, and a preference you have to set
+// again every time you pick the phone up is one you stop using. Same try/catch, for the same
+// private mode.
+//
+// It lives here rather than in stream.js because #v-live's attributes are this file's - it sets
+// data-idle, it owns the transcript, it owns the router. What stream.js needs to know is only
+// that the picture is no longer being looked at, and there is already a seam for saying so.
+const FACE_KEY = 'cyclops.face';
+
+function liveFace(talk) {
+  if (!liveView) return;
+  if (talk) liveView.dataset.face = 'talk'; else liveView.removeAttribute('data-face');
+  if (facePad) facePad.setAttribute('aria-pressed', talk ? 'true' : 'false');
+  try { localStorage.setItem(FACE_KEY, talk ? 'talk' : ''); } catch (e) { /* private mode */ }
+  // A stream into an <img> the stylesheet has hidden is a stream still arriving, and the picture
+  // is the one thing on this screen that costs the Pi anything to send. stream.js re-reads the
+  // attribute and stops or starts; this is the same seam a drawing taking the stage already uses,
+  // and it is undefined until that file loads, which is after this one.
+  if (window.__cam) window.__cam();
+}
+
+if (facePad) {
+  facePad.addEventListener('click', () => liveFace(liveView.dataset.face !== 'talk'));
+  let remembered = '';
+  try { remembered = localStorage.getItem(FACE_KEY) || ''; } catch (e) { /* nothing remembered */ }
+  liveFace(remembered === 'talk');
 }
 
 // ---------------------------------------------------------------- the projects

@@ -65,7 +65,7 @@ def capturing(tmp_path) -> ScreenSource:
 def test_a_capture_of_the_screen_becomes_a_30_fps_video_of_the_right_length(tmp_path) -> None:
     screen = capturing(tmp_path)
     try:
-        assert screen.start() == "", "the capture's first frame is in"
+        assert screen.acquire() == "", "the capture's first frame is in"
         recorder = record.SessionRecorder(screen, tmp_path / "session", fps=record.DEFAULT_FPS)
         assert recorder.start()
         time.sleep(0.3)
@@ -76,7 +76,7 @@ def test_a_capture_of_the_screen_becomes_a_30_fps_video_of_the_right_length(tmp_
         ran = time.monotonic() - recorder._t0
         video = recorder.stop()
     finally:
-        screen.stop()
+        screen.release()
 
     assert video is not None, recorder.failed
     probe = subprocess.run(  # noqa: S603
@@ -173,3 +173,79 @@ def test_the_capture_ends_with_the_session_even_when_the_session_fell_over(
     (proc,) = running
     assert proc is not None, "the session was filming the screen"
     assert proc.poll() is not None, "and the capture did not outlive it"
+
+
+# ---------------------------------------------------------------- one capture, two owners
+#
+# The session is no longer the only thing that wants the glass: a phone on the LIVE screen wants
+# the same frames (:mod:`cyclops.companion`), and the two arrive and leave in any order. So the
+# capture is held rather than started, and these are the claims that makes.
+
+
+def test_two_owners_share_one_capture(tmp_path) -> None:
+    """The second one through joins the capture that is running rather than starting another."""
+    screen = capturing(tmp_path)
+    try:
+        assert screen.acquire() == ""
+        first = screen._proc
+        assert screen.acquire() == ""
+
+        assert screen._proc is first, "the second owner restarted the capture"
+    finally:
+        screen.release()
+        screen.release()
+
+
+def test_a_capture_outlives_the_first_owner_and_ends_with_the_last(tmp_path) -> None:
+    """Either owner letting go is not the end of it. Only the last one is."""
+    screen = capturing(tmp_path)
+    try:
+        screen.acquire()
+        screen.acquire()
+        proc = screen._proc
+
+        screen.release()
+        assert proc.poll() is None, "one owner leaving took the capture with it"
+        assert screen.latest() is not None, "and the frames stopped"
+
+        screen.release()
+        assert proc.poll() is not None, "the last owner left and the capture stayed up"
+    finally:
+        screen.release()
+
+
+def test_a_capture_that_will_not_start_hands_out_no_lease(tmp_path) -> None:
+    """A refused owner holds nothing, so its release cannot reach somebody else's capture."""
+    screen = ScreenSource(SIZE, program=fake(tmp_path, "broken", BROKEN))
+    assert screen.acquire(), "a capture that exits is not a capture"
+
+    screen.release()  # the mistake this guards: a refused owner tidying up anyway
+
+    assert screen._leases == 0
+
+
+def test_the_newest_frame_comes_with_the_moment_it_arrived(tmp_path) -> None:
+    """``latest()`` is ``CameraSource.latest()``'s shape, so one consumer can sample either."""
+    screen = capturing(tmp_path)
+    try:
+        screen.acquire()
+        frame, stamp = screen.latest()
+
+        assert frame is screen.frame(), "frame() and latest() disagree about the newest frame"
+        assert isinstance(stamp, float)
+    finally:
+        screen.release()
+
+
+def test_a_session_that_ends_leaves_a_companion_watching(tmp_path, filmed) -> None:
+    """The regression the lease exists for: a phone keeps its picture when a session ends."""
+    screen = capturing(tmp_path)
+    screen.acquire()  # a companion viewer, already watching when the session starts
+    try:
+        frames, camera, said = filmed(screen)
+
+        assert frames is screen and said["source"] == "screen", "the session filmed the glass"
+        assert screen._proc.poll() is None, "the session's teardown cut the companion's picture"
+        assert screen.latest() is not None
+    finally:
+        screen.release()
