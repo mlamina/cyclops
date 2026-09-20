@@ -13,13 +13,15 @@ it from, because Claude Code puts your command text in its own argv — it will 
 alive when you are the only thing alive. It reported a dead job as building for twenty minutes.
 Liveness is `kill -0 <the pid in the log>`, which cannot match the process asking.
 
-**Waiting on Marco first** — that's the only part he has to act on.
+**Waiting on Marco first** — that's the only part he has to act on. Drafts count: a job nobody has
+released is waiting on him as surely as one that is built.
 
 | what you find | what it is |
 |---|---|
 | `state: review` | **waiting on him** — the number, the title, and `/review N` |
 | `state: stopped` | **waiting on him** — the build says this plan cannot meet a criterion. The number, the title, which criterion, and `/review N` |
-| no log | queued; the loop takes it within half a minute |
+| `state: draft` | **yours to release** — captured and waiting on him, and nothing happens to it until `state: ready`. Say the number, the title, and that one line |
+| `state: ready`, no log | queued; the loop takes it within half a minute |
 | last marker `PID n`, and `kill -0 n` succeeds | **building** — say how long since `START` |
 | the last `WORKING` line | building normally; it says what was written last and when |
 | the last `WAITING` line | **stuck or waiting** — say how long it has been quiet and, if the line names it, what on. Killed at 90m |

@@ -54,7 +54,7 @@ Write `factory/NNN-slug.md`, where NNN is the next free number across `factory/`
 
 ```markdown
 ---
-state: ready
+state: draft
 opened: <YYYY-MM-DD>
 ---
 
@@ -69,5 +69,13 @@ opened: <YYYY-MM-DD>
 - [ ] <criterion> — <its check>
 ```
 
-Then one line: the number, the title, and that the loop has it. Nothing else — no recap of the
-plan he just read.
+**`draft`, not `ready`.** A captured job sits until he says go, and that is the whole difference
+between a board and a queue. The loop only ever takes `ready`, so nothing happens to a draft — he
+can read it again, change the plan, change what *done* means, or leave it a week.
+
+The cost of getting this wrong is measured: job 015 was captured at `ready`, the loop took it inside
+thirty seconds, and the `draft` he set two and a half minutes later did nothing at all — the build
+was already eighteen minutes into a plan he was still writing.
+
+Then one line: the number, the title, and that it is a draft — **`state: ready` in the job file is
+what sets it building**. Nothing else — no recap of the plan he just read.

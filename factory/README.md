@@ -3,9 +3,9 @@
 You say what you want. It gets built while you do something else. You look at the result.
 
 ```
-/capture ──► ready ──► (the loop builds it) ──► review ──► /ship ──► done
-                ▲                              or stopped
-                └──────────── /rework ─────────────┘
+/capture ──► draft ──► ready ──► (the loop builds it) ──► review ──► /ship ──► done
+             (yours)      ▲                            or stopped
+                          └────────────── /rework ─────────┘
 ```
 
 `/run-factory` starts it and leaves it: the loop builds and watches, and the command watching the
@@ -22,7 +22,7 @@ glass are yours, and they are written that way from capture.
 
 | | |
 |---|---|
-| `/capture <anything>` | idea, bug, feature request — one way in for all three |
+| `/capture <anything>` | idea, bug, feature request — one way in for all three. Leaves a **draft** |
 | `/run-factory` | start the factory and keep it running |
 | `/board` | what's building, what's waiting on you |
 | `/review N` | look at what came out |
@@ -34,6 +34,18 @@ glass are yours, and they are written that way from capture.
 Every command ends by naming the next one, so the process is something you read rather than
 something you remember. Every command works at any state — you never need to know what stage
 something is in to act on it.
+
+## A draft is yours until you say go
+
+`/capture` writes the job at `state: draft`, and the loop only ever takes `ready`. So a captured job
+sits: read it again, change the plan, change what *done* means, leave it a week. Changing the one
+line `state: draft` to `state: ready` is what sets it building, and that is the only thing you type.
+
+It is a board, not a queue, and the difference was paid for: job 015 was captured straight to
+`ready`, the loop had it inside thirty seconds, and marking it `draft` two and a half minutes later
+did nothing — the build was already eighteen minutes into a plan still being written. **Nothing looks
+at the state again once a build is running**, so releasing a job is a decision you only get to make
+once.
 
 ## Capture is where the thinking happens
 
