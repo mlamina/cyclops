@@ -33,11 +33,15 @@ from collections import deque
 
 import cv2
 
-from . import steady
+from . import steady, webcam
 from .webcam import DEFAULT_FRAMING, FRAMINGS, RPICAM, WebcamError, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
 RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
+# ...and how often to ask whether something better has been plugged in while one is held. Slower
+# than the kiosk reads the bus for the rail, because this ends in dropping a working camera and
+# reopening: a second of a blank preview is worth paying once, not every time a connector bounces.
+BETTER_CAMERA_EVERY_S = 2.0
 # How long stop() waits for the reader to come back before giving up on it. Comfortably
 # more than a healthy read (33 ms at 30 fps) and deliberately less than a stalled one,
 # which _read_loop's docstring measures at ten seconds: waiting that out would push the
@@ -49,6 +53,27 @@ HISTORY = 24  # frames kept for the sharpest-of-recent pick - 0.8 s at the 30 fp
 # twenty-four frames just covers the window at 30 fps, and at 15 fps would cover twice it.
 SHARP_WINDOW_S = 0.7  # only frames this fresh compete; older ones may show a different scene
 FOCUS_WIDTH, FOCUS_HEIGHT = 320, 180  # score on a downscale: same ranking, ~1.5 ms on a Pi 5
+
+
+def _let_go(cap) -> None:
+    """Release a capture, and survive a release that does not go well.
+
+    Every close in this file goes through here. Putting a device down is the one job where
+    failing is not allowed to matter: whatever state the handle is in, the thing we actually
+    want next is the supervisor going back round to look for a camera, and an exception out of
+    ``release()`` in a ``finally`` takes that whole loop with it - the panel then sits on "no
+    camera" until somebody restarts the kiosk, for a device that had already gone.
+
+    The other half of this is not here and cannot be. A libusb handle whose device has been
+    yanked aborts the *process* when it is destroyed rather than raising, and no ``except``
+    catches a SIGABRT - so that one is headed off at the source, by
+    :meth:`cyclops.webcam._UseeplusCapture.release`, which declines to hand back a device that
+    is no longer on the bus.
+    """
+    try:
+        cap.release()
+    except Exception as exc:  # noqa: BLE001 - a camera on its way out may raise anything
+        print(f"· camera would not close cleanly ({exc}); letting it go", flush=True)
 
 
 def thumbnail(frame):
@@ -88,6 +113,10 @@ class CameraSource:
 
     def __init__(self, camera_index: int | None = None) -> None:
         self._preferred = camera_index
+        # Set when the read loop stands down for a better camera rather than a dead one, so the
+        # supervisor keeps the frames over the reopen instead of putting the 'no camera' card up
+        # mid-swap. The same argument the framing change already makes, for the same second.
+        self._switching = False
         self._lock = threading.Lock()
         self._frame = None  # the newest decoded frame, BGR, raw
         self._live = None  # ...and the steadied window of it the panel is shown
@@ -256,7 +285,7 @@ class CameraSource:
                 self._forget()
                 return
         if self._cap is not None:  # no reader ever ran; nobody else can be holding this
-            self._cap.release()
+            _let_go(self._cap)
             self._cap = None
         self._forget()
 
@@ -285,7 +314,7 @@ class CameraSource:
                 self._stop.wait(RECONNECT_EVERY_S)
                 continue
             if self._stop.is_set() or self._generation != token:
-                cap.release()  # retired while that open was blocking; never adopt the device
+                _let_go(cap)  # retired while that open was blocking; never adopt the device
                 return
             if self._error:  # we had been looking, so this is news; a first open is not
                 print(f"· camera {index} found", flush=True)
@@ -296,9 +325,10 @@ class CameraSource:
             finally:
                 with self._lock:
                     self._cap = None
-                cap.release()
-                if self._framing == framing:
+                _let_go(cap)
+                if self._framing == framing and not self._switching:
                     self._forget()  # the device went; what it was showing is now last minute's
+                self._switching = False
                 # Otherwise this is a framing change we asked for, and the frames are kept on
                 # purpose: the reopen below takes about a second, and dropping them would put
                 # the "no camera" card up in the middle of a deliberate gesture. A second is
@@ -335,8 +365,20 @@ class CameraSource:
         steadier = steady.Steady()
         steadying, looked = steady.enabled(self.steady_note), time.monotonic()
         failing_since = 0.0
+        checked = time.monotonic()
         while not self._stop.is_set() and self._generation == token and self._framing == framing:
             attempted = time.monotonic()
+            # Has something better been plugged in? Asked on a slow timer rather than per frame:
+            # it is a handful of small sysfs reads, which is nothing beside decoding a frame but
+            # is also not worth doing twenty-five times a second to answer a question that
+            # changes at the speed of a hand. Returning is the same clean exit a framing change
+            # makes - the supervisor reopens, and open_camera picks the best of what is there.
+            if attempted - checked >= BETTER_CAMERA_EVERY_S:
+                checked = attempted
+                if webcam.outranked(self._index, self._preferred):
+                    print(f"· a better camera than {self._index} is plugged in", flush=True)
+                    self._switching = True
+                    return
             ok, frame = cap.read()
             if not ok or frame is None or frame.size == 0:
                 failing_since = failing_since or attempted

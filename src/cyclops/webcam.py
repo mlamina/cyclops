@@ -19,6 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import devices
 from .overlay import sharpen
 
 WARMUP_FRAMES = 10  # let auto-exposure/white-balance settle before the real shot
@@ -31,6 +32,10 @@ FRAME_RATE = 30  # asked of the camera, not the reader; see the format note in o
 USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
+# The endoscopes cyclops drives over libusb - the same two IDs deploy/99-useeplus-camera.rules
+# grants access to, and the same two cyclops.devices.KNOWN names. Here so that "is one plugged
+# in?" can be answered off sysfs without opening the device; see outranked().
+USEEPLUS_IDS = ("2ce3:3828", "0329:2022")
 RPICAM_ROTATION = 180  # the module is mounted upside down in the case; see _open_rpicam
 RPICAM_AF = "continuous"  # a fixed camera watching a changing bench, not a shutter to half-press
 # The three framings the panel cycles between, as the rpicam-vid flags each one takes. Only the
@@ -102,6 +107,40 @@ def _usb_video_nodes() -> list[int]:
     return sorted(nodes)
 
 
+def outranked(index: int | str, preferred: int | None = None) -> bool:
+    """Is there a camera on the box right now that we would rather be using than this one?
+
+    A camera used to be given up only when it stopped delivering, which meant the first one to
+    open kept the panel for the rest of the run. That is wrong the moment a camera is a thing you
+    reach for: plug the endoscope in to look down a bore and the panel carries on showing the
+    room, and the only way to get the picture you plugged in for is to restart the kiosk. Marco
+    hit that twice on 2026-09-20, which is what this is for.
+
+    The order is :func:`open_camera`'s own probe order, because that order already *is* the
+    preference: a webcam you plugged into USB, then an endoscope, then the module screwed to the
+    case. Nothing outranks a USB webcam, and the CSI module is outranked by anything at all - it
+    is the camera that is always there, so it is the one to fall back to and never the one to
+    hold on to while something better is waiting.
+
+    An explicit ``CYCLOPS_CAMERA_INDEX`` is never second-guessed, here as everywhere else.
+
+    Read off sysfs, not off libusb: this is asked on a timer by a thread holding a camera open,
+    and enumerating the bus underneath a live handle is how the last fault in this area started.
+    """
+    if preferred is not None:
+        return False
+    if index == RPICAM:
+        return bool(_usb_video_nodes()) or _endoscope_on_bus()
+    if index == USEEPLUS:
+        return bool(_usb_video_nodes())
+    return False  # already on a USB webcam; nothing beats it
+
+
+def _endoscope_on_bus() -> bool:
+    """Is one of the vendor-specific endoscopes plugged in? Sysfs only, no libusb."""
+    return any(one.ident in USEEPLUS_IDS for one in devices.connected())
+
+
 def _candidate_indices(preferred: int | None) -> list[int]:
     if preferred is not None:
         return [preferred]  # an explicit choice is never silently overridden
@@ -130,6 +169,18 @@ def _quiet_probe():
         yield
     finally:
         api.setLogLevel(previous)
+
+
+# Endoscopes whose device was pulled out from under them, kept alive deliberately for the rest of
+# the process. Nothing ever reads this list; holding the reference IS the whole point.
+#
+# Declining to *call* release() on a yanked device is not enough, which is what the first attempt
+# at this got wrong and what Marco found by pulling the cable a second time. `supercamera.Camera`
+# has a `__del__` that calls `release()` itself, so the abort just moved house: the supervisor
+# drops the dead capture, CPython's refcount hits zero, the finalizer runs, and libusb walks into
+# the same assertion. A handle we have decided to abandon has to be unreachable by the *collector*,
+# not merely unreferenced by us - so it is parked here, where it outlives everything.
+_STRANDED: list[object] = []
 
 
 class _UseeplusCapture:
@@ -161,12 +212,70 @@ class _UseeplusCapture:
         if self._gone:
             return False, None
         ok, frame = self._camera.read()
-        if not ok and not self._still_present():
-            self._gone = True  # unplugged: stop paying the retry timeout on every later read
+        if not ok and not self._present():
+            # Unplugged. Two things at once, and the order matters: later reads stop paying the
+            # retry timeout, and the driver object is stranded here and now rather than at
+            # release() - because nothing guarantees release() is ever called. The supervisor
+            # may simply drop this capture and go looking for a camera, and a drop is all the
+            # collector needs to run the finalizer that aborts the process.
+            self._gone = True
+            self._strand()
         return ok, frame
 
+    def _strand(self) -> None:
+        """Abandon the driver object somewhere the garbage collector cannot reach it."""
+        if self._camera is not None:
+            _STRANDED.append(self._camera)
+            self._camera = None
+
+    def _present(self) -> bool:
+        """Is it still on the bus? A probe that cannot answer is answering no.
+
+        The probe walks the bus over libusb, which is the same library that has just had a
+        device pulled out from under it, so it is entitled to raise. Letting that propagate
+        would take the reader thread down mid-loop; and a bus we cannot enumerate is not a bus
+        we are going to find this endoscope on either way.
+        """
+        try:
+            return bool(self._still_present())
+        except Exception:  # noqa: BLE001 - libusb raises its own, and none of them mean "yes"
+            return False
+
     def release(self) -> None:
+        """Hand the device back - unless it is not there any more, in which case do nothing.
+
+        This is the one call on this class that can take the whole kiosk down, and it does not
+        do it by raising. Releasing a libusb handle whose device has been yanked walks into
+
+            usbi_mutex_destroy: Assertion `pthread_mutex_destroy(mutex) == 0' failed.
+
+        which is an ``assert()`` in C: it raises SIGABRT and the process is gone - panel, face,
+        session and all. There is no ``except`` that catches it and no ``finally`` that runs
+        after it. Marco found it on 2026-09-20 by pulling the endoscope out while it was the
+        camera on screen, which is the ordinary way to finish looking at something.
+
+        So the rule is that the handle is only given back while there is something to give it
+        back to. Otherwise it is stranded in :data:`_STRANDED` and the process keeps the few
+        file descriptors libusb had open until it exits - which is the same trade
+        :meth:`CameraSource.stop` already makes for a reader stuck inside a read, and for the
+        same reason: a leaked handle is cheap and a dead kiosk is not.
+
+        The presence probe is here as well as in :meth:`read` because the two arrive by
+        different roads. ``read`` catches the cable being pulled mid-stream; this catches the
+        kiosk being shut down, or the framing being changed, in the window after the device went
+        and before anything tried to read from it. Both end at the same place.
+
+        After a *clean* release the driver object is dropped normally: its own ``release`` has
+        already set its device to ``None``, so the ``__del__`` that follows returns immediately
+        and there is nothing left to abort on.
+        """
+        if self._camera is None:
+            return
+        if self._gone or not self._present():
+            self._strand()
+            return
         self._camera.release()
+        self._camera = None
 
 
 def _open_useeplus() -> tuple[_UseeplusCapture, str]:

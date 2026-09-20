@@ -55,7 +55,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from openai.types.realtime import RealtimeServerEvent
 
-from cyclops import card, panel, recall, session, tasks
+from cyclops import card, devices, panel, recall, session, tasks
 from cyclops.agent import VoiceAgent, function_calls
 from cyclops.config import ConfigError, load_settings
 
@@ -387,6 +387,24 @@ def _lay_the_card(root: Path, history: tuple[tuple[datetime, int], ...]) -> Path
         card.write_text(folder / card.PAGE_NAME, "# a session\n")
         card.write_text(folder / card.SUMMARY_NAME, FAKE_SUMMARY)
     return sessions
+
+
+def _plug_in(spec: str) -> None:
+    """Pretend these are on the USB bus for the rest of the process.
+
+    There is no sysfs on a Mac, so ``--usb camera:Endoscope`` is the only way to ask what the
+    greeting does with something on the end of a cable. Patched at :func:`cyclops.devices.connected`
+    and not below it, so everything downstream - the prompt block, its header, the ordering - is
+    the real thing.
+    """
+    made = []
+    for one in (part.strip() for part in spec.split(",") if part.strip()):
+        category, _, name = one.partition(":")
+        made.append(devices.Device("0000", f"{len(made):04d}", name.strip() or category,
+                                   category.strip()))
+    plugged = tuple(made)
+    devices.connected = lambda root=None: plugged  # type: ignore[assignment]
+    print(f"· pretending these are plugged in: {[one.name for one in plugged]}", flush=True)
 
 
 @contextlib.contextmanager
@@ -801,6 +819,8 @@ def main() -> None:
     parser.add_argument("--repeat", type=int, default=1, help="takes per situation, for --wakes")
     parser.add_argument("--situations", type=int, default=3,
                         help=f"how many of the {len(SITUATIONS)} wake situations to sample")
+    parser.add_argument("--usb", default="", help="pretend this is plugged in, as "
+                        "'camera:Endoscope,music:MiniLab 3'")
     parser.add_argument("--wake-tally", type=Path, help="tally a --wakes JSONL and exit")
     parser.add_argument("--props", type=Path, nargs="+",
                         help="count openers and recurring nouns over every greeting in these")
@@ -808,6 +828,8 @@ def main() -> None:
     if args.props:
         props(args.props)
         return
+    if args.usb:
+        _plug_in(args.usb)
     if args.wake_tally:
         wake_tally(args.wake_tally)
         return

@@ -163,6 +163,26 @@ class SessionController:
             return False  # the loop closed in the moment between the guard and the call
         return True
 
+    def bus_changed(self, arrived: tuple, left: tuple) -> bool:
+        """Tell the running agent what was just plugged in or pulled out. False if none is live.
+
+        The same shape as :meth:`show_photo` - snapshot under the lock, then dispatch - and
+        called off the kiosk's own loop, which is where the bus is read. *When* to call this is
+        the kiosk's business (:class:`cyclops.devices.Watch`); whether the model gets a word in
+        edgeways about it is the agent's.
+        """
+        with self._lock:
+            loop, agent = self._loop, self._agent
+        if loop is None or agent is None or loop.is_closed() or not loop.is_running():
+            return False
+        if not agent.ready.is_set() or not agent.connected:
+            return False
+        try:
+            loop.call_soon_threadsafe(agent.bus_changed, arrived, left)
+        except RuntimeError:
+            return False  # the loop closed in the moment between the guard and the call
+        return True
+
     def panel_closed(self, seconds: float) -> bool:
         """Tell the agent the glass is its own again, and for how long it was not.
 
