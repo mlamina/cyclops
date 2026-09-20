@@ -132,6 +132,18 @@ def _quiet_probe():
         api.setLogLevel(previous)
 
 
+# Endoscopes whose device was pulled out from under them, kept alive deliberately for the rest of
+# the process. Nothing ever reads this list; holding the reference IS the whole point.
+#
+# Declining to *call* release() on a yanked device is not enough, which is what the first attempt
+# at this got wrong and what Marco found by pulling the cable a second time. `supercamera.Camera`
+# has a `__del__` that calls `release()` itself, so the abort just moved house: the supervisor
+# drops the dead capture, CPython's refcount hits zero, the finalizer runs, and libusb walks into
+# the same assertion. A handle we have decided to abandon has to be unreachable by the *collector*,
+# not merely unreferenced by us - so it is parked here, where it outlives everything.
+_STRANDED: list[object] = []
+
+
 class _UseeplusCapture:
     """A useeplus endoscope wearing :class:`cv2.VideoCapture`'s clothes.
 
@@ -162,8 +174,20 @@ class _UseeplusCapture:
             return False, None
         ok, frame = self._camera.read()
         if not ok and not self._present():
-            self._gone = True  # unplugged: stop paying the retry timeout on every later read
+            # Unplugged. Two things at once, and the order matters: later reads stop paying the
+            # retry timeout, and the driver object is stranded here and now rather than at
+            # release() - because nothing guarantees release() is ever called. The supervisor
+            # may simply drop this capture and go looking for a camera, and a drop is all the
+            # collector needs to run the finalizer that aborts the process.
+            self._gone = True
+            self._strand()
         return ok, frame
+
+    def _strand(self) -> None:
+        """Abandon the driver object somewhere the garbage collector cannot reach it."""
+        if self._camera is not None:
+            _STRANDED.append(self._camera)
+            self._camera = None
 
     def _present(self) -> bool:
         """Is it still on the bus? A probe that cannot answer is answering no.
@@ -192,15 +216,27 @@ class _UseeplusCapture:
         camera on screen, which is the ordinary way to finish looking at something.
 
         So the rule is that the handle is only given back while there is something to give it
-        back to. Once :meth:`read` has established the device is off the bus, the handle is
-        simply dropped and the process keeps the few file descriptors libusb had open until it
-        exits - which is the same trade :meth:`CameraSource.stop` already makes for a reader
-        stuck inside a read, and for the same reason: a leaked handle is cheap and a dead kiosk
-        is not.
+        back to. Otherwise it is stranded in :data:`_STRANDED` and the process keeps the few
+        file descriptors libusb had open until it exits - which is the same trade
+        :meth:`CameraSource.stop` already makes for a reader stuck inside a read, and for the
+        same reason: a leaked handle is cheap and a dead kiosk is not.
+
+        The presence probe is here as well as in :meth:`read` because the two arrive by
+        different roads. ``read`` catches the cable being pulled mid-stream; this catches the
+        kiosk being shut down, or the framing being changed, in the window after the device went
+        and before anything tried to read from it. Both end at the same place.
+
+        After a *clean* release the driver object is dropped normally: its own ``release`` has
+        already set its device to ``None``, so the ``__del__`` that follows returns immediately
+        and there is nothing left to abort on.
         """
-        if self._gone:
+        if self._camera is None:
+            return
+        if self._gone or not self._present():
+            self._strand()
             return
         self._camera.release()
+        self._camera = None
 
 
 def _open_useeplus() -> tuple[_UseeplusCapture, str]:
