@@ -20,6 +20,10 @@ No mic, no speaker, no camera and no session folder: ``VoiceAgent`` + ``send_tex
 greeting: it arrives on its own as the session comes up, nobody types anything to get it, and it
 is written down as turn 0, timed from the session being ready rather than from a question.
 
+``--script synth`` asks the one question a device extension's tool is for. It needs the fake
+synth installed and on the bus - ``--extensions tests/fake_extensions --usb "music:Bench Synth"``
+- and its tally is how many runs called ``read_patch``.
+
 ``--script smiley`` is the one question that used to come back with the greeting glued to the
 front of its answer, asked into a busy day on a scratch card - so the tally can say whether the
 answer still talks about the clock. Point the card somewhere scratch with the
@@ -40,6 +44,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import functools
 import json
 import os
 import random
@@ -55,7 +60,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from openai.types.realtime import RealtimeServerEvent
 
-from cyclops import card, devices, panel, recall, session, tasks
+from cyclops import card, devices, extensions, panel, recall, session, tasks
 from cyclops.agent import VoiceAgent, function_calls
 from cyclops.config import ConfigError, load_settings
 
@@ -106,12 +111,16 @@ MANUAL_COLD_SCRIPT = MANUAL_SCRIPT[:1] + MANUAL_SCRIPT[2:3]
 # The question the greeting was glued onto on the Pi ("Seventh run today; keep it tidy."), asked
 # after a greeting that now has a turn of its own. Its answer is about a smiley face or it failed.
 SMILEY_SCRIPT = ("Hey, can you draw a smiley face on this scratchpad?",)
+# What the fake synth's one tool is for (tests/fake_extensions/synth.py). A wired tool is not a
+# used tool: the tally is whether the model reaches for it or answers out of thin air.
+SYNTH_SCRIPT = ("What's the pattern on the synth right now?",)
 SCRIPTS = {
     "bench": SCRIPT,
     "tutorial": TUTORIAL_SCRIPT,
     "manual": MANUAL_SCRIPT,
     "manual-cold": MANUAL_COLD_SCRIPT,
     "smiley": SMILEY_SCRIPT,
+    "synth": SYNTH_SCRIPT,
 }
 
 # Where --script manual finds its one manual, and where it keeps everything it would otherwise
@@ -397,11 +406,15 @@ def _plug_in(spec: str) -> None:
     and not below it, so everything downstream - the prompt block, its header, the ordering - is
     the real thing.
     """
+    ids = {ext.name.lower(): ext.usb_ids[0] for ext in extensions.load() if ext.usb_ids}
     made = []
     for one in (part.strip() for part in spec.split(",") if part.strip()):
         category, _, name = one.partition(":")
-        made.append(devices.Device("0000", f"{len(made):04d}", name.strip() or category,
-                                   category.strip()))
+        name = name.strip() or category
+        # A name an extension answers to gets that extension's ID, so its block and tools come
+        # with it - "camera:Endoscope" is the endoscope, not a camera that happens to be called so.
+        vid, _, pid = ids.get(name.lower(), f"0000:{len(made):04d}").partition(":")
+        made.append(devices.Device(vid, pid, name, category.strip()))
     plugged = tuple(made)
     devices.connected = lambda root=None: plugged  # type: ignore[assignment]
     print(f"· pretending these are plugged in: {[one.name for one in plugged]}", flush=True)
@@ -821,6 +834,8 @@ def main() -> None:
                         help=f"how many of the {len(SITUATIONS)} wake situations to sample")
     parser.add_argument("--usb", default="", help="pretend this is plugged in, as "
                         "'camera:Endoscope,music:MiniLab 3'")
+    parser.add_argument("--extensions", type=Path, help="a folder of device extensions to "
+                        "install beside the shipped ones, e.g. tests/fake_extensions")
     parser.add_argument("--wake-tally", type=Path, help="tally a --wakes JSONL and exit")
     parser.add_argument("--props", type=Path, nargs="+",
                         help="count openers and recurring nouns over every greeting in these")
@@ -828,6 +843,8 @@ def main() -> None:
     if args.props:
         props(args.props)
         return
+    if args.extensions:  # before --usb, which looks their names up
+        extensions.load = functools.partial(extensions.load, extra=args.extensions.resolve())
     if args.usb:
         _plug_in(args.usb)
     if args.wake_tally:
