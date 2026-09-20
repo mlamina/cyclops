@@ -150,12 +150,13 @@ def test_the_lamp_makes_room_for_itself_rather_than_covering_anything() -> None:
     cool, hot = ov.pod_boxes[0], ov.pod_boxes[1]
     grew = hot.w - cool.w
     assert grew == round(ov._tag_w + ov._stop), f"the pod grew by {grew}px, not by one tag"
-    assert hot.center[0] == cool.center[0], "...and it grew off centre"
+    # ...and it grew leftwards only: the clock at the right edge stays put for HOT and for REC.
+    assert cool.right == hot.right == ov.pod_boxes[2].right, "something at the right edge moved"
     # The lamp lands between the meter and the clock, inside the plate, with nothing overlapping.
     clock_right, tag_x, meter_right = ov._readouts(1)
     assert meter_right < tag_x and tag_x + ov._tag_w <= clock_right - ov._clock_w
-    flat = ov.pods[1].spine[3][0], ov.pods[1].spine[2][0]
-    assert flat[0] + ov.rail_w / 2 < hot.x and hot.right < flat[1] - ov.rail_w / 2
+    flat_left = ov.pods[1].spine[1][0]
+    assert flat_left + ov.rail_w / 2 < hot.x and hot.right < ov.width - ov.frame_w
     # ...and it is on the panel in the colour it was asked for, which is the half a geometry
     # test cannot see.
     band = _strip(ov.render(heat="throttled", **AWAKE), ov)

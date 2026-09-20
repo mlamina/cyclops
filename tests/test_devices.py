@@ -18,6 +18,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
+from PIL import Image, ImageDraw
 
 from cyclops import agent, devices, overlay
 from cyclops.config import Settings
@@ -301,14 +302,57 @@ def test_it_is_no_deeper_than_the_pod() -> None:
         assert max(y for _, y in ov.usb_spine(ov.usb_fit(RAIL)[1])) == ov.pod_boxes[0].h
 
 
-def test_it_clears_the_pod_at_its_widest() -> None:
-    """Measured against two tags lit, so nothing up here moves when REC comes on."""
+def test_it_stays_in_its_own_corner() -> None:
+    """Its room is its own now, not what the pod leaves: with the pod out of the middle, room
+    measured off the pod would let a long list sprawl towards the reticle."""
     for w, h in PANELS:
         ov = overlay.Overlay(w, h)
         pod_left = min(x for x, _ in ov.pods[2].spine)
         for plugged in ((), RAIL[:1], RAIL, SHORT, RAIL * 3):
             corner = max(x for x, _ in ov.usb_spine(ov.usb_fit(plugged)[1]))
+            assert corner <= ov.usb_room(), f"it outgrew its corner with {len(plugged)} plugged in"
             assert corner < pod_left, f"it runs into the pod with {len(plugged)} plugged in"
+
+
+# What usb_fit gave for each prefix of each list before the pod moved into the other corner, off
+# the code at 844f601. The 480x320 window is left out on purpose: its room used to be a smaller
+# share of the panel than at the Pi's size, and the fixed room gives it the same share instead.
+MIX = SHORT[:1] + RAIL + SHORT[1:]
+SHOWED = {
+    (800, 480): {
+        "RAIL": [((), 126), (("Endoscope",), 126), (("Endoscope", "MiniLab 3"), 158),
+                 (("Endoscope", "MiniLab 3"), 158)],
+        "SHORT": [((), 126), (("Cam",), 126), (("Cam", "Synth"), 126),
+                  (("Cam", "Synth", "Card"), 128), (("Cam", "Synth", "Card", "Uno"), 161)],
+        "MIX": [((), 126), (("Cam",), 126), (("Cam", "Endoscope"), 126),
+                (("Cam", "Endoscope"), 126), (("Cam", "Endoscope"), 126),
+                (("Cam", "Endoscope", "Synth"), 163), (("Cam", "Endoscope", "Synth"), 163),
+                (("Cam", "Endoscope", "Synth"), 163)],
+    },
+    (1280, 720): {
+        "RAIL": [((), 189), (("Endoscope",), 189), (("Endoscope", "MiniLab 3"), 246),
+                 (("Endoscope", "MiniLab 3"), 246)],
+        "SHORT": [((), 189), (("Cam",), 189), (("Cam", "Synth"), 189),
+                  (("Cam", "Synth", "Card"), 198), (("Cam", "Synth", "Card", "Uno"), 249)],
+        "MIX": [((), 189), (("Cam",), 189), (("Cam", "Endoscope"), 189),
+                (("Cam", "Endoscope"), 189), (("Cam", "Endoscope"), 189),
+                (("Cam", "Endoscope", "Synth"), 253), (("Cam", "Endoscope", "Synth"), 253),
+                (("Cam", "Endoscope", "Synth"), 253)],
+    },
+}
+
+
+def test_it_shows_what_it_showed_before_the_pod_moved() -> None:
+    """Which devices show, how wide the module comes to, and where the list drops off."""
+    lists = {"RAIL": RAIL, "SHORT": SHORT, "MIX": MIX}
+    for (w, h), table in SHOWED.items():
+        ov = overlay.Overlay(w, h)
+        for name, want in table.items():
+            got = []
+            for n in range(len(lists[name]) + 1):
+                shown, right = ov.usb_fit(lists[name][:n])
+                got.append((tuple(device.name for device, _, _ in shown), round(right)))
+            assert got == want, f"{w}x{h} {name}"
 
 
 def test_it_is_as_wide_as_its_contents() -> None:
@@ -329,6 +373,96 @@ def test_the_plate_reaches_the_top_and_the_left(tmp_path: Path) -> None:
     ov = overlay.Overlay(800, 480)
     spine = ov.usb_spine(ov.usb_fit(RAIL)[1])
     assert min(x for x, _ in spine) == 0 and min(y for _, y in spine) == 0
+
+
+def test_the_pods_plate_reaches_the_top_and_the_right() -> None:
+    """The pod is the USB module's mirror: flush into the other corner, with no frame showing
+    between its plate and either edge - the corner pixel itself is plate."""
+    for w, h in PANELS:
+        ov = overlay.Overlay(w, h)
+        for tags in range(3):
+            pod = ov.pods[tags]
+            assert pod.corner == (w, 0)
+            assert max(x for x, _ in pod.spine) == w and min(y for _, y in pod.spine) == 0
+            mask = Image.new("L", (w, h), 0)
+            pod.plate(ImageDraw.Draw(mask))
+            assert mask.getpixel((w - 1, 0)) == 255, f"pod {tags} stops short of its corner"
+
+
+def test_the_pod_has_one_chamfer_on_its_left_end() -> None:
+    """Steel on its bottom run and its one chamfered end; none up the edge it runs off."""
+    for w, h in PANELS:
+        ov = overlay.Overlay(w, h)
+        for tags in range(3):
+            spine = ov.pods[tags].spine
+            flat_left = spine[1][0]
+            assert spine[0] == (w, ov.pod_depth), "the bottom run does not leave by the right edge"
+            runs = list(zip(spine, spine[1:], strict=False))
+            slopes = [(a, b) for a, b in runs if a[0] != b[0] and a[1] != b[1]]
+            assert len(slopes) == 1, f"pod {tags} has {len(slopes)} chamfers"
+            (ax, ay), (bx, by) = slopes[0]
+            assert max(ax, bx) <= flat_left and abs(ax - bx) == abs(ay - by), "not a left 45"
+            # Every other run is the bottom one or the leg up from the chamfer, and every knee a
+            # bolt goes through is on that end.
+            for (ax, ay), (bx, by) in runs:
+                assert (ay == by == ov.pod_depth) or max(ax, bx) <= flat_left
+            assert all(x <= flat_left for x, _ in spine[1:-1])
+
+
+def _behind(ov: overlay.Overlay, rgba: np.ndarray, level: int) -> np.ndarray:
+    """The frame as the Pi shows it, over a room that is one flat *level*."""
+    room = np.full((ov.height, ov.width, 3), level, np.uint8)
+    return overlay.composite(room, rgba).astype(np.float32)
+
+
+def _windows(ov: overlay.Overlay, plugged) -> dict[str, np.ndarray]:
+    """Where each corner module's glass proper is, as a mask over the top of the panel."""
+    modules = {"usb": overlay.Bracket((0, 0), ov.usb_spine(ov.usb_fit(plugged)[1])),
+               "pod": ov.pods[0]}
+    reveal = max(1.0, overlay.POD_REVEAL * ov.scale)
+    return {name: ov._pod_field(m, 0, 0, ov.width, ov.pod_depth)[0] < -reveal
+            for name, m in modules.items()}
+
+
+def test_the_usb_window_lets_no_more_of_the_room_through_than_the_pods() -> None:
+    """Two rooms as far apart as rooms go, behind the same frame: whatever a window lets through
+    is the difference between the two. It was a plate you could see the camera through; it is
+    the pod's glass now, and no pixel of it may be clearer than the pod's clearest."""
+    ov = overlay.Overlay(800, 480)
+    shot(ov, RAIL)
+    rgba = shot(ov, RAIL)
+    through = np.abs(_behind(ov, rgba, 255) - _behind(ov, rgba, 0)).mean(axis=2) / 255.0
+    top = through[: ov.pod_depth]
+    leak = {name: float(top[window].max()) for name, window in _windows(ov, RAIL).items()}
+    assert leak["usb"] <= leak["pod"], leak
+
+
+def test_the_two_top_corners_are_the_same_part() -> None:
+    """Same depth, same flange, same glass - read down a column through each bottom run, the
+    same distance from each module's own lamp, so the rake that grades both is the same too."""
+    ov = overlay.Overlay(800, 480)
+    shot(ov, ())
+    rgba = shot(ov, ())
+    dark = _behind(ov, rgba, 0)
+    usb = overlay.Bracket((0, 0), ov.usb_spine(ov.usb_fit(())[1]))
+    assert max(y for _, y in usb.spine) == max(y for _, y in ov.pods[0].spine)
+
+    def column(module: overlay.Bracket, along: float) -> tuple[int, int, np.ndarray]:
+        (kx, _), out = ov._shoulder(module)
+        x = round(kx - out * along)
+        rgb = dark[: ov.pod_depth + ov.rail_w, x]
+        # The flange starts on the first neutral row under the glass, which is green.
+        neutral = (np.ptp(rgb, axis=1) < 12) & (rgb.mean(axis=1) > 40)
+        steel = next(y for y in range(round(ov.pod_depth * 0.6), len(rgb)) if neutral[y])
+        solid = int(np.nonzero(rgba[: ov.pod_depth + ov.rail_w, x, 3] == 255)[0].max())
+        return steel, solid, rgb[steel - 7 : steel - 1].mean(axis=0)
+
+    # Clear of NO USB, the meter's cells, the clock's digits and the case's own surround.
+    for along in (40.0, 135.0, 145.0):
+        u, p = column(usb, along), column(ov.pods[0], along)
+        assert u[0] == p[0], f"{along}: the flange starts at row {u[0]} against {p[0]}"
+        assert u[1] == p[1], f"{along}: the rail ends at row {u[1]} against {p[1]}"
+        assert np.abs(u[2] - p[2]).max() <= 4, f"{along}: glass {u[2]} against {p[2]}"
 
 
 def test_it_is_still_there_with_nothing_plugged_in() -> None:

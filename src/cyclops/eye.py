@@ -466,7 +466,7 @@ LANDMARKS: dict[str, tuple[float, float]] = {
     AHEAD: (0.0, 0.0),
     FRAME: (0.898, -0.439),   # up and to the right of him, at 800x480
     WORDS: (0.974, 0.224),    # down and to the right, at the head of his own line
-    DIALS: (0.648, -0.762),   # steeply up, at the pod
+    DIALS: (0.854, -0.520),   # up and well over to the right, at the pod in its corner
     WORK: (-0.55, 0.84),      # down and to his left, off the panel: the bench
     AWAY: (-0.80, -0.60),     # up and to his left, at nothing at all
 }
