@@ -31,6 +31,7 @@ from openai.types.realtime import (
 from . import (
     arguments,
     card,
+    devices,
     imagine,
     manuals,
     panel,
@@ -985,13 +986,12 @@ HOW YOU TALK
   could ask for, or which button makes you do it. No "if you want, I can", no "just say the
   word", no menu of what else is possible. They built you; they know what you are for. A turn
   that has answered the question is finished.
-- Open with a greeting and stop. Not a briefing on what you can do, not which button to press,
-  not a report that you are switched on and listening - they switched you on, they can see the
-  eye. Half a dozen words in your own voice, and a different half-dozen each time. What makes it
-  different is not a new way of saying hello: it is that you are being switched on at a
-  particular hour of a particular day, after a particular gap, for the nth time today - WHEN IT
-  IS below says which, and says the shape of the line as well. Take the one thing about this
-  moment that is not true of any other one and say that.
+- Open with a greeting and stop. Half a dozen words in your own voice, and a different
+  half-dozen each time. What makes it different is not a new way of saying hello: it is that you
+  are being switched on at a particular hour of a particular day, after a particular gap, for the
+  nth time today, with particular things plugged into you - WHEN IT IS below says which, and says
+  the shape of the line as well. Take the one thing about this moment that is not true of any
+  other one and say that.
 - The first word is the one they hear most often in their life with you, so it is the one that
   goes stale. Never begin with "Morning", "Evening", "Afternoon", "Hey", "Hi", "Hello" or
   "Back" - "back again", "back already", "back at it", "back on it", all of them. Begin on the
@@ -1000,18 +1000,14 @@ HOW YOU TALK
   single time you say anything at all, it is about you rather than about them, and counting it
   turns the line into a number with a machine noun on either side of it. If how many times
   today is the thing worth saying, say what it means about their day.
-- What you say is an observation, not an opening - the sort of thing you would have said out
-  loud anyway, with them there or not. That is what makes it finished: an observation ends when
-  it has been made. It is about the moment and never about the scene: no picture has arrived
-  yet, so you have nothing to describe and no mood to report. Never "quiet" - not a quiet
-  morning, not a quiet Sunday, not a quiet start. You cannot hear the room, a day is not an
-  atmosphere, and it is the word that turns up when there was nothing to say and something got
-  said anyway. The day, the hour, the gap and the count are
-  what you have, and they are enough. Eight words is the ceiling and
-  there is no second clause after it: nothing beginning "let's", nothing asking what the job
-  is, nothing about what you will do next, no question, nothing telling them to go ahead. It
-  was their floor before you woke up and they switched you on already knowing what they were
-  going to say.
+- An observation, not an opening - the sort of thing you would have said out loud anyway, with
+  them there or not. Never "quiet" - not a quiet morning, not a quiet Sunday, not a quiet start.
+  You cannot hear the room, a day is not an atmosphere, and it is the word that turns up when
+  there was nothing to say and something got said anyway. Eight words is the ceiling and there
+  is no second clause after it: nothing beginning "let's", nothing asking what the job is,
+  nothing about what you will do next, no question, nothing telling them to go ahead. It was
+  their floor before you woke up and they switched you on already knowing what they were going
+  to say.
 - One unasked-for thing is still allowed: a risk, or something left unresolved. Say it briefly
   and let it go, and never raise the same unheeded point twice.
 - Saying nothing is a real option. While they measure, count, cut or think, stay quiet. When
@@ -1203,6 +1199,21 @@ MANUALS YOU HAVE READ - use recall on one before the web, and name the part in t
 MANUALS_LISTED = 24
 
 
+# What is plugged into the box right now. Names and categories and nothing else - what a thing is
+# FOR is a fact about the session that is starting, in the way the hour and the gap are: a snake
+# cam on the end of the cable means something is about to be looked at closely, and a keyboard
+# means the afternoon is about music. The greeting is told it may use this, in WHEN IT IS.
+#
+# The lav mic is not in here and never is (see cyclops.devices): it is plugged in every single
+# time, so it is not a fact about *this* session and listing it would only teach the model that
+# the list is furniture.
+PLUGGED_HEADER = """\
+PLUGGED INTO YOU RIGHT NOW
+What is on your USB bus this minute, and what sort of thing each one is. It says what this
+session is likely to be about; it is not a list to read out.
+"""
+
+
 def _about_block(settings: Settings) -> str:
     """What it knows about them, or the instruction to go and find out.
 
@@ -1254,6 +1265,20 @@ def _projects_block(settings: Settings) -> str:
     return f"{PROJECTS_HEADER}\n" + "\n".join(lines) + "\n"
 
 
+def _plugged_block() -> str:
+    """What is on the bus, or nothing at all - which is every box that is not the Pi.
+
+    Read at connect time like everything else here, and for the sharpest version of the same
+    reason: this one changes while you are standing at the bench. Costs one pass over sysfs -
+    see :func:`cyclops.devices.connected`, which is measured against the greeting's own margin.
+    """
+    found = devices.connected()
+    if not found:
+        return ""
+    print(f"· plugged in: {', '.join(one.name for one in found)}", flush=True)
+    return f"{PLUGGED_HEADER}\n" + "\n".join(one.line() for one in found) + "\n"
+
+
 def _manuals_block(settings: Settings) -> str:
     """What it has read, or nothing at all. ``_projects_block``'s sibling, in every respect."""
     if not settings.manuals:
@@ -1299,6 +1324,10 @@ def build_instructions(settings: Settings) -> str:
     # who and what happened, this says what can be looked up.
     if manuals_block := _manuals_block(settings):
         blocks.append(manuals_block)
+    # After the reference and before the clock: it is about this minute rather than about what
+    # can be looked up, and the clock stays last because the greeting is the next thing said.
+    if plugged_block := _plugged_block():
+        blocks.append(plugged_block)
     if moment:
         blocks.append(moment.text)
     return "\n".join(blocks)
@@ -1734,7 +1763,62 @@ class VoiceAgent:
             return
         self._spawn(self.add_photo(capture))
 
+    def bus_changed(self, arrived: tuple, left: tuple) -> None:
+        """Something was plugged into the box, or pulled out of it. Loop thread only.
+
+        :meth:`cyclops.ui.SessionController.bus_changed`'s landing point, the same way
+        :meth:`queue_photo` is ``show_photo``'s. Everything about *whether this change is real*
+        was settled before it got here - see :class:`cyclops.devices.Watch`.
+        """
+        if not self.connected or not self.ready.is_set():
+            return
+        self._spawn(self.add_bus_change(arrived, left))
+
+    async def add_bus_change(self, arrived: tuple, left: tuple) -> None:
+        """Put the change into the conversation, and ask for a word about it only if it arrived.
+
+        A synthetic user turn, like a photo: as far as the conversation is concerned they held
+        something up. And like a photo it is flat and unquotable, because a line written as
+        speech comes back out of the speaker verbatim.
+
+        The asymmetry is the whole design and it was his call. Plugging something in is news and
+        worth a sentence - the snake cam coming out means something is about to be looked at
+        closely, and saying so is Cyclops noticing rather than Cyclops reporting. Pulling
+        something out is not: being told "snake cam's out" while you coil the cable up is a turn
+        nobody wanted. So an unplug reaches the model - it must not go on believing the thing is
+        there - and asks for nothing.
+
+        :meth:`_request_response` is what keeps it out of the way: it waits for the response in
+        flight to finish and for the room to stop talking, so the sentence lands in a gap rather
+        than over the top of one.
+        """
+        if not self.connected or not (arrived or left):
+            return
+        said = []
+        if arrived:
+            said.append("just plugged in: "
+                        + ", ".join(f"{one.name} ({one.category})" for one in arrived))
+        if left:
+            said.append("just unplugged: " + ", ".join(one.name for one in left))
+        note = "; ".join(said)
+        await self._send_item({
+            "type": "message",
+            "role": "user",
+            "content": [{
+                "type": "input_text",
+                "text": (
+                    f"[USB bus change - {note}. They did not say this; you noticed it.]"
+                    + (" Say one short line about it, then stop." if arrived
+                       else " Do not mention it.")
+                ),
+            }],
+        })
+        self._log(f"bus: {note}")
+        if arrived:
+            await self._request_response()
+
     async def add_photo(self, capture: Capture) -> None:
+
         """Put a photo into the conversation as an image, and say nothing about it.
 
         The model has no camera of its own, so this is the only way anything is ever seen. The

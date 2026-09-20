@@ -26,7 +26,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from cyclops import eye, overlay, stats
+from cyclops import devices, eye, overlay, stats
 
 STATES = (
     overlay.IDLE,
@@ -577,8 +577,18 @@ def _lit(crop: np.ndarray) -> int:
     return int(((crop[:, :, :3].astype(int).sum(axis=2) > 300) & (crop[:, :, 3] > 150)).sum())
 
 
+# Three things on the head rail, so the sleep test covers them too: a label is the newest thing
+# on this panel that is neither baked into the base nor gated on a session, which is exactly the
+# shape the caption's breath was when it got caught pulsing a resting panel.
+SLEEPING_BUS = (
+    devices.Device("046d", "08e5", "HD Pro Webcam C920", devices.CAMERA),
+    devices.Device("1c75", "0288", "MiniLab 3", devices.MUSIC),
+    devices.Device("0781", "5581", "Ultra", devices.STORAGE),
+)
+
+
 def _asleep(ov: overlay.Overlay, state: str, detail: str = "") -> list[np.ndarray]:
-    shown = dict(state=state, level=0.0, detail=detail, elapsed=None)
+    shown = dict(state=state, level=0.0, detail=detail, elapsed=None, plugged_in=SLEEPING_BUS)
     _settle(ov, **shown)  # the eye is *meant* to travel between moods, and then hold
     return [ov.render(phase=100.0 + i * 0.31, **shown) for i in range(40)]
 

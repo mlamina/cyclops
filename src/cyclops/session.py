@@ -796,11 +796,12 @@ def recent_context(settings: Settings) -> Recap:
 # and "two minutes ago" is precisely the case this exists for.
 MOMENT_HEADER = """\
 WHEN IT IS
-The clock as the eye opened. It belongs to the first thing you say and to nothing after it. Four
-things make this moment and no other: which day of the week it is, what hour of it, how long you
-were switched off, and how many times today. The test is whether the line would have done just
-as well yesterday - if it would, you were told this and did not use it. Take whichever of the
-four is the odd one about today and put it in your own words, never in these. Never give them
+The clock as the eye opened. It belongs to the first thing you say and to nothing after it.
+Five things make this moment and no other: which day of the week it is, what hour of it, how
+long you were switched off, how many times today, and whatever is plugged into you (see PLUGGED
+INTO YOU RIGHT NOW, if there is anything on it). The test is whether the line would have done
+just as well yesterday - if it would, you were told this and did not use it. Take whichever of
+the five is the odd one about today and put it in your own words, never in these. Never give them
 the clock reading or the date, never explain how you know, and never claim anything these lines
 do not say - how long you have been switched off is the one a greeting gets wrong, and three
 days is not "a short break".

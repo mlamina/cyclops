@@ -98,6 +98,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from . import material
+from .devices import CAMERA, MUSIC, STORAGE, Device
 from .eye import (
     AHEAD,
     AWAY,
@@ -1079,6 +1080,27 @@ PLATE_WEAR = 0.035  # how much the lift comes and goes across the sheet - a plat
 # not going to be mistaken for anything else, and the word cost a row of depth to say so. The
 # pod is wider for it and much slimmer, which is the right trade for something hanging over the
 # middle of the picture - depth is what it takes away from the room, width is not.
+# ---- what is plugged in, as labels clamped to the head rail either side of the module ----
+# The rail across the top is the only run of the panel with nothing on it, and a USB device is
+# exactly the sort of thing a rail carries: it comes and goes, it belongs to the box rather than
+# to the session, and it must never be somewhere a glance has to hunt for. These sit on the row
+# the readouts are on, so the whole top of the panel is one line of instruments.
+#
+# They are laid out against the module at its WIDEST - two tags lit - and not against whatever
+# it happens to be now, so nothing on the rail shuffles when REC comes on or the board goes hot.
+DEV_TAGS = 3  # the most any one run of rail shows - the run itself usually stops it sooner
+DEV_H = 22.0  # reference px of label, centred on the readouts' row
+DEV_PAD = 7.0  # inside its ends
+DEV_ICON = 11.0  # the square the category mark is cut in - the knob's mark budget, near enough
+DEV_ICON_GAP = 5.0  # between that mark and the name
+DEV_GAP = 8.0  # between two labels, which is the module's own tag gap
+DEV_INSET = 36.0  # px in from each edge the run starts, which clears the rail's formed corner
+DEV_RADIUS = 3.0  # the label's corners, same former as a tag's
+DEV_LIP = 0.55  # how much of the panel's white the label's top arris keeps. A dark slab laid on
+# a lit bar with no arris at all is a hole in the rail rather than a part on it
+DEV_FACE = 0.82  # how far the label's field is taken from the glass towards black. Darker than
+# the module's pane on purpose: these are read past rather than read, and the one on the rail
+# that matters is whichever one just appeared
 POD_H = 50.0  # its depth, which is one row of readout and the rail under it
 POD_STEP = 16.0  # the square drop off the top edge before the splay starts
 POD_PAD = 16.0  # inside the flat, either side of the readouts
@@ -3814,6 +3836,11 @@ class Overlay:
         # the whole of what moves it - the word and the colour are constants and the x comes off
         # _readouts - which makes this a cache of at most two small tiles.
         self._rec: dict[int, tuple[Image.Image, tuple[int, int]]] = {}
+        # ...and one label per thing plugged into the box. Keyed on what is drawn rather than on
+        # where it lands - there is no lamp in a label to place - so a device that comes and goes
+        # all afternoon is drawn once. At most three are ever shown and a workshop has a handful
+        # of cables, so this is bounded by the bench rather than by anything here.
+        self._devices: dict[tuple[str, str], Image.Image] = {}
         self.glow_r = max(1.0, LAMP_BLOOM_R * scale)
         self.halo_r = max(1.0, LAMP_HALO_R * scale)
         self._skirt = math.ceil(3 * self.halo_r)  # how far a lamp's light reaches past its edge
@@ -5998,6 +6025,7 @@ class Overlay:
         look_at: tuple[int, int] | None = None,
         handed_over: bool = False,
         tutorial: Tutorial | None = None,
+        plugged_in: Sequence[Device] = (),
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -6051,6 +6079,12 @@ class Overlay:
         ``tutorial`` is a walkthrough in progress. It takes the terminal's top row for a bar - one
         cell per step, lit up to and including the one being done - and its step's label becomes
         the sentence under it whenever ``detail`` has nothing to say.
+
+        ``plugged_in`` is what is on the USB bus, from :mod:`cyclops.devices`, and it becomes up
+        to three labels on the head rail. A label turning up *is* the feedback that something
+        was plugged in - there is no toast and nothing to dismiss - so this is composited rather
+        than baked, and none of it animates: a rail that breathed would be the panel asking to
+        be looked at over a cable that was already plugged in an hour ago.
         """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording, heat).copy()
@@ -6058,6 +6092,10 @@ class Overlay:
 
         self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat),
                             self._taping(state, recording), phase)
+        # ...and what is plugged into the box, on the same row, out on the clear rail either
+        # side of the module. Composited and never baked: a thing arriving is the whole of the
+        # feedback that it arrived, so the base would have to be thrown away to show it.
+        self._draw_devices(layer, plugged_in)
         self._draw_caption(layer, state, halo, detail, phase, tutorial)
         held = pressed == "eye"
         # The pointers, over the faces the chrome laid down once. Neither inverts under a thumb
@@ -6911,6 +6949,145 @@ class Overlay:
         layer: Image.Image = d._image
         layer.alpha_composite(*self._tag_tile(word, colour, tags, x, cy))
         return self._tag_w
+
+    # ---- what is plugged in ----
+
+    def _device_run(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        """The two clear runs of head rail, left of the module and right of it.
+
+        Measured against the module at its widest - :attr:`pod_boxes` at two tags - so a label
+        does not move when REC comes on or the board goes hot. That is the whole reason the runs
+        are computed from the worst case rather than from the pod actually being drawn.
+        """
+        box = self.pod_boxes[2]
+        inset = DEV_INSET * self.scale
+        gap = DEV_GAP * self.scale
+        return ((inset, box.x - gap), (box.right + gap, self.width - inset))
+
+    def device_places(self, found: Sequence[Device]) -> list[tuple[Device, float]]:
+        """Each device and the x its label starts at. Packed left run first, then right.
+
+        Greedy and in bus order, so the row reads the way the bus does and a label keeps its
+        place for as long as the thing is plugged in. Anything that will not fit in either run
+        is simply not shown: three names is the most this rail can carry and still be read at a
+        glance, and a fourth crammed in is a rail that says nothing.
+        """
+        places: list[tuple[Device, float]] = []
+        runs = list(self._device_run())
+        cursor = [runs[0][0], runs[1][0]]
+        held = [0, 0]
+        for device in found:
+            width = self._device_w(device)
+            for side, (_, end) in enumerate(runs):
+                if held[side] < DEV_TAGS and cursor[side] + width <= end:
+                    places.append((device, cursor[side]))
+                    cursor[side] += width + DEV_GAP * self.scale
+                    held[side] += 1
+                    break
+        return places
+
+    def _device_w(self, device: Device) -> float:
+        """How wide this one's label comes out: the mark, the name, and the air round both."""
+        return round(
+            2 * DEV_PAD * self.scale + DEV_ICON * self.scale + DEV_ICON_GAP * self.scale
+            + self.font_micro.getlength(device.name)
+        )
+
+    def _device_tile(self, device: Device) -> Image.Image:
+        """One label as a finished tile, kept for as long as the thing is plugged in.
+
+        Cached on what is drawn and not on where, because unlike :meth:`_rec_tile` there is no
+        lamp in it to place: a label is a dark field with a lit top arris, which is the same
+        wherever along the rail it lands. Three of them are three composites a frame, and they
+        are the only thing on this panel that is not either baked into the base or blinking.
+        """
+        key = (device.category, device.name)
+        cached = self._devices.get(key)
+        if cached is not None:
+            return cached
+        w, h = round(self._device_w(device)), round(DEV_H * self.scale)
+        radius = max(1.0, DEV_RADIUS * self.scale)
+        face = mix(SCREEN, (0, 0, 0), DEV_FACE)
+        lip = mix(SCREEN, WHITE, DEV_LIP)
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            t.rounded_rectangle([at(0), at(0), at(w - 1), at(h - 1)],
+                                radius=round(wide(radius)), fill=linear(face))
+            # The one lit edge, along the top: a part sitting on a bar catches the same lamp the
+            # bar does, and without it the label is a hole cut in the rail.
+            t.rounded_rectangle([at(0), at(0), at(w - 1), at(h - 1)],
+                                radius=round(wide(radius)), outline=linear(lip, 150),
+                                width=round(wide(1.0)))
+            self._device_mark(t, device.category, DEV_PAD * self.scale,
+                              (h - DEV_ICON * self.scale) / 2.0, DEV_ICON * self.scale)
+
+        tile = smoothed((w, h), paint)
+        self._text(ImageDraw.Draw(tile),
+                   DEV_PAD * self.scale + DEV_ICON * self.scale + DEV_ICON_GAP * self.scale,
+                   h / 2.0, device.name, self.font_micro, (*GREEN, 255))
+        self._devices[key] = tile
+        return tile
+
+    def _device_mark(self, t: ImageDraw.ImageDraw, category: str, x: float, y: float,
+                     span: float) -> None:
+        """The category, as one mark in a *span* square with its corner at (*x*, *y*).
+
+        Four silhouettes rather than four pictures. At eleven pixels a drawing is a smudge and
+        the only thing that survives is the outline, so each of these is picked for its shape
+        against the other three: the cone is the one that is wider than it is tall and pointed
+        at one end, the lens is a ring with something solid in the middle of it, the disc is a
+        ring with a hole in the middle of it, and the plug is the one with legs.
+
+        Laid out through :func:`at` and coloured through :func:`linear`, like everything else
+        drawn into a supersampled tile.
+        """
+        c = GREEN
+        cx, cy, r = x + span / 2.0, y + span / 2.0, span / 2.0
+        if category == MUSIC:
+            # A cone and its throat as one silhouette, the same cut the volume knob carries.
+            t.polygon(
+                [(at(cx - r), at(cy - r / 3)), (at(cx - r / 3), at(cy - r / 3)),
+                 (at(cx + r * 0.9), at(cy - r)), (at(cx + r * 0.9), at(cy + r)),
+                 (at(cx - r / 3), at(cy + r / 3)), (at(cx - r), at(cy + r / 3))],
+                fill=linear(c),
+            )
+        elif category == CAMERA:
+            # A barrel with an aperture in it: a thick ring and a solid pupil. The pupil is what
+            # the disc has not got, and it is the whole of the difference between the two.
+            t.ellipse([at(cx - r), at(cy - r), at(cx + r), at(cy + r)],
+                      outline=linear(c), width=round(wide(max(1.0, r * 0.30))))
+            t.ellipse([at(cx - r * 0.42), at(cy - r * 0.42),
+                       at(cx + r * 0.42), at(cy + r * 0.42)], fill=linear(c))
+        elif category == STORAGE:
+            # A stack of discs seen on edge: a drum, with one dark rim cut across it. Drawn round
+            # rather than flat because a disc is what storage has always been, and drawn as a
+            # *stack* because a single platter is the same circle as the lens beside it - at
+            # eleven pixels the silhouette is the only thing that survives, and a cylinder is not
+            # a circle. The rim is what stops the cylinder reading as a pill.
+            lid = r * 0.42
+            t.ellipse([at(cx - r), at(cy - r), at(cx + r), at(cy - r + 2 * lid)], fill=linear(c))
+            t.rectangle([at(cx - r), at(cy - r + lid), at(cx + r), at(cy + r - lid)],
+                        fill=linear(c))
+            t.ellipse([at(cx - r), at(cy + r - 2 * lid), at(cx + r), at(cy + r)], fill=linear(c))
+            t.line([at(cx - r), at(cy + r * 0.12), at(cx + r), at(cy + r * 0.12)],
+                   fill=linear(mix(SCREEN, (0, 0, 0), DEV_FACE)), width=round(wide(1.0)))
+        else:
+            # A plug: a body with two pins out of the top of it. The one mark here with legs, so
+            # it is told from the other three by silhouette before anything is read into it.
+            pin = r * 0.34
+            for side in (-1, 1):
+                t.rectangle([at(cx + side * r * 0.46 - pin / 2), at(cy - r),
+                             at(cx + side * r * 0.46 + pin / 2), at(cy - r * 0.1)],
+                            fill=linear(c))
+            t.rounded_rectangle([at(cx - r * 0.82), at(cy - r * 0.18),
+                                 at(cx + r * 0.82), at(cy + r)],
+                                radius=round(wide(r * 0.26)), fill=linear(c))
+
+    def _draw_devices(self, layer: Image.Image, found: Sequence[Device]) -> None:
+        """Every label the rail can hold, composited at the readouts' own row."""
+        half = round(DEV_H * self.scale) // 2
+        for device, x in self.device_places(found):
+            layer.alpha_composite(self._device_tile(device), (round(x), self.row - half))
 
     def _draw_readouts(
         self,

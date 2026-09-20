@@ -11,6 +11,7 @@ same photo, the same state, and the only thing that differs between two shots is
     uv run python tools/panel_shot.py --bg photo.jpg --state listening --strip 8 --seconds 4 --out eye.png
     uv run python tools/panel_shot.py --handed-over --out away.png
     uv run python tools/panel_shot.py --tutorial 7 --step 3 --out steps.png
+    uv run python tools/panel_shot.py --usb camera:Endoscope,music:MiniLab 3 --out usb.png
     uv run python tools/panel_shot.py --bench
 
 ``--strip`` crops the eye and lays N frames of it across a row, which is how motion is looked at
@@ -29,7 +30,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from cyclops import eye, overlay, point, tutorial
+from cyclops import devices, eye, overlay, point, tutorial
 
 WIDTH, HEIGHT = 800, 480
 STRIP_PAD = 12  # picture kept around the eye in each strip cell, so the bezel's shadow is in it
@@ -75,6 +76,7 @@ def shown(args: argparse.Namespace, src: tuple[int, int] = (WIDTH, HEIGHT)) -> d
         volume=args.volume,
         temp_c=args.temp,
         handed_over=args.handed_over,
+        plugged_in=plugged_in(args.usb),
     )
     shape = gesture(args)
     if shape is not None:
@@ -82,6 +84,21 @@ def shown(args: argparse.Namespace, src: tuple[int, int] = (WIDTH, HEIGHT)) -> d
     if args.tutorial:
         kw["tutorial"] = tutorial.Tutorial(SAMPLE_STEPS[: args.tutorial], args.step - 1)
     return kw
+
+
+def plugged_in(spec: str) -> tuple[devices.Device, ...]:
+    """``--usb camera:Endoscope,music:MiniLab 3`` as the list devices.connected() would hand back.
+
+    There is no sysfs on a Mac, so the only way to look at the rail with something on it is to
+    say what is on it. The IDs are made up and nothing reads them - what a label draws from is
+    the category and the name.
+    """
+    made = []
+    for one in (part.strip() for part in spec.split(",") if part.strip()):
+        category, _, name = one.partition(":")
+        made.append(devices.Device("0000", f"{len(made):04d}", name.strip() or category,
+                                   category.strip()))
+    return tuple(made)
 
 
 def background(path: Path | None) -> tuple[np.ndarray, tuple[int, int]]:
@@ -169,6 +186,8 @@ def main() -> None:
     ap.add_argument("--tutorial", type=int, default=0,
                     help="a walkthrough of N steps (2-10) on the terminal's top row")
     ap.add_argument("--step", type=int, default=1, help="which of its steps is up, from 1")
+    ap.add_argument("--usb", default="", help="what is plugged in, as "
+                    "'camera:Endoscope,music:MiniLab 3' - category is camera/music/storage/other")
     ap.add_argument("--out", type=Path, default=Path("panel.png"))
     args = ap.parse_args()
 

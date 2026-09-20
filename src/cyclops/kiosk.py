@@ -39,6 +39,7 @@ import numpy as np  # noqa: E402 - kept with cv2, which pulls it in anyway
 from . import (  # noqa: E402
     barge,
     companion,
+    devices,
     mixer,
     panel,
     point,
@@ -142,6 +143,9 @@ NO_CAMERA = "No camera found"
 CAMERA_STALLED = "Camera stopped responding"
 NO_CAMERA_SIZE = (800, 480)
 TEMP_POLL_S = 5.0  # how often the heat lamp re-reads sysfs; a board warms up over minutes
+USB_POLL_S = 1.0  # ...and how often the bus is read. Faster, because a cable goes in at the
+# speed of a hand and the label appearing is the only acknowledgement there is. A pass over
+# sysfs costs well under a millisecond a device, so this is a rounding error on a Pi's core
 NOTICE_S = 4.0  # how long one of the kiosk's own lines holds the caption
 FLASH_SECONDS = 0.45
 # How long the framing's name stays in the middle of the reticle after a tap, and how much of
@@ -487,6 +491,13 @@ class Kiosk:
         # gauge wants the degrees, and throwing the degrees away was only ever because nothing
         # was showing them.
         self._temp_c: float | None = None
+        # What is plugged into the box, and the clock that decides when a change is believed and
+        # when it is worth saying out loud (cyclops.devices.Watch). Polled here rather than
+        # hooked off udev for the same reason the temperature is: one small read on a timer is a
+        # thing that cannot break, and a hook is a thing that can be missing.
+        self._bus = devices.Watch()
+        self._bus_at = 0.0
+        self._bus_live = False  # whether a session was up last time we looked
         # The kiosk's own voice in the caption, for the things that happen to it rather than to
         # the session - a shutter that could not take a photo being the one that matters. The
         # controller owns that line the rest of the time and knows nothing about any of this.
@@ -1647,6 +1658,22 @@ class Kiosk:
             self._pressed, self._press_until = None, 0.0
         self._turning = False  # last, and _walk reads it first: see the note there
 
+    def _sync_bus(self, now: float, live: bool) -> None:
+        """Read the USB bus, and tell a running session what changed on it.
+
+        The reading goes to the watch either way - the rail is drawn whether anybody is talking
+        or not - and only what comes back out of it reaches the session. A session opening is
+        told nothing, because its own instructions already carry the list; that is what
+        ``catch_up`` is for, and doing it here rather than in the controller keeps the one fact
+        ("the model has been told") in the one place that decides whether to tell it again.
+        """
+        if live and not self._bus_live:
+            self._bus.catch_up()  # its instructions have just been built with the list in them
+        self._bus_live = live
+        arrived, left = self._bus.seen(devices.connected(), now)
+        if live and (arrived or left):
+            self.controller.bus_changed(tuple(arrived), tuple(left))
+
     def _sync_handover(self) -> None:
         """Send his voice to whoever is listening on the LAN, or back to the panel's own amp.
 
@@ -1925,6 +1952,13 @@ class Kiosk:
                 self._temp_c = stats.cpu_temp_c()
                 self._heat = stats.heat_alarm(self._temp_c, self._heat)
 
+            # ...and the same shape again for the USB bus, on a faster clock: a label turning up
+            # is the whole of the feedback that a plug went in, so it has to arrive at about the
+            # speed of the plug. What the reading costs is measured in the suite.
+            if started - self._bus_at >= USB_POLL_S:
+                self._bus_at = started
+                self._sync_bus(started, session_up(str(status["state"])))
+
             frame = None  # nothing to draw: the camera is off, absent, or still coming back
             stalled = False  # ...or open, enumerated, and no longer delivering anything
             if not asleep:
@@ -2025,6 +2059,10 @@ class Kiosk:
                     # old level says they are not.
                     volume=self._wanted if self._sliding else self._volume,
                     temp_c=self._temp_c,
+                    # What is plugged in, as labels on the head rail. Off the watch's settled
+                    # reading and not off a fresh one, so a connector that is half in does not
+                    # strobe a label on and off the rail.
+                    plugged_in=self._bus.listed,
                     turning=self._turning,
                     # ...and the third: whether his voice is coming out of this box's amp at all.
                     # It turns the whole instrument blue, and _on_mouse stops taking its
