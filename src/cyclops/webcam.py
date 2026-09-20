@@ -19,6 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import devices
 from .overlay import sharpen
 
 WARMUP_FRAMES = 10  # let auto-exposure/white-balance settle before the real shot
@@ -31,6 +32,10 @@ FRAME_RATE = 30  # asked of the camera, not the reader; see the format note in o
 USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/video number
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
+# The endoscopes cyclops drives over libusb - the same two IDs deploy/99-useeplus-camera.rules
+# grants access to, and the same two cyclops.devices.KNOWN names. Here so that "is one plugged
+# in?" can be answered off sysfs without opening the device; see outranked().
+USEEPLUS_IDS = ("2ce3:3828", "0329:2022")
 RPICAM_ROTATION = 180  # the module is mounted upside down in the case; see _open_rpicam
 RPICAM_AF = "continuous"  # a fixed camera watching a changing bench, not a shutter to half-press
 # The three framings the panel cycles between, as the rpicam-vid flags each one takes. Only the
@@ -100,6 +105,40 @@ def _usb_video_nodes() -> list[int]:
             if (entry / "device" / "subsystem").resolve().name == "usb":
                 nodes.append(int(entry.name.removeprefix("video")))
     return sorted(nodes)
+
+
+def outranked(index: int | str, preferred: int | None = None) -> bool:
+    """Is there a camera on the box right now that we would rather be using than this one?
+
+    A camera used to be given up only when it stopped delivering, which meant the first one to
+    open kept the panel for the rest of the run. That is wrong the moment a camera is a thing you
+    reach for: plug the endoscope in to look down a bore and the panel carries on showing the
+    room, and the only way to get the picture you plugged in for is to restart the kiosk. Marco
+    hit that twice on 2026-09-20, which is what this is for.
+
+    The order is :func:`open_camera`'s own probe order, because that order already *is* the
+    preference: a webcam you plugged into USB, then an endoscope, then the module screwed to the
+    case. Nothing outranks a USB webcam, and the CSI module is outranked by anything at all - it
+    is the camera that is always there, so it is the one to fall back to and never the one to
+    hold on to while something better is waiting.
+
+    An explicit ``CYCLOPS_CAMERA_INDEX`` is never second-guessed, here as everywhere else.
+
+    Read off sysfs, not off libusb: this is asked on a timer by a thread holding a camera open,
+    and enumerating the bus underneath a live handle is how the last fault in this area started.
+    """
+    if preferred is not None:
+        return False
+    if index == RPICAM:
+        return bool(_usb_video_nodes()) or _endoscope_on_bus()
+    if index == USEEPLUS:
+        return bool(_usb_video_nodes())
+    return False  # already on a USB webcam; nothing beats it
+
+
+def _endoscope_on_bus() -> bool:
+    """Is one of the vendor-specific endoscopes plugged in? Sysfs only, no libusb."""
+    return any(one.ident in USEEPLUS_IDS for one in devices.connected())
 
 
 def _candidate_indices(preferred: int | None) -> list[int]:
