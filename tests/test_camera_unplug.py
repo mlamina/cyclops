@@ -116,6 +116,7 @@ class Source:
         self._error = ""
         self._cap = None
         self._index = None
+        self._switching = False  # set when the loop stands down for a better camera, not a dead one
         self.opens = 0
         self.caps: list[Raiser] = []
 
