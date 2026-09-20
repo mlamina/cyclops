@@ -53,8 +53,16 @@ under it is worth more than a tick he has to distrust.
 Work every criterion in **Done when** that can be worked here, and get a real result for each. The
 evidence lives in `$MAIN/factory/html/NNN/`, and everything you have is headless:
 `tools/panel_shot.py` (`--strip N` for motion, `--bench` for render cost, `--point` for gestures),
-`tools/eye_sheet.py`, `tools/iris_strip.py`, `tools/corner_sheet.py`, and `captures/` for a real
-photo behind the chrome. Before **and** after, same background, same state — that is the whole
+`tools/eye_sheet.py`, `tools/iris_strip.py`, `tools/corner_sheet.py`, `tools/talk_probe.py` for what
+it says, and `captures/` for a real photo behind the chrome.
+
+**`talk_probe.py` opens a live model session per run, and you may not spend more of them than the
+criterion names.** Its defaults are small on purpose — `--runs 3`, and `--wakes` samples 3 of 8
+situations — because a sample that size shows whether a thing works, which is usually the question.
+If the criterion names a bigger number, run that number; it was agreed with Marco. If it names none
+and the default is genuinely not enough to answer the line, **that is a wrong plan** — say what the
+line needs and what it would cost, and stop. Do not quietly turn 3 into 16: job 015 spent eighty
+live sessions and half an hour on two criteria that nobody had priced. Before **and** after, same background, same state — that is the whole
 reason `panel_shot.py` exists.
 
 A criterion that was only ever Marco's to judge stays unjudged. Say so; don't grade it yourself.

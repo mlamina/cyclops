@@ -31,6 +31,21 @@ be guessing at. Each with your own recommendation, so answering is one word. Non
 - `render stays under 12 ms a frame` → `panel_shot.py --bench`, the number before and after
 - `a wedged camera recovers without an ssh` → yours, on the Pi
 
+**A check that talks to the model costs real money and real minutes, so it is agreed out loud.**
+`talk_probe.py` opens a live realtime session per run, and its defaults are deliberately small:
+`--runs 3`, and `--wakes` samples 3 of the 8 wake situations. That is enough to see whether a
+thing works at all, and **not** enough to stand up a median, a worst case, or a tally.
+
+So if a criterion needs more — a distribution, a before-and-after comparison, one situation in
+particular — **ask him, name the number, and say what it buys**: *"reading the worst case needs 10
+runs, about five minutes and a few thousand tokens; 3 will only tell us it works. Which?"* Then write
+the number into the check (`talk_probe.py --wakes --situations 8 --repeat 2`) so the build runs
+exactly what he agreed to and nothing more.
+
+Job 015 is why. Two criteria both read `talk_probe.py --wakes`, the defaults were 10 and 16, and the
+build quietly spent eighty live sessions and half an hour on them. Nobody chose that; nobody was
+asked.
+
 **A line whose check needs the Pi is written as *"yours, on the Pi"*, every time.** The builder
 has no Pi — it cannot deploy, photograph or touch the glass — so a criterion that needs one and does
 not say so is a line nobody can ever tick: the builder either leaves it hanging or, worse, argues it

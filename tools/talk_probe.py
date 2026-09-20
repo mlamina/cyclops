@@ -456,11 +456,28 @@ async def _smiley(runs: int, out_path: Path) -> int:
     return 0
 
 
-async def _wakes(repeat: int, out_path: Path) -> int:
+def _sample(n: int) -> tuple:
+    """`n` situations spread across the list, not the first `n` neighbours.
+
+    Every one of these is a live model session, so the default sample is small and the whole set
+    is something you ask for. Spread rather than truncated because the situations are a clock
+    sweep - first thing Monday, three weeks dark, never switched on - and the first three in a row
+    would sample one end of it.
+    """
+    if n >= len(SITUATIONS):
+        return SITUATIONS
+    step = len(SITUATIONS) / n
+    return tuple(SITUATIONS[int(i * step)] for i in range(n))
+
+
+async def _wakes(repeat: int, out_path: Path, situations: int) -> int:
+    chosen = _sample(situations)
+    print(f"· {len(chosen) * repeat} live sessions "
+          f"({len(chosen)} of {len(SITUATIONS)} situations x {repeat})", file=sys.stderr)
     root = Path(tempfile.mkdtemp(prefix="cyclops-wakes-"))
     with out_path.open("a", encoding="utf-8") as out:
         for take in range(1, repeat + 1):
-            for name, when, history in SITUATIONS:
+            for name, when, history in chosen:
                 sessions = _lay_the_card(root / f"{name}-{take}", history)
                 try:
                     await _one_wake(name, when, sessions, take, out)
@@ -767,7 +784,10 @@ def score(key_path: Path, marks_path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--runs", type=int, default=10)
+    # Three, not ten. Every run is a live realtime session: job 015 spent eighty of them on
+    # two criteria before anybody noticed. More than a handful is something a plan asks for
+    # by name, agreed at capture, never a default.
+    parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--out", type=Path, help="JSONL to append each turn to")
     parser.add_argument("--tally", type=Path, help="tally a JSONL written earlier and exit")
     parser.add_argument("--script", choices=sorted(SCRIPTS), default="bench",
@@ -778,7 +798,9 @@ def main() -> None:
                         help="tally marks made against a --blind list, per arm")
     parser.add_argument("--wakes", type=Path,
                         help="JSONL to append one greeting per made-up situation to")
-    parser.add_argument("--repeat", type=int, default=2, help="takes per situation, for --wakes")
+    parser.add_argument("--repeat", type=int, default=1, help="takes per situation, for --wakes")
+    parser.add_argument("--situations", type=int, default=3,
+                        help=f"how many of the {len(SITUATIONS)} wake situations to sample")
     parser.add_argument("--wake-tally", type=Path, help="tally a --wakes JSONL and exit")
     parser.add_argument("--props", type=Path, nargs="+",
                         help="count openers and recurring nouns over every greeting in these")
@@ -791,7 +813,7 @@ def main() -> None:
         return
     if args.wakes:
         try:
-            sys.exit(asyncio.run(_wakes(args.repeat, args.wakes)))
+            sys.exit(asyncio.run(_wakes(args.repeat, args.wakes, args.situations)))
         except ConfigError as exc:
             print(f"error: {exc}", file=sys.stderr)
             sys.exit(2)
