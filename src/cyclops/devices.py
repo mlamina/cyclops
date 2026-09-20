@@ -6,10 +6,10 @@ down; this reads the files it wrote.
 
 Three things about the bus on this box set the shape of it. The endoscope reports no manufacturer
 and no product string at all and its interfaces are vendor-specific, so neither its name nor its
-category can be read off the bus - both have to come out of :data:`KNOWN`. The lav mic is always
-in, so it is never news, and its product string is "USB Composite Device", which is not a name
-anybody would want on the glass anyway. And the four root hubs are on the bus like anything else,
-so device class 09 is skipped or the panel lists the Pi's own silicon back at it.
+category can be read off the bus - both come out of its extension, via :func:`known`. The lav mic
+is always in, so it is never news, and its product string is "USB Composite Device", which is
+not a name anybody would want on the glass anyway. And the four root hubs are on the bus like
+anything else, so device class 09 is skipped or the panel lists the Pi's own silicon back at it.
 
 Off Linux there is no sysfs and the list is empty. That is what keeps the Mac, the test suite and
 ``tools/panel_shot.py`` honest: nothing here renders or prompts differently on a laptop by
@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 SYSFS = Path("/sys/bus/usb/devices")
@@ -41,12 +42,21 @@ BY_INTERFACE: tuple[tuple[str, str], ...] = (
 
 HUB_CLASS = "09"  # a device class, not an interface one: root hubs and any hub hanging off them
 
-# Devices the bus describes badly, by vid:pid. Overrides both the name and the category, because
-# for these two the bus gives neither: vendor-specific interfaces and empty strings.
-KNOWN: dict[str, tuple[str, str]] = {
-    "2ce3:3828": (CAMERA, "Endoscope"),  # the USEEPlus one, and what deploy/99-*.rules is for
-    "0329:2022": (CAMERA, "Endoscope"),  # its sibling, same rules file
-}
+
+@cache
+def known() -> dict[str, tuple[str, str]]:
+    """Devices the bus describes badly, by vid:pid: ``(category, name)``.
+
+    Overrides both, because for these the bus gives neither - vendor-specific interfaces and
+    empty strings, which is the endoscope. Built out of the extensions, since everything about a
+    device lives in its own file (:mod:`cyclops.extensions`), and cached, since this is asked once
+    per device per poll. Imported in here rather than at the top, because extensions must never
+    import this module and the two would otherwise meet at load time.
+    """
+    from . import extensions
+
+    return extensions.known(extensions.load())
+
 
 # Never listed, whatever else is true of them. The lav mic is in every single session, so it is
 # not news in the greeting and it is not worth a rail tag either - his answer, and the one device
@@ -112,9 +122,9 @@ def _interfaces(folder: Path) -> list[str]:
 
 
 def _category(ident: str, folder: Path) -> str:
-    known = KNOWN.get(ident)
-    if known is not None:
-        return known[0]
+    table = known().get(ident)
+    if table is not None:
+        return table[0]
     classes = set(_interfaces(folder))
     for code, category in BY_INTERFACE:
         if code in classes:
@@ -126,11 +136,11 @@ def _name(ident: str, folder: Path) -> str:
     """What to call it: the bus first, then the table, then the bare IDs.
 
     ``product`` is what the manufacturer wrote on it and is nearly always the right answer.
-    :data:`KNOWN` comes second rather than first so a device that grows a sensible product string
-    after a firmware update starts using it. ``manufacturer`` alone is a poor name ("Jieli
-    Technology") but it beats four hex digits, which is what is left.
+    The table (:func:`known`) comes second rather than first so a device that grows a sensible
+    product string after a firmware update starts using it. ``manufacturer`` alone is a poor
+    name ("Jieli Technology") but it beats four hex digits, which is what is left.
     """
-    for candidate in (_read(folder, "product"), KNOWN.get(ident, ("", ""))[1],
+    for candidate in (_read(folder, "product"), known().get(ident, ("", ""))[1],
                       _read(folder, "manufacturer")):
         if tidy := _tidy(candidate):
             return tidy
