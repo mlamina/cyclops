@@ -8,8 +8,8 @@ element returns its rectangle, so a tap can be resolved without a second layout.
 
 The layout is two corner mounts, a status pod, a terminal and a picture. A mount's rail comes in
 square to one panel edge, ramps across the corner at 45 degrees and lands square on the other,
-and the two of them carry the three controls; the pod is that same shape turned inwards, hanging
-off the middle of the top edge with the readouts in it; and the terminal is a monitor in the
+and the two of them carry the three controls; the pod is that same shape turned inwards, flush
+into the top-right corner with the readouts in it; and the terminal is a monitor in the
 middle of the bottom bay, bracketed to a mount at either end, with the caption on its glass. The
 middle of the panel, which is what somebody holding a camera down a pipe is actually looking at,
 is nothing but picture and a four-arc reticle on the lens axis.
@@ -1066,16 +1066,17 @@ PLATE_WEAR = 0.035  # how much the lift comes and goes across the sheet - a plat
 # it, and a face wants room. The right one is a bracket with two switches bolted through it, and
 # every pixel it does not take is a pixel of the room somebody is holding a camera down a pipe
 # to look at.
-# The status pod: a narrow module hanging off the middle of the top edge, and the one piece of
-# chrome here that is not a corner. It went corner, then half a corner, then this - and the
-# middle is where it belonged all along, because none of what it carries is *about* a corner.
-# What it says is the box's own vital signs: how loud the room is, how long this has been going
-# on, and whether anything is being recorded or running hot.
+# The status pod: a narrow module flush into the top-right corner, the USB module's mirror. It
+# went corner, then half a corner, then the middle of the top edge, then back here at the
+# owner's word - two top corners that are one part read as one machine, where a module in the
+# middle and another in the corner read as two. What it says is the box's own vital signs: how
+# loud the room is, how long this has been going on, and whether anything is being recorded or
+# running hot.
 #
 # The shape is the bracket language turned inwards: the rail drops square off the top edge,
-# splays out at 45 to the flat that carries the readouts, and goes back up the same way. So it
-# is a module rather than a mount - it has no corner to be bolted into - but it is plainly the
-# same metal, and both its ends land square on the frame like everything else does.
+# splays out at 45 to the flat that carries the readouts, and runs off the right-hand edge. Its
+# steel is on the two edges that meet the rest of the machine, as the USB module's is, and its
+# plate runs off the top and the right with nothing between it and them.
 # One row, not two, and no label on the meter: eight lit segments beside a running clock are
 # not going to be mistaken for anything else, and the word cost a row of depth to say so. The
 # pod is wider for it and much slimmer, which is the right trade for something hanging over the
@@ -1102,8 +1103,9 @@ USB_NAME_W = 92.0  # the most a name may take before it is cut short. A column i
 # name, so this is what stops one badly-behaved product string eating the whole corner
 USB_MIN_W = 126.0  # the narrowest the flat ever gets, which the legend in its rail sets and not
 # the contents: a pocket for USB DEVICES has to fit inside the module it names
-USB_CLEAR = 10.0  # px of picture kept between the module's top corner and the pod's plate. The
-# pod is measured at its WIDEST - both tags lit - so nothing up here moves when REC comes on
+USB_ROOM = 203.0  # reference px: the rightmost its top corner may reach. It was measured off the
+# centred pod at its widest, less ten px of air; the pod went into the other corner and this is
+# that same number kept, so which devices show and where the list drops off did not change
 USB_EMPTY = "NO USB"  # what it says when there is nothing on the bus. It is always there: a
 # module that vanished would be a part falling off the machine every time a cable came out
 USB_LEGEND = "USB DEVICES"  # cut into the rail along its bottom, the way CYCLOPS is cut into the
@@ -1258,7 +1260,7 @@ POCKET_W = 60.0  # reference px of the legend pocket milled into the rail under 
 POCKET_H = 10.0  # ...how much of the rail's face it takes, which leaves two rows of face above
 # it and one below rather than being a band across the bar...
 POCKET_R = 2.5  # ...and the radius the slot drill leaves in its corners
-POCKET_IN = 15.5  # px in from the pod's lower-right knee its right edge sits: off centre, where
+POCKET_IN = 15.5  # px in from a module's lower knee its near edge sits: off centre, where
 # a service label is actually stuck, and clear of the bolt through the knee
 POCKET_DROP = 0.5  # px below the rail's centreline its own centre sits
 POCKET_DEEP = 2.0  # px the floor is cut below the face, which is what sets its shadow
@@ -3691,15 +3693,16 @@ class Overlay:
                 self._meter_w + self._stop + self._clock_w
                 + (tags * self._tag_w + (tags - 1) * self._tag_gap + self._stop if tags else 0)
             )
+            # Flush into the top-right corner, the USB module's mirror: the flat ends at the
+            # panel's edge, so a tag lighting grows it leftwards and nothing at the right moves.
             flat = content + 2 * self._pod_pad
-            left = width // 2 - flat // 2
-            right = left + flat
+            left = width - flat
             # Wound right to left, so that (dy, -dx) points out of the pod's own body - the same
             # sign that means "away from the corner" on the two mounts, and what lets one rail
-            # routine light the correct side of all three.
-            self.pods[tags] = Bracket(None, [
-                (right + ramp, 0), (right + ramp, step), (right, depth),
-                (left, depth), (left - ramp, step), (left - ramp, 0),
+            # routine light the correct side of all three. No right-hand ramp: it closes against
+            # (width, 0) the way the USB module closes against (0, 0).
+            self.pods[tags] = Bracket((width, 0), [
+                (width, depth), (left, depth), (left - ramp, step), (left - ramp, 0),
             ])
             # The readouts' own box inside the flat: everything in there is placed off this.
             self.pod_boxes[tags] = Rect(left + self._pod_pad, 0, content, depth)
@@ -4055,7 +4058,12 @@ class Overlay:
         ImageDraw.Draw(rounded).rounded_rectangle(
             [0, 0, self.width - 1, self.height - 1], radius=self.radius, fill=255
         )
-        return inside * (np.asarray(rounded, np.float32) / 255.0)
+        # ...except the pod, which runs square into its corner for the reason the USB module
+        # does (see _usb_chassis): cut back, the surround's corner shines through as a grey nub.
+        pod = Image.new("L", (self.width, self.height), 0)
+        self.pods[tags].plate(ImageDraw.Draw(pod))
+        return np.maximum(inside * (np.asarray(rounded, np.float32) / 255.0),
+                          np.asarray(pod, np.float32) / 255.0)
 
     @_by_size
     def _build_filter(self) -> tuple[np.ndarray, np.ndarray]:
@@ -4668,7 +4676,7 @@ class Overlay:
             layer = self._chrome_base.copy()
             # The window first and the rail over it: the rail is the frame, its shadow falls on
             # the flange, and the bolts through its knees sit over both.
-            self._draw_pod_face(layer, tags)
+            self._draw_pod_face(layer, self.pods[tags], self.pod_boxes[tags])
             self._draw_bracket(layer, self.pods[tags])
             cached = self._chromes[tags] = layer
         return cached
@@ -5217,8 +5225,8 @@ class Overlay:
         hatches through it. They still stay near the corner: run them out towards the rail and
         they stop reading as webbing inside a bracket and start reading as stripes laid over the
         room, which is the one thing this layout is spending its corners to avoid. The pod has
-        none: webbing braces a corner against a load, and a module hanging off the middle of an
-        edge has no corner and nothing to brace.
+        none: it is a module hung off the frame rather than a mount carrying a load, and its
+        corner is the one the USB module's mirror is - glass, not a gusset.
 
         Nor does the one with a face on it. The loom leaves his housing into that same corner and
         there is about forty pixels of it, so webbing and cables in there together is not two
@@ -6193,21 +6201,30 @@ class Overlay:
     # ---- the pod ----
 
     def _pod_field(
-        self, tags: int, x0: int, y0: int, w: int, h: int
+        self, module: Bracket, x0: int, y0: int, w: int, h: int
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-        """The pod's lip as a distance field over one box of the panel: negative inside, the
-        unit direction from the lip to each pixel, which inside the window is inwards, and how
-        far along the lip its nearest point is.
+        """A corner module's lip as a distance field over one box of the panel: negative inside,
+        the unit direction from the lip to each pixel, which inside the window is inwards, and
+        how far along the lip its nearest point is.
 
         The lip is where the flange's flat ends and the reveal starts - inside the rail by the
-        land's width. The polygon is closed well above the panel so that bar_field's nearest-
-        edge sign is a clean inside/outside and its closing edge never lands on a pixel: the
-        window is open at the top, because the module hangs off the frame.
+        land's width. Each end of it is carried off the panel edge its spine ends on, and the
+        polygon is closed well outside the panel, so that bar_field's nearest-edge sign is a
+        clean inside/outside and its closing edges never land on a pixel: the window is open at
+        the top and along the side it runs off, because the module hangs off the frame.
         """
-        pod = self.pods[tags]
-        lip = offset_path(pod.spine, -(self.rail_w / 2.0 + max(1.0, POD_LAND * self.scale)))
-        above = -4.0 * self.rail_w
-        ring = [*lip, (lip[-1][0], above), (lip[0][0], above), lip[0]]
+        lip = offset_path(module.spine, -(self.rail_w / 2.0 + max(1.0, POD_LAND * self.scale)))
+        far = 4.0 * self.rail_w
+
+        def off(end: tuple[float, float], at: tuple[float, float]) -> tuple[float, float]:
+            if end[1] <= 0:
+                return (at[0], -far)
+            return (-far if end[0] <= 0 else self.width + far, at[1])
+
+        first, last = off(module.spine[0], lip[0]), off(module.spine[-1], lip[-1])
+        # Round the outside of the corner from whichever end left by a side.
+        turn = (first[0] if first[1] > -far else last[0], -far)
+        ring = [first, *lip, last, turn, first]
         dist, ox, oy, along, side = material.bar_field(ring, x0, y0, w, h)
         return -dist * side, ox, oy, along
 
@@ -6215,31 +6232,44 @@ class Overlay:
         """Coverage of the glass proper - inside the lip by the reveal's width, anti-aliased."""
         return np.clip(0.5 - (sdf + max(1.0, POD_REVEAL * self.scale)), 0.0, 1.0)
 
-    def _pod_rake(self, tags: int, x0: int, y0: int, w: int, h: int) -> np.ndarray:
+    @staticmethod
+    def _shoulder(module: Bracket) -> tuple[tuple[float, float], float]:
+        """A corner module's one chamfered end - the upper knee on it - and which way is
+        outboard of it: -1 if the rest of the module lies to its right, +1 if to its left.
+
+        The pod's is on its left and the USB module's on its right, so the two lamps that rake
+        them both stand towards the middle of the panel and the pair mirror each other.
+        """
+        if module.spine[-1][1] <= 0:
+            top, knee, far = module.spine[-1], module.spine[-2], module.spine[0]
+        else:
+            top, knee, far = module.spine[0], module.spine[1], module.spine[-1]
+        return knee, (1.0 if top[0] > far[0] else -1.0)
+
+    def _pod_rake(self, module: Bracket, x0: int, y0: int, w: int, h: int) -> np.ndarray:
         """How much of the module's own key light reaches each pixel of one of its boxes.
 
-        The lamp is a *place*, off the left shoulder of the module and above the panel, and its
-        light falls off with distance - so the left knee is lit, the right knee is half lit, and
-        every face between them grades. A drift across the module did this as a straight ramp
-        before, and a straight ramp is a light with a direction and no position: the same eleven
-        levels over a hundred and eighty pixels whichever end you read it from, which measures as
-        a lamp at infinity and looks like no lamp at all.
+        The lamp is a *place*, off the chamfered shoulder of the module and above the panel,
+        and its light falls off with distance - so the knee by it is lit, the far end is half
+        lit, and every face between them grades. A drift across the module did this as a
+        straight ramp before, and a straight ramp is a light with a direction and no position:
+        the same eleven levels over a hundred and eighty pixels whichever end you read it from,
+        which measures as a lamp at infinity and looks like no lamp at all.
 
-        Normalised at the left knee and capped, so this only ever takes brightness away. The
+        Normalised at that knee and capped, so this only ever takes brightness away. The
         flange, the reveal, the scale cut into it and the glass are all multiplied by it, which
         is the whole point: one lamp, and everything on the module agrees about where it is.
         """
-        pod = self.pods[tags]
-        lamp = (pod.spine[-1][0] - POD_RAKE_OUT * self.scale, -POD_RAKE_UP * self.scale)
+        knee, out = self._shoulder(module)
+        lamp = (knee[0] + out * POD_RAKE_OUT * self.scale, -POD_RAKE_UP * self.scale)
         reach = POD_RAKE_REACH * self.scale
         lit = material.glare(w, h, (lamp[0] - x0, lamp[1] - y0), reach, ambient=POD_RAKE_FLOOR)
-        knee = pod.spine[-2]  # the left one, nearest the lamp: the face's own full brightness
         near = material.glare(1, 1, (lamp[0] - knee[0], lamp[1] - knee[1]), reach,
                               ambient=POD_RAKE_FLOOR)[0, 0]
         return np.minimum(lit / max(near, 1e-6), POD_RAKE_CEIL)
 
     def _pod_scale(
-        self, rgb: np.ndarray, tags: int, xs: np.ndarray, sdf: np.ndarray,
+        self, rgb: np.ndarray, box: Rect, xs: np.ndarray, sdf: np.ndarray,
         land: float, reveal: float, rake: np.ndarray,
     ) -> np.ndarray:
         """The graduation cut into the flange under the window, at the meter's own pitch.
@@ -6257,7 +6287,6 @@ class Overlay:
         Raked with everything else, so the marks at the far end are as dim as that steel is.
         """
         pitch = max(4.0, POD_TICK_PITCH * self.scale)
-        box = self.pod_boxes[tags]
         # Off the meter's own left edge, so the marks stand under the cells rather than beside
         # them, and stopping short of the right-hand knee where the rail turns.
         first = box.x + self._seg[0] / 2.0
@@ -6280,7 +6309,7 @@ class Overlay:
         # graduation at the dark end of the cove stays as dark as the cove.
         return rgb * (1.0 + POD_TICK_LIP * beyond * rake)[..., None]
 
-    def _pod_mask(self, tags: int, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+    def _pod_mask(self, box: Rect, xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
         """Coverage of the mask between the meter's windows: one septum per gap, at its pitch.
 
         A segmented meter is a dark plate with eight windows cut in it, and what lies between
@@ -6299,7 +6328,6 @@ class Overlay:
         than part of the reading: it is there when every cell is dark, and it costs a frame
         nothing because the pane is baked.
         """
-        box = self.pod_boxes[tags]
         seg_w, seg_h, gap = self._seg
         pitch = seg_w + gap
         # Where in one cell-and-gap each column falls, and the half-pixel the cells' own
@@ -6310,8 +6338,13 @@ class Overlay:
         down = np.clip(0.5 + (seg_h + 1) / 2.0 - np.abs(ys - self.row), 0.0, 1.0)
         return along * run * down
 
-    def _draw_pod_face(self, layer: Image.Image, tags: int) -> None:
-        """The instrument in the pod: a dark glass window let into a steel flange, under the rail.
+    def _draw_pod_face(self, layer: Image.Image, module: Bracket, meter: Rect | None) -> None:
+        """A corner module's window: dark glass let into a steel flange, under the rail.
+
+        The pod's and the USB module's both, through this one pass, which is what makes the two
+        top corners one part: two copies tuned apart would drift the first time either was
+        touched. *meter* is where the pod's bar sits, for the scale cut under it and the mask
+        between its windows; the USB module has no bar and passes None.
 
         The rail is the frame. What it framed used to be the same brushed wash the mounts are
         cut from, with the meter and the clock lying flat on it, and a readout lying on a plate
@@ -6347,26 +6380,30 @@ class Overlay:
         that the cover's own reflection - one lobe with a hard leading edge and a soft trail,
         plus the second return off the far rim that says the glass has a thickness.
 
-        Once per pod width, before the rail, so the rail's shadow falls on the land and the bolts
-        sit over both. Nothing in here may be reached from a frame.
+        Once per module width, before the rail, so the rail's shadow falls on the land and the
+        bolts sit over both. Nothing in here may be reached from a frame.
         """
-        pod = self.pods[tags]
         half = self.rail_w / 2.0
         land = max(1.0, POD_LAND * self.scale)
         reveal = max(1.0, POD_REVEAL * self.scale)
-        x0 = max(0, math.floor(min(x for x, _ in pod.spine)) - 1)
-        x1 = min(self.width, math.ceil(max(x for x, _ in pod.spine)) + 2)
-        y0, y1 = 0, min(self.height, math.ceil(pod.spine[2][1]) + 1)
+        bottom = max(y for _, y in module.spine)
+        x0 = max(0, math.floor(min(x for x, _ in module.spine)) - 1)
+        x1 = min(self.width, math.ceil(max(x for x, _ in module.spine)) + 2)
+        y0, y1 = 0, min(self.height, math.ceil(bottom) + 1)
         if x1 <= x0 or y1 <= y0:
             return
         w, h = x1 - x0, y1 - y0
-        sdf, ox, oy, _ = self._pod_field(tags, x0, y0, w, h)
+        sdf, ox, oy, _ = self._pod_field(module, x0, y0, w, h)
         glass = self._pod_glass(sdf)
+        # Which way the module's own lamp stands: the room's reflection on the glass is on the
+        # lamp's side of it, so on a module lit from the right it is mirrored with the rake.
+        _, out = self._shoulder(module)
+        mirror = out > 0
 
         # Nearer the lamp is brighter, across the whole module - and "nearer" is a distance from
         # a place, not a fraction of the way across a box. See _pod_rake. Built before the steel
         # now, because the bounce off the pane is raked along the run like everything else.
-        rake = self._pod_rake(tags, x0, y0, w, h)
+        rake = self._pod_rake(module, x0, y0, w, h)
         # The steel: the cove at the root of the rail's chamfer. The tilt runs from nothing at
         # the bar's foot to POD_ROLL_TILT where the glass starts, and it leans *away* from the
         # window the whole way - (ox, oy) is the way from the lip to the pixel, outwards on the
@@ -6403,7 +6440,8 @@ class Overlay:
         # +1, which is a bounce - twice that and the flange has stopped being steel.
         spill = np.clip(1.0 - (sdf + reveal) / max(1.0, POD_BOUNCE_REACH * self.scale), 0.0, 1.0)
         rgb = rgb + np.asarray(POD_BOUNCE_LIT, np.float32) * (spill * rake)[..., None]
-        rgb = self._pod_scale(rgb, tags, xs, sdf, land, reveal, rake)
+        if meter is not None:
+            rgb = self._pod_scale(rgb, meter, xs, sdf, land, reveal, rake)
         # The wear: the sheet's own hairlines where they run onto the flange and the pod's own
         # dragged across it, both deterministic off material.SEED. Bright, and only a few chips
         # against them: what a used face carries is where the finish came *off* and the bare
@@ -6437,7 +6475,8 @@ class Overlay:
         # The mask between the meter's windows, behind everything the glass itself does - the
         # glare, the cover's reflection and the raster all lie over it, because it is a plate
         # behind the pane and they are on its face. See :meth:`_pod_mask`.
-        pane = _over(pane, (0, 0, 0), POD_SEPTUM_A * self._pod_mask(tags, xs, ys))
+        if meter is not None:
+            pane = _over(pane, (0, 0, 0), POD_SEPTUM_A * self._pod_mask(meter, xs, ys))
         # The rebate: a step down into near black, hard against the reveal and the same width all
         # the way round, and then the walls shading further in - deepest at the wall and gone
         # POD_AO in, squared so it is a falloff and not a band. The step is the shape that says
@@ -6458,10 +6497,12 @@ class Overlay:
         # The room, over the glass's own depth - the pane ends where the reveal starts, well
         # above the rail's centreline this box runs down to, and a streak placed as a fraction
         # of the box would land on the steel.
-        deep = math.ceil(pod.spine[2][1] - half - land - reveal)
+        deep = math.ceil(bottom - half - land - reveal)
         shine = np.zeros((h, w), dtype=np.float32)
         shine[:deep] = material.glare(w, deep, (GLARE_X * w, GLARE_Y * deep),
                                       POD_GLARE_REACH * w, POD_GLARE_FLOOR, POD_GLARE_STREAK)
+        if mirror:
+            shine = shine[:, ::-1]
         pane = _over(pane, WHITE, shine * rake * POD_GLARE_A * open_)
         # The cover's own reflection over that: a lobe that comes on in a row and goes off over
         # ten, running downhill across the pane, and the second return the far rim gives back.
@@ -6469,12 +6510,15 @@ class Overlay:
         # glass and the far end of the window is dark.
         down = ys / max(1.0, float(deep))
         across = (xs - x0) / max(1.0, w - 1.0)
+        if mirror:
+            across = 1.0 - across
         edge = (down - (POD_SWEEP_AT + POD_SWEEP_TILT * across)) / POD_SWEEP_LEAD
         trail = (down - (POD_SWEEP_AT + POD_SWEEP_TILT * across)) / POD_SWEEP_TRAIL
         lobe = np.exp(-(((across - POD_SWEEP_X) / POD_SWEEP_WIDE) ** 2))
         sweep = np.where(edge < 0.0, np.exp(-edge * edge * 9.0), np.exp(-trail * trail)) * lobe
         pane = _over(pane, POD_SWEEP_LAMP, POD_SWEEP_A * sweep * rake * open_)
         lx, ly = material.lamp_2d()
+        lx = -lx if mirror else lx
         away = np.clip(ox * lx + oy * ly, 0.0, 1.0)  # (ox, oy) points in: this is the far rim
         rim = np.clip(1.0 - inset / max(1.0, POD_RETURN_W * self.scale), 0.0, 1.0)
         pane = _over(pane, WHITE, POD_RETURN_A * rim * rim * away * open_)
@@ -6527,7 +6571,7 @@ class Overlay:
         """
         w, h = lamps.width, lamps.height
         body = np.asarray(lamps, np.float32)
-        sdf, _, _, _ = self._pod_field(tags, left, top, w, h)
+        sdf, _, _, _ = self._pod_field(self.pods[tags], left, top, w, h)
         glass = self._pod_glass(sdf)
         over = body[:, :, 3] / 255.0 * glass
         if emitter is None:
@@ -6621,7 +6665,7 @@ class Overlay:
         # of the scale as dissolving. The drift stays - it is what says these cells are cut in a
         # surface that is lit from one side - and no cell now steps more than a few counts off
         # its neighbour, which is the other half of what a scale has to do.
-        cell_rake = 1.0 - SEG_WELL_RAKE * (1.0 - self._pod_rake(0, left, top, w, h))
+        cell_rake = 1.0 - SEG_WELL_RAKE * (1.0 - self._pod_rake(self.pods[0], left, top, w, h))
         xs = np.arange(w, dtype=np.float32)[None, :]
         ys = np.arange(h, dtype=np.float32)[:, None]
         lx, ly = material.lamp_2d()
@@ -6903,8 +6947,11 @@ class Overlay:
         picture, which can say "searching the web…" where a word could only say SEARCH.
         """
         count = self._tag_count(state, recording, heat)
-        self._pocket(d._image, *self._legend_box(self.pods[count].spine[2], MARK_WORD))
-        self._mark(d._image, *self._legend_box(self.pods[count].spine[2], MARK_WORD), MARK_WORD)
+        # Off the lower-left knee and running right, the mirror of USB DEVICES in the other
+        # corner - so it rides that knee as a tag lighting moves it, like everything on the pod.
+        box = self._legend_box(self.pods[count].spine[1], MARK_WORD, 1.0)
+        self._pocket(d._image, *box)
+        self._mark(d._image, *box, MARK_WORD)
         _, at, _ = self._readouts(count)
         if self._taping(state, recording):
             at += self._tag_w + self._tag_gap  # REC's slot, kept whether it is lit or not
@@ -6912,8 +6959,13 @@ class Overlay:
         if colour is not None:
             self._tag(d, at, self.row, HEAT_WORD, colour, count)
 
-    def _legend_box(self, knee: tuple[float, float], word: str) -> tuple[float, float, float]:
+    def _legend_box(
+        self, knee: tuple[float, float], word: str, inward: float = -1.0
+    ) -> tuple[float, float, float]:
         """Where a nameplate cut into a rail sits, given the knee its rail turns at: (cx, cy, w).
+
+        *inward* is which way along the rail from that knee it lies: -1 to its left, as on the
+        USB module, and +1 to its right, as on the pod.
 
         One box for both passes - :meth:`_pocket` mills it and :meth:`_mark` cuts into what was
         milled - because two boxes that have to agree are two boxes that can disagree, and what
@@ -6924,7 +6976,7 @@ class Overlay:
         a row of letters at half the pitch of every other one on the panel.
         """
         w = POCKET_W * self.scale * len(word) / len(MARK_WORD)
-        return (knee[0] - POCKET_IN * self.scale - w / 2.0,
+        return (knee[0] + inward * (POCKET_IN * self.scale + w / 2.0),
                 knee[1] + POCKET_DROP * self.scale, w)
 
     def _tag_tile(
@@ -6983,14 +7035,14 @@ class Overlay:
     # ---- what is plugged in ----
 
     def usb_room(self) -> float:
-        """The rightmost x the module's top corner may reach: the pod at its widest, less air.
+        """The rightmost x the module's top corner may reach. See USB_ROOM.
 
-        Measured against ``pods[2]`` and never against the pod actually being drawn, so the
-        module is the same width whether the tape is running or the board is hot. What that
+        A constant rather than a measurement off the pod: the pod is in the far corner now, and
+        room measured off it would let a long device list sprawl towards the reticle. What that
         costs is that the corner is only as big as it is - see :meth:`usb_fit`, which drops what
         will not go in it.
         """
-        return min(x for x, _ in self.pods[2].spine) - USB_CLEAR * self.scale
+        return USB_ROOM * self.scale
 
     def _usb_col(self, device: Device) -> tuple[str, float]:
         """One device's name, cut to what a column may take, and how wide that column comes out."""
@@ -7072,6 +7124,11 @@ class Overlay:
         cut = np.asarray(mask, np.float32) / 255.0
         rgb, alpha = self._filter
         layer = _to_image(rgb, alpha * cut)
+        # ...then the pod's own window over it - flange, reveal, glass, rake and glare, through
+        # the same pass - so the two top corners are one part and the glyphs and names sit on
+        # glass rather than on the room. Before the rail, as on the pod, so its shadow falls on
+        # the flange.
+        self._draw_pod_face(layer, module, None)
         # ...then the steel, on the two edges that meet the rest of the machine, and a bolt where
         # it turns - which is the same pass the pod and both mounts go through.
         self._draw_bracket(layer, module)

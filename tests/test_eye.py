@@ -1533,28 +1533,30 @@ def test_the_face_is_tappable_where_the_face_is(width: int, height: int) -> None
 
 
 @pytest.mark.parametrize(("width", "height"), SIZES)
-def test_every_pod_is_centred_and_packed(width: int, height: int) -> None:
+def test_every_pod_is_right_anchored_and_packed(width: int, height: int) -> None:
     """The Mac and the Pi pick different faces, so this is a test and not a measurement.
 
     There is one pod per number of tags and each is exactly as wide as what it shows, which is
     the whole of why the tags are laid out packed rather than into a reserved slot: a pod cut for
     its worst case had a tag-shaped hole in the middle of it whenever neither tag was lit, and
-    that hole was wider than the meter.
+    that hole was wider than the meter. It sits flush into the top-right corner, so its flat
+    ends at the panel's right edge whatever it is showing.
     """
     ov = overlay.Overlay(width, height)
     for tags in range(3):
         box = ov.pod_boxes[tags]
         clock_right, tag_x, meter_right = ov._readouts(tags)
-        assert box.center[0] in (width // 2, (width - 1) // 2), f"pod {tags} is off centre"
+        assert ov.pods[tags].spine[0][0] == width, f"pod {tags} is not flush into the corner"
+        assert box.right == width - ov._pod_pad, f"pod {tags}: the clock is off the right edge"
         assert ov._meter_x(meter_right) == box.x, f"pod {tags}: the meter is off its left edge"
         # Packed: what the tags need is exactly what is between the meter and the clock, and
         # with none lit the two stops either side of them collapse into one.
         room = clock_right - ov._clock_w - tag_x
         want = tags * ov._tag_w + (tags - 1) * ov._tag_gap + ov._stop if tags else 0
         assert round(room) == round(want), f"pod {tags} has {room - want:.0f}px going spare"
-        # ...and the whole of it is inside the flat the rail draws round it.
-        left, right = ov.pods[tags].spine[3][0], ov.pods[tags].spine[2][0]
-        assert left + ov.rail_w / 2 < box.x and box.right < right - ov.rail_w / 2
+        # ...and the whole of it is inside the flat the rail draws round it, clear of the case.
+        left = ov.pods[tags].spine[1][0]
+        assert left + ov.rail_w / 2 < box.x and box.right < width - ov.frame_w
     assert ov.row + ov.font_read.size / 2 < ov.pod.bottom - ov.rail_w / 2, "the clock hits the rail"
 
 
