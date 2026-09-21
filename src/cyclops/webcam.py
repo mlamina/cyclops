@@ -33,8 +33,10 @@ USEEPLUS = "useeplus"  # the index reported for an endoscope, which has no /dev/
 USEEPLUS_READ_TIMEOUT_S = 1.0  # generous at 20 fps, and bounds the retry on a dead device
 RPICAM = "rpicam"  # the index reported for a CSI module, which has no capture node either
 # The endoscopes cyclops drives over libusb - the same two IDs deploy/99-useeplus-camera.rules
-# grants access to, and the same two cyclops.devices.KNOWN names. Here so that "is one plugged
-# in?" can be answered off sysfs without opening the device; see outranked().
+# grants access to, and the same two cyclops/extensions/endoscope.py declares. Here and not read
+# out of the extension, because this is how the camera is opened and a broken extension must not
+# be a dead camera; a test keeps the three lists in step. Here so that "is one plugged in?" can be
+# answered off sysfs without opening the device; see outranked().
 USEEPLUS_IDS = ("2ce3:3828", "0329:2022")
 RPICAM_ROTATION = 180  # the module is mounted upside down in the case; see _open_rpicam
 RPICAM_AF = "continuous"  # a fixed camera watching a changing bench, not a shutter to half-press

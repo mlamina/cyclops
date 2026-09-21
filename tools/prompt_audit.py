@@ -9,6 +9,7 @@ below matters as much as the totals.
 
     uv run python tools/prompt_audit.py
     uv run python tools/prompt_audit.py --ceiling   # what a full card would send
+    uv run python tools/prompt_audit.py --usb 2ce3:3828   # ...with the endoscope plugged in
 
 Measurement only, and no verdict: this prints sizes and overlaps, and what to cut is a
 judgement about what Cyclops should sound like. `/prompt-audit` is the command that makes it.
@@ -28,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 import tiktoken  # noqa: E402
 
-from cyclops import agent, session  # noqa: E402
+from cyclops import agent, devices, session  # noqa: E402
 from cyclops.config import Settings  # noqa: E402
 
 ENC = tiktoken.get_encoding("o200k_base")  # what gpt-realtime counts in
@@ -74,6 +75,17 @@ def payload(settings: Settings) -> tuple[str, list[dict]]:
     config = agent.VoiceAgent.session_config(agent_)
     made = [t if isinstance(t, dict) else t.model_dump(exclude_none=True) for t in config["tools"]]
     return config["instructions"], made
+
+
+def plug_in(idents: str) -> None:
+    """Pretend these vid:pids are on the bus, named the way the bus read would name them."""
+    made = []
+    for ident in (one.strip().lower() for one in idents.split(",") if one.strip()):
+        vid, _, pid = ident.partition(":")
+        category, name = devices.known().get(ident, (devices.OTHER, ident))
+        made.append(devices.Device(vid, pid, name, category))
+    plugged = tuple(made)
+    devices.connected = lambda root=None: plugged  # type: ignore[assignment]
 
 
 def bullets(text: str) -> tuple[int, int]:
@@ -132,7 +144,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--ceiling", action="store_true", help="also show a full card's worst case")
     parser.add_argument("--json", action="store_true", help="machine-readable, for a diff")
+    parser.add_argument("--usb", default="", help="pretend these vid:pids are plugged in")
     args = parser.parse_args()
+    if args.usb:
+        plug_in(args.usb)
 
     settings = Settings(api_key="audit")
     instructions, schemas = payload(settings)

@@ -32,6 +32,7 @@ from . import (
     arguments,
     card,
     devices,
+    extensions,
     imagine,
     manuals,
     panel,
@@ -1265,14 +1266,13 @@ def _projects_block(settings: Settings) -> str:
     return f"{PROJECTS_HEADER}\n" + "\n".join(lines) + "\n"
 
 
-def _plugged_block() -> str:
+def _plugged_block(found: tuple[devices.Device, ...]) -> str:
     """What is on the bus, or nothing at all - which is every box that is not the Pi.
 
     Read at connect time like everything else here, and for the sharpest version of the same
     reason: this one changes while you are standing at the bench. Costs one pass over sysfs -
     see :func:`cyclops.devices.connected`, which is measured against the greeting's own margin.
     """
-    found = devices.connected()
     if not found:
         return ""
     print(f"· plugged in: {', '.join(one.name for one in found)}", flush=True)
@@ -1305,6 +1305,25 @@ def build_instructions(settings: Settings) -> str:
     What was handed over is printed, not silent. A memory you cannot see is one you cannot
     trust: when Cyclops opens by knowing something, this line is where you check it was told.
     """
+    found = devices.connected()
+    head, tail = _standing(settings, found)
+    return _splice(head, extensions.block(extensions.matching(found, extensions.load())), tail)
+
+
+def _splice(head: str, extension_block: str, tail: str) -> str:
+    """The instructions, with the extension block between what is plugged in and the clock.
+
+    The one seam a session's prompt is ever re-cut at: a device arriving or leaving mid-session
+    swaps this block and nothing else (see :meth:`VoiceAgent.add_bus_change`). With nothing
+    matched it is not there at all, which leaves the prompt byte for byte what it was before
+    extensions existed.
+    """
+    return "\n".join(part for part in (head, extension_block, tail) if part)
+
+
+def _standing(settings: Settings, found: tuple[devices.Device, ...]) -> tuple[str, str]:
+    """Everything :func:`build_instructions` says, as the text before the extension block and
+    the clock after it."""
     recap = session.recent_context(settings)
     print(f"· continuity: {recap.note}", flush=True)
     moment = session.now_context(settings)
@@ -1326,11 +1345,10 @@ def build_instructions(settings: Settings) -> str:
         blocks.append(manuals_block)
     # After the reference and before the clock: it is about this minute rather than about what
     # can be looked up, and the clock stays last because the greeting is the next thing said.
-    if plugged_block := _plugged_block():
+    if plugged_block := _plugged_block(found):
         blocks.append(plugged_block)
-    if moment:
-        blocks.append(moment.text)
-    return "\n".join(blocks)
+    # The extension block goes here, between the two - see _splice.
+    return "\n".join(blocks), moment.text if moment else ""
 
 
 class SessionError(RuntimeError):
@@ -1497,6 +1515,15 @@ class VoiceAgent:
         # but the record. Rebound whole, never mutated, for the reason _doing is - the render
         # thread reads it every frame with no lock.
         self._tutorial: tutorial.Tutorial | None = None
+        # What the device extensions need to re-arm a live session when something is plugged in
+        # or pulled out, all of it written by session_config as the session opens: what is
+        # installed, what the bus held, which of them applied, the prompt either side of their
+        # block, and the tools that are not theirs. See add_bus_change.
+        self._extensions: tuple[extensions.Extension, ...] = ()
+        self._plugged: tuple[devices.Device, ...] = ()
+        self._matched: tuple[extensions.Match, ...] = ()
+        self._prompt: tuple[str, str] = ("", "")
+        self._tools: list[RealtimeFunctionToolParam] = []
         self._background: set[asyncio.Task[None]] = set()
         # Cues sound on their own stream (see cyclops.sfx), but on the same device as the voice
         # rather than whatever the system calls default - those are not always the same speaker.
@@ -1646,9 +1673,28 @@ class VoiceAgent:
         transcription: dict[str, Any] = {"model": TRANSCRIPTION_MODEL}
         if self.settings.transcribe_lang:
             transcription["language"] = self.settings.transcribe_lang
+        # build_instructions, taken apart: the same prompt, but with its pieces kept so a plug
+        # mid-session can swap the extension block without re-reading the card or the clock.
+        self._plugged = devices.connected()
+        self._extensions = extensions.load()  # once a session, so a new module needs no restart
+        self._matched = extensions.matching(self._plugged, self._extensions)
+        self._prompt = _standing(self.settings, self._plugged)
+        self._tools = [
+            WEB_SEARCH_TOOL,
+            *_look_tools(self.settings),
+            *_video_tools(self.settings),
+            *_diagram_tools(self.settings),
+            *_scratchpad_tools(self.settings),
+            *_sketch_tools(self.settings),
+            *_point_tools(self.settings),
+            *_imagine_tools(self.settings),
+            *_project_tools(self.settings),
+            *_recall_tools(self.settings),
+            *TUTORIAL_TOOLS,
+        ]
         config: RealtimeSessionCreateRequestParam = {
             "type": "realtime",
-            "instructions": build_instructions(self.settings),
+            "instructions": self._instructions(),
             "output_modalities": ["audio"],
             "audio": {
                 "input": {
@@ -1670,19 +1716,7 @@ class VoiceAgent:
                     "speed": 1.0,
                 },
             },
-            "tools": [
-                WEB_SEARCH_TOOL,
-                *_look_tools(self.settings),
-                *_video_tools(self.settings),
-                *_diagram_tools(self.settings),
-                *_scratchpad_tools(self.settings),
-                *_sketch_tools(self.settings),
-                *_point_tools(self.settings),
-                *_imagine_tools(self.settings),
-                *_project_tools(self.settings),
-                *_recall_tools(self.settings),
-                *TUTORIAL_TOOLS,
-            ],
+            "tools": self._offered(),
             "tool_choice": "auto",
         }
         effort = self.settings.reasoning_effort  # explicit setting always goes through
@@ -1691,6 +1725,15 @@ class VoiceAgent:
         if effort:
             config["reasoning"] = {"effort": effort}  # type: ignore[typeddict-item]
         return config
+
+    def _instructions(self) -> str:
+        """The prompt the session opened with, carrying the block for what is plugged in now."""
+        return _splice(self._prompt[0], extensions.block(self._matched), self._prompt[1])
+
+    def _offered(self) -> list[RealtimeFunctionToolParam]:
+        """Every tool, with the plugged-in devices' last. A device that is not there offers none:
+        left out rather than offered and refused, as with every other gate."""
+        return [*self._tools, *extensions.schemas(self._matched)]  # type: ignore[list-item]
 
     # ---------------------------------------------------------------- lifecycle
 
@@ -1794,6 +1837,7 @@ class VoiceAgent:
         """
         if not self.connected or not (arrived or left):
             return
+        await self._rearm(arrived, left)
         said = []
         if arrived:
             said.append("just plugged in: "
@@ -1816,6 +1860,35 @@ class VoiceAgent:
         self._log(f"bus: {note}")
         if arrived:
             await self._request_response()
+
+    async def _rearm(self, arrived: tuple, left: tuple) -> None:
+        """Hand the session the extensions for what is on the bus now, if that set changed.
+
+        Before the turn that says so, so the model can use a new tool in the very response that
+        acknowledges the plug - plugging a synth in and being told to wake the box again is a
+        turn spent on Cyclops itself. Only instructions and tools go up: the voice cannot be
+        changed once it has spoken, and nothing else here has moved.
+
+        The instructions are the ones the session opened with, with only the extension block
+        swapped. Not rebuilt: that re-reads the card and restates the clock, and the clock is for
+        the greeting. A second ``session.updated`` comes back and is ignored - the session was
+        ready already, so nothing is greeted and no lid sounds (see :meth:`_on_session_ready`).
+        """
+        gone = {one.ident for one in left}
+        kept = tuple(one for one in self._plugged if one.ident not in gone)
+        held = {one.ident for one in kept}
+        self._plugged = kept + tuple(one for one in arrived if one.ident not in held)
+        matched = extensions.matching(self._plugged, self._extensions)
+        changed = [m.extension for m in matched] != [m.extension for m in self._matched]
+        self._matched = matched  # the same extensions may now be running against another device
+        if not changed:
+            return
+        self._log(f"extensions: {', '.join(m.extension.name for m in matched) or 'none'}")
+        await self.conn.session.update(session={
+            "type": "realtime",
+            "instructions": self._instructions(),
+            "tools": self._offered(),
+        })
 
     async def add_photo(self, capture: Capture) -> None:
 
@@ -2290,7 +2363,7 @@ class VoiceAgent:
         line in each of its six branches would only be six chances to forget the seventh - and
         the seventh is precisely the one nobody would notice was silent.
         """
-        job = self._start_doing(_activity_line(call))
+        job = self._start_doing(_activity_line(call, self._matched))
         try:
             await self._dispatch_tool(call)
         finally:
@@ -2333,10 +2406,36 @@ class VoiceAgent:
         if call.name in TUTORIAL_TOOL_NAMES:
             await self._run_tutorial(call)
             return
+        if (owned := extensions.find(self._matched, call.name)) is not None:
+            await self._run_extension_tool(call, *owned)
+            return
         # Every name still gets an output. A tool the model invents, or one it remembers from a
         # session config that has since changed, must be answered or it waits for it forever.
         self._log(f"[tool] unknown tool {call.name!r}", stream=sys.stderr)
         await self._send_tool_output(call.call_id, {"ok": False, "error": "unknown tool"})
+        await self._request_response()
+
+    async def _run_extension_tool(
+        self, call: RealtimeConversationItemFunctionCall, tool: extensions.Tool, device: Any
+    ) -> None:
+        """Run a plugged-in device's tool in a thread, and hand the model whatever it returns.
+
+        In a thread for :meth:`_run_project_tool`'s reason: it talks to hardware or a disk, and
+        the loop is carrying the audio. A handler that raises, or returns something that is not
+        a JSON object, still answers - the model waits forever on a call nobody answers.
+        """
+        self._log(f"[tool] {call.name} on {device.name}")
+        try:
+            args = json.loads(call.arguments or "{}")
+            output = await asyncio.to_thread(tool.run, args if isinstance(args, dict) else {},
+                                             device)
+            if not isinstance(output, dict):
+                raise TypeError(f"returned {type(output).__name__}, not a dict")
+            json.dumps(output)  # here, so a bad return is caught here and not in the send
+        except Exception as exc:
+            self._log(f"[tool] {call.name} failed: {exc!r}", stream=sys.stderr)
+            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
     async def _run_take_a_look(self, call: RealtimeConversationItemFunctionCall) -> None:
@@ -4173,7 +4272,9 @@ def _phrase(verb: str, subject: str, bare: str) -> str:
     return f"{verb} {named}…" if named else f"{bare}…"
 
 
-def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
+def _activity_line(
+    call: RealtimeConversationItemFunctionCall, matched: tuple[extensions.Match, ...] = ()
+) -> str:
     """One clause for the panel about what this call is off to do.
 
     Written for someone glancing up from a bench rather than reading a log, so it names the
@@ -4238,4 +4339,7 @@ def _activity_line(call: RealtimeConversationItemFunctionCall) -> str:
         return "next step…"
     if call.name == "end_tutorial":
         return "putting the steps away…"
+    # A plugged-in device's tool says what its own file told it to.
+    if (owned := extensions.find(matched, call.name)) is not None:
+        return owned[0].line
     return "working…"  # a tool the model invented; it still gets an answer, so it still gets a line
