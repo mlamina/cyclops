@@ -121,6 +121,7 @@ from .eye import (
 from .point import PanelMark
 from .stats import HOT_C, WARN_C, temp_band, temp_percent
 from .tutorial import Tutorial
+from .wifi import KEYBOARD, PAGE, Picker
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
     "idle",
@@ -2653,9 +2654,11 @@ STEEL = 0.58  # how far the rail's body is stirred towards SCREEN out of GREEN_M
 # Why it is a menu drawn here rather than a screen on the admin page: the page is a browser that
 # has to be uncovered, and the one moment you most want to shut a box down is the moment it is
 # behaving badly enough that you would rather not ask Chromium for anything first.
-POWER_OFF, RESTART, CANCEL = "poweroff", "restart", "cancel"
-MENU_ROWS = ((POWER_OFF, "SHUT DOWN"), (RESTART, "RESTART"), (CANCEL, "CANCEL"))
-MENU_TITLE = "POWER"
+POWER_OFF, RESTART, WIFI, CANCEL = "poweroff", "restart", "wifi", "cancel"
+MENU_ROWS = (
+    (POWER_OFF, "SHUT DOWN"), (RESTART, "RESTART"), (WIFI, "WI-FI"), (CANCEL, "CANCEL"),
+)
+MENU_TITLE = "SYSTEM"  # no longer only power: the network the box is on is asked for here too
 # The one line that keeps this apart from the tab a finger's width underneath it. GO TO SLEEP
 # ends the *session*; these two end the *box*, and in English those are near enough the same
 # sentence that the menu says which it means rather than trusting the words to.
@@ -2669,6 +2672,31 @@ MENU_SCRIM = 168  # how far the panel behind the card is put out. Not all the wa
 # and the border keep saying what the box is doing underneath a question about turning it off.
 MENU_GLYPH_R = 0.030  # the power and restart marks, which are the half of a row that is read
 # from further away than its word
+
+# ---- the Wi-Fi picker ----
+#
+# Two screens over the same scrim as the menu, in the menu's vocabulary: a card, ruled rows,
+# pressed-inverts. The list of what is on the air, and a keyboard for the password - the box has
+# no other keyboard, and none of the on-screen ones for Linux are installed or touch-sized.
+# Fractions of the panel height like everything else here; the numbers in the comments are 480.
+WIFI_LIST_W = 1.40  # 672 px: an SSID is up to 32 characters and most of them are used
+WIFI_ROW_H = 0.108  # 52 px, six of them and a row for MORE / CANCEL
+WIFI_HEAD_H = 0.075
+WIFI_BARS = 4  # signal as rising bars, read from across the bench rather than as a number
+KEY_H = 0.1375  # 66 px - taller than the menu's 62, because these are hit ten to a password
+KEY_GAP = 0.0125  # 6 px between two keys
+KEY_MARGIN = 0.033  # the card's inset from the panel's sides
+KEY_TITLE_H = 0.055  # the network's name over the field
+KEY_ROWS = ("qwertyuiop", "asdfghjkl", "zxcvbnm")
+SYMBOL_ROWS = ("1234567890", "!@#$%^&*()", "-_=+.,?/:;")
+SYMBOL_ALT_ROWS = ("1234567890", "[]{}<>|\\~`", "'\".,?!-_@#")
+# The bottom row, in key-widths: the four keys that are not characters, and the one that acts.
+SHIFT, SYMBOLS, SPACE, DELETE, JOIN, SHOW, MORE, SCAN = (
+    "SHIFT", "123", "SPACE", "DEL", "JOIN", "SHOW", "MORE", "SCAN"
+)
+KEY_BOTTOM = ((SHIFT, 1.5), (SYMBOLS, 1.5), (SPACE, 3.0), (DELETE, 2.0), (JOIN, 2.0))
+NET = "net:"  # a row of the list is NET and its place on the page
+OFFLINE_LABEL = "NO WI-FI"
 
 
 def unit(ax: float, ay: float, bx: float, by: float) -> Point:
@@ -3925,6 +3953,12 @@ class Overlay:
         )
         self.menu_card, self.menu_cells = self._menu_layout()
         self._scrim: Image.Image | None = None  # built on the first long press, then kept
+        self.wifi_card, self.wifi_cells = self._wifi_layout()
+        self.key_card = self._key_card()
+        self._keys: dict[tuple[bool, bool], dict[str, Rect]] = {}
+        # The picker's card as last drawn, and what it was drawn from. It holds still for as long
+        # as nobody touches it, so it is built on a change and composited every other frame.
+        self._wifi_tile: tuple[tuple, Image.Image] | None = None
 
     # ---- layout ----
 
@@ -4021,6 +4055,87 @@ class Overlay:
             if cell.contains(px, py):
                 return key
         return None if self.menu_card.contains(px, py) else CANCEL
+
+    def _wifi_layout(self) -> tuple[Rect, dict[str, Rect]]:
+        """The network list's card: a title, six rows, and MORE beside CANCEL under them."""
+        width = min(self.width - 2 * self.pad, round(WIFI_LIST_W * self.height))
+        row_h = max(22, round(WIFI_ROW_H * self.height))
+        head_h = max(14, round(WIFI_HEAD_H * self.height))
+        pad = max(3, round(MENU_PAD * self.height))
+        height = head_h + row_h * (PAGE + 1) + pad * 2
+        card = Rect((self.width - width) // 2, max(0, (self.height - height) // 2), width, height)
+        cells = {}
+        y = card.y + pad + head_h
+        inner = card.w - pad * 2
+        for i in range(PAGE):
+            cells[f"{NET}{i}"] = Rect(card.x + pad, y, inner, row_h)
+            y += row_h
+        cells[MORE] = Rect(card.x + pad, y, inner // 2, row_h)
+        cells[CANCEL] = Rect(card.x + pad + inner // 2, y, inner - inner // 2, row_h)
+        return card, cells
+
+    def wifi_hit(self, px: int, py: int) -> str | None:
+        """Which cell of the list a tap landed on. Off the card is CANCEL, as on the menu."""
+        for key, cell in self.wifi_cells.items():
+            if cell.contains(px, py):
+                return key
+        return None if self.wifi_card.contains(px, py) else CANCEL
+
+    def _key_card(self) -> Rect:
+        """The keyboard's card, as tall as what is on it and centred on the panel."""
+        margin = max(4, round(KEY_MARGIN * self.height))
+        pad = max(3, round(MENU_PAD * self.height))
+        key_h = max(22, round(KEY_H * self.height))
+        gap = max(2, round(KEY_GAP * self.height))
+        title = max(12, round(KEY_TITLE_H * self.height))
+        height = pad * 2 + title + 5 * key_h + 5 * gap
+        return Rect(margin, max(0, (self.height - height) // 2), self.width - 2 * margin, height)
+
+    def key_cells(self, symbols: bool = False, alt: bool = False) -> dict[str, Rect]:
+        """Every key on the keyboard for this layer, and the field's two: SHOW and CANCEL.
+
+        A character key is named by its character, so anything one long is typed and anything
+        longer is a key that does something. Kept per layer: the layout is a function of three
+        booleans and a window size, and it is asked for on every tap.
+        """
+        layer = (symbols, alt)
+        if layer in self._keys:
+            return self._keys[layer]
+        card = self.key_card
+        pad = max(3, round(MENU_PAD * self.height))
+        key_h = max(22, round(KEY_H * self.height))
+        gap = max(2, round(KEY_GAP * self.height))
+        title = max(12, round(KEY_TITLE_H * self.height))
+        left = card.x + pad
+        unit = (card.w - pad * 2 + gap) / 10  # one key and the gap after it
+
+        def span(start: float, units: float, y: int) -> Rect:
+            x0 = round(left + start * unit)
+            return Rect(x0, y, round(left + (start + units) * unit - gap) - x0, key_h)
+
+        y = card.y + pad + title
+        cells = {SHOW: span(6.0, 2.0, y), CANCEL: span(8.0, 2.0, y)}
+        rows = (SYMBOL_ALT_ROWS if alt else SYMBOL_ROWS) if symbols else KEY_ROWS
+        for row in rows:
+            y += key_h + gap
+            offset = (10 - len(row)) / 2
+            for i, char in enumerate(row):
+                cells[char] = span(offset + i, 1.0, y)
+        y += key_h + gap
+        at_unit = 0.0
+        for key, units in KEY_BOTTOM:
+            cells[key] = span(at_unit, units, y)
+            at_unit += units
+        self._keys[layer] = cells
+        return cells
+
+    def key_hit(self, px: int, py: int, symbols: bool = False, alt: bool = False) -> str | None:
+        """Which key a tap on the keyboard landed on. None anywhere else - nothing dismisses it
+        but CANCEL, because a password half typed is not something to lose to a stray thumb."""
+        for key, cell in self.key_cells(symbols, alt).items():
+            if cell.contains(px, py):
+                return key
+        return None
 
     # ---- the cached backdrop ----
 
@@ -6055,6 +6170,8 @@ class Overlay:
         handed_over: bool = False,
         tutorial: Tutorial | None = None,
         plugged_in: Sequence[Device] = (),
+        wifi: Picker | None = None,
+        offline: bool = False,
     ) -> np.ndarray:
         """Draw the whole chrome for this frame and return it as an RGBA numpy array.
 
@@ -6114,6 +6231,10 @@ class Overlay:
         was plugged in - there is no toast and nothing to dismiss - so this is composited rather
         than baked, and none of it animates: a rail that breathed would be the panel asking to
         be looked at over a cable that was already plugged in an hour ago.
+
+        ``wifi`` is the network picker, when it is up - over everything, the way the menu is.
+        ``offline`` is the box having no network at all, and it is the only time the chrome says
+        anything about the network: a mark that is always there is a mark nobody reads.
         """
         halo = HALOS.get(state, GREEN_DIM)
         layer = self._base(state, recording, heat).copy()
@@ -6125,6 +6246,8 @@ class Overlay:
         # Composited rather than baked, because a device arriving IS the feedback that it
         # arrived, and a layer built once per state cannot say so without being thrown away.
         self._draw_usb(layer, plugged_in)
+        if offline:
+            self._draw_offline(layer, d)
         self._draw_caption(layer, state, halo, detail, phase, tutorial)
         held = pressed == "eye"
         # The pointers, over the faces the chrome laid down once. Neither inverts under a thumb
@@ -6193,6 +6316,8 @@ class Overlay:
             # Last of everything, because it is the only thing here that is asked a question
             # rather than told one: nothing behind it is live while it is up.
             self._draw_menu(layer, d, pressed)
+        if wifi is not None:
+            self._draw_wifi(layer, wifi, pressed)
         if flash > 0.0:
             # Green-white rather than white: a photo taken through a phosphor screen.
             d.rectangle([0, 0, self.width, self.height], fill=(214, 255, 228, int(190 * flash)))
@@ -9007,9 +9132,206 @@ class Overlay:
         r = max(6, round(MENU_GLYPH_R * self.height))
         gap = max(6, round(14 * self.scale))
         x = cell.x + gap
-        mark = self._glyph_power if key == POWER_OFF else self._glyph_restart
+        mark = {POWER_OFF: self._glyph_power, WIFI: self._glyph_wifi}.get(key, self._glyph_restart)
         mark(layer, x + r, cy, r, ink)
         self._text(d, x + 2 * r + gap, cy, label, self.font_read, (*ink, 255), tracking=tracking)
+
+    def _glyph_wifi(
+        self, layer: Image.Image, cx: int, cy: int, r: int, colour: tuple[int, int, int],
+        struck: bool = False,
+    ) -> None:
+        """Three arcs over a dot - the Wi-Fi mark every phone and laptop carries. *struck* puts a
+        line through it, which is how every one of them says there is no network."""
+        span = round(r * 1.15) + max(2, round(3 * self.scale))
+        stroke = max(2, round(3 * self.scale))
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            ox, oy = at(span), at(span + r * 0.62)
+            for k in (0.42, 0.86, 1.30):
+                reach = at(r * k) - at(0)
+                t.arc([ox - reach, oy - reach, ox + reach, oy + reach], start=225, end=315,
+                      fill=linear(colour), width=round(wide(stroke)))
+            dot = at(r * 0.16) - at(0)
+            t.ellipse([ox - dot, oy - dot, ox + dot, oy + dot], fill=linear(colour))
+            if struck:
+                t.line([at(span - r), at(span - r * 0.9), at(span + r), at(span + r * 0.9)],
+                       fill=linear(colour), width=round(wide(stroke)))
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
+
+    def _draw_offline(self, layer: Image.Image, d: ImageDraw.ImageDraw) -> None:
+        """No network: a struck Wi-Fi mark and two words on a plate hung from the top rail.
+
+        Amber, not the phosphor green, because it is the one thing in the chrome that is a fault
+        rather than a reading; and absent altogether while there is a network.
+        """
+        r = max(5, round(9 * self.scale))
+        pad = max(3, round(8 * self.scale))
+        tracking = max(1.0, 1.6 * self.scale)
+        text_w = self._width(OFFLINE_LABEL, self.font_tab, tracking)
+        w = round(pad * 3 + 2 * r + text_w)
+        h = round(2 * r + pad * 2)
+        x = (self.width - w) // 2
+        y = max(0, round(4 * self.scale))
+        d.rounded_rectangle([x, y, x + w, y + h], radius=self.radius, fill=(*SCREEN, 235),
+                            outline=(*AMBER, 255), width=self.line)
+        cy = y + h // 2
+        self._glyph_wifi(layer, x + pad + r, cy, r, AMBER, struck=True)
+        self._text(d, x + pad * 2 + 2 * r, cy, OFFLINE_LABEL, self.font_tab, (*AMBER, 255),
+                   tracking=tracking)
+
+    def _draw_wifi(self, layer: Image.Image, picker: Picker, pressed: str | None) -> None:
+        """The picker, over a scrim: one card, kept until what it shows changes."""
+        layer.alpha_composite(self._scrimmed())
+        shown = tuple(picker.shown())
+        key = (picker.screen, shown, picker.more(), picker.chosen, picker.typed, picker.shift,
+               picker.symbols, picker.show, picker.status, picker.busy, pressed)
+        if self._wifi_tile is None or self._wifi_tile[0] != key:
+            tile = Image.new("RGBA", (self.width, self.height), (0, 0, 0, 0))
+            if picker.screen == KEYBOARD:
+                self._draw_keyboard(tile, picker, pressed)
+            else:
+                self._draw_networks(tile, picker, shown, pressed)
+            self._wifi_tile = (key, tile)
+        layer.alpha_composite(self._wifi_tile[1])
+
+    def _card(self, d: ImageDraw.ImageDraw, card: Rect) -> None:
+        d.rounded_rectangle([card.x, card.y, card.right - 1, card.bottom - 1], radius=self.radius,
+                            fill=(*SCREEN, 255), outline=(*GREEN_MID, 255), width=self.line)
+
+    def _cell(self, d: ImageDraw.ImageDraw, cell: Rect, pressed: bool, lit: bool = False) -> None:
+        """A key: outlined, filled when it is the one that acts, inverted under a thumb."""
+        edge = max(1, round(2 * self.scale))
+        fill = (*GREEN, 255) if pressed or lit else (*SCREEN, 255)
+        d.rounded_rectangle([cell.x, cell.y, cell.right - 1, cell.bottom - 1],
+                            radius=self.radius, fill=fill, outline=(*GREEN_DIM, 255),
+                            width=max(1, edge // 2))
+
+    def _draw_networks(
+        self, layer: Image.Image, picker: Picker, shown: tuple, pressed: str | None
+    ) -> None:
+        d = ImageDraw.Draw(layer)
+        card = self.wifi_card
+        self._card(d, card)
+        pad = max(3, round(MENU_PAD * self.height))
+        first = self.wifi_cells[f"{NET}0"]
+        head = (card.y + pad + first.y) / 2
+        self._text(d, card.x + pad * 2, head, "WI-FI", self.font_tab, (*GREEN_DIM, 255),
+                   tracking=max(1.0, 2.4 * self.scale))
+        note = picker.status or ("looking for networks..." if picker.busy
+                                 else "tap a network to join")
+        self._text(d, card.right - pad * 2, head, note, self.font_micro, (*GREEN_MID, 255),
+                   align="r")
+        tracking = max(1.0, 1.0 * self.scale)
+        for i in range(PAGE):
+            cell = self.wifi_cells[f"{NET}{i}"]
+            d.line([cell.x, cell.y, cell.right, cell.y], fill=(*GREEN_DIM, 200),
+                   width=max(1, self.line // 2))
+            if i >= len(shown):
+                continue
+            net = shown[i]
+            down = pressed == f"{NET}{i}"
+            if down:
+                self._cell(d, cell, True)
+            ink = INK if down else GREEN if net.active or net.saved else GREEN_MID
+            _, cy = cell.center
+            x = cell.x + max(6, round(12 * self.scale))
+            x = self._signal_bars(d, x, cy, net.signal, ink)
+            tag = "ON" if net.active else "SAVED" if net.saved else ""
+            right = cell.right - max(6, round(12 * self.scale))
+            if tag:
+                right -= self._text(d, right, cy, tag, self.font_micro, (*ink, 255), align="r")
+                right -= max(6, round(12 * self.scale))
+            if net.secure:
+                right -= self._padlock(d, right, cy, ink) + max(6, round(12 * self.scale))
+            room = right - x
+            name = self._elide(net.ssid, self.font_read, room - tracking * len(net.ssid))
+            self._text(d, x, cy, name, self.font_read, (*ink, 255), tracking=tracking)
+        if not shown:
+            rows = self.wifi_cells[f"{NET}0"].y, self.wifi_cells[f"{NET}{PAGE - 1}"].bottom
+            empty = "looking for networks..." if picker.busy else "no networks found"
+            self._text(d, card.center[0], sum(rows) / 2, empty, self.font_read,
+                       (*GREEN_MID, 255), align="c")
+        more, cancel = self.wifi_cells[MORE], self.wifi_cells[CANCEL]
+        d.line([more.x, more.y, cancel.right, more.y], fill=(*GREEN_DIM, 200),
+               width=max(1, self.line // 2))
+        d.line([cancel.x, cancel.y + 8, cancel.x, cancel.bottom - 8], fill=(*GREEN_DIM, 200),
+               width=max(1, self.line // 2))
+        spread = max(1.0, 2.0 * self.scale)
+        for cell, word, key in ((more, MORE if picker.more() else SCAN, MORE),
+                                (cancel, "CANCEL", CANCEL)):
+            down = pressed == key
+            if down:
+                self._cell(d, cell, True)
+            ink = INK if down else GREEN_MID
+            self._text(d, cell.center[0], cell.center[1], word, self.font_read, (*ink, 255),
+                       align="c", tracking=spread)
+
+    def _signal_bars(self, d: ImageDraw.ImageDraw, x: int, cy: int, signal: int,
+              ink: tuple[int, int, int]) -> int:
+        """Signal as four rising bars. Returns where the name after them may start."""
+        bar = max(2, round(4 * self.scale))
+        gap = max(1, round(3 * self.scale))
+        lit = 1 + min(WIFI_BARS - 1, signal // 26)
+        base = cy + round(9 * self.scale)
+        for i in range(WIFI_BARS):
+            top = base - round((5 + i * 5) * self.scale)
+            colour = (*ink, 255) if i < lit else (*GREEN_DIM, 150)
+            x0 = x + i * (bar + gap)
+            d.rectangle([x0, top, x0 + bar - 1, base], fill=colour)
+        return x + WIFI_BARS * (bar + gap) + max(6, round(12 * self.scale))
+
+    def _padlock(self, d: ImageDraw.ImageDraw, right: int, cy: int,
+              ink: tuple[int, int, int]) -> int:
+        """A padlock ending at *right*. Returns how wide it was."""
+        r = max(3, round(5 * self.scale))
+        x0 = right - 2 * r
+        d.arc([x0 + 1, cy - 2 * r, right - 1, cy + 1], 180, 360, fill=(*ink, 255),
+              width=max(1, round(2 * self.scale)))
+        d.rounded_rectangle([x0, cy - r // 2, right, cy + r + r // 2], radius=1,
+                            fill=(*ink, 255))
+        return 2 * r
+
+    def _draw_keyboard(self, layer: Image.Image, picker: Picker, pressed: str | None) -> None:
+        d = ImageDraw.Draw(layer)
+        card = self.key_card
+        self._card(d, card)
+        pad = max(3, round(MENU_PAD * self.height))
+        title = max(12, round(KEY_TITLE_H * self.height))
+        cells = self.key_cells(picker.symbols, picker.shift and picker.symbols)
+        head = card.y + pad + title / 2
+        ssid = picker.chosen.ssid if picker.chosen else ""
+        self._text(d, card.x + pad * 2, head, self._elide(ssid.upper(), self.font_tab,
+                   card.w / 2), self.font_tab, (*GREEN, 255), tracking=max(1.0, 2.0 * self.scale))
+        note = picker.status or "password"
+        self._text(d, card.right - pad * 2, head, note, self.font_micro,
+                   (*(GREEN if picker.status else GREEN_DIM), 255), align="r")
+        show = cells[SHOW]
+        field = Rect(card.x + pad, show.y, show.x - card.x - pad - max(2, round(KEY_GAP
+                     * self.height)), show.h)
+        d.rounded_rectangle([field.x, field.y, field.right - 1, field.bottom - 1],
+                            radius=self.radius, outline=(*GREEN, 255), width=max(1, self.line))
+        typed = picker.typed if picker.show else "\u2022" * len(picker.typed)
+        spread = max(1.0, 1.5 * self.scale)
+        room = field.w - 4 * pad - self._cursor_w
+        while typed and self._width(typed, self.font_read, spread) > room:
+            typed = typed[1:]  # the end being typed is the end worth seeing
+        after = self._text(d, field.x + pad * 2, field.center[1], typed, self.font_read,
+                           (*GREEN, 255), tracking=spread)
+        self._text(d, field.x + pad * 2 + after + spread, field.center[1], CURSOR,
+                   self.font_read, (*GREEN, 255))
+        upper = picker.shift and not picker.symbols
+        labels = {SHIFT: "#+=" if picker.symbols else SHIFT,
+                  SYMBOLS: "ABC" if picker.symbols else SYMBOLS,
+                  SHOW: "HIDE" if picker.show else SHOW, CANCEL: "CANCEL"}
+        for key, cell in cells.items():
+            down = pressed == key
+            lit = key == JOIN or (key == SHIFT and picker.shift)
+            self._cell(d, cell, down, lit)
+            ink = INK if down or lit else GREEN if len(key) == 1 else GREEN_MID
+            word = key.upper() if upper and len(key) == 1 else labels.get(key, key)
+            self._text(d, cell.center[0], cell.center[1], word, self.font_read, (*ink, 255),
+                       align="c", tracking=0.0 if len(key) == 1 else max(1.0, 1.5 * self.scale))
 
     def _scrimmed(self) -> Image.Image:
         """The wash that puts the panel out behind the card. Built once, then kept."""

@@ -50,6 +50,7 @@ from . import (  # noqa: E402
     tasks,
     voice,
     webcam,
+    wifi,
 )
 from .audio import SAMPLE_RATE, resolve_device  # noqa: E402
 from .backlight import Backlight  # noqa: E402
@@ -69,13 +70,22 @@ from .config import (  # noqa: E402
 from .eye import COVER_OPEN_S  # noqa: E402
 from .overlay import (  # noqa: E402
     CANCEL,
+    DELETE,
     HEAT,
     IDLE,
+    JOIN,
+    MORE,
+    NET,
     POWER_OFF,
+    SHIFT,
+    SHOW,
+    SPACE,
     STARTING,
     STOPPING,
+    SYMBOLS,
     VOLUME,
     VOLUME_STEP,
+    WIFI,
     Overlay,
     composite,
     fit_to_window,
@@ -169,6 +179,10 @@ LONG_PRESS_S = 0.7
 # move together: change this and re-cut (tools/cut_cues.py), or the rise stops arriving.
 PRESS_GRACE_S = 0.1
 MENU_TIMEOUT_S = 20.0  # a menu nobody chose from gives the panel back rather than holding it
+# The Wi-Fi picker holds the panel longer than the menu does - a password is typed a key at a
+# time - but not forever: nobody at the glass for this long is not choosing a network.
+WIFI_TIMEOUT_S = 120.0
+WIFI_POLL_S = 10.0  # how often NetworkManager is asked whether there is a network at all
 # What the panel says while it finishes the session and goes. Not a caption: this is the last
 # thing the screen does, and everything else on it has stopped being true.
 POWER_SAYS = {power.POWEROFF: "Shutting down…", power.REBOOT: "Restarting…"}
@@ -431,6 +445,11 @@ def _stop_browser(proc: subprocess.Popen) -> None:
 class Kiosk:
     """The render loop, the window, and the tap handling."""
 
+    # Class-level so a kiosk built without its constructor - every test's - has no picker up
+    # and no opinion about the network. __init__ sets both again.
+    _wifi: wifi.Picker | None = None
+    _online: bool | None = None
+
     def __init__(
         self,
         controller: SessionController,
@@ -453,6 +472,17 @@ class Kiosk:
         self._eye_down_at: float | None = None
         self._menu = False  # the power menu has the panel; nothing behind it is live
         self._menu_until = 0.0
+        # The Wi-Fi picker, when it has the panel - modal exactly as the menu is. Its scans and
+        # joins run on a worker thread and write back into it; this loop only ever reads it.
+        self._wifi: wifi.Picker | None = None
+        self._wifi_until = 0.0
+        # Whether there is a network, as NetworkManager last said. None where it cannot say
+        # (a Mac, a box with no nmcli), which is drawn and treated as online.
+        self._online: bool | None = None
+        self._online_at = -WIFI_POLL_S
+        self._online_busy = threading.Event()
+        self._booting = True  # the first read is the boot's own, and the only one that offers
+        self._offer = False  # ...the picker, when that read found no network
         # What was chosen, honoured after the whole teardown below has run: the session's video
         # is still being muxed while the panel says goodbye, and systemd starts killing units the
         # moment the command underneath this returns. See main().
@@ -744,6 +774,9 @@ class Kiosk:
             # card can be reached while it is up, and anywhere off the card is a way out.
             self._choose(self.overlay.menu_hit(x, y))
             return
+        if self._wifi is not None:
+            self._wifi_tap(x, y)  # modal too: nothing behind a half-typed password is live
+            return
         boxes = self.overlay.hitboxes
         if boxes.volume.contains(x, y):
             if self._handed_over:
@@ -903,10 +936,167 @@ class Kiosk:
         if key == CANCEL:
             self._close_menu()
             return
+        if key == WIFI:
+            # Before the line below, which reads every other row as a way to end the box.
+            self._open_wifi()
+            return
         self._press(key)
         self.power = power.POWEROFF if key == POWER_OFF else power.REBOOT
         self._power_at = time.monotonic() + PRESS_SECONDS  # let the row be seen to invert
         print(f"· {self.power} asked for from the panel", flush=True)
+
+    # ---- the Wi-Fi picker ----
+
+    def _sync_network(self, now: float, live: bool) -> None:
+        """Ask NetworkManager, off-thread, whether there is a network; offer the picker once.
+
+        The offer is the boot's and nobody else's. A network dropping mid-session is not a
+        reason to put a card over the conversation - that would make the box the task - and
+        pressing the button with no network opens it anyway (see :meth:`_toggle_session`).
+        """
+        if now - self._online_at >= WIFI_POLL_S and not self._online_busy.is_set():
+            self._online_at = now
+            self._online_busy.set()
+            threading.Thread(target=self._read_network, name="kiosk-wifi-state",
+                             daemon=True).start()
+        if self._offer:
+            self._offer = False
+            self._offer_wifi(live)
+
+    def _read_network(self) -> None:
+        try:
+            if self._booting:
+                wifi.settle()  # NetworkManager may still be joining a saved network at boot
+            self._online = wifi.online()
+            if self._booting and self._online is False:
+                self._offer = True
+            self._booting = False
+        finally:
+            self._online_busy.clear()
+
+    def _offer_wifi(self, live: bool) -> None:
+        """The picker, on its own - but never over a session, and never over another question."""
+        if live or self._menu or self._wifi is not None or self._page_busy.is_set():
+            return
+        print("· no network at boot: the Wi-Fi picker", flush=True)
+        self._open_wifi()
+
+    def _open_wifi(self) -> None:
+        self._menu = False
+        self._wifi = wifi.Picker()
+        self._wifi_until = time.monotonic() + WIFI_TIMEOUT_S
+        self._touched_at = time.monotonic()
+        self._rescan(self._wifi)
+        print("· wifi picker", flush=True)
+
+    def _close_wifi(self) -> None:
+        self._wifi = None
+        self._touched_at = time.monotonic()
+
+    def _rescan(self, picker: wifi.Picker) -> None:
+        picker.busy = True
+        picker.status = ""
+
+        def scan() -> None:
+            try:
+                picker.networks = wifi.scan()
+                picker.page = 0
+            finally:
+                picker.busy = False
+
+        threading.Thread(target=scan, name="kiosk-wifi-scan", daemon=True).start()
+
+    def _join(self, picker: wifi.Picker, net: wifi.Network, password: str = "") -> None:
+        """Join *net* off-thread. The picker says so meanwhile and takes no second join."""
+        picker.busy = True
+        picker.status = f"joining {net.ssid}..."
+
+        def join() -> None:
+            try:
+                outcome = wifi.join(net, password)
+                if outcome == wifi.JOINED:
+                    self._online = True
+                    if self._wifi is picker:
+                        self._close_wifi()
+                    self._say(f"on {net.ssid}")
+                    print(f"· joined {net.ssid}", flush=True)
+                elif outcome == wifi.WRONG_PASSWORD:
+                    if picker.screen != wifi.KEYBOARD:
+                        picker.choose(net)  # a saved key that no longer works: ask for the new one
+                    picker.status = "wrong password - try again"
+                else:
+                    picker.status = f"couldn't join {net.ssid}"
+            finally:
+                picker.busy = False
+
+        threading.Thread(target=join, name="kiosk-wifi-join", daemon=True).start()
+
+    def _wifi_tap(self, x: int, y: int) -> None:
+        """A tap while the picker is up: a row of the list, or a key of the keyboard."""
+        picker = self._wifi
+        if picker is None or self.overlay is None:
+            return
+        self._wifi_until = time.monotonic() + WIFI_TIMEOUT_S
+        if picker.screen == wifi.KEYBOARD:
+            self._on_key(picker, self.overlay.key_hit(x, y, picker.symbols,
+                                                      picker.shift and picker.symbols))
+        else:
+            self._on_row(picker, self.overlay.wifi_hit(x, y))
+
+    def _on_row(self, picker: wifi.Picker, key: str | None) -> None:
+        if key is None:
+            return
+        if key == CANCEL:
+            self._close_wifi()
+            return
+        self._press(key)
+        if picker.busy:
+            return  # one scan or one join at a time; the header already says which
+        if key == MORE:
+            if picker.more():
+                picker.next_page()
+            else:
+                self._rescan(picker)
+            return
+        shown = picker.shown()
+        index = int(key.removeprefix(NET))
+        if index >= len(shown):
+            return
+        net = shown[index]
+        if net.active:
+            self._close_wifi()
+            self._say(f"on {net.ssid}")
+        elif net.saved or not net.secure:
+            self._join(picker, net)
+        else:
+            picker.choose(net)
+
+    def _on_key(self, picker: wifi.Picker, key: str | None) -> None:
+        if key is None:
+            return
+        self._press(key)
+        if key == CANCEL:
+            picker.back()
+        elif key == SHOW:
+            picker.show = not picker.show
+        elif key == SHIFT:
+            picker.shift = not picker.shift
+        elif key == SYMBOLS:
+            picker.symbols = not picker.symbols
+            picker.shift = False
+        elif key == SPACE:
+            picker.type(" ")
+        elif key == DELETE:
+            picker.delete()
+        elif key == JOIN:
+            if picker.busy or picker.chosen is None:
+                return
+            if len(picker.typed) < wifi.MIN_PSK:
+                picker.status = f"at least {wifi.MIN_PSK} characters"
+                return
+            self._join(picker, picker.chosen, picker.typed)
+        elif len(key) == 1:
+            picker.type(key.upper() if picker.shift and not picker.symbols else key)
 
     def _farewell(self) -> None:
         """Say what is happening and stop drawing. The rest is main()'s teardown, then the box.
@@ -971,7 +1161,7 @@ class Kiosk:
         if self._asleep:
             self._wake()
             return
-        if self._menu:
+        if self._menu or self._wifi is not None:
             return  # modal, and two of its three rows end the box: this is no answer to it
         self._snap()
 
@@ -1002,7 +1192,7 @@ class Kiosk:
         """
         self._touched_at = time.monotonic()
         self._cues.stop_if("button_pressed")
-        if self._menu:
+        if self._menu or self._wifi is not None:
             return  # modal, exactly as it is for the tap above
         if self._asleep:
             self._wake()
@@ -1459,6 +1649,11 @@ class Kiosk:
         # left saying which way this goes: the switch that used to went the way the words that
         # used to say it went before it.
         starting = not session_up(str(state))
+        if starting and self._online is False:
+            # No network: the session would get as far as the socket and fail there. The one
+            # thing that fixes it is choosing a network, so that is what the press opens.
+            self._open_wifi()
+            return
         self._pending = "start" if starting else "stop"
         self._pending_at = time.monotonic()
         if starting:
@@ -1799,7 +1994,8 @@ class Kiosk:
         # ...and so does somebody watching from the next room. Sleeping releases the camera,
         # which is the one thing a companion is here for; a panel that went dark under a phone
         # would take the picture with it and there is nobody at the glass to tap it back.
-        if session_up(state) or self._page_busy.is_set() or self._menu or companion.watching():
+        if (session_up(state) or self._page_busy.is_set() or self._menu or self._wifi is not None
+                or companion.watching()):
             self._touched_at = now
         elif after and not self._asleep and now - self._touched_at > after:
             self._sleep()
@@ -1888,9 +2084,12 @@ class Kiosk:
                 self._open_menu()
             if self._menu and started > self._menu_until:
                 self._close_menu()  # nobody chose; the panel is not the menu's to keep
+            if self._wifi is not None and started > self._wifi_until:
+                self._wifi = None  # ...and the same for a picker nobody is using
 
             status = self.controller.status()
             state = self._effective(str(status["state"]))
+            self._sync_network(started, session_up(str(status["state"])))
             # Something is running in the background - a picture being made, or the child
             # tidying up after a session that has already ended (cyclops.tasks). Read once here
             # and used twice: it picks the face, and it is the caption's last fallback below.
@@ -2048,6 +2247,9 @@ class Kiosk:
                     heat=self._heat,
                     hold=hold,
                     menu=self._menu,
+                    # The picker over everything, and the one mark that says there is no network.
+                    wifi=self._wifi,
+                    offline=self._online is False,
                     # The two instruments in the corner. Both may be None - no sink, no thermal
                     # zone - and both draw that as a dial that is not reading.
                     #

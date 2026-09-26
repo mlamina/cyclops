@@ -46,6 +46,19 @@ IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
 LEVEL_FULL_SCALE = 3000.0  # int16 RMS that maps to a full meter
 
 
+def failure(exc: BaseException) -> str:
+    """What the panel says when a session could not run: the two causes worth a sentence,
+    and otherwise the SDK's own words."""
+    message = str(exc)
+    if "invalid_api_key" in message:
+        return "OpenAI rejected the API key"
+    # A socket that never opened - no route, no DNS, a timeout - is a box with no network,
+    # which on this one means Wi-Fi. The SDK wraps it, so its name is checked as well.
+    if isinstance(exc, OSError) or "Connection" in type(exc).__name__:
+        return "No Wi-Fi"
+    return message
+
+
 class SessionController:
     """Starts/stops a VoiceAgent on its own thread and reports a thread-safe status snapshot.
 
@@ -327,10 +340,7 @@ class SessionController:
         except asyncio.CancelledError:
             pass  # a normal stop
         except Exception as exc:  # noqa: BLE001 - surface it to the panel, don't crash the kiosk
-            message = str(exc)
-            if "invalid_api_key" in message:
-                message = "OpenAI rejected the API key"
-            self._error = message
+            self._error = failure(exc)
         finally:
             # Cleared before the close, not after: anything holding this controller reads these
             # under the lock, and a loop that is closed but still published is one they will
