@@ -1,0 +1,18 @@
+:Noise Upstairs:89:WPA1 WPA2
+:MidnightFlour:79:WPA2
+:MidnightFlour:72:WPA2
+:Noise:60:WPA2
+*:Noise Upstairs 5g:60:WPA1 WPA2
+:networks:55:WPA2 WPA3
+:ATT33hsbna_Guest:54:WPA2
+:ATT33hsbna:52:WPA2
+:MidnightFlour:50:WPA2
+:ATT8g8N6xy:49:WPA2
+:ATT7J85Sne:49:WPA2
+:Noise 5g:47:WPA2
+:ETVillage3:47:WPA2
+::45:WPA2
+:a1c218:29:WPA3
+:MommyKwong:29:WPA2
+::29:
+::29:WPA2

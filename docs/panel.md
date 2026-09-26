@@ -29,8 +29,8 @@ the photo, a hold is the conversation.
 
 ## Holding his eye shuts the box down
 
-Press and hold him for 0.7 s and a power menu comes up over the picture: **SHUT DOWN**,
-**RESTART**, **CANCEL**, with anywhere off the card being a cancel too. It is behind a hold
+Press and hold him for 0.7 s and the **SYSTEM** menu comes up over the picture: **SHUT DOWN**,
+**RESTART**, **WI-FI**, **CANCEL** - four rows, with anywhere off the card being a cancel too. It is behind a hold
 because it is the one control here you cannot take back. While you hold, the rule that arcs over
 his head fills in from the left; when it reaches the far side the menu is open, and the panel
 blips, because the menu appears under the very finger covering it. The card sits above his face
@@ -44,6 +44,20 @@ down the way it would have over ssh, which is the whole point: an unplugged Pi l
 conversation it was in the middle of. It goes through `sudo -n systemctl` first and bare
 `systemctl` after, so it works whether the kiosk was started by the desktop at boot or by
 `deploy/push.sh` over ssh.
+
+## Choosing a network
+
+**WI-FI** opens the picker: what is on the air, one row per network - the one in use first, then
+the saved ones, then by signal - six to a page, with **MORE** paging on (or **SCAN** looking
+again when there is only one page). A saved or open network joins on one tap; anything else opens
+a keyboard drawn on the panel, with **SHIFT**, **123**, **SPACE**, **DEL**, **SHOW** and **JOIN**.
+A wrong password says so and leaves what you typed in the field. A network joined here is the one
+preferred at the next boot. All of it is `sudo -n nmcli`, on a worker thread.
+
+It comes up on its own once, at boot, when there is no network - never over a session - and
+pressing the button with no network opens it instead of starting a session that could not
+connect. While there is no network the top rail carries an amber **NO WI-FI** plate; with one,
+nothing.
 
 ## The border
 

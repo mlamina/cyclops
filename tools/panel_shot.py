@@ -12,6 +12,10 @@ same photo, the same state, and the only thing that differs between two shots is
     uv run python tools/panel_shot.py --handed-over --out away.png
     uv run python tools/panel_shot.py --tutorial 7 --step 3 --out steps.png
     uv run python tools/panel_shot.py --usb camera:Endoscope,music:MiniLab 3 --out usb.png
+    uv run python tools/panel_shot.py --menu --out menu.png
+    uv run python tools/panel_shot.py --wifi --page 2 --out list.png
+    uv run python tools/panel_shot.py --keyboard --typed hunter22 --status "wrong" --out kb.png
+    uv run python tools/panel_shot.py --offline --out offline.png
     uv run python tools/panel_shot.py --bench
 
 ``--strip`` crops the eye and lays N frames of it across a row, which is how motion is looked at
@@ -30,10 +34,13 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from cyclops import devices, eye, overlay, point, tutorial
+from cyclops import devices, eye, overlay, point, tutorial, wifi
 
 WIDTH, HEIGHT = 800, 480
 STRIP_PAD = 12  # picture kept around the eye in each strip cell, so the bezel's shadow is in it
+# The scan the picker was designed from: 18 rows off the Pi on 2026-09-26, one of them saved.
+SCAN = Path(__file__).resolve().parent.parent / "tests" / "wifi_scan.txt"
+SAVED = {"Noise Upstairs 5g"}
 AWAKE_ELAPSED = 12.0  # a session twelve seconds old, which is what the clock readouts show
 # A real job's steps, as the model would set them out, for --tutorial to take the first N of.
 SAMPLE_STEPS = (
@@ -77,6 +84,9 @@ def shown(args: argparse.Namespace, src: tuple[int, int] = (WIDTH, HEIGHT)) -> d
         temp_c=args.temp,
         handed_over=args.handed_over,
         plugged_in=plugged_in(args.usb),
+        menu=args.menu,
+        wifi=picker(args),
+        offline=args.offline,
     )
     shape = gesture(args)
     if shape is not None:
@@ -84,6 +94,19 @@ def shown(args: argparse.Namespace, src: tuple[int, int] = (WIDTH, HEIGHT)) -> d
     if args.tutorial:
         kw["tutorial"] = tutorial.Tutorial(SAMPLE_STEPS[: args.tutorial], args.step - 1)
     return kw
+
+
+def picker(args: argparse.Namespace) -> wifi.Picker | None:
+    """The Wi-Fi picker as --wifi or --keyboard ask for it, off the real scan. None if neither."""
+    if not (args.wifi or args.keyboard):
+        return None
+    nets = wifi.parse_scan(SCAN.read_text(), SAVED)
+    made = wifi.Picker(networks=nets, page=max(0, args.page - 1), status=args.status)
+    if args.keyboard:
+        made.choose(next(n for n in nets if n.ssid == "MidnightFlour"))
+        made.typed, made.status = args.typed, args.status
+        made.shift, made.symbols, made.show = args.shift, args.symbols, args.show
+    return made
 
 
 def plugged_in(spec: str) -> tuple[devices.Device, ...]:
@@ -188,6 +211,16 @@ def main() -> None:
     ap.add_argument("--step", type=int, default=1, help="which of its steps is up, from 1")
     ap.add_argument("--usb", default="", help="what is plugged in, as "
                     "'camera:Endoscope,music:MiniLab 3' - category is camera/music/storage/other")
+    ap.add_argument("--menu", action="store_true", help="the long-press menu is up")
+    ap.add_argument("--wifi", action="store_true", help="the Wi-Fi list, off the real scan")
+    ap.add_argument("--page", type=int, default=1, help="which page of the list, from 1")
+    ap.add_argument("--keyboard", action="store_true", help="the password keyboard")
+    ap.add_argument("--typed", default="", help="what has been typed on it")
+    ap.add_argument("--status", default="", help="the picker's line of news")
+    ap.add_argument("--shift", action="store_true")
+    ap.add_argument("--symbols", action="store_true")
+    ap.add_argument("--show", action="store_true", help="the password in the clear")
+    ap.add_argument("--offline", action="store_true", help="the box has no network")
     ap.add_argument("--out", type=Path, default=Path("panel.png"))
     args = ap.parse_args()
 
