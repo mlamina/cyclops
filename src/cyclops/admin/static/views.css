@@ -186,6 +186,29 @@ body {
   overflow: hidden;   /* the still is cut by the row's own edge rather than drawn past it */
 }
 .row:active, .row:focus-visible { border-color: var(--green); outline: none; }
+/* Holding a session row to delete it - see "deleting a session" in app.js. The row fills from
+   the left as the hold lands, over the same 0.7 s the eye's collar takes to reach the SYSTEM
+   menu, and then the text half becomes DELETE and CANCEL. The still stays uncovered so you can
+   see which session you are about to lose. Only ever drawn on the panel. */
+.row::after {
+  content: ''; position: absolute; inset: 0; z-index: 11; pointer-events: none;
+  background: var(--red); opacity: .28;
+  transform: scaleX(0); transform-origin: left;
+}
+.row.holding::after { transform: scaleX(1); transition: transform .7s linear; }
+.row.holding { border-color: var(--red); }
+.row.armed { border-color: var(--red); }
+.arm {
+  position: absolute; z-index: 12; top: 0; bottom: 0; right: 0;
+  left: calc(132 * var(--u));
+  display: grid; grid-template-columns: 1fr 1fr;
+}
+.arm > span {
+  display: grid; place-content: center; text-align: center;
+  font-size: calc(18 * var(--u)); letter-spacing: .2em;
+}
+.armdel { background: var(--red); color: #000; }
+.armno { background: var(--screen); color: var(--green); border-left: calc(1 * var(--u)) solid var(--dim); }
 /* The still is the recording's own first seconds, asked for with a media fragment - see the
    script. No poster file, no ffmpeg, nothing cached on the card. */
 /* Over the scanlines, the lift base.css describes: this is a picture, and the phosphor was

@@ -183,7 +183,9 @@ function sessionRow(one) {
   if (one.verdict === 'live') sub = '<span class="rowsub live">recording</span>';
   else if (one.verdict !== 'finished') sub = '<span class="rowsub broke">' + one.verdict + '</span>';
   else if (one.photos) sub = '<span class="rowsub">' + many(one.photos, 'photo') + '</span>';
-  return '<button class="row" type="button" data-open="' + esc(one.name) + '">' +
+  // data-live is what the hold reads: a session still recording cannot be armed for deleting.
+  return '<button class="row" type="button" data-open="' + esc(one.name) + '"' +
+    (one.verdict === 'live' ? ' data-live' : '') + '>' +
     '<span class="shot">' + still + '</span>' +
     '<span class="rowtext"><span class="rowtitle">' + esc(one.title) + '</span>' +
     '<span class="rowsum">' + esc(one.summary) + '</span></span>' +
@@ -1528,6 +1530,109 @@ if (document.body.classList.contains('kiosk')) {
   dragScroll(vMedia);
   dragScroll(vProjects);
   dragScroll(pbody);
+}
+
+// ---------------------------------------------------------------- deleting a session
+
+// Hold a row and it fills; at LONG_PRESS_S it arms, and becomes DELETE and CANCEL. The power
+// menu's shape exactly - a hold to reach the destructive thing and a way out beside it - which is
+// why there is no dialog: the hold is the confirmation. The panel only: the server refuses the LAN
+// (views.delete_session), and a laptop is never shown anything that would be refused.
+//
+// The armed cells are spans inside the row's <button> rather than buttons of their own - a button
+// cannot hold one - and they act on the press, not the release, so the press that armed the row
+// can never be the one that deletes it.
+const LONG_PRESS_MS = 700;    // kiosk.LONG_PRESS_S, the hold that opens the SYSTEM menu
+const ARMED_MS = 20000;       // an armed row nobody answered goes back to being a row
+const HOLD_SLOP = 6;          // dragScroll's SLOP: past this the finger is scrolling, not holding
+let holdRow = null, holdTimer = 0, holdX = 0, holdY = 0, armedRow = null, armedTimer = 0;
+let eatClick = false;         // the release after an arm or a DELETE/CANCEL press opens nothing
+
+function unhold() {
+  clearTimeout(holdTimer);
+  if (holdRow) holdRow.classList.remove('holding');
+  holdRow = null;
+}
+
+function disarm() {
+  clearTimeout(armedTimer);
+  if (!armedRow) return;
+  armedRow.classList.remove('armed');
+  armedRow.querySelector('.arm')?.remove();
+  armedRow = null;
+}
+
+function arm(row) {
+  disarm();
+  armedRow = row;
+  row.classList.add('armed');
+  row.insertAdjacentHTML('beforeend', '<span class="arm">' +
+    '<span class="armdel" data-act="delete">DELETE</span>' +
+    '<span class="armno" data-act="cancel">CANCEL</span></span>');
+  armedTimer = setTimeout(disarm, ARMED_MS);
+}
+
+async function eraseSession(row) {
+  const cell = row.querySelector('.armdel');
+  try {
+    const r = await fetch('/api/session/' + encodeURIComponent(row.dataset.open) + '/delete',
+                          { method: 'POST' });
+    if (!r.ok) {
+      // A file we did not write, or a session that started recording: the row stays, and says so.
+      if (cell) cell.textContent = (await r.text()) || 'could not delete it';
+      return;
+    }
+  } catch (e) {
+    if (cell) cell.textContent = 'could not delete it';
+    return;
+  }
+  if (armedRow === row) { clearTimeout(armedTimer); armedRow = null; }
+  row.remove();
+  held = null;   // or the listing's 20 s of reuse paints the row straight back
+  showSessions();
+}
+
+if (ON_PANEL) {
+  vSessions.addEventListener('pointerdown', (e) => {
+    unhold();
+    eatClick = false;
+    const act = e.target.closest('[data-act]');
+    if (act && armedRow && armedRow.contains(act)) {
+      eatClick = true;
+      if (act.dataset.act === 'delete') eraseSession(armedRow);
+      else disarm();
+      return;
+    }
+    // A tap off the armed row puts it back and does nothing else - not open whatever it landed on.
+    if (armedRow) { disarm(); eatClick = true; return; }
+    if (e.button) return;
+    const row = e.target.closest('.row[data-open]');
+    if (!row || row.hasAttribute('data-live')) return;
+    holdRow = row; holdX = e.clientX; holdY = e.clientY;
+    row.classList.add('holding');
+    holdTimer = setTimeout(() => {
+      row.classList.remove('holding');
+      holdRow = null;
+      eatClick = true;
+      arm(row);
+    }, LONG_PRESS_MS);
+  });
+  vSessions.addEventListener('pointermove', (e) => {
+    if (holdRow && Math.hypot(e.clientX - holdX, e.clientY - holdY) > HOLD_SLOP) unhold();
+  });
+  vSessions.addEventListener('pointerup', unhold);
+  vSessions.addEventListener('pointercancel', unhold);
+  vSessions.addEventListener('scroll', () => { unhold(); disarm(); }, { passive: true });
+  // Ahead of the router's click, which would open the session the finger just armed.
+  vSessions.addEventListener('click', (e) => {
+    if (!eatClick) return;
+    eatClick = false;
+    e.stopPropagation(); e.preventDefault();
+  }, true);
+  // A tap anywhere off the list puts an armed row back, as a tap on it already does.
+  document.addEventListener('pointerdown', (e) => {
+    if (!vSessions.contains(e.target)) disarm();
+  });
 }
 
 // ---------------------------------------------------------------- the router

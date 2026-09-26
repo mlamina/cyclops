@@ -38,6 +38,7 @@ from .. import (
     tasks,
     voice,
 )
+from .. import session as sessionlog
 from ..config import (
     BROWSER_CLOSE_FLAG,
     COMPANION_PORT,
@@ -627,6 +628,35 @@ def find_clips(request: HttpRequest, name: str) -> HttpResponse:
     except OSError as exc:
         return HttpResponseBadRequest(f"could not ask for that ({exc})")
     return JsonResponse({"name": name, "cut": cut.state(folder)})
+
+
+@require_POST
+def delete_session(request: HttpRequest, name: str) -> HttpResponse:
+    """Delete one session - its log, its pages, its video and every picture in it. No undo.
+
+    Written beside :func:`find_clips` and in its shape, with one difference that matters: this
+    answers the panel only. The page has no login, and a one-tap irreversible delete from
+    anything on the LAN is the wrong side of that line, so a laptop gets 403 - and, because
+    ``body.kiosk`` is what draws the gesture, never sees anything to press in the first place.
+
+    Answers with the fresh list so the row can leave without a reload.
+    """
+    if not _is_local(request):
+        return HttpResponseForbidden("only the panel can delete a session")
+    settings = _settings()
+    folder = library.resolve(settings.sessions_dir, name)
+    if folder is None:
+        raise Http404("no such session")
+    if card.locked(folder):
+        return HttpResponseBadRequest("that session is still recording")
+    with cut.kept_off(folder) as free:
+        if not free:
+            return HttpResponseBadRequest("a clip is being made from it - try in a minute")
+        try:
+            sessionlog.erase(folder)
+        except OSError as exc:
+            return HttpResponseBadRequest(f"could not delete it ({exc})")
+    return JsonResponse({"sessions": library.as_dicts(_entries())})
 
 
 def session_records(request: HttpRequest, name: str) -> JsonResponse:

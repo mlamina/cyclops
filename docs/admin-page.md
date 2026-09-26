@@ -4,9 +4,15 @@
 can open `http://cyclops.local/` and see both how the box is doing and what it has recorded. It
 has no database and no login — a private-LAN dashboard, not an exposed service.
 
-Almost all of it is read-only. The two exceptions are in the project browser, where anything on
-the network can make a folder and upload a file into `projects/` — putting a datasheet on the box
-from the machine the datasheet is on is the whole point of them. What stands in for a login is
+It reads far more than it writes, but three things on it change the card. Two are in the
+project browser, where anything on the network can make a folder and upload a file into
+`projects/` — putting a datasheet on the box from the machine the datasheet is on is the whole
+point of them. The third is deleting a session, and that one is the panel's alone: hold a row on
+**SESSIONS** for 0.7 s, it fills as you hold and then becomes **DELETE** and **CANCEL**, and
+DELETE takes the session folder and everything in it at once — no undo, no trash. A laptop on the
+LAN is refused (403) and is never shown the gesture; a session still recording cannot be armed,
+and a file in the folder that Cyclops did not write keeps the whole session. What the project
+filed from it — its copies of the photos, its `Log.md` entry — stays with the project. What stands in for a login is
 containment rather than a credential: a destination is resolved before it is compared against the
 project it must be under, every name is sanitised rather than trusted, and a file is refused past
 128 MB. That defends against a mistake and against a browser on another origin, not against

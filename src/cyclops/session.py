@@ -1457,7 +1457,7 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
         # reaches this function instead of being repaired. An rmdir on that raises, which left
         # the folder stuck forever - never deleted, and never muxed either, because _recover
         # takes the removal branch and steps over _fix.
-        for generated in (card.CLIPS, PARTS):
+        for generated in (card.CLIPS, PARTS, card.VIDEOS):
             made = folder / generated
             if made.is_dir():
                 for one in made.iterdir():
@@ -1477,6 +1477,52 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
         return f"nothing survived, but could not remove it ({exc})"
     card.sync_dir(folder.parent)
     return "nothing survived - removed"
+
+
+def erase(folder: Path) -> None:
+    """Delete a session somebody asked to be deleted, photographs and all. Raises OSError.
+
+    :func:`_remove`'s sibling and not a flag on it: that one refuses a folder with a picture in
+    it by design, and this one exists to take exactly that. Both of its safety properties stay.
+    :func:`cyclops.card.surprises` goes first, so a file we did not write keeps the session and
+    the error says which; and every directory goes with ``rmdir``, never ``rmtree``, so anything
+    unexpected inside one still stops it. What it takes that ``_remove`` does not is the contents
+    of ``photos/`` and ``videos/`` - pictures, their sidecars and our own strays - because you
+    asked it to.
+
+    Our own scratch files beside the log (``.video.mp4.tmp`` from a mux that was killed) are
+    ours, so they do not count as a surprise and go with the rest.
+
+    A delete that cannot finish leaves the session whole, not hollow: what can be made again
+    (clips, parts, bookmarks, the summary) goes first, and the recording itself - photographs,
+    video, page and log, in that order - only once nothing else is left to stop it.
+    """
+    ours = {p.name for p in card.strays(folder)}
+    odd = [name for name in card.surprises(folder) if name not in ours]
+    if odd:
+        raise OSError(f"{', '.join(odd)} is not ours, so the session was kept")
+    kept = (card.VIDEO, card.PAGE_NAME, card.LOG_NAME)
+    for sub in (card.CLIPS, PARTS, card.VIDEOS):
+        _empty(folder / sub)
+    for one in folder.iterdir():
+        if not one.is_dir() and one.name not in kept:
+            one.unlink(missing_ok=True)
+    if left := [p.name for p in folder.iterdir() if p.name not in (PHOTOS, *kept)]:
+        raise OSError(f"{', '.join(left)} turned up while deleting, so the session was kept")
+    _empty(folder / PHOTOS)
+    for name in kept:
+        (folder / name).unlink(missing_ok=True)
+    folder.rmdir()
+    card.sync_dir(folder.parent)
+
+
+def _empty(inside: Path) -> None:
+    """Every file in one of a session's directories, then the directory - rmdir, never rmtree."""
+    if inside.is_dir():
+        for one in inside.iterdir():
+            if not one.is_dir():
+                one.unlink(missing_ok=True)
+        inside.rmdir()
 
 
 def _recover(settings: Settings, *, offline: bool = False, dry_run: bool = False) -> int:

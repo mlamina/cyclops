@@ -271,6 +271,23 @@ def _held():
         handle.close()  # the kernel drops the lock with the fd, however this process ends
 
 
+@contextmanager
+def kept_off(folder: Path):
+    """Hold the clipper off one session while it is deleted. Yields False when it is on it now.
+
+    A free lock is taken for the whole delete, so no sweep can start on the folder mid-way (a
+    ``write_plan`` would put ``clips/`` back into a folder being emptied). A busy lock refuses
+    only the session the clipper is working on - the one :func:`work` names - so deleting an
+    old session does not wait on a render of today's.
+    """
+    with _held() as mine:
+        if mine:
+            yield True
+            return
+        todo = work(folder.parent)
+        yield todo is None or todo.folder != folder
+
+
 # ------------------------------------------------------------------ is this one worth anything
 
 
