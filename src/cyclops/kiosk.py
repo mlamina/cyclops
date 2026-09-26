@@ -40,6 +40,7 @@ from . import (  # noqa: E402
     barge,
     companion,
     devices,
+    flip,
     mixer,
     panel,
     point,
@@ -71,6 +72,7 @@ from .eye import COVER_OPEN_S  # noqa: E402
 from .overlay import (  # noqa: E402
     CANCEL,
     DELETE,
+    FLIP,
     HEAT,
     IDLE,
     JOIN,
@@ -770,8 +772,8 @@ class Kiosk:
             self._wake()
             return
         if self._menu:
-            # Modal, and it has to be: two of its three rows end the box. Nothing behind the
-            # card can be reached while it is up, and anywhere off the card is a way out.
+            # Modal, and it has to be: two of its rows end the box. Nothing behind the card
+            # can be reached while it is up, and anywhere off the card is a way out.
             self._choose(self.overlay.menu_hit(x, y))
             return
         if self._wifi is not None:
@@ -940,10 +942,23 @@ class Kiosk:
             # Before the line below, which reads every other row as a way to end the box.
             self._open_wifi()
             return
+        if key == FLIP:
+            # Before the line below too. The note first, so a reboot mid-turn still comes back
+            # the way that was asked for; the turn itself off the render loop, because it is a
+            # subprocess and a camera restart.
+            self._close_menu()
+            on = flip.request(not flip.enabled())
+            threading.Thread(target=self._flip, args=(on,), name="kiosk-flip", daemon=True).start()
+            return
         self._press(key)
         self.power = power.POWEROFF if key == POWER_OFF else power.REBOOT
         self._power_at = time.monotonic() + PRESS_SECONDS  # let the row be seen to invert
         print(f"· {self.power} asked for from the panel", flush=True)
+
+    def _flip(self, on: bool) -> None:
+        """Turn the panel over (or back), and the camera with it. On a worker thread."""
+        flip.apply(on)
+        self.camera.reopen()  # the module's --rotation comes off or goes back on
 
     # ---- the Wi-Fi picker ----
 
@@ -1162,7 +1177,7 @@ class Kiosk:
             self._wake()
             return
         if self._menu or self._wifi is not None:
-            return  # modal, and two of its three rows end the box: this is no answer to it
+            return  # modal, and two of its rows end the box: this is no answer to it
         self._snap()
 
     def button_held(self) -> None:
@@ -2050,6 +2065,9 @@ class Kiosk:
             h, w = first.shape[:2]
             width, height = min(w, 1280), min(h, 720)
         self.open_window(first, width, height)
+        if flip.enabled():  # a box rebooted upside down comes back upside down
+            threading.Thread(target=flip.apply, args=(True,), name="kiosk-flip",
+                             daemon=True).start()
 
         while self.running:
             started = time.monotonic()

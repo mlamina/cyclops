@@ -81,6 +81,11 @@ VOICE_FILE = Path.home() / ".cache" / "cyclops" / "voice"
 # reader looks at it twice a second. Absent means nobody has ever said, and that is on.
 STEADY_FILE = Path.home() / ".cache" / "cyclops" / "steady"
 
+# And whether the box is standing on its head - see :mod:`cyclops.flip`. Written by the kiosk
+# when FLIP SCREEN is chosen, read at startup so a box rebooted upside down comes back that way.
+# Absent means the right way up.
+FLIP_FILE = Path.home() / ".cache" / "cyclops" / "flip"
+
 # And beside it, the one note here that is a request rather than a state: play that voice now, so
 # whoever is standing at the panel can hear what they are choosing between. Written by the page,
 # consumed *and deleted* by the kiosk - the only process on this box with a /dev/snd - which is

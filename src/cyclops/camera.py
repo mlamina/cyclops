@@ -117,6 +117,7 @@ class CameraSource:
         # supervisor keeps the frames over the reopen instead of putting the 'no camera' card up
         # mid-swap. The same argument the framing change already makes, for the same second.
         self._switching = False
+        self._reopening = False  # set by reopen(); the reader stands down for it
         self._lock = threading.Lock()
         self._frame = None  # the newest decoded frame, BGR, raw
         self._live = None  # ...and the steadied window of it the panel is shown
@@ -164,6 +165,13 @@ class CameraSource:
         order = list(FRAMINGS)
         self._framing = order[(order.index(self._framing) + 1) % len(order)]
         return self._framing
+
+    def reopen(self) -> None:
+        """Open the module again with the flags it would be opened with now - the flip's
+        rotation. A framing change without the change: same stand-down, same kept frames.
+        Only the module: a C920 taken down and put back up wedges (see :meth:`stop`)."""
+        if self._index == RPICAM:
+            self._reopening = True
 
     @property
     def error(self) -> str:
@@ -367,6 +375,10 @@ class CameraSource:
         failing_since = 0.0
         checked = time.monotonic()
         while not self._stop.is_set() and self._generation == token and self._framing == framing:
+            if self._reopening:
+                self._reopening = False
+                self._switching = True  # keep the frames over the reopen, as a framing change does
+                return
             attempted = time.monotonic()
             # Has something better been plugged in? Asked on a slow timer rather than per frame:
             # it is a handful of small sysfs reads, which is nothing beside decoding a frame but

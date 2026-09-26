@@ -30,7 +30,7 @@ the photo, a hold is the conversation.
 ## Holding his eye shuts the box down
 
 Press and hold him for 0.7 s and the menu comes up over the picture: **SHUT DOWN**,
-**RESTART**, **WI-FI**, **CANCEL** - four rows and no title, with anywhere off the card being a
+**RESTART**, **WI-FI**, **FLIP SCREEN**, **CANCEL** - five rows and no title, with anywhere off the card being a
 cancel too. It is behind a hold because it is the one control here you cannot take back. While
 you hold, the rule that arcs over his head fills in from the left; when it reaches the far side
 the menu is open, and the panel blips, because the menu appears under the very finger covering
@@ -43,6 +43,13 @@ down the way it would have over ssh, which is the whole point: an unplugged Pi l
 conversation it was in the middle of. It goes through `sudo -n systemctl` first and bare
 `systemctl` after, so it works whether the kiosk was started by the desktop at boot or by
 `deploy/push.sh` over ssh.
+
+**FLIP SCREEN** turns the panel over, for a box that has to stand on its head: the picture is
+rotated 180° by the compositor (`wlr-randr`), the camera module's own upside-down correction
+comes off so the room stays the right way up, and session recordings are turned back so they
+play upright. Choose it again to turn it back. The choice is kept in `~/.cache/cyclops/flip`, so
+a box rebooted upside down comes back upside down - bar the boot splash, which is drawn before
+there is a compositor to turn it.
 
 ## Choosing a network
 

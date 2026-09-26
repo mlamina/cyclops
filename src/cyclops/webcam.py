@@ -19,7 +19,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from . import devices
+from . import devices, flip
 from .overlay import sharpen
 
 WARMUP_FRAMES = 10  # let auto-exposure/white-balance settle before the real shot
@@ -452,7 +452,8 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
             "--framerate",
             str(FRAME_RATE),
             "--rotation",
-            str(RPICAM_ROTATION),
+            # Turned over, the module is the right way up and its correction comes off.
+            str(0 if flip.enabled() else RPICAM_ROTATION),
             "--autofocus-mode",
             RPICAM_AF,
             *FRAMINGS[framing],

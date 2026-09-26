@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from cyclops import flip, overlay, ui, wifi
 from cyclops import kiosk as kiosk_module
-from cyclops import overlay, ui, wifi
 
 SCAN = (Path(__file__).parent / "wifi_scan.txt").read_text()
 DOWN = kiosk_module.cv2.EVENT_LBUTTONDOWN
@@ -90,6 +90,32 @@ def test_choosing_wifi_opens_the_picker_and_does_not_reboot(kiosk) -> None:
     assert kiosk.power is None, "the WI-FI row fell through to RESTART"
     assert not kiosk._menu and kiosk._wifi is not None
     assert len(kiosk._wifi.networks) == 13
+
+
+def test_choosing_flip_turns_it_on_a_worker_and_does_not_reboot(
+    kiosk, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The WI-FI row's twin: FLIP SCREEN sits above the same fall-through to RESTART."""
+    note = tmp_path / "flip"
+    monkeypatch.setattr(flip, "FLIP_FILE", note)
+    started = []
+
+    class Thread:
+        def __init__(self, target, name: str = "", daemon: bool = False, args: tuple = ()):
+            started.append((target, args))
+
+        def start(self) -> None:
+            pass
+
+    monkeypatch.setattr(kiosk_module.threading, "Thread", Thread)
+    k = kiosk
+    k._menu = True
+    k._on_mouse(kiosk_module.cv2.EVENT_LBUTTONDOWN,
+                *k.overlay.menu_cells[overlay.FLIP].center, 0, None)
+    assert k.power is None, "the FLIP SCREEN row fell through to RESTART"
+    assert not k._menu
+    assert started == [(k._flip, (True,))], "the turn ran on the render loop"
+    assert note.read_text().strip() == "on"
 
 
 def test_the_picker_never_opens_by_itself_over_a_session(kiosk) -> None:
