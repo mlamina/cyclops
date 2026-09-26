@@ -66,15 +66,6 @@ def test_every_row_label_fits_beside_its_mark(width: int, height: int) -> None:
         assert ov._width(label, ov.font_read, tracking) <= room, f"{label} at {width}x{height}"
 
 
-def test_the_header_says_which_of_the_two_sleeps_this_is() -> None:
-    """GO TO SLEEP ends the session and SHUT DOWN ends the box, and the card says so."""
-    ov = overlay.Overlay(800, 480)
-    tracking = max(1.0, 2.4 * ov.scale)
-    room = ov.menu_card.w - 4 * max(3, round(overlay.MENU_PAD * 480))
-    title = ov._width(overlay.MENU_TITLE, ov.font_tab, tracking)
-    assert title + ov.font_micro.getlength(overlay.MENU_NOTE) <= room
-
-
 # ---------------------------------------------------------------- where a tap lands
 
 

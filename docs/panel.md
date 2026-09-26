@@ -29,13 +29,12 @@ the photo, a hold is the conversation.
 
 ## Holding his eye shuts the box down
 
-Press and hold him for 0.7 s and the **SYSTEM** menu comes up over the picture: **SHUT DOWN**,
-**RESTART**, **WI-FI**, **CANCEL** - four rows, with anywhere off the card being a cancel too. It is behind a hold
-because it is the one control here you cannot take back. While you hold, the rule that arcs over
-his head fills in from the left; when it reaches the far side the menu is open, and the panel
-blips, because the menu appears under the very finger covering it. The card sits above his face
-rather than over it and says *the whole box, not the session*, because **GO TO SLEEP** on the tab
-beside it means the other thing.
+Press and hold him for 0.7 s and the menu comes up over the picture: **SHUT DOWN**,
+**RESTART**, **WI-FI**, **CANCEL** - four rows and no title, with anywhere off the card being a
+cancel too. It is behind a hold because it is the one control here you cannot take back. While
+you hold, the rule that arcs over his head fills in from the left; when it reaches the far side
+the menu is open, and the panel blips, because the menu appears under the very finger covering
+it. The card sits above his face rather than over it.
 
 Choosing does not cut the power there and then. The panel says `Shutting down…`, the kiosk tears
 itself down exactly as `q` would — the session is finished, the video muxed, the folder named and

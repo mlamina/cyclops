@@ -2658,15 +2658,10 @@ POWER_OFF, RESTART, WIFI, CANCEL = "poweroff", "restart", "wifi", "cancel"
 MENU_ROWS = (
     (POWER_OFF, "SHUT DOWN"), (RESTART, "RESTART"), (WIFI, "WI-FI"), (CANCEL, "CANCEL"),
 )
-MENU_TITLE = "SYSTEM"  # no longer only power: the network the box is on is asked for here too
-# The one line that keeps this apart from the tab a finger's width underneath it. GO TO SLEEP
-# ends the *session*; these two end the *box*, and in English those are near enough the same
-# sentence that the menu says which it means rather than trusting the words to.
-MENU_NOTE = "the whole box, not the session"
-
+# No header. The card is its rows and nothing else: a title only names the menu you can already
+# see, and the rows say what they do.
 MENU_W = 0.80  # of the panel height, like every other fraction here
 MENU_ROW_H = 0.13  # 62 px at 480 - a target for a thumb that is not being looked at
-MENU_HEAD_H = 0.09  # the title line above the rows
 MENU_PAD = 0.021
 MENU_SCRIM = 168  # how far the panel behind the card is put out. Not all the way: the picture
 # and the border keep saying what the box is doing underneath a question about turning it off.
@@ -4027,9 +4022,8 @@ class Overlay:
         """
         width = max(160, round(MENU_W * self.height))
         row_h = max(22, round(MENU_ROW_H * self.height))
-        head_h = max(14, round(MENU_HEAD_H * self.height))
         pad = max(3, round(MENU_PAD * self.height))
-        height = head_h + row_h * len(MENU_ROWS) + pad * 2
+        height = row_h * len(MENU_ROWS) + pad * 2
         y = max(0, (self.height - height) // 2)
         x = self.frame.x + (self.width - width) // 2
         clear = self.eye[0] + self.shoulder + max(4, round(10 * self.scale))
@@ -4037,7 +4031,7 @@ class Overlay:
             x = min(clear, self.frame.right - width)
         card = Rect(x, y, width, height)
         cells = {}
-        row_y = card.y + pad + head_h
+        row_y = card.y + pad
         for key, _ in MENU_ROWS:
             cells[key] = Rect(card.x + pad, row_y, card.w - pad * 2, row_h)
             row_y += row_h
@@ -4047,9 +4041,9 @@ class Overlay:
         """Which row of the power menu a tap landed on, if the menu is up.
 
         Anywhere off the card is :data:`CANCEL`, which is what tapping outside a dialog has meant
-        on every machine since the mouse. Anywhere on it that is not a row - the title line, the
-        few pixels between the border and the first row - is nothing at all: a card you can
-        dismiss by missing the thing you were aiming at is a card that answers for you.
+        on every machine since the mouse. Anywhere on it that is not a row - the few pixels of
+        padding between the border and the first row - is nothing at all: a card you can dismiss
+        by missing the thing you were aiming at is a card that answers for you.
         """
         for key, cell in self.menu_cells.items():
             if cell.contains(px, py):
@@ -9082,18 +9076,6 @@ class Overlay:
             outline=(*GREEN_MID, 255),
             width=self.line,
         )
-        pad = max(3, round(MENU_PAD * self.height))
-        inset = card.x + pad * 2
-        first = self.menu_cells[MENU_ROWS[0][0]]
-        head = (card.y + pad + first.y) / 2
-        self._text(
-            d, inset, head, MENU_TITLE, self.font_tab, (*GREEN_DIM, 255),
-            tracking=max(1.0, 2.4 * self.scale),
-        )
-        # The note is the half of this header that is actually load-bearing; the title only says
-        # which menu you are in, and the note says which of the two sleeps this one means.
-        self._text(d, card.right - pad * 2, head, MENU_NOTE, self.font_micro,
-                   (*GREEN_DIM, 255), align="r")
         for key, label in MENU_ROWS:
             self._draw_menu_row(layer, d, key, label, pressed == key)
 
@@ -9105,7 +9087,7 @@ class Overlay:
         label: str,
         pressed: bool,
     ) -> None:
-        """One row: a rule over it, a mark, a word, and the inversion that answers a thumb.
+        """One row: a rule over it (bar the first), a mark, a word, and the inversion for a thumb.
 
         The two that do something wear a glyph and full phosphor; CANCEL is centred, dimmer and
         under a rule of its own, because the way out of a menu is not one of its choices. Pressed
@@ -9113,8 +9095,10 @@ class Overlay:
         it should not have to be learnt twice on one panel.
         """
         cell = self.menu_cells[key]
-        d.line([cell.x, cell.y, cell.right, cell.y], fill=(*GREEN_DIM, 200),
-               width=max(1, self.line // 2))
+        if key != MENU_ROWS[0][0]:  # the top row is under the card's own border already, and a
+            # second line a pad below the first reads as a mistake rather than as a division
+            d.line([cell.x, cell.y, cell.right, cell.y], fill=(*GREEN_DIM, 200),
+                   width=max(1, self.line // 2))
         edge = max(1, round(2 * self.scale))
         if pressed:
             d.rounded_rectangle(
