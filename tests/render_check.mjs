@@ -158,6 +158,208 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 
 let failed = 0;
+
+// ---- deleting a session ----
+//
+// The list is the admin page's own, so this drives the page against a stubbed card: /api/sessions
+// answers the fixture rows below and /api/panel answers "nothing up" - otherwise a pending picture
+// covers the list and every row measures as invisible. Nothing is deleted from anywhere; the
+// delete route is stubbed too, and only the page's half of it is under test. The server's half is
+// tests/test_delete_session.py.
+//
+// ONLY=sessions runs this section and stops, so it can be run without touching the panel offer
+// the picture cases below write into ~/.cache/cyclops.
+const ROWS = ['a', 'b', 'c', 'd', 'e', 'f'].map((k, i) => ({
+  name: `2026-09-2${i}_10-00-00_row-${k}`, title: `Row ${k.toUpperCase()}`,
+  summary: 'Swapped the fork seals and bled the brakes.', started: `2026-09-2${i}T10:00:00`,
+  seconds: 600, video: false, photos: 2, verdict: i === 1 ? 'live' : 'finished',
+}));
+async function stubCard(target) {
+  const card = { rows: [...ROWS], asked: 0, deleted: [] };
+  await target.route('**/api/panel', (r) => r.fulfill({ json: { picture: null, screen: null } }));
+  await target.route('**/api/sessions', (r) => { card.asked++; r.fulfill({ json: { sessions: card.rows } }); });
+  await target.route('**/api/session/*/delete', (r) => {
+    const name = decodeURIComponent(r.request().url().split('/').slice(-2)[0]);
+    card.deleted.push(name);
+    card.rows = card.rows.filter((one) => one.name !== name);
+    r.fulfill({ json: { sessions: card.rows } });
+  });
+  return card;
+}
+const rowOf = (target, i) => target.locator('#v-sessions .row').nth(i);
+const middle = async (loc) => {
+  const b = await loc.boundingBox();
+  return [b.x + b.width / 2, b.y + b.height / 2];
+};
+const rowState = (target, i) => rowOf(target, i).evaluate((el) => ({
+  holding: el.classList.contains('holding'), armed: el.classList.contains('armed'),
+  cells: [...el.querySelectorAll('[data-act]')].map((c) => c.textContent),
+}));
+
+{
+  const panel = await browser.newPage({ viewport: { width: 800, height: 480 }, deviceScaleFactor: 2 });
+  panel.on('pageerror', (e) => errors.push('SESSIONS PAGEERROR: ' + e.message));
+  const card = await stubCard(panel);
+  const bad = [], notes = [];
+  const toList = async () => {
+    await panel.evaluate(() => { location.hash = '#/status'; });
+    await panel.evaluate(() => { location.hash = '#/sessions'; });
+    await panel.waitForSelector('#v-sessions .row', { timeout: 10000 });
+    await panel.waitForTimeout(200);
+  };
+  await panel.goto(BASE + '/#/sessions', { waitUntil: 'domcontentloaded' });
+  await panel.waitForSelector('#v-sessions .row', { timeout: 10000 });
+  if (!(await panel.evaluate(() => document.body.classList.contains('kiosk')))) {
+    bad.push('the panel page came back without body.kiosk - is BASE loopback?');
+  }
+  await panel.waitForTimeout(300);
+  await panel.screenshot({ path: join(SHOTS, 'sessions-before.png') });
+
+  // A tap still opens the session.
+  let [x, y] = await middle(rowOf(panel, 0));
+  await panel.mouse.click(x, y);
+  await panel.waitForTimeout(200);
+  if (!(await panel.evaluate(() => location.hash)).startsWith('#/s/')) bad.push('a tap no longer opens a session');
+  await toList();
+
+  // A hold fills the row, then arms it; the release that follows opens nothing.
+  [x, y] = await middle(rowOf(panel, 0));
+  await panel.mouse.move(x, y);
+  await panel.mouse.down();
+  await panel.waitForTimeout(350);
+  const mid = await rowState(panel, 0);
+  const fill = await rowOf(panel, 0).evaluate((el) => getComputedStyle(el, '::after').transform);
+  await panel.screenshot({ path: join(SHOTS, 'sessions-holding.png') });
+  if (!mid.holding || mid.armed) bad.push(`at 350 ms the row is ${JSON.stringify(mid)}, wanted filling`);
+  notes.push(`fill mid-hold ${fill}`);
+  await panel.waitForTimeout(450);
+  const held = await rowState(panel, 0);
+  await panel.mouse.up();
+  await panel.waitForTimeout(250);
+  await panel.screenshot({ path: join(SHOTS, 'sessions-armed.png') });
+  if (!held.armed || held.cells.join() !== 'DELETE,CANCEL') {
+    bad.push(`a 0.8 s hold left the row ${JSON.stringify(held)}, wanted DELETE and CANCEL`);
+  }
+  if ((await panel.evaluate(() => location.hash)) !== '#/sessions') bad.push('the release after arming opened the session');
+
+  // CANCEL puts it back, on the press.
+  [x, y] = await middle(panel.locator('.armno'));
+  await panel.mouse.move(x, y);
+  await panel.mouse.down();
+  const cancelled = await rowState(panel, 0);
+  await panel.mouse.up();
+  await panel.waitForTimeout(200);
+  if (cancelled.armed) bad.push('CANCEL did not disarm the row on the press');
+  if ((await panel.evaluate(() => location.hash)) !== '#/sessions') bad.push('CANCEL opened the session');
+
+  // 40 px of travel with the button down is a scroll, however long the finger stays down.
+  [x, y] = await middle(rowOf(panel, 2));
+  const top0 = await panel.evaluate(() => document.getElementById('v-sessions').scrollTop);
+  await panel.mouse.move(x, y);
+  await panel.mouse.down();
+  await panel.mouse.move(x, y - 40, { steps: 8 });
+  await panel.waitForTimeout(900);
+  const dragged = await panel.evaluate(() => ({
+    armed: document.querySelectorAll('#v-sessions .row.armed').length,
+    top: document.getElementById('v-sessions').scrollTop,
+  }));
+  await panel.mouse.up();
+  await panel.waitForTimeout(600);
+  if (dragged.armed) bad.push('a 40 px drag armed a row');
+  if (dragged.top === top0) notes.push('the drag did not scroll (list may fit)');
+  else notes.push(`drag scrolled ${Math.round(dragged.top - top0)} px, armed nothing`);
+  await panel.evaluate(() => { document.getElementById('v-sessions').scrollTop = 0; });
+  await panel.waitForTimeout(200);
+
+  // The RECORDING row cannot be armed.
+  [x, y] = await middle(rowOf(panel, 1));
+  await panel.mouse.move(x, y);
+  await panel.mouse.down();
+  await panel.waitForTimeout(900);
+  const live = await rowState(panel, 1);
+  await panel.screenshot({ path: join(SHOTS, 'sessions-live-held.png') });
+  await panel.mouse.up();
+  if (live.armed || live.holding) bad.push('the RECORDING row armed or filled under a hold');
+  await toList();
+
+  // DELETE takes the row out without a reload, and the list is asked for again.
+  const doomed = ROWS[0].name;
+  [x, y] = await middle(rowOf(panel, 0));
+  await panel.mouse.move(x, y);
+  await panel.mouse.down();
+  await panel.waitForTimeout(800);
+  await panel.mouse.up();
+  const askedBefore = card.asked;
+  [x, y] = await middle(panel.locator('.armdel'));
+  await panel.mouse.move(x, y);
+  await panel.mouse.down();
+  await panel.mouse.up();
+  await panel.waitForTimeout(600);
+  await panel.screenshot({ path: join(SHOTS, 'sessions-deleted.png') });
+  const left = await panel.evaluate((n) => ({
+    there: !!document.querySelector(`#v-sessions .row[data-open="${n}"]`),
+    rows: document.querySelectorAll('#v-sessions .row').length,
+    hash: location.hash,
+  }), doomed);
+  if (card.deleted.join() !== doomed) bad.push(`deleted ${JSON.stringify(card.deleted)}, wanted ${doomed}`);
+  if (left.there) bad.push('the deleted row is still in the list');
+  if (card.asked <= askedBefore) bad.push('/api/sessions was not asked again after the delete');
+  if (left.hash !== '#/sessions') bad.push(`the DELETE press navigated to ${left.hash}`);
+  // ...and leaving and coming back inside the 20 s window does not paint it back.
+  await toList();
+  if (await panel.evaluate((n) => !!document.querySelector(`#v-sessions .row[data-open="${n}"]`), doomed)) {
+    bad.push('the deleted row came back from the cached listing');
+  }
+  notes.push(`${left.rows} rows left, /api/sessions asked ${card.asked - askedBefore}x after`);
+  await panel.close();
+
+  if (bad.length) { failed++; console.log('FAIL sessions:', bad.join('; ')); }
+  else console.log('ok   sessions: tap opens, hold fills and arms, drag and RECORDING never arm, ' +
+                   'DELETE removes the row -', notes.join('; '));
+}
+
+// The laptop: the same list from a LAN address, held for a second - and nothing to press appears.
+{
+  const lan = (() => {
+    for (const rows of Object.values(networkInterfaces())) {
+      for (const row of rows || []) {
+        if (row.family === 'IPv4' && !row.internal) return `http://${row.address}:${new URL(BASE).port}`;
+      }
+    }
+    return null;
+  })();
+  if (!lan) console.log('skip sessions-lan: no non-loopback address on this machine');
+  else {
+    const laptop = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+    await stubCard(laptop);
+    await laptop.goto(lan + '/#/sessions', { waitUntil: 'domcontentloaded' });
+    await laptop.waitForSelector('#v-sessions .row', { timeout: 10000 });
+    const [x, y] = await middle(rowOf(laptop, 0));
+    await laptop.mouse.move(x, y);
+    await laptop.mouse.down();
+    await laptop.waitForTimeout(1000);
+    await laptop.screenshot({ path: join(SHOTS, 'sessions-lan-held.png') });
+    const got = await laptop.evaluate(() => ({
+      kiosk: document.body.classList.contains('kiosk'),
+      arm: document.querySelectorAll('.arm, [data-act], .row.holding, .row.armed').length,
+    }));
+    await laptop.mouse.up();
+    await laptop.close();
+    const bad = [];
+    if (got.kiosk) bad.push('the LAN page wore body.kiosk');
+    if (got.arm) bad.push(`${got.arm} delete affordance(s) on the laptop page`);
+    if (bad.length) { failed++; console.log('FAIL sessions-lan:', bad.join('; ')); }
+    else console.log('ok   sessions-lan: a one-second hold on a laptop shows nothing to delete with');
+  }
+}
+
+if (process.env.ONLY === 'sessions') {
+  await browser.close();
+  if (errors.length) { failed++; console.log('FAIL console errors:', errors); }
+  console.log(failed ? `\n${failed} failed - see ${SHOTS}` : '\nall good');
+  process.exit(failed ? 1 : 0);
+}
+
 for (const item of CASES) {
   writeFileSync(PENDING, JSON.stringify({ id: item.name + '-' + Date.now(), ...item.payload }));
   let posted = false, kept = '';

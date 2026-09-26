@@ -105,7 +105,7 @@ STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobod
 # removed however empty triage thinks it is.
 KNOWN = frozenset(
     {
-        LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS, CLIPS,
+        LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS, CLIPS, VIDEOS,
         CUT_REQUEST, CUT_PLAN, CUT_SUBS, CUT,
     }
 )

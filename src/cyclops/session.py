@@ -1457,7 +1457,7 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
         # reaches this function instead of being repaired. An rmdir on that raises, which left
         # the folder stuck forever - never deleted, and never muxed either, because _recover
         # takes the removal branch and steps over _fix.
-        for generated in (card.CLIPS, PARTS):
+        for generated in (card.CLIPS, PARTS, card.VIDEOS):
             made = folder / generated
             if made.is_dir():
                 for one in made.iterdir():
@@ -1477,6 +1477,38 @@ def _remove(folder: Path, *, dry_run: bool = False) -> str:
         return f"nothing survived, but could not remove it ({exc})"
     card.sync_dir(folder.parent)
     return "nothing survived - removed"
+
+
+def erase(folder: Path) -> None:
+    """Delete a session somebody asked to be deleted, photographs and all. Raises OSError.
+
+    :func:`_remove`'s sibling and not a flag on it: that one refuses a folder with a picture in
+    it by design, and this one exists to take exactly that. Both of its safety properties stay.
+    :func:`cyclops.card.surprises` goes first, so a file we did not write keeps the session and
+    the error says which; and every directory goes with ``rmdir``, never ``rmtree``, so anything
+    unexpected inside one still stops it. What it takes that ``_remove`` does not is the contents
+    of ``photos/`` and ``videos/`` - pictures, their sidecars and our own strays - because you
+    asked it to.
+
+    Our own scratch files beside the log (``.video.mp4.tmp`` from a mux that was killed) are
+    ours, so they do not count as a surprise and go with the rest.
+    """
+    ours = {p.name for p in card.strays(folder)}
+    odd = [name for name in card.surprises(folder) if name not in ours]
+    if odd:
+        raise OSError(f"{', '.join(odd)} is not ours, so the session was kept")
+    for sub in (PHOTOS, card.VIDEOS, card.CLIPS, PARTS):
+        inside = folder / sub
+        if inside.is_dir():
+            for one in inside.iterdir():
+                if not one.is_dir():
+                    one.unlink(missing_ok=True)
+            inside.rmdir()
+    for one in folder.iterdir():
+        if not one.is_dir():
+            one.unlink(missing_ok=True)
+    folder.rmdir()
+    card.sync_dir(folder.parent)
 
 
 def _recover(settings: Settings, *, offline: bool = False, dry_run: bool = False) -> int:

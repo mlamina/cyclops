@@ -120,7 +120,9 @@ core the panel already spends drawing itself:
 
 At 15 fps the old stitched recording cost about 18%. What it costs on the card at 30 fps has not
 been measured yet. `CYCLOPS_RECORD_WIDTH` caps the size if the card matters more than the
-detail does. Nothing is ever pruned; delete what you don't want.
+detail does. Nothing is ever pruned; delete what you don't want — hold a session's row on the
+panel for 0.7 s and press **DELETE**, which takes the folder, its video, photos, clips and
+watched-video bookmarks with it (see `docs/admin-page.md`). What a project filed from it stays.
 
 ## Clips
 
