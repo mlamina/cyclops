@@ -82,3 +82,32 @@ def test_only_the_panel_may_delete(folder) -> None:
     assert delete(LAPTOP).status_code == 403
     assert folder.exists()
     assert delete(PANEL).status_code == 200
+
+
+def test_a_session_the_clipper_is_working_on_is_refused(folder, tmp_path, monkeypatch) -> None:
+    import fcntl
+
+    from cyclops import cut
+
+    monkeypatch.setattr(cut, "CUT_LOCK", tmp_path / "cut.lock")
+    (folder / card.CLIPS / card.CLIP_PLAN).unlink()  # no plan yet: the clipper's next unit
+    with cut.CUT_LOCK.open("w") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        assert delete().status_code == 400
+    assert (folder / card.VIDEO).exists()
+
+
+def test_a_delete_that_cannot_finish_leaves_the_folder_whole(folder, monkeypatch) -> None:
+    from pathlib import Path
+
+    real = Path.rmdir
+
+    def late_render(self):
+        if self.name == card.CLIPS:
+            (self / "1.mp4").write_bytes(b"c")  # ffmpeg landing a clip after it was emptied
+        real(self)
+
+    monkeypatch.setattr(Path, "rmdir", late_render)
+    assert delete().status_code == 400
+    for kept in (card.LOG_NAME, card.PAGE_NAME, card.VIDEO, f"{card.PHOTOS}/14-00-00_you.jpg"):
+        assert (folder / kept).exists()

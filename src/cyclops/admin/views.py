@@ -649,10 +649,13 @@ def delete_session(request: HttpRequest, name: str) -> HttpResponse:
         raise Http404("no such session")
     if card.locked(folder):
         return HttpResponseBadRequest("that session is still recording")
-    try:
-        sessionlog.erase(folder)
-    except OSError as exc:
-        return HttpResponseBadRequest(f"could not delete it ({exc})")
+    with cut.kept_off(folder) as free:
+        if not free:
+            return HttpResponseBadRequest("a clip is being made from it - try in a minute")
+        try:
+            sessionlog.erase(folder)
+        except OSError as exc:
+            return HttpResponseBadRequest(f"could not delete it ({exc})")
     return JsonResponse({"sessions": library.as_dicts(_entries())})
 
 
