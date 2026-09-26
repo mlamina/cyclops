@@ -58,6 +58,21 @@ EOF
 done
 [ -n "$wrote" ] || echo "· no connected DRM output - is the panel plugged in?" >&2
 
+# --- touch: mapped to whatever the panel is called now ----------------------------------------
+# labwc maps touches to an output by name, and the name moved from DSI-1 to DSI-2 with the
+# Camera Module - rc.xml still said DSI-1, and named the i2c device, which renumbers too. So the
+# output is the one found above and there is no deviceName. The compositor rotates taps with
+# the output, which should keep them under the finger while FLIP SCREEN has it turned over.
+RC="$HOME/.config/labwc/rc.xml"
+if [ -n "$wrote" ] && [ -f "$RC" ]; then
+  if grep -q '<touch ' "$RC"; then
+    sed -i "s|<touch [^>]*/>|<touch mapToOutput=\"$name\" mouseEmulation=\"yes\"/>|" "$RC"
+  else
+    sed -i "s|</openbox_config>|\t<touch mapToOutput=\"$name\" mouseEmulation=\"yes\"/>\n</openbox_config>|" "$RC"
+  fi
+  echo "· touch: mapped to $name ($RC)"
+fi
+
 # pcmanfm reads the file at start and not again. lwrespawn puts it straight back, so killing it
 # is how the new desktop appears without a reboot. -x matches the process name, not the command
 # line, so this cannot match the shell running the script.

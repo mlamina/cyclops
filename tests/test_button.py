@@ -150,7 +150,7 @@ def test_a_press_on_a_dark_panel_is_spent_waking_it(monkeypatch: pytest.MonkeyPa
 
 
 def test_the_power_menu_swallows_it(monkeypatch: pytest.MonkeyPatch) -> None:
-    """It is modal, and two of its three rows end the box. A photo is not an answer to it."""
+    """It is modal, and two of its rows end the box. A photo is not an answer to it."""
     kiosk = _panel(monkeypatch)
     kiosk._menu = True
     kiosk.shutter_pressed()
@@ -189,7 +189,7 @@ def test_a_hold_on_a_dark_panel_lands_as_well_as_lighting_it(
 
 
 def test_the_power_menu_swallows_a_hold_too(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Modal is modal. Two of its three rows end the box; starting a session is no answer."""
+    """Modal is modal. Two of its rows end the box; starting a session is no answer."""
     kiosk = _panel(monkeypatch)
     kiosk._menu = True
     kiosk.button_held()

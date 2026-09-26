@@ -2654,9 +2654,10 @@ STEEL = 0.58  # how far the rail's body is stirred towards SCREEN out of GREEN_M
 # Why it is a menu drawn here rather than a screen on the admin page: the page is a browser that
 # has to be uncovered, and the one moment you most want to shut a box down is the moment it is
 # behaving badly enough that you would rather not ask Chromium for anything first.
-POWER_OFF, RESTART, WIFI, CANCEL = "poweroff", "restart", "wifi", "cancel"
+POWER_OFF, RESTART, WIFI, FLIP, CANCEL = "poweroff", "restart", "wifi", "flip", "cancel"
 MENU_ROWS = (
-    (POWER_OFF, "SHUT DOWN"), (RESTART, "RESTART"), (WIFI, "WI-FI"), (CANCEL, "CANCEL"),
+    (POWER_OFF, "SHUT DOWN"), (RESTART, "RESTART"), (WIFI, "WI-FI"), (FLIP, "FLIP SCREEN"),
+    (CANCEL, "CANCEL"),
 )
 # No header. The card is its rows and nothing else: a title only names the menu you can already
 # see, and the rows say what they do.
@@ -9116,7 +9117,8 @@ class Overlay:
         r = max(6, round(MENU_GLYPH_R * self.height))
         gap = max(6, round(14 * self.scale))
         x = cell.x + gap
-        mark = {POWER_OFF: self._glyph_power, WIFI: self._glyph_wifi}.get(key, self._glyph_restart)
+        mark = {POWER_OFF: self._glyph_power, WIFI: self._glyph_wifi,
+                FLIP: self._glyph_flip}.get(key, self._glyph_restart)
         mark(layer, x + r, cy, r, ink)
         self._text(d, x + 2 * r + gap, cy, label, self.font_read, (*ink, 255), tracking=tracking)
 
@@ -9345,6 +9347,27 @@ class Overlay:
                 [middle, at(span - r * 1.12), middle, at(span - r * 0.12)],
                 fill=linear(colour), width=round(wide(stroke)),
             )
+
+        layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
+
+    def _glyph_flip(
+        self, layer: Image.Image, cx: int, cy: int, r: int, colour: tuple[int, int, int]
+    ) -> None:
+        """Two arrows side by side, one up and one down - the swap mark: what was at the top
+        goes to the bottom."""
+        span = round(r * 1.15) + max(2, round(3 * self.scale))
+        stroke = max(2, round(3 * self.scale))
+
+        def paint(t: ImageDraw.ImageDraw) -> None:
+            head = r * 0.55
+            for dx, up in ((-r * 0.45, True), (r * 0.45, False)):
+                x = span + dx
+                tip, tail = (-r, r) if up else (r, -r)
+                back = span + tip + (head if up else -head)
+                t.line([at(x), at(span + tail), at(x), at(back)],
+                       fill=linear(colour), width=round(wide(stroke)))
+                t.polygon([(at(x), at(span + tip)), (at(x - head * 0.75), at(back)),
+                           (at(x + head * 0.75), at(back))], fill=linear(colour))
 
         layer.alpha_composite(smoothed(2 * span + 1, paint), (cx - span, cy - span))
 

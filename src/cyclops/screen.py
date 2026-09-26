@@ -47,11 +47,14 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import flip
+
 PROGRAM = "wf-recorder"
 FIRST_FRAME_S = 1.0  # past this with nothing on the pipe, the session records the camera
 POLL_S = 0.02
 STOP_S = 2.0  # how long SIGINT gets before the capture is killed
 BYTES_PER_PIXEL = 4  # R, G, B, X - see the module docstring
+FLIP_POLL_S = 0.5  # how often the reader asks whether the box has been turned over
 
 
 def command(program: str, fifo: Path) -> list[str]:
@@ -268,9 +271,16 @@ class ScreenSource:
         width, height = self._size
         raw = bytearray(width * height * BYTES_PER_PIXEL)
         pixels = np.frombuffer(raw, dtype=np.uint8).reshape(height, width, BYTES_PER_PIXEL)
+        flipped, looked = flip.enabled(), time.monotonic()
         with open(read_end, "rb", buffering=0) as pipe:
             while _fill(pipe, raw):
-                self._latest = (cv2.cvtColor(pixels, cv2.COLOR_RGBA2BGR), time.monotonic())
+                frame = cv2.cvtColor(pixels, cv2.COLOR_RGBA2BGR)
+                now = time.monotonic()
+                if now - looked >= FLIP_POLL_S:
+                    flipped, looked = flip.enabled(), now
+                if flipped:  # wf-recorder hands over the physical framebuffer, not the turned one
+                    frame = cv2.flip(frame, -1)
+                self._latest = (frame, now)
                 first.set()
 
 
