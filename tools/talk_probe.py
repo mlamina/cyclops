@@ -7,6 +7,7 @@
     uv run python tools/talk_probe.py --script manual --runs 5 --out oxi.jsonl
     uv run python tools/talk_probe.py --script smiley --runs 10 --out smiley.jsonl
     uv run python tools/talk_probe.py --script draw --runs 1 --out draw.jsonl
+    uv run python tools/talk_probe.py --script pico --runs 3 --out pico.jsonl
 
 ``--script manual`` sets its own bench up: the OXI One manual from the fixtures folder and nothing
 else on the card, with the recall index, the panel file and the task ledger all in a scratch
@@ -24,6 +25,11 @@ is written down as turn 0, timed from the session being ready rather than from a
 ``--script synth`` asks the one question a device extension's tool is for. It needs the fake
 synth installed and on the bus - ``--extensions tests/fake_extensions --usb "music:Bench Synth"``
 - and its tally is how many runs called ``read_patch``.
+
+``--script pico`` puts a Pico running MicroPython on a fake bus, with a fake board behind its
+tools that answers like a real one and writes down what it was sent. It asks for the onboard LED
+to blink, then where the wire for an LED on GP15 goes; the tally is whether the first went to
+``pico_program`` with code that uses the onboard LED, and whether the second said pin 20.
 
 ``--script smiley`` is the one question that used to come back with the greeting glued to the
 front of its answer, asked into a busy day on a scratch card - so the tally can say whether the
@@ -124,8 +130,14 @@ DRAW_SCRIPT = (
     "Draw what the shelf will look like when it's finished.",
     "Show me the boot sequence as a flowchart.",
 )
+# A Pico on the bench: one program asked for, and one wire asked about (GP15 is physical pin 20).
+PICO_SCRIPT = (
+    "Blink the LED on the Pico.",
+    "I've got an LED on GP15, where does the wire go?",
+)
 SCRIPTS = {
     "bench": SCRIPT,
+    "pico": PICO_SCRIPT,
     "draw": DRAW_SCRIPT,
     "tutorial": TUTORIAL_SCRIPT,
     "manual": MANUAL_SCRIPT,
@@ -351,6 +363,8 @@ async def _probe(runs: int, out_path: Path, script: tuple[str, ...] = SCRIPT) ->
         return await _smiley(runs, out_path)
     if script == DRAW_SCRIPT:
         return await _draw(runs, out_path)
+    if script == PICO_SCRIPT:
+        return await _pico(runs, out_path)
     with out_path.open("a", encoding="utf-8") as out:
         for run in range(1, runs + 1):
             try:
@@ -547,6 +561,73 @@ async def _draw(runs: int, out_path: Path) -> int:
                     print(f"run {run} failed: {exc}", file=sys.stderr)
                     return 1
     return 0
+
+
+class _FakePico:
+    """What the Pico tools talk to in a probe: answers like a board, and keeps what it was sent."""
+
+    def __init__(self) -> None:
+        self.sent: list[dict] = []
+
+    def program(self, code: str) -> dict:
+        self.sent.append({"tool": "pico_program", "code": code})
+        return {"ok": True, "state": "running", "output": ""}
+
+    def run(self, code: str) -> dict:
+        self.sent.append({"tool": "pico_run", "code": code})
+        return {"ok": True, "output": ""}
+
+    def output(self) -> dict:
+        self.sent.append({"tool": "pico_output"})
+        return {"ok": True, "state": "running", "output": ""}
+
+
+async def _pico(runs: int, out_path: Path) -> int:
+    """A Pico with MicroPython on a fake bus, on a scratch card, its board faked."""
+    from cyclops.extensions import pico
+
+    root = Path(tempfile.mkdtemp(prefix="cyclops-pico-"))
+    for name in ("SESSIONS", "PROJECTS", "CAPTURES"):
+        os.environ[f"CYCLOPS_{name}_DIR"] = str(root / name.lower())
+    panel.PANEL_FILE = root / "panel.json"
+    tasks.TASKS_FILE, tasks.TASKS_LOCK = root / "tasks.yaml", root / "tasks.lock"
+    vid, _, pid = pico.MICROPYTHON_ID.partition(":")
+    plugged = (devices.Device(vid, pid, "Board in FS mode", devices.OTHER),)
+    devices.connected = lambda root=None: plugged  # type: ignore[assignment]
+    with out_path.open("a", encoding="utf-8") as out:
+        for run in range(1, runs + 1):
+            fake = _FakePico()
+            pico.board = lambda: fake  # type: ignore[assignment]
+            try:
+                await _one_run(run, out, PICO_SCRIPT)
+            except (TimeoutError, RuntimeError) as exc:
+                print(f"run {run} failed: {exc}", file=sys.stderr)
+                return 1
+            out.write(json.dumps({"run": run, "turn": -1, "you": "", "pico": fake.sent}) + "\n")
+            out.flush()
+    return 0
+
+
+def pico_tally(records: list[dict]) -> None:
+    """Whether "blink" became a program on the onboard LED, and whether GP15 came back as pin 20."""
+    runs = sorted({r["run"] for r in records})
+    blinked = pinned = 0
+    for run in runs:
+        mine = {r["turn"]: r for r in records if r["run"] == run}
+        programs = [c["code"] for c in mine.get(-1, {}).get("pico", [])
+                    if c["tool"] == "pico_program"]
+        led = any(re.search(r"""Pin\(\s*["']LED["']|Pin\(\s*25\b""", code) for code in programs)
+        said = mine.get(2, {}).get("cyclops", "")
+        pin20 = bool(re.search(r"\b(pin|physical)\s*(number\s*)?(20|twenty)\b", said, re.I))
+        blinked += led
+        pinned += pin20
+        print(f"run {run}: blink -> {'ok ' if led else 'MISS'} tools={mine.get(1, {}).get('tools')}"
+              f"\n      said={mine.get(1, {}).get('cyclops', '')!r}")
+        for code in programs:
+            print("      code: " + code.strip().replace("\n", "\n            "))
+        print(f"       GP15 -> {'ok ' if pin20 else 'MISS'} said={said!r}")
+    print(f"\nblink went to pico_program on the onboard LED: {blinked} of {len(runs)}")
+    print(f"GP15 answered as pin 20: {pinned} of {len(runs)}")
 
 
 def draw_tally(records: list[dict]) -> None:
@@ -807,6 +888,9 @@ def timing(records: list[dict]) -> None:
 def tally(path: Path) -> None:
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     said = {r["you"] for r in records}
+    if PICO_SCRIPT[0] in said:
+        pico_tally(records)
+        return
     if MANUAL_SCRIPT[0] in said:
         manual_tally(records)
         return

@@ -131,7 +131,8 @@ def test_the_endoscope_ids_agree_everywhere_they_are_written() -> None:
     (scope,) = [one for one in extensions.load() if one.name == "Endoscope"]
     ruled = re.findall(r'ATTR\{idVendor\}=="(\w+)", ATTR\{idProduct\}=="(\w+)"', RULES.read_text())
     assert set(scope.usb_ids) == set(webcam.USEEPLUS_IDS) == {f"{v}:{p}" for v, p in ruled}
-    assert devices.known() == {ident: (devices.CAMERA, "Endoscope") for ident in scope.usb_ids}
+    assert {ident: devices.known()[ident] for ident in scope.usb_ids} == {
+        ident: (devices.CAMERA, "Endoscope") for ident in scope.usb_ids}
 
 
 # ---------------------------------------------------------------- the tools

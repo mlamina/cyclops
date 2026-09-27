@@ -38,6 +38,9 @@ dependencies = [
     # that rots on somebody else's schedule: YouTube changes and yt-dlp catches up, so when
     # playback breaks `uv lock --upgrade-package yt-dlp` is the first thing to try.
     "yt-dlp>=2026.1",
+    # The Pico extension: MicroPython's raw REPL over the board's USB serial port. Not mpremote,
+    # whose Python API is not a surface anybody promises to keep.
+    "pyserial>=3.5",
 ]
 
 [project.scripts]
