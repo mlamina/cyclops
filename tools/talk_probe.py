@@ -6,6 +6,7 @@
     uv run python tools/talk_probe.py --script tutorial --runs 10 --out walk.jsonl
     uv run python tools/talk_probe.py --script manual --runs 5 --out oxi.jsonl
     uv run python tools/talk_probe.py --script smiley --runs 10 --out smiley.jsonl
+    uv run python tools/talk_probe.py --script draw --runs 1 --out draw.jsonl
 
 ``--script manual`` sets its own bench up: the OXI One manual from the fixtures folder and nothing
 else on the card, with the recall index, the panel file and the task ledger all in a scratch
@@ -60,12 +61,13 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from openai.types.realtime import RealtimeServerEvent
 
-from cyclops import card, devices, extensions, panel, recall, session, tasks
+from cyclops import card, devices, extensions, imagine, panel, recall, session, tasks
 from cyclops.agent import VoiceAgent, function_calls
 from cyclops.config import ConfigError, load_settings
 
 READY_TIMEOUT_S = 30.0
 TURN_TIMEOUT_S = 60.0
+DRAW_WAIT_S = 120.0  # past a drawing's half minute; nothing is waited for if draw was not called
 
 # One session at a bench: a greeting, a question with a genuine rhyme in it (a red power light
 # in a robot's head), a method to bless, a finished job held up, a pause, and a recall. The
@@ -114,8 +116,17 @@ SMILEY_SCRIPT = ("Hey, can you draw a smiley face on this scratchpad?",)
 # What the fake synth's one tool is for (tests/fake_extensions/synth.py). A wired tool is not a
 # used tool: the tally is whether the model reaches for it or answers out of thin air.
 SYNTH_SCRIPT = ("What's the pattern on the synth right now?",)
+# Four ways of asking for a picture, each in a session of its own so no answer leans on the one
+# before it. Every one of them should be the draw tool and none a scratchpad: the tally is which.
+DRAW_SCRIPT = (
+    "Can you draw me a smiley face?",
+    "Visualize how the battery, the fuse and the motor connect.",
+    "Draw what the shelf will look like when it's finished.",
+    "Show me the boot sequence as a flowchart.",
+)
 SCRIPTS = {
     "bench": SCRIPT,
+    "draw": DRAW_SCRIPT,
     "tutorial": TUTORIAL_SCRIPT,
     "manual": MANUAL_SCRIPT,
     "manual-cold": MANUAL_COLD_SCRIPT,
@@ -260,7 +271,7 @@ async def _greeting(agent: VoiceAgent, agent_task: asyncio.Task, turn: Turn) -> 
     await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
 
 
-async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
+async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT, linger=None) -> None:
     settings = load_settings()
     agent = VoiceAgent(settings)
     current = [Turn()]
@@ -293,6 +304,8 @@ async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT) -> None:
             out.write(json.dumps(record) + "\n")
             out.flush()
             print(f"· run {run} turn {index}: {turn.text!r}", flush=True)
+        if linger is not None:  # work the turn started and the session would cancel on close
+            await linger()
     finally:
         await agent.close()
         await asyncio.gather(agent_task, return_exceptions=True)
@@ -336,6 +349,8 @@ async def _probe(runs: int, out_path: Path, script: tuple[str, ...] = SCRIPT) ->
         await _manual_bench()
     if script == SMILEY_SCRIPT:
         return await _smiley(runs, out_path)
+    if script == DRAW_SCRIPT:
+        return await _draw(runs, out_path)
     with out_path.open("a", encoding="utf-8") as out:
         for run in range(1, runs + 1):
             try:
@@ -485,6 +500,65 @@ async def _smiley(runs: int, out_path: Path) -> int:
                     print(f"run {run} failed: {exc}", file=sys.stderr)
                     return 1
     return 0
+
+
+async def _draw(runs: int, out_path: Path) -> int:
+    """Each drawing request in a fresh session, on a scratch card, with the live scratchpad on.
+
+    ``CYCLOPS_SKETCH=1`` because that is the scratchpad that used to draw Mermaid, and so the one
+    most likely to go on drawing when asked to.
+    """
+    root = Path(tempfile.mkdtemp(prefix="cyclops-draw-"))
+    for name in ("SESSIONS", "PROJECTS", "CAPTURES"):
+        os.environ[f"CYCLOPS_{name}_DIR"] = str(root / name.lower())
+    os.environ["CYCLOPS_SKETCH"] = "1"
+    panel.PANEL_FILE = root / "panel.json"
+    tasks.TASKS_FILE, tasks.TASKS_LOCK = root / "tasks.yaml", root / "tasks.lock"
+    # Each picture is paid for either way, so keep it beside the JSONL rather than let the
+    # session's close cancel it half-drawn.
+    drawn: list[bytes] = []
+    asked: list[str] = []
+    real_draw = imagine.draw
+
+    async def keep(request: str, style: str, settings) -> bytes:
+        asked.append(request)
+        jpeg = await real_draw(request, style, settings)
+        drawn.append(jpeg)
+        return jpeg
+
+    imagine.draw = keep
+
+    async def picture(name: str, before: int) -> None:
+        deadline = time.monotonic() + DRAW_WAIT_S
+        while len(asked) > before and len(drawn) == before and time.monotonic() < deadline:
+            await asyncio.sleep(1)
+        if len(drawn) > before:
+            (out_path.parent / name).write_bytes(drawn[-1])
+            print(f"· kept {name}", flush=True)
+
+    with out_path.open("a", encoding="utf-8") as out:
+        for run in range(1, runs + 1):
+            for index, line in enumerate(DRAW_SCRIPT, 1):
+                name = f"draw-{run}-{index}.jpg"
+                try:
+                    await _one_run(run, out, (line,),
+                                   functools.partial(picture, name, len(drawn)))
+                except (TimeoutError, RuntimeError) as exc:
+                    print(f"run {run} failed: {exc}", file=sys.stderr)
+                    return 1
+    return 0
+
+
+def draw_tally(records: list[dict]) -> None:
+    """Which tools each drawing request reached for, and how many went only to draw."""
+    asked = [r for r in records if r["turn"] == 1]
+    right = 0
+    for r in asked:
+        ok = "draw" in r["tools"] and not {"sketch", "write_on_scratchpad"} & set(r["tools"])
+        right += ok
+        print(f"{'ok ' if ok else 'MISS'} run {r['run']} {r['you']!r}\n"
+              f"      tools={r['tools']}  said={r['cyclops']!r}")
+    print(f"\nrouted to draw and no scratchpad: {right} of {len(asked)}")
 
 
 def _sample(n: int) -> tuple:
@@ -735,6 +809,9 @@ def tally(path: Path) -> None:
     said = {r["you"] for r in records}
     if MANUAL_SCRIPT[0] in said:
         manual_tally(records)
+        return
+    if DRAW_SCRIPT[0] in said:
+        draw_tally(records)
         return
     if SMILEY_SCRIPT[0] in said:
         smiley_tally(records)
