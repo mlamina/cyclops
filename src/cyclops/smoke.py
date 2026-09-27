@@ -29,7 +29,7 @@ from .webcam import capture_image_async
 
 READY_TIMEOUT_S = 30.0
 TURN_TIMEOUT_S = 90.0
-# How long turn 4 then waits for the picture itself. draw_diagram returns as soon as it is called
+# How long turn 4 then waits for the picture itself. draw returns as soon as it is called
 # and the image lands about half a minute later (imagine.DRAW_QUALITY), so the turn is over long
 # before the drawing is - and checking the offer file the moment the turn ends would always find
 # it empty. Comfortably past imagine.DRAW_TIMEOUT_S, so a slow draw fails on its own timeout with
@@ -205,13 +205,13 @@ async def _main() -> int:
             f"· turn 4: tools={turn.tool_calls}, {turn.seconds_of_audio:.1f}s audio, "
             f"picture offered to the panel: {offered}"
         )
-        if "draw_diagram" not in turn.tool_calls:
-            failures.append("model did not call draw_diagram")
+        if "draw" not in turn.tool_calls:
+            failures.append("model did not call draw")
         elif not offered:
             # The tool answered, so nothing is stuck - but no picture reached the panel inside
             # the deadline, which means the drawing failed or is slower than it has ever been.
             failures.append(
-                f"draw_diagram was called but nothing was drawn in {DRAW_DEADLINE_S:.0f}s"
+                f"draw was called but nothing was drawn in {DRAW_DEADLINE_S:.0f}s"
             )
         if not turn.has_transcript:
             failures.append("turn 4 returned no transcript")

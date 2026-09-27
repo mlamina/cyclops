@@ -164,7 +164,7 @@ class Settings:
     slug: bool = True  # name each finished session from its transcript (cyclops.slug)
     remember: bool = True  # keep about-you.md up to date from what is said (cyclops.about)
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
-    diagrams: bool = True  # offer draw_diagram, and keep what it draws in photos/
+    diagrams: bool = True  # offer draw, and keep what it draws in photos/
     recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
     # Read uploaded PDFs into searchable pages (cyclops.reading). Separate from `recall` rather
     # than folded into it: a manual costs one vision call per page the moment it lands, which is

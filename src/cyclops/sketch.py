@@ -29,9 +29,9 @@ What leaves here is Prefab's wire format, ``{"$prefab": ..., "view": ..., "state
 nothing downstream understands it: :mod:`cyclops.companion` posts it through an SSE stream and
 ``sketch.js`` hands it to the renderer untouched. The one thing this module does add is
 ``mode``, and it is light. The panel wears phosphor green and everything else on it is dark, but
-this is a sheet of paper: what gets drawn on it brings its own colour, and every library that
-draws - Mermaid most of all - has defaults built for a white page. On black, Mermaid's edges are
-dark grey on near-black and a connection diagram loses the connections.
+this is a sheet of paper: what gets drawn on it brings its own colour, and the chart library's
+defaults are built for a white page. On black, a chart's axes and gridlines are dark grey on
+near-black and the reading loses its scale.
 
 The listener set is the same shape as the rest of the panel plumbing: whoever compiles is a
 tool coroutine on the agent's thread, whoever writes the bytes is a request thread in the
@@ -41,7 +41,6 @@ companion server, and one lock around a set is all the two of them need.
 from __future__ import annotations
 
 import queue
-import re
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -104,52 +103,13 @@ def _globals() -> dict[str, Any]:
                     names[name] = getattr(module, name)
         names["PrefabApp"] = PrefabApp
         names["Rx"] = rx.Rx
+        # Drawing is the image tool's job, not the scratchpad's: a Mermaid diagram or a hand-typed
+        # SVG never once came out more useful than a picture. Without the names they fail to
+        # compile, and a sketch that only draws puts nothing on the glass.
+        for name in ("Mermaid", "Svg"):
+            names.pop(name, None)
         _namespace = names
     return dict(_namespace)
-
-
-# Characters Mermaid cannot take in a bare label. `(`, `{` and `[` all start a node shape, so a
-# label that merely mentions one is a parse error - and a parse error does not fail quietly: the
-# renderer prints the source, and a workshop panel fills up with `-->|Black (Ground)|`. Which is
-# what Marco got, because "Black (Ground)" is how a person writes a wire colour.
-_MERMAID_UNSAFE = re.compile(r'[(){}\[\]#;]')
-# A node label: `[text]`, but not the `[[` of a subroutine or the `[(` of a cylinder, and not one
-# that is already quoted. Newlines and brackets end it, so a malformed diagram cannot run away.
-_NODE_LABEL = re.compile(r'(?<![\[(])\[(?![\[("])([^\[\]\n]*)\]')
-# ...and an edge label, `|text|`.
-_EDGE_LABEL = re.compile(r'\|(?!")([^|\n]*)\|')
-
-
-def _quote_labels(chart: str) -> str:
-    """Put quotes round any Mermaid label that needs them. Mermaid's own escape hatch.
-
-    Quoting rather than stripping, because the characters are the content: a wire called "Black
-    (Ground)" and a box called "Network / Voice" are what the person is going to read. Only
-    labels that actually need it are touched, so a diagram that was already fine is unchanged
-    byte for byte.
-
-    This is a backstop, not the plan. The tool description tells the model to quote its own
-    labels; this is here because it will forget, and because the failure is not a blank screen
-    it can be asked about - it is a screenful of source code that looks like a crash.
-    """
-
-    def fix(match: re.Match[str]) -> str:
-        body = match.group(1)
-        if not body or '"' in body or not _MERMAID_UNSAFE.search(body):
-            return match.group(0)
-        opener = match.group(0)[0]
-        return f'{opener}"{body}"{opener if opener == "|" else "]"}'
-
-    return _EDGE_LABEL.sub(fix, _NODE_LABEL.sub(fix, chart))
-
-
-def _clean(node: Any) -> None:
-    """Walk a compiled tree and quote the labels in every Mermaid on it. In place."""
-    if isinstance(node, dict):
-        if node.get("type") == "Mermaid" and isinstance(node.get("chart"), str):
-            node["chart"] = _quote_labels(node["chart"])
-        for child in node.get("children") or ():
-            _clean(child)
 
 
 def warm() -> None:
@@ -210,7 +170,6 @@ def compile(code: str) -> dict[str, Any] | None:  # noqa: A001 - it compiles; th
         except BaseException:  # noqa: BLE001 - a tree half-built serialises about as well
             return None
         wire.setdefault("mode", "light")
-        _clean(wire.get("view"))
         wire["css"] = [*(wire.get("css") or []), PANEL_CSS]
         return wire
 

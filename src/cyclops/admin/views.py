@@ -425,7 +425,7 @@ def renderer(request: HttpRequest) -> HttpResponse:
     not need the internet to draw a number on itself.
 
     ``mode="bundled"`` is what makes that true: the CDN stub would still fetch the renderer, and
-    its lazy chunks - charts, mermaid, icons - would each come down the first time a program used
+    its lazy chunks - charts, icons - would each come down the first time a program used
     one, mid-sentence. Bundled inlines the lot.
 
     It is read on every request rather than held in memory. This is asked for once per browser

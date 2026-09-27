@@ -10,10 +10,11 @@ both of you call it — say "put that on your scratchpad" and he knows what you 
 
 `write_on_scratchpad` takes a small piece of HTML that **he writes**, and it is on the panel about
 a second later: a torque figure set large while he talks you through the job, the steps of it as a
-numbered list, a part number worth reading rather than hearing, a simple shape as inline SVG.
-Colour, emoji and layout are his to choose. It costs nothing but the tokens to write it, which is
-the whole point — this is the tool he reaches for by default, and [diagrams](#diagrams) are the
-expensive exception for when the answer really is a drawing.
+numbered list, a part number worth reading rather than hearing, a few readings as a chart.
+Colour, emoji and layout are his to choose. It costs nothing but the tokens to write it. **It never
+draws** — anything drawn or visualized, however simple, is a [picture](#pictures). (Until
+2026-09-26 the scratchpad drew Mermaid diagrams and inline SVG; they never came out more useful
+than a picture, so both went.)
 
 It lands in a document of its own — an `<iframe srcdoc>` on the same stage a photo lands on — so
 his `<style>` cannot reach the dashboard behind it. **It is always a blank white screen**, the
@@ -33,18 +34,19 @@ Nothing is written to the card — a scratchpad is a sentence he said with the s
 mouth, and `session.md` records it as one line naming what it said. `CYCLOPS_SCRATCHPAD=0`
 withholds the tool entirely.
 
-## Diagrams
+## Pictures
 
-Some answers are a picture. Ask *"how do I wire this relay to GPIO 17"* and Cyclops draws it on
-the touchscreen — a wiring diagram in the idiom of a printed service manual, a pinout chart, a
-block diagram, an assembly sketch. It takes about half a minute, fills the panel when it
+Some answers are a picture. Ask *"how do I wire this relay to GPIO 17"*, *"draw what the shelf
+will look like"* or just *"draw me a smiley"* and Cyclops draws it on the touchscreen — a wiring
+diagram in the idiom of a printed service manual, a pinout chart, a flowchart, an assembly sketch,
+a clean illustration of a finished piece. It takes about half a minute, fills the panel when it
 lands, and keeps a small **Close** square in the corner rather than the full-width bar: a diagram
 is a thing you point at while you talk about it, so pressing it must not put it away.
 
-**The voice model does not draw it.** It calls `draw_diagram` with two things — one sentence
+**The voice model does not draw it.** It calls `draw` with two things — one sentence
 saying what to draw, with every value that matters in it, and a second saying what kind of
-drawing it should be. That second one is not a menu: the model is asked to name the conventions
-of whatever field the subject belongs to, because a diagram in the wrong idiom is read wrong. Ask
+drawing it should be. That second one is not a menu: for anything technical the model is asked to
+name the conventions of whatever field the subject belongs to, because a diagram in the wrong idiom is read wrong. Ask
 for wires and terminals on a piece of software and the picture will invent terminals that do not
 exist. `gpt-image-2.5-sunburst` draws it at `quality="high"`, which takes about 26 seconds.
 
@@ -52,7 +54,7 @@ exist. `gpt-image-2.5-sunburst` draws it at `quality="high"`, which takes about 
 distinguishes a wire drawn to the right pin from one drawn to the pin beside it. (Until
 2026-09-04 a text model emitted a JSON scene that we validated and rendered with JointJS; it went
 because the pictures were worse — colliding labels, boxes clipped off the edge of the panel.)
-`draw_diagram` is told to say a connection out loud when getting it wrong would cost you a part,
+`draw` is told to say a connection out loud when getting it wrong would cost you a part,
 and nothing in a generated picture is to scale or measurable, whatever it looks like.
 
 **A diagram is a photo.** It lands in the session's `photos/` as `14-35-01_drawn.jpg`, exactly
@@ -65,7 +67,7 @@ Because it is a photo, `edit_photo` works on it too — *"drop the status LED"* 
 front of you. Bear in mind that an edit redraws every pixel including the lettering, so for
 anything whose labels matter, drawing it again is the safer move.
 
-`CYCLOPS_DIAGRAMS=0` withholds `draw_diagram`.
+`CYCLOPS_DIAGRAMS=0` withholds `draw`.
 
 ## Imagining a change
 
@@ -92,7 +94,7 @@ else's photo, redrawn, on the panel, half a minute later.
 whole frame, so every pixel in the result is the model's, including the ones that look untouched.
 Nothing in it is measured and nothing in it is a fact about your hardware. That is why colour,
 finish, a part moved, a thing that is not there yet and *shown finished* are what it is for, and
-why connections, orientation and assembly order are not: those are `draw_diagram`, which draws
+why connections, orientation and assembly order are not: those are `draw`, which draws
 the answer from a description instead of painting over your hardware.
 
 **Cyclops is shown the result the moment it lands**, so it can tell you when the edit did not do
@@ -150,7 +152,7 @@ cancelled. By the time a row appears the work is already running. Its only job i
 whether anything is going on.
 
 **Cyclops never opens a task himself.** He calls a tool, and the tool spawns the work and opens
-the row. Three things do so today: `draw_diagram`, `edit_photo`, and the three jobs
+the row. Three things do so today: `draw`, `edit_photo`, and the three jobs
 `cyclops.after` runs once a session has ended.
 
 **Where you see it.** The panel's terminal, along the bottom — the same line that says

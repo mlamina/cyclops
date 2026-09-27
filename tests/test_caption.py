@@ -101,7 +101,7 @@ def test_every_tool_the_model_is_offered_has_something_to_say() -> None:
     [
         (Call("web_search", '{"query": "M8 torque"}'), "searching for M8 torque…"),
         (
-            Call("draw_diagram", '{"request": "the fuse box", "style": "a wiring diagram"}'),
+            Call("draw", '{"request": "the fuse box", "style": "a wiring diagram"}'),
             "drawing the fuse box…",
         ),
         (

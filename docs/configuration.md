@@ -20,7 +20,7 @@
 | `CYCLOPS_PROJECTS_DIR` | `projects`     | Where project folders are written (relative to the CWD; `~` ok). |
 | `CYCLOPS_ABOUT_FILE`   | `about-you.md` | Where the standing facts about you are kept (relative to the CWD; `~` ok). |
 | `CYCLOPS_PROJECTS`     | `1`            | Keep `projects/` up to date, and offer Cyclops the `open_project` / `track_project` tools; `0` turns the whole feature off. |
-| `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them with the photos; `0` withholds `draw_diagram`. |
+| `CYCLOPS_DIAGRAMS`     | `1`            | Let Cyclops draw diagrams on the panel and keep them with the photos; `0` withholds `draw`. |
 | `CYCLOPS_IMAGINE`      | `1`            | Let Cyclops redraw any photo from this session with a change and show it on the panel; `0` withholds `edit_photo`. |
 | `CYCLOPS_SCRATCHPAD`   | `1`            | Let Cyclops write on the panel himself, as a small piece of HTML, without being asked; `0` withholds `write_on_scratchpad`. |
 | `CYCLOPS_SOUNDS`       | `1`            | Cues: the box booting, waking and going to sleep, the shutter; `0` disables. |
