@@ -75,7 +75,7 @@ from .config import Settings
 #
 # A drawing lands in a third of the time and a quarter of the price. The edit was already "low"
 # and already quick: it does not move, and it did not need to. Everything downstream that says
-# how long to expect to wait was rewritten for that first column - see DRAW_DIAGRAM_TOOL and the
+# how long to expect to wait was rewritten for that first column - see DRAW_TOOL and the
 # system prompt in cyclops.agent - because a picture announced as taking three times as long as
 # it does sends the conversation off somewhere else and leaves it there.
 #
@@ -112,7 +112,7 @@ EDIT_TIMEOUT_S = 120.0
 
 MAX_REQUEST_CHARS = 600
 MAX_TITLE_CHARS = 70
-MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TOOL
+MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_TOOL
 
 # High, and it buys less than you would like. Measured on 2026-09-04 over five requests against
 # gpt-image-2 - a relay wiring, the NS4168 amp on the Pi's header, the 40-pin pinout, a block
@@ -123,7 +123,7 @@ MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TO
 # wait costs a third of what it did, and every word of the argument still holds.
 #
 # So this is a reduction in a failure rate and not a fix, and the rest of the mitigation is
-# elsewhere on purpose: DRAW_DIAGRAM_TOOL tells the model to say a connection out loud when
+# elsewhere on purpose: DRAW_TOOL tells the model to say a connection out loud when
 # getting it wrong would cost somebody a part. Nothing downstream can check a generated diagram -
 # there is no schema left to check it against - and a wire drawn to the pin next to the right one
 # is the one error a person cannot catch by looking, because the label beside it still reads
@@ -131,7 +131,7 @@ MAX_STYLE_CHARS = 300  # a style note, not a second request; see DRAW_DIAGRAM_TO
 #
 # Half a minute is bearable only because nothing is waiting on it: the tool has returned, the
 # overlay says "drawing…", and the conversation carries on. That was written as a description and
-# was not true - `_run_draw_diagram` awaited this call inside the tool handler, so the call stayed
+# was not true - `_run_draw` awaited this call inside the tool handler, so the call stayed
 # open for the whole of it and the model could not say another word. It is true now, and it is
 # what pays for this setting: the drawing is a task (cyclops.tasks), the tool answers in a moment,
 # and the model is told when the picture lands. Anything that puts a caller back in front of this
@@ -192,30 +192,31 @@ The instruction: {request}"""
 
 
 # What the drawing is asked to look like when the voice model sends no style note. It should not
-# happen - the tool makes the parameter required - but a diagram drawn in the wrong style still
-# beats a tool that refuses over a missing adjective.
+# happen - the tool makes the parameter required - but a picture drawn in a plain style still
+# beats a tool that refuses over a missing adjective. Neutral on purpose: the tool draws a smiley
+# as readily as a wiring loom now, and a service-manual default made everything a schematic.
 DEFAULT_STYLE = (
-    "Draw it as a printed workshop service-manual diagram: black line-art on off-white paper, "
-    "colour-coded wires with a small colour key, standard schematic symbols."
+    "A clean, clearly labelled illustration on a plain light background, bold simple shapes."
 )
 
 # The fixed half of the drawing instruction. The style note sits in the middle because that is
 # where it reads as a description of the picture rather than an afterthought, and the request
-# goes last so the most specific thing is the last thing read.
+# goes last so the most specific thing is the last thing read. The look - flat schematic or
+# shaded scene - is the style note's to set; what stays fixed is what makes any picture legible
+# on this panel.
 DRAW_PROMPT = """\
-A technical diagram, drawn to be read on a small 800x480 workshop panel at arm's length.
+A picture, drawn to be read on a small 800x480 workshop panel at arm's length.
 
 {style}
 
-Favour few, large, clearly separated elements over dense detail: a diagram of nine things
-somebody can read beats one of thirty they cannot. Label every component and terminal in a crisp
-technical sans-serif, set horizontally. Use the exact values, pin numbers and part names given
-and no others - never "a resistor" where a value was said.
+Favour few, large, clearly separated elements over dense detail: a picture of nine things
+somebody can read beats one of thirty they cannot. Any label is set horizontally in a crisp
+sans-serif. Use the exact values, pin numbers and part names given and no others - never "a
+resistor" where a value was said.
 
-No perspective, no shading, no gradients, no glow, no photographic style, no decoration, no
-watermark.
+No watermark, no border, no caption repeating the request.
 
-The diagram: {request}"""
+The picture: {request}"""
 
 
 class ImagineError(RuntimeError):
@@ -446,7 +447,7 @@ async def draw(request: str, style: str, settings: Settings) -> bytes:
 
     ``style`` arrives from the voice model rather than from a constant here, because the right
     look is a property of the subject and only the conversation knows the subject. See
-    ``DRAW_DIAGRAM_TOOL`` in :mod:`cyclops.agent` for what it is told to send.
+    ``DRAW_TOOL`` in :mod:`cyclops.agent` for what it is told to send.
 
     No retry, unlike :func:`cyclops.panel.draw` before it and for the reason this module's
     docstring already gives about :func:`edit`: an image has no schema to fail, so a second

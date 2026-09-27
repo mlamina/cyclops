@@ -66,8 +66,8 @@ def test_a_broken_program_does_not_poison_the_next_one():
 
 
 def test_a_frame_is_a_white_sheet_and_carries_a_view():
-    """White is not taste: Mermaid and Recharts both default to a light page, and on black a
-    diagram's edges came out dark grey on near-black and the connections were lost."""
+    """White is not taste: the charts default to a light page, and on black a chart's axes and
+    gridlines come out dark grey on near-black."""
     wire = sketch.compile(WHOLE)
     assert wire["mode"] == "light"
     assert wire["view"]
@@ -182,53 +182,15 @@ def test_another_tool_being_typed_draws_nothing(voice: agent.VoiceAgent):
     assert sketch.current() is None
 
 
-# ---------------------------------------------------------------- diagrams that will not parse
+# ---------------------------------------------------------------- no drawing on the scratchpad
 #
-# Mermaid does not fail quietly. A label it cannot parse makes the renderer print the source
-# instead, so the panel fills with `-->|Black (Ground)|` set in monospace - which is what a
-# person sees when they ask for a wiring diagram and name a wire colour the way people do.
+# Drawing goes to the image tool. A Mermaid chart or hand-typed SVG on the scratchpad never once
+# came out more useful than a picture, so neither is a name the model's code can reach.
 
 
 @pytest.mark.parametrize(
-    ("chart", "fixed"),
-    [
-        ("graph LR\n  M -->|Black (Ground)| G[Ground]", 'M -->|"Black (Ground)"| G[Ground]'),
-        ("graph LR\n  A[Battery (12V)] --> B[F]", 'A["Battery (12V)"] --> B[F]'),
-    ],
+    "call",
+    ["Mermaid('graph LR\\n  B[Battery] --> F[Fuse]')", "Svg('<svg viewBox=\"0 0 8 8\"/>')"],
 )
-def test_a_label_that_would_not_parse_gets_quoted(chart, fixed):
-    assert sketch._quote_labels(chart).splitlines()[-1].strip() == fixed
-
-
-@pytest.mark.parametrize(
-    "chart",
-    [
-        "graph LR\n  A[Network / Voice] --> B[Nuts & bolts]",  # safe punctuation
-        'graph LR\n  A["Battery (12V)"] --> B[F]',  # the model quoted it itself
-        "graph LR\n  A[[Subroutine]] --> B[(Database)]",  # other node shapes
-        "graph LR\n  B[Battery] -->|Red| F[Fuse]",  # nothing to do
-    ],
-)
-def test_a_diagram_that_already_parses_is_left_alone(chart):
-    assert sketch._quote_labels(chart) == chart
-
-
-def test_the_sanitiser_reaches_a_mermaid_nested_in_the_tree():
-    code = (
-        "with PrefabApp() as app:\n"
-        "    with Column(gap=3):\n"
-        "        Heading('Wiring')\n"
-        "        Mermaid('graph LR\\n  M -->|Black (Ground)| G[Ground]')\n"
-    )
-
-    def find(node):
-        if isinstance(node, dict):
-            if node.get("type") == "Mermaid":
-                return node["chart"]
-            for child in node.get("children") or ():
-                found = find(child)
-                if found:
-                    return found
-        return None
-
-    assert '|"Black (Ground)"|' in find(sketch.compile(code)["view"])
+def test_a_sketch_that_draws_compiles_to_nothing(call):
+    assert sketch.compile(f"with PrefabApp() as app:\n    {call}\n") is None

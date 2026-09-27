@@ -512,7 +512,7 @@ def test_a_drawing_on_the_panel_is_edited_like_any_other_picture(voice) -> None:
     """The opposite of what this slot used to assert, and the change is the point.
 
     A drawing was once a JSON spec with no file behind it, so the slot held ``Panel(None,
-    "diagram")`` and an edit had nothing to send: it refused, and named draw_diagram. A drawing
+    "diagram")`` and an edit had nothing to send: it refused, and named draw. A drawing
     is a jpg in photos/ now, so "make that clearer, drop the status LED" is an ordinary edit of
     an ordinary picture.
     """
@@ -543,10 +543,10 @@ def test_nothing_is_sent_once_the_socket_has_gone(voice) -> None:
 
 
 class Asked:
-    """A draw_diagram call, as much of one as the handler reads."""
+    """A draw call, as much of one as the handler reads."""
 
     def __init__(self, arguments: str) -> None:
-        self.name = "draw_diagram"
+        self.name = "draw"
         self.call_id = "call_2"
         self.arguments = arguments
 
@@ -565,7 +565,7 @@ def tool_result(made, call) -> dict:
     made._send_tool_output = _send_tool_output
     made._request_response = _nothing
     made._spawn = lambda coro: coro.close()
-    asyncio.run(made._run_draw_diagram(call))
+    asyncio.run(made._run_draw(call))
     return sent[0]
 
 
@@ -625,3 +625,10 @@ def test_a_session_that_ended_mid_drawing_is_not_talked_to(voice) -> None:
     made._conn = None
     asyncio.run(made.announce("[The diagram you were drawing is now up on their screen.]"))
     assert sent == []
+
+
+@pytest.mark.parametrize("sketch", [False, True])
+def test_drawing_is_offered_as_draw_whichever_scratchpad_is_on(sketch) -> None:
+    offered = {t["name"] for t in agent._offered_tools(Settings(api_key="", sketch=sketch))}
+    assert "draw" in offered
+    assert "draw_diagram" not in offered

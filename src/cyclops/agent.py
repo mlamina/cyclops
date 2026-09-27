@@ -224,15 +224,17 @@ WATCH_VIDEO_TOOL: RealtimeFunctionToolParam = {
     },
 }
 
-DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
+DRAW_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
-    "name": "draw_diagram",
+    "name": "draw",
     "description": (
-        "Draw a technical diagram on the touchscreen: a wiring or connection diagram, a pinout, "
-        "a block diagram, a flow or a state machine. Use it when the answer is a layout or a set "
-        "of connections that would take several sentences to say and one picture to show - "
-        "'wire this relay to GPIO 17', 'what goes where on the header', 'how does this loop "
-        "work'. "
+        "Draw or visualize anything as a picture on the touchscreen: a circuit, a flow, a "
+        "concept, what something will look like when it is done, a scene - a smiley face if "
+        "that is what they asked for. Reach for it whenever they say draw, visualize, sketch it "
+        "out or show me a picture of, and whenever the answer is a layout or a set of "
+        "connections that would take several sentences to say and one picture to show - 'wire "
+        "this relay to GPIO 17', 'what goes where on the header', 'how does this loop work'. "
+        "This is the only way you draw: the scratchpad is for words, numbers and charts. "
         "It fills the panel when it arrives "
         "and stays until they put it away; do not narrate the drawing or read it back to them, "
         "they can see it. It is kept with this session's "
@@ -253,20 +255,21 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
                 "type": "string",
                 "description": (
                     "What to draw, in one or two sentences, with every value that matters - "
-                    "part names, pin numbers, resistances, voltages. Whoever draws it sees only "
+                    "part names, pin numbers, resistances, voltages, sizes, colours. Whoever draws it sees only "
                     "this sentence and nothing of your conversation, so it has to stand alone."
                 ),
             },
             "style": {
                 "type": "string",
                 "description": (
-                    "How this particular drawing should look, as a short phrase naming the "
-                    "conventions of the field it belongs to - the kind of drawing they would "
-                    "find in a manual for the thing in front of them. Work out what the subject "
-                    "is, then name the paper, the linework, the use of colour and the labelling "
-                    "that a drawing of THAT would have - a diagram in the wrong idiom is read "
-                    "wrong, and asking for wires and terminals on a piece of software gets you "
-                    "terminals that do not exist. "
+                    "How this particular picture should look, as a short phrase. For anything "
+                    "technical, name the conventions of the field it belongs to - the kind of "
+                    "drawing they would find in a manual for the thing in front of them: the "
+                    "paper, the linework, the use of colour and the labelling that a drawing of "
+                    "THAT would have. A diagram in the wrong idiom is read wrong, and asking for "
+                    "wires and terminals on a piece of software gets you terminals that do not "
+                    "exist. For a scene, a finished piece or an idea, name a clean illustration "
+                    "style instead. "
                     "Examples of the shape of answer wanted - a relay wired to a Pi, or a "
                     "motorcycle loom: 'a printed workshop service-manual wiring diagram, black "
                     "line-art on off-white paper, wires drawn in their real colours with a small "
@@ -278,7 +281,9 @@ DRAW_DIAGRAM_TOOL: RealtimeFunctionToolParam = {
                     "sketch, the parts drawn separated along the axis they slide on, numbered "
                     "callouts and a small parts key'. A pipe or duct run: 'an isometric pipework "
                     "diagram in the style of a plumbing manual, runs in a single line weight, "
-                    "fittings and valves as standard symbols'."
+                    "fittings and valves as standard symbols'. The shelf once it is built: 'a "
+                    "clean, softly shaded product illustration on a plain light background'. A "
+                    "smiley face: 'a bold, friendly flat cartoon'."
                 ),
             },
         },
@@ -291,8 +296,8 @@ SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "write_on_scratchpad",
     "description": (
-        "Your SCRATCHPAD: a blank white screen in front of them, 800x480, which you write and "
-        "draw on as a small piece of HTML. It is up about a second later, while you are still "
+        "Your SCRATCHPAD: a blank white screen in front of them, 800x480, which you write on "
+        "as a small piece of HTML. It is up about a second later, while you are still "
         "talking, and it costs nothing. "
         "That is the name you both use for it. Expect to be asked for it by that name - 'put "
         "that on your scratchpad', 'scratchpad it', 'what's on the scratchpad' - and call it "
@@ -300,14 +305,12 @@ SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
         "Use it on your own initiative, without being asked, whenever the answer has something "
         "in it worth looking at rather than hearing: a torque figure or a temperature set large, "
         "the steps of a job as a numbered list they can work down, a part number, a size, a "
-        "setting, a simple drawing as inline SVG. A number you say once over a running "
+        "setting. A number you say once over a running "
         "compressor is a number they will ask you for again; one on the scratchpad is one they "
         "work to. So show it AND say it - put the figure up, then say the caveat out loud. Then "
         "stop describing what is up there. They can see it. "
-        "This is the tool to reach for by default. draw_diagram is the expensive exception: it "
-        "is for a real technical drawing - how something is wired, what goes where on a header, "
-        "how parts fit together - and it costs half a minute, which is half a minute wasted on "
-        "anything that is text, numbers, a list or a simple shape. "
+        "It is for words, numbers, lists and tables - never a drawing. Anything they want drawn "
+        "or visualized, however simple, is the draw tool. "
         "It is read at arm's length and it does not scroll, so whatever does not "
         "fit is not seen: one idea at a time, set big, a handful of elements. "
         "It holds the whole panel until they touch it - a press anywhere wipes it and gives them "
@@ -325,15 +328,12 @@ SCRATCHPAD_TOOL: RealtimeFunctionToolParam = {
                     "the elements. A number is '<h1>25 Nm</h1>'. Steps are an <ol> of short "
                     "<li>. Plain markup with nothing styled already comes out right: dark on "
                     "white, sized for the panel, centred. "
-                    "Colour is yours - text, shapes, anything - and it is worth using when the "
-                    "colour MEANS something: a value in red because it is out of range, wires "
-                    "drawn in the colours they actually are. "
-                    "The screen is already a blank white sheet, so never draw a background "
-                    "rectangle and never draw a frame or border round the whole thing. A box "
-                    "inside a box on a panel this small is what makes a clear diagram "
-                    "unreadable. Give an <svg> the drawing's own viewBox and let it fill. "
+                    "Colour is yours, and it is worth using when the colour MEANS something: a "
+                    "value in red because it is out of range. "
+                    "The screen is already a blank white sheet, so never set a background and "
+                    "never put a frame or border round the whole thing. "
                     "Emoji are just characters. Scripts do not run and nothing loads from the "
-                    "network, so a picture has to be inline SVG rather than a src."
+                    "network."
                 ),
             },
         },
@@ -366,7 +366,7 @@ EDIT_PHOTO_TOOL: RealtimeFunctionToolParam = {
         "nothing in it is measured and nothing in it is a fact about their hardware - and "
         "because it started as a photograph of the real thing, it is the one picture they could "
         "mistake for a record of it. So do NOT use it for connections, wiring, which way round a "
-        "part goes, the order to assemble something, or anything they would act on: draw_diagram "
+        "part goes, the order to assemble something, or anything they would act on: draw "
         "is for those, because it draws the answer from a description instead of painting over "
         "their hardware. Do not use it to read a label or a plate: look at the photo you "
         "already have. Never call it to show them what something 'really' looks like."
@@ -443,7 +443,7 @@ POINT_AT_TOOL: RealtimeFunctionToolParam = {
                     "  n 1 0.55 0.62\n"
                     "  n 2 0.71 0.60\n"
                     "Eight marks is the most that will be drawn. If you find yourself wanting "
-                    "more than three, what you want is draw_diagram."
+                    "more than three, what you want is draw."
                 ),
             },
             "picture": {
@@ -488,16 +488,9 @@ SKETCH_TOOL: RealtimeFunctionToolParam = {
         "is on the screen and do not read it back. They can see it. "
         "Write the most important line FIRST. It is on the glass a beat later, and anything you "
         "add after it lands under something they are already reading. "
-        "IT IS NOT ONLY WORDS AND NUMBERS. A handful of readings is a chart. A circuit, a "
-        "sequence, anything with boxes and arrows, is a Mermaid diagram - drawn here in a few "
-        "seconds, and drawn correctly, because you write what connects to what and the layout "
-        "is done for you. Reach for those as readily as for a heading. "
-        "This is the tool to reach for by default, diagrams included. draw_diagram is now the "
-        "narrow exception: it costs half a minute and it is for a picture of a PHYSICAL "
-        "thing - what a part looks like, where a fitting sits on an engine, something you would "
-        "photograph if it were in front of you. Anything structural - wiring, a flow, an order "
-        "of operations, what plugs into what - belongs here, in Mermaid, now rather than in half "
-        "a minute. "
+        "It is for words, numbers, lists, tables and charts of real readings - a handful of "
+        "readings is a chart. It never draws: anything they want drawn or visualized - a "
+        "circuit, a flow, a shape, a scene, however simple - is the draw tool. "
         "It is read at arm's length and it does not scroll, so whatever does not "
         "fit is not seen: one idea at a time, set big, a handful of elements. "
         "It holds the whole screen until they touch it - a press anywhere wipes it and gives "
@@ -525,15 +518,8 @@ SKETCH_TOOL: RealtimeFunctionToolParam = {
                     "CardHeader / CardTitle / CardContent.\n"
                     "Content: Heading, Text, Badge(label, variant='success'|'warning'|"
                     "'destructive'|'secondary'), Metric(label, value), Progress(value), "
-                    "Ring(value), Separator, Code, Markdown, Icon(name), Svg(markup), "
+                    "Ring(value), Separator, Code, Markdown, Icon(name), "
                     "Image(src), Table(data=[{...}]), Kbd.\n"
-                    "Diagrams: Mermaid(text) - a whole mermaid document, usually 'graph LR' or "
-                    "'graph TD', one connection per line. It takes a few seconds to lay out; "
-                    "everything else here is instant. PUT QUOTES ROUND ANY LABEL THAT IS NOT "
-                    "just letters, digits and spaces - A[\"Battery (12V)\"], -->|\"Black "
-                    "(ground)\"|. A bracket or a bracketed aside in a bare label is a parse "
-                    "error, and a mermaid parse error is not a blank screen, it is your source "
-                    "code printed on the panel.\n"
                     "Charts: BarChart / LineChart / AreaChart / ScatterChart / Histogram, each "
                     "taking data=[{...}], series=[ChartSeries(data_key='x', label='X')] and "
                     "x_axis='key'. PieChart is different: data=[{...}], data_key='value', "
@@ -569,10 +555,6 @@ SKETCH_TOOL: RealtimeFunctionToolParam = {
                     "          Text('1. Open the far bleeder')\n"
                     "          Text('2. Pump twice')\n"
                     "          Text('3. Close it')\n"
-                    "Good - what connects to what, drawn rather than described:\n"
-                    "  with PrefabApp() as app:\n"
-                    "      Mermaid('graph LR\\n  B[Battery] --> F[Fuse 10A]\\n"
-                    "                  S[Switch] --> M[Motor]')\n"
                     "Good - a few readings, as a shape instead of five spoken numbers:\n"
                     "  with PrefabApp() as app:\n"
                     "      with Column(gap=2):\n"
@@ -974,7 +956,7 @@ HOW YOU TALK
 - One or two sentences. Their hands are busy and probably dirty; this is talk, not a document.
 - You have a SCRATCHPAD as well as a voice - the touchscreen in front of them - and writing on
   it is part of answering rather than an extra. When the answer has a number, a list of steps
-  or a shape in it, put that on the scratchpad and say the rest out loud. A figure they have
+  or a few readings in it, put that on the scratchpad and say the rest out loud. A figure they have
   to hold in their head while they work is a figure they will ask you for twice.
 - Call it the scratchpad, because that is what they call it. "Put that on your scratchpad",
   "scratchpad it", "what's on the scratchpad" - all of them mean write_on_scratchpad. A press
@@ -1013,7 +995,7 @@ HOW YOU TALK
   and let it go, and never raise the same unheeded point twice.
 - Saying nothing is a real option. While they measure, count, cut or think, stay quiet. When
   they say hang on, "Okay" is the whole turn, with nothing offered for afterwards.
-- Two things take about half a minute to arrive: draw_diagram and edit_photo. Those come
+- Two things take about half a minute to arrive: draw and edit_photo. Those come
   back to you the moment you ask, before the work is done. For those two, say what you are
   doing in a few words and carry on talking; you are told separately when it lands or fails,
   and that is when to mention it. Never ask for the same thing twice while you are waiting,
@@ -1078,10 +1060,10 @@ LOOKING THINGS UP
 SHOWING THEM SOMETHING
 - You have a screen, and reaching for it is part of answering rather than an extra. Do it as you
   answer, not instead of answering, and do it without being asked.
-- Which one to reach for: write_on_scratchpad for anything that is words, numbers, a list or a
-  simple shape. draw_diagram when the answer is a set of connections or a layout. edit_photo
-  when the answer is what something would LOOK like - a colour, a finish, a part moved, a thing
-  that is not there yet. Each one says what it is for and what it cannot do.
+- Which one to reach for: the scratchpad for words, numbers, lists and charts. draw for anything
+  drawn or visualized - a circuit, a flow, an idea, what something will look like. edit_photo
+  when the answer is their own photo changed - a colour, a finish, a part moved on the thing in
+  front of them. Each one says what it is for and what it cannot do.
 - Once it is up, stop describing it. They can see it. Answer what they ask about it.
 
 THE PROJECTS YOU KEEP
@@ -1679,19 +1661,7 @@ class VoiceAgent:
         self._extensions = extensions.load()  # once a session, so a new module needs no restart
         self._matched = extensions.matching(self._plugged, self._extensions)
         self._prompt = _standing(self.settings, self._plugged)
-        self._tools = [
-            WEB_SEARCH_TOOL,
-            *_look_tools(self.settings),
-            *_video_tools(self.settings),
-            *_diagram_tools(self.settings),
-            *_scratchpad_tools(self.settings),
-            *_sketch_tools(self.settings),
-            *_point_tools(self.settings),
-            *_imagine_tools(self.settings),
-            *_project_tools(self.settings),
-            *_recall_tools(self.settings),
-            *TUTORIAL_TOOLS,
-        ]
+        self._tools = _offered_tools(self.settings)
         config: RealtimeSessionCreateRequestParam = {
             "type": "realtime",
             "instructions": self._instructions(),
@@ -2391,8 +2361,8 @@ class VoiceAgent:
         if call.name == "point_at":
             await self._run_point(call)
             return
-        if call.name == "draw_diagram":
-            await self._run_draw_diagram(call)
+        if call.name == "draw":
+            await self._run_draw(call)
             return
         if call.name == "edit_photo":
             await self._run_edit_photo(call)
@@ -2942,7 +2912,7 @@ class VoiceAgent:
         return {"ok": True, "step": up.number, "of": up.total, "now": up.current,
                 "note": tutorial.note(up)}
 
-    async def _run_draw_diagram(self, call: RealtimeConversationItemFunctionCall) -> None:
+    async def _run_draw(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Set a drawing going, answer at once, and let :meth:`_draw` finish it.
 
         The tool returns in a moment and the picture arrives about half a minute later. That is
@@ -2961,7 +2931,7 @@ class VoiceAgent:
         """
         request = _tool_string(call.arguments, "request", imagine.MAX_REQUEST_CHARS)
         style = _tool_string(call.arguments, "style", imagine.MAX_STYLE_CHARS)
-        self._log(f"[tool] draw_diagram {request!r} ({style!r})")
+        self._log(f"[tool] draw {request!r} ({style!r})")
         if not request:
             await self._send_tool_output(call.call_id, {"ok": False, "error": "nothing described"})
             await self._request_response()
@@ -2986,7 +2956,7 @@ class VoiceAgent:
         await self._request_response()
 
     async def _draw(self, task: str, request: str, style: str) -> None:
-        """The half minute. Runs on its own after :meth:`_run_draw_diagram` has answered.
+        """The half minute. Runs on its own after :meth:`_run_draw` has answered.
 
         The model is deliberately *not* told what the diagram contains. It asked for a picture,
         the picture is on the screen, and a model handed a description of it will read that
@@ -3006,11 +2976,11 @@ class VoiceAgent:
             self._log(f"[tool] draw: {len(jpeg) // 1024} KB in {time.monotonic() - started:.1f}s")
         except imagine.ImagineError as exc:
             session.note("photo", by="drawn", request=request[:80], error=str(exc))
-            self._log(f"[tool] draw_diagram failed: {exc}", stream=sys.stderr)
+            self._log(f"[tool] draw failed: {exc}", stream=sys.stderr)
             output, kept = {"ok": False, "error": str(exc)}, None
         except Exception as exc:  # never leave the model waiting to be told how it went
             session.note("photo", by="drawn", request=request[:80], error=f"{type(exc).__name__}")
-            self._log(f"[tool] draw_diagram failed: {exc!r}", stream=sys.stderr)
+            self._log(f"[tool] draw failed: {exc!r}", stream=sys.stderr)
             output, kept = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}, None
         finally:
             self.drawing_active = False
@@ -3025,7 +2995,7 @@ class VoiceAgent:
         if not output.get("ok"):
             tasks.fail(task, str(output.get("error", "")))
             await self.announce(
-                "[The diagram you were drawing could not be made: "
+                "[The picture you were drawing could not be made: "
                 f"{output.get('error', 'it failed')}. Tell them so in a few words. Nothing "
                 "appeared on their screen, so nobody else has told them.]"
             )
@@ -3035,12 +3005,12 @@ class VoiceAgent:
             # Drawn with no panel to put it on - `uv run cyclops` at a desk. The one case where
             # describing it is the right thing to do, because they have nothing to look at.
             await self.announce(
-                "[The diagram you were drawing is finished, but there was no screen to put it "
+                "[The picture you were drawing is finished, but there was no screen to put it "
                 f"on. Say so plainly rather than describing it. It was: {request}]"
             )
             return
         await self.announce(
-            "[The diagram you were drawing is now up on their screen. Say it is there, in a few "
+            "[The picture you were drawing is now up on their screen. Say it is there, in a few "
             "words. Do not describe it or read it back - they are looking at it."
             # The one picture the model is told about and never shown, so this sentence is the
             # only handle it will ever have on the diagram it just drew.
@@ -3513,7 +3483,7 @@ class VoiceAgent:
     async def announce(self, text: str) -> None:
         """Tell the model that something it started in the background has landed, and let it talk.
 
-        The other end of a tool that returns before its work is done. ``draw_diagram`` answers in
+        The other end of a tool that returns before its work is done. ``draw`` answers in
         a moment and the picture arrives about half a minute later, so the arrival has to reach
         the conversation on its own - there is no tool call left to answer by then, and the model
         would otherwise be told nothing at all and go on believing a drawing was still being made.
@@ -3538,7 +3508,7 @@ class VoiceAgent:
     async def _run_edit_photo(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Check there is something to edit, set the redraw going, and answer at once.
 
-        The same lifecycle as :meth:`_run_draw_diagram` and split the same way and for the same
+        The same lifecycle as :meth:`_run_draw` and split the same way and for the same
         reason: the picture takes half a minute, and a tool call held open for that long is a
         conversation with nothing in it. What is left here is the three questions that can be
         answered without drawing anything - is there a request, is there a picture to change, and
@@ -4007,6 +3977,23 @@ def _tool_string(arguments: str | None, key: str, limit: int) -> str:
     return str(args.get(key) or "")[:limit]
 
 
+def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """Every built-in tool a session opens with, before any extension adds its own."""
+    return [
+        WEB_SEARCH_TOOL,
+        *_look_tools(settings),
+        *_video_tools(settings),
+        *_diagram_tools(settings),
+        *_scratchpad_tools(settings),
+        *_sketch_tools(settings),
+        *_point_tools(settings),
+        *_imagine_tools(settings),
+        *_project_tools(settings),
+        *_recall_tools(settings),
+        *TUTORIAL_TOOLS,
+    ]
+
+
 def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The drawing tool, or nothing. Left out rather than refused, as with the project tools.
 
@@ -4014,7 +4001,7 @@ def _diagram_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     folder of its own. A diagram is a photograph now, so recall does that job and this is one
     tool again.
     """
-    return [DRAW_DIAGRAM_TOOL] if settings.diagrams else []
+    return [DRAW_TOOL] if settings.diagrams else []
 
 
 def _look_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
@@ -4292,7 +4279,7 @@ def _activity_line(
         return _phrase("searching for", _tool_query(args), "searching the web")
     if call.name == "take_a_look":
         return "taking a look…"
-    if call.name == "draw_diagram":
+    if call.name == "draw":
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
     # Barely seen - the browser covers this strip about a second later - but the chain wants no
     # silent branches, and the recording is still watching while it is up.

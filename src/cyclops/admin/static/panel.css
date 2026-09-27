@@ -115,18 +115,17 @@ body.drawing .stage { display: block; }
    not shown. It is what makes this display-only, and that is the v1 position rather than an
    oversight: Prefab's inputs and actions all work, and none of them have a way out yet. */
 /* It is ALWAYS laid out, and only ever hidden from view. That distinction is the whole of why
-   diagrams work: `display: none` gives an element no box, an iframe with no box gives the
-   document inside it a viewport of zero, and Mermaid measures its container once, asynchronously,
-   and lays out to whatever it finds. Frames arrive before the panel is uncovered - that is the
-   point of this design - so with `display: none` every diagram was laid out into nothing and
-   never re-measured when the box appeared. Text and charts survived it (charts carry a
-   ResizeObserver); Mermaid came out black, three times, in front of somebody.
+   charts work: `display: none` gives an element no box, an iframe with no box gives the
+   document inside it a viewport of zero, and anything that measures its container lays out to
+   whatever it finds. Frames arrive before the panel is uncovered - that is the point of this
+   design - so with `display: none` a frame was laid out into nothing. Charts carry a
+   ResizeObserver and recover; nothing should have to.
 
    `visibility` keeps the box and skips the paint, so the renderer always sees a real 800x480.
 
    White, like the scratchpad it replaces and for the same reason (see panel.js): what is drawn
-   on it brings its own colour, and Mermaid's and Recharts' defaults are both built for a white
-   page. Dark read well for a number set large and lost a diagram's arrows entirely. */
+   on it brings its own colour, and the charts' defaults are built for a white page. Dark read
+   well for a number set large and lost a chart's axes into the background. */
 .sketch {
   position: fixed; inset: 0; width: 100%; height: 100%;
   border: 0; background: #fff; pointer-events: none; z-index: 2;

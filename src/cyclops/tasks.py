@@ -8,7 +8,7 @@ anything is going on.** It is not a scheduler, nothing pulls work off it, and no
 queued - the work is already running by the time a row appears.
 
 Cyclops never writes a row himself. He calls a tool, and the tool spawns the work and opens the
-task for it (:meth:`cyclops.agent.VoiceAgent._run_draw_diagram`); the detached child that tidies up
+task for it (:meth:`cyclops.agent.VoiceAgent._run_draw`); the detached child that tidies up
 after a session opens three of its own (:mod:`cyclops.after`). Any process and any thread may
 write here, which is why the file is what it is rather than a table in somebody's memory: the
 agent, the kiosk, the admin service and a child that outlives all three share no memory at all.
