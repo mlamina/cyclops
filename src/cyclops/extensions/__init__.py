@@ -82,6 +82,9 @@ class Extension:
     categories: tuple[str, ...] = ()  # one of cyclops.devices' four - any box of a kind
     category: str = ""  # what it is, for a device whose bus descriptors will not say
     tools: tuple[Tool, ...] = ()
+    # A board that reboots into new firmware leaves the bus under one of its usb_ids and comes
+    # back under another. Gone for less than this, it never left - see cyclops.devices.Watch.
+    rejoin_s: float = 0.0
 
     def matches(self, device: Plugged) -> bool:
         return device.ident in self.usb_ids or device.category in self.categories
@@ -177,3 +180,10 @@ def known(loaded: Iterable[Extension]) -> dict[str, tuple[str, str]]:
     """``vid:pid -> (category, name)`` for every device an extension says its bus cannot."""
     return {ident: (ext.category, ext.name)
             for ext in loaded if ext.category for ident in ext.usb_ids}
+
+
+def rejoins(loaded: Iterable[Extension]) -> dict[str, tuple[str, float]]:
+    """``vid:pid -> (extension name, seconds)`` for every device that may drop off and come back
+    as another of its own IDs. The name is what makes two IDs the same device."""
+    return {ident: (ext.name, ext.rejoin_s)
+            for ext in loaded if ext.rejoin_s > 0 for ident in ext.usb_ids}

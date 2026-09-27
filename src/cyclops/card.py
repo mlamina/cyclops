@@ -96,6 +96,9 @@ CUT = "cut.mp4"
 # here, and in session._remove, so a folder still holding one can still be deleted.
 CLIPS = "clips"
 CLIP_PLAN = "plan.json"
+# Programs put on a board plugged into the box - the Pico's main.py, one file per version, so
+# what was running on the breadboard last week is here and not only on the board.
+CODE = "code"
 
 STAMP = "%Y-%m-%d_%H-%M-%S"
 STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobody has named yet
@@ -105,7 +108,7 @@ STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobod
 # removed however empty triage thinks it is.
 KNOWN = frozenset(
     {
-        LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS, CLIPS, VIDEOS,
+        LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS, CLIPS, VIDEOS, CODE,
         CUT_REQUEST, CUT_PLAN, CUT_SUBS, CUT,
     }
 )
@@ -135,7 +138,7 @@ KNOWN = frozenset(
 # question and would blunt the second, where MADE is what outranks a model saying this was a mic
 # check.
 SPOKEN = frozenset({"you", "transcript_failed"})
-MADE = frozenset({"photo", "screen", "project", "data"})
+MADE = frozenset({"photo", "screen", "project", "data", "code"})
 
 
 # ------------------------------------------------------------------ writing

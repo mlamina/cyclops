@@ -1081,6 +1081,9 @@ def _render_record(record: dict) -> str:
         return _render_data(record, at)
     if kind == "tutorial":
         return _render_tutorial(record, at)
+    if kind == "code":
+        what = f"*Programmed the {record.get('device', 'board')}* ({at}) — {record.get('name', '')}"
+        return f"{what}\n\n```python\n{record.get('code', '').rstrip()}\n```"
     if kind == "transcript_failed":
         return f"*You said something that could not be transcribed* ({at})"
     if kind == "error":

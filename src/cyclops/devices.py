@@ -58,6 +58,23 @@ def known() -> dict[str, tuple[str, str]]:
     return extensions.known(extensions.load())
 
 
+@cache
+def rejoins() -> dict[str, tuple[str, float]]:
+    """Devices that may leave the bus and come back as another ID: ``vid:pid -> (who, seconds)``.
+
+    A Pico being flashed goes out as its bootloader and comes back as MicroPython, and that is
+    one board doing its job, not a plug and an unplug. Out of the extensions, like :func:`known`.
+    """
+    from . import extensions
+
+    return extensions.rejoins(extensions.load())
+
+
+def key(device: Device) -> str:
+    """What makes two readings the same device: its vid:pid, or the board it is a state of."""
+    return rejoins().get(device.ident, (device.ident, 0.0))[0]
+
+
 # Never listed, whatever else is true of them. The lav mic is in every single session, so it is
 # not news in the greeting and it is not worth a rail tag either - his answer, and the one device
 # this job was told to ignore by name.
@@ -172,9 +189,9 @@ def connected(root: Path | None = None) -> tuple[Device, ...]:
 
 def changes(before: tuple[Device, ...],
             after: tuple[Device, ...]) -> tuple[list[Device], list[Device]]:
-    """What arrived and what left, between two readings. Identity is the vid:pid."""
-    was = {one.ident: one for one in before}
-    now = {one.ident: one for one in after}
+    """What arrived and what left, between two readings. Identity is :func:`key`."""
+    was = {key(one): one for one in before}
+    now = {key(one): one for one in after}
     return ([one for ident, one in now.items() if ident not in was],
             [one for ident, one in was.items() if ident not in now])
 
@@ -209,6 +226,7 @@ class Watch:
         self._since = 0.0
         self._said_at = -quiet_s
         self._primed = False
+        self._away: dict[str, float] = {}  # a rebooting board's key -> when it dropped off
 
     def catch_up(self) -> None:
         """A session has just opened, so its instructions carry the list. Nothing to announce."""
@@ -226,6 +244,7 @@ class Watch:
             self._seen = self.listed = self._told = found
             self._since = now
             return ([], [])
+        found = self._bridge(found, now)
         if found != self._seen:
             self._seen, self._since = found, now
         if found != self.listed and now - self._since >= self.settle_s:
@@ -241,3 +260,22 @@ class Watch:
         if arrived:
             self._said_at = now
         return (arrived, left)
+
+    def _bridge(self, found: tuple[Device, ...], now: float) -> tuple[Device, ...]:
+        """*found*, with a rebooting board still in it for as long as it may be on its way back.
+
+        A flash is the board dropping off as one ID and returning seconds later as another; left
+        to the settle clock alone that is an unplug turn and then a plug turn, and the model loses
+        the board's tools in between. Only a device an extension says does this is held.
+        """
+        here = {key(one) for one in found}
+        listed = {key(one) for one in self.listed}
+        self._away = {k: t for k, t in self._away.items() if k not in here and k in listed}
+        held = []
+        for one in self.listed:
+            who, window = rejoins().get(one.ident, ("", 0.0))
+            if not window or who in here:
+                continue
+            if now - self._away.setdefault(who, now) < window:
+                held.append(one)
+        return found + tuple(held)
