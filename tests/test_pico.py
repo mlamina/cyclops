@@ -142,7 +142,7 @@ def tools_with(monkeypatch, *plugged: devices.Device) -> list[str]:
 
 
 def test_its_tools_come_with_either_state_of_the_board_and_go_without_it(monkeypatch) -> None:
-    ours = {"pico_program", "pico_run", "pico_output"}
+    ours = {"pico_program", "pico_run", "pico_output", "pico_show"}
     assert ours <= set(tools_with(monkeypatch, C920, BOOT))
     assert ours <= set(tools_with(monkeypatch, MPY))
     assert not ours & set(tools_with(monkeypatch, C920))
@@ -239,3 +239,62 @@ def test_an_endoscope_leaving_is_not_held_back(monkeypatch) -> None:
     told = [watch.seen((C920,), 1.0 + tick * 0.5)[1] for tick in range(6)]
     assert [scope] in told
 
+
+
+# Where pins 1, 20, 21 and 40 are as you look at the board, worked out by hand from the
+# datasheet's pinout (USB at the top, chip up: 1 top left, 20 bottom left, 21 bottom right, 40
+# top right), turned for each way the USB can point and mirrored for chip down.
+CORNERS = {
+    ("up", "up"): ("TL", "BL", "BR", "TR"),
+    ("left", "up"): ("BL", "BR", "TR", "TL"),
+    ("down", "up"): ("BR", "TR", "TL", "BL"),
+    ("right", "up"): ("TR", "TL", "BL", "BR"),
+    ("up", "down"): ("TR", "BR", "BL", "TL"),
+    ("left", "down"): ("TL", "TR", "BR", "BL"),
+    ("down", "down"): ("BL", "TL", "TR", "BR"),
+    ("right", "down"): ("BR", "BL", "TL", "TR"),
+}
+
+
+@pytest.mark.parametrize(("usb", "chip"), list(CORNERS))
+def test_every_orientation_puts_the_pins_where_the_board_has_them(usb: str, chip: str) -> None:
+    places = {n: pico.pin_place(n, usb, chip) for n in range(1, 41)}
+    xs, ys = {x for x, _ in places.values()}, {y for _, y in places.values()}
+
+    def corner(n: int) -> str:
+        x, y = places[n]
+        return ("T" if y == min(ys) else "B" if y == max(ys) else "?") + \
+            ("L" if x == min(xs) else "R" if x == max(xs) else "?")
+
+    assert tuple(corner(n) for n in (1, 20, 21, 40)) == CORNERS[usb, chip]
+
+    for first in (1, 30, 60):  # pin 1's column is all they are asked for
+        layout = pico.make_layout(usb, chip, first)
+        holes = [pico.pin_hole(n, layout) for n in range(1, 41)]
+        assert holes[0][0] == first and len(set(holes)) == 40
+        assert all(col >= 1 and row in pico.ROWS for col, row in holes)
+        assert {pico._across(row) for _, row in holes} == {
+            pico._across(layout.pin1_row), pico._across(pico.partner(layout.pin1_row))}
+        assert abs(pico._across(holes[0][1]) - pico._across(holes[20][1])) == pico.PICO_SPAN
+
+
+def test_the_same_picture_is_the_same_bytes() -> None:
+    layout = pico.make_layout("left", "up", 60, "h")
+    parts = pico.resolve([
+        {"kind": "resistor", "from": "GP15", "to": "37j", "label": "330 ohm"},
+        {"kind": "led", "from": "37i", "to": "36i"},
+        {"kind": "wire", "from": "GND", "to": "36j", "colour": "black"},
+    ], layout)
+    assert pico.render(layout, parts) == pico.render(layout, parts)
+
+
+def test_a_lead_goes_beside_its_pin_and_never_where_it_cannot() -> None:
+    layout = pico.make_layout("left", "up", 60, "h")
+    [part] = pico.resolve([{"kind": "wire", "from": "GP15", "to": "36j"}], layout)
+    assert part.ends[0] == (41, "j")
+    for wrong in ([{"kind": "wire", "from": "50f", "to": "36j"}],  # under the Pico
+                  [{"kind": "wire", "from": "45j", "to": "36j"}],  # GP12's strip, unnamed
+                  [{"kind": "resistor", "from": "GP15", "to": "37j"},  # two leads, one hole
+                   {"kind": "led", "from": "37j", "to": "36j"}]):
+        with pytest.raises(ValueError):
+            pico.resolve(wrong, layout)

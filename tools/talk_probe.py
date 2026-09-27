@@ -29,7 +29,8 @@ synth installed and on the bus - ``--extensions tests/fake_extensions --usb "mus
 ``--script pico`` puts a Pico running MicroPython on a fake bus, with a fake board behind its
 tools that answers like a real one and writes down what it was sent. It asks for the onboard LED
 to blink, then where the wire for an LED on GP15 goes; the tally is whether the first went to
-``pico_program`` with code that uses the onboard LED, and whether the second said pin 20.
+``pico_program`` with code that uses the onboard LED, whether the second said pin 20, and
+whether the third - wiring, with the layout given - went to ``pico_show`` and never to ``draw``.
 
 ``--script smiley`` is the one question that used to come back with the greeting glued to the
 front of its answer, asked into a busy day on a scratch card - so the tally can say whether the
@@ -134,6 +135,8 @@ DRAW_SCRIPT = (
 PICO_SCRIPT = (
     "Blink the LED on the Pico.",
     "I've got an LED on GP15, where does the wire go?",
+    "Show me how to wire an LED to the Pico - it's on my breadboard, USB to my left, chip up, "
+    "pin 1 in column 60.",
 )
 SCRIPTS = {
     "bench": SCRIPT,
@@ -598,11 +601,20 @@ async def _pico(runs: int, out_path: Path) -> int:
         for run in range(1, runs + 1):
             fake = _FakePico()
             pico.board = lambda: fake  # type: ignore[assignment]
+            real_render = pico.render
+
+            def render(layout, parts, pins=(), fake=fake, real_render=real_render):
+                fake.sent.append({"tool": "pico_show", "layout": pico.describe(layout),
+                                  "leads": [": ".join(pico.legend(p, layout)) for p in parts]})
+                return real_render(layout, parts, pins)
+
+            pico.render = render  # type: ignore[assignment]
             try:
                 await _one_run(run, out, PICO_SCRIPT)
             except (TimeoutError, RuntimeError) as exc:
                 print(f"run {run} failed: {exc}", file=sys.stderr)
                 return 1
+            pico.render = real_render  # type: ignore[assignment]
             out.write(json.dumps({"run": run, "turn": -1, "you": "", "pico": fake.sent}) + "\n")
             out.flush()
     return 0
@@ -626,8 +638,21 @@ def pico_tally(records: list[dict]) -> None:
         for code in programs:
             print("      code: " + code.strip().replace("\n", "\n            "))
         print(f"       GP15 -> {'ok ' if pin20 else 'MISS'} said={said!r}")
+    shown = 0
+    for run in runs:
+        mine = {r["turn"]: r for r in records if r["run"] == run}
+        tools = mine.get(3, {}).get("tools", [])
+        drew = any("draw" in r.get("tools", []) for r in mine.values())
+        ok = "pico_show" in tools and not drew
+        shown += ok
+        leads = [c for c in mine.get(-1, {}).get("pico", []) if c["tool"] == "pico_show"]
+        print(f"run {run}: wiring -> {'ok ' if ok else 'MISS'} tools={tools} drew={drew}"
+              f"\n      said={mine.get(3, {}).get('cyclops', '')!r}")
+        for call in leads:
+            print(f"      {call['layout']}: " + " | ".join(call["leads"]))
     print(f"\nblink went to pico_program on the onboard LED: {blinked} of {len(runs)}")
     print(f"GP15 answered as pin 20: {pinned} of {len(runs)}")
+    print(f"wiring went to pico_show and never draw: {shown} of {len(runs)}")
 
 
 def draw_tally(records: list[dict]) -> None:
