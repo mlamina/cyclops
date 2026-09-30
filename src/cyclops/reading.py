@@ -194,7 +194,7 @@ def _loads(answer: str) -> dict | None:
     return found if isinstance(found, dict) else None
 
 
-async def read_page(image: Path, client: AsyncOpenAI) -> Page | None:
+async def read_page(image: Path, client: AsyncOpenAI, source: str = "") -> Page | None:
     """Read one rendered page. ``None`` means ask again; a ``Page`` means do not.
 
     That distinction is the whole contract and it is not the one :func:`cyclops.captions.describe`
@@ -210,6 +210,10 @@ async def read_page(image: Path, client: AsyncOpenAI) -> Page | None:
     url = _data_url(image)
     if url is None:
         return None
+    # The PDF's filename is often the only place a page's subject is named. A kit manual that is
+    # all photos never prints "Pico": read cold, its LED strip page came back as "two circuit
+    # boards ... LEDs lit in a row", and a search for the Pico's LED strip ranked it last.
+    prompt = f"This page comes from a PDF named {source!r}.\n{PAGE_PROMPT}" if source else PAGE_PROMPT
     try:
         answer = await client.responses.create(
             model=PAGE_MODEL,
@@ -218,7 +222,7 @@ async def read_page(image: Path, client: AsyncOpenAI) -> Page | None:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "input_text", "text": PAGE_PROMPT},
+                        {"type": "input_text", "text": prompt},
                         {"type": "input_image", "image_url": url, "detail": "auto"},
                     ],
                 }
@@ -248,16 +252,19 @@ async def read_page(image: Path, client: AsyncOpenAI) -> Page | None:
     )
 
 
-async def identify(pages: dict[str, dict], client: AsyncOpenAI) -> dict:
+async def identify(pages: dict[str, dict], client: AsyncOpenAI, source: str = "") -> dict:
     """What this manual is, from the pages already read. ``{}`` if it could not be worked out.
 
     Text only, and no second render: the opening pages have already been transcribed and paid for,
     so this is one cheap call over words we hold rather than another trip through the images.
     """
+    # Text and illustrations both. A manual that opens on photos has almost no words on its first
+    # pages - the Pico kit's were "UCTR0NICS" twice - and named from those alone it was called
+    # after its maker, which nobody says out loud.
     opening = [
-        pages[str(n)].get("text", "")
+        text
         for n in range(1, IDENTITY_PAGES + 1)
-        if str(n) in pages and pages[str(n)].get("text", "").strip()
+        if str(n) in pages and (text := _said_on(pages[str(n)])).strip()
     ]
     if not opening:
         return {}
@@ -282,6 +289,7 @@ async def identify(pages: dict[str, dict], client: AsyncOpenAI) -> dict:
             reasoning={"effort": "none"},
             input=(
                 IDENTITY_PROMPT
+                + (f"(The file is named {source!r}.)\n\n" if source else "")
                 + "\n\n---\n\n".join(opening)[:6000]
                 + "\n\nEvery page's heading, in order - this is what the manual covers:\n"
                 + "\n".join(f"- {h}" for h in headings)[:3000]
@@ -291,6 +299,12 @@ async def identify(pages: dict[str, dict], client: AsyncOpenAI) -> dict:
         return {}
     found = _loads((getattr(answer, "output_text", "") or "").strip())
     return found or {}
+
+
+def _said_on(page: dict) -> str:
+    """A page's words and what its illustrations show, as one block for the identity call."""
+    figures = [str(f.get("what", "")) for f in page.get("figures", []) if isinstance(f, dict)]
+    return "\n".join(p for p in [str(page.get("text", "")), *figures] if p.strip())
 
 
 # ------------------------------------------------------------------ one manual, start to finish
@@ -328,7 +342,7 @@ async def fill(manual: Manual, settings: Settings, client: AsyncOpenAI) -> int:
 
     async def one(n: int, image: Path) -> tuple[int, Page | None]:
         async with limit:
-            return n, await read_page(image, client)
+            return n, await read_page(image, client, manual.pdf.name)
 
     made = 0
     for start in range(0, len(todo), FLUSH_EVERY):
@@ -360,7 +374,7 @@ async def _name(manual: Manual, pages: dict[str, dict], client: AsyncOpenAI) -> 
     """
     if not pages or manual.about:
         return
-    found = await identify(pages, client)
+    found = await identify(pages, client, manual.pdf.name)
     if not found:
         return
     manual.name = str(found.get("manual") or manual.name)[:160]

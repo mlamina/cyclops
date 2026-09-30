@@ -3253,6 +3253,11 @@ class VoiceAgent:
         )
         fresh = [hit for hit in ranked if hit.item.key not in self._recalled][:RECALL_HITS]
         hits = [hit for hit in fresh if hit.score >= recall.MIN_SCORE]
+        # "Page 29" means page 29. Searched by meaning it brought up page 161, three times.
+        if (number := recall.page_asked(query)) is not None:
+            pinned = recall.page_of(index, vector[0], scopes=scopes, number=number)
+            if pinned is not None and pinned.item.key not in self._recalled:
+                hits = [pinned] + [hit for hit in hits if hit.item.key != pinned.item.key]
         if not hits and any(hit.score >= recall.MIN_SCORE for hit in ranked):
             return {
                 "ok": True,

@@ -40,7 +40,7 @@ def card(tmp_path, pdf_bytes):
     (folder / manuals.PAGES_NAME).write_text(
         json.dumps(
             {
-                "1": {"heading": "Cover", "text": "mo.unit blue instruction manual", "figures": []},
+                "1": {"heading": "Introduction", "text": "mo.unit blue instruction manual", "figures": []},
                 "2": {
                     "heading": "Connecting indicator lights",
                     "text": "two diodes 1N4001 to Turn L and Turn R",
@@ -198,6 +198,30 @@ def test_the_manual_itself_is_findable_without_naming_a_page(settings, manual):
     assert any("mo.unit" in item.text for item in entries)
 
 
+def test_a_cover_page_is_not_indexed(settings, manual):
+    """Front matter answers nothing, and a near-empty page matches every "manual page" query."""
+    written = json.loads((manual.path / manuals.PAGES_NAME).read_text())
+    written["1"]["heading"] = "Copyright and trademarks notice"
+    (manual.path / manuals.PAGES_NAME).write_text(json.dumps(written))
+    assert [i.title for i in recall.corpus(settings) if i.kind == "page"] == [
+        next(i.title for i in recall.corpus(settings) if "page 2" in i.title)
+    ]
+
+
+def test_a_page_asked_for_by_number_is_that_page(settings):
+    """Whatever it ranks, "page 2" hands back page 2 of the manual the query is about."""
+    items = [i for i in recall.corpus(settings) if i.kind == "page"]
+    # page 1 is the better match by meaning, so only the number can pick page 2
+    one = next(n for n, i in enumerate(items) if i.path.endswith("0001.jpg"))
+    vectors = np.zeros((len(items), 2), dtype=np.float32)
+    vectors[:, 1] = 1.0
+    vectors[one] = [1.0, 0.0]
+    index = recall.Index(items=items, vectors=vectors)
+    number = recall.page_asked("show me page 2 of the mo.unit manual")
+    hit = recall.page_of(index, np.array([1.0, 0.0]), scopes=None, number=number)
+    assert hit.item.path.endswith("0002.jpg")
+
+
 def test_a_page_render_with_no_entry_is_not_indexed(settings, manual):
     """A page nobody has read yet has nothing to search by, so it is not askable for."""
     (manual.pages_dir / "0003.jpg").write_bytes(b"\xff\xd8\xff\xe0 third")
@@ -245,7 +269,7 @@ def test_a_manual_with_every_page_read_still_gets_named(manual, monkeypatch):
     """
     asked = []
 
-    async def identify(pages, client):
+    async def identify(pages, client, source=""):
         asked.append(len(pages))
         return {"part": "Raspberry Pi 5", "about": "power, ports, pinout", "aliases": ["pi 5"]}
 
