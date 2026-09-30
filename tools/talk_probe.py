@@ -138,9 +138,17 @@ PICO_SCRIPT = (
     "Show me how to wire an LED to the Pico - it's on my breadboard, USB to my left, chip up, "
     "pin 1 in column 60.",
 )
+# The Pi session of 30 Sep: an I2C display wired to the Pico, and three turns where it told them
+# to run a scan instead of running it. The tally is whether each turn reached a pico_ tool itself.
+PICO_HANDS_SCRIPT = (
+    "All right, I've got the LCD display wired to the Pico, all four wires are connected.",
+    "I want you to take control of this. Display some test text on it.",
+    "I've got everything wired up as in the diagram, but I don't see the display lit up.",
+)
 SCRIPTS = {
     "bench": SCRIPT,
     "pico": PICO_SCRIPT,
+    "pico-hands": PICO_HANDS_SCRIPT,
     "draw": DRAW_SCRIPT,
     "tutorial": TUTORIAL_SCRIPT,
     "manual": MANUAL_SCRIPT,
@@ -366,8 +374,8 @@ async def _probe(runs: int, out_path: Path, script: tuple[str, ...] = SCRIPT) ->
         return await _smiley(runs, out_path)
     if script == DRAW_SCRIPT:
         return await _draw(runs, out_path)
-    if script == PICO_SCRIPT:
-        return await _pico(runs, out_path)
+    if script in (PICO_SCRIPT, PICO_HANDS_SCRIPT):
+        return await _pico(runs, out_path, script)
     with out_path.open("a", encoding="utf-8") as out:
         for run in range(1, runs + 1):
             try:
@@ -585,7 +593,7 @@ class _FakePico:
         return {"ok": True, "state": "running", "output": ""}
 
 
-async def _pico(runs: int, out_path: Path) -> int:
+async def _pico(runs: int, out_path: Path, script: tuple[str, ...] = PICO_SCRIPT) -> int:
     """A Pico with MicroPython on a fake bus, on a scratch card, its board faked."""
     from cyclops.extensions import pico
 
@@ -610,7 +618,7 @@ async def _pico(runs: int, out_path: Path) -> int:
 
             pico.render = render  # type: ignore[assignment]
             try:
-                await _one_run(run, out, PICO_SCRIPT)
+                await _one_run(run, out, script)
             except (TimeoutError, RuntimeError) as exc:
                 print(f"run {run} failed: {exc}", file=sys.stderr)
                 return 1
@@ -653,6 +661,32 @@ def pico_tally(records: list[dict]) -> None:
     print(f"\nblink went to pico_program on the onboard LED: {blinked} of {len(runs)}")
     print(f"GP15 answered as pin 20: {pinned} of {len(runs)}")
     print(f"wiring went to pico_show and never draw: {shown} of {len(runs)}")
+
+
+# Handing the work back: telling them to run, scan, restart or reboot something, or asking
+# whether they want it done, or asking for pins a scan would find.
+HANDED_BACK = re.compile(
+    r"\b(run|do) (a|an|another|the) (quick )?(i2c )?scan|\b(reboot|restart|re-?run|power[- ]cycle)"
+    r"|\bif you want\b|\bdo you want me\b|\bwant me to\b|\bwhich (pico )?pins\b", re.I)
+
+
+def pico_hands_tally(records: list[dict]) -> None:
+    """Per turn: did it reach for a pico_ tool itself, and did it hand the work back in words."""
+    runs = sorted({r["run"] for r in records})
+    acted = handed = total = 0
+    for run in runs:
+        print(f"run {run}")
+        for r in sorted((r for r in records if r["run"] == run and r["turn"] > 0),
+                        key=lambda r: r["turn"]):
+            did = any(t.startswith("pico_") for t in r.get("tools", []))
+            back = HANDED_BACK.findall(r["cyclops"])
+            acted += did
+            handed += bool(back)
+            total += 1
+            print(f"  t{r['turn']} {'acted' if did else 'MISS '} tools={r.get('tools')}"
+                  + (f"  HANDED BACK" if back else "") + f"\n      said={r['cyclops']!r}")
+    print(f"\nturns that reached a pico_ tool unasked: {acted} of {total}")
+    print(f"turns that handed the work back in words: {handed} of {total}")
 
 
 def draw_tally(records: list[dict]) -> None:
@@ -913,6 +947,9 @@ def timing(records: list[dict]) -> None:
 def tally(path: Path) -> None:
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
     said = {r["you"] for r in records}
+    if PICO_HANDS_SCRIPT[0] in said:
+        pico_hands_tally(records)
+        return
     if PICO_SCRIPT[0] in said:
         pico_tally(records)
         return

@@ -83,6 +83,13 @@ INSTRUCTIONS = (
     "with the pico_ tools - they wire, you write the MicroPython. Listed as RP2 Boot it is "
     "blank: your first pico_ call installs MicroPython (about ten seconds), so say you are "
     "setting it up before you call. Onboard LED: Pin(\"LED\"), GP25, not on a pin.\n"
+    "The board is yours to drive: anything that happens on the Pico - running code, a scan, a "
+    "test, a restart, a new program - you do yourself, straight away, and then say what you "
+    "found. Never tell them to run, scan, reset or restart something, and never ask whether "
+    "they want you to: just do it. Never ask them something the board can tell you - which "
+    "pins, what address, is it alive - find out with pico_run. When they finish wiring or say "
+    "it doesn't work, check it on the board before you say anything else. Only their hands "
+    "(wiring, replugging, power) are theirs.\n"
     "Pinout, USB end at the top, chip side up. " + _pinout() + "\n"
     "Wiring: always give both names and where the pin is - \"GP15, that's pin 20, last on the "
     "left counting from the USB end\". Once you know how it sits on their breadboard, show it "
@@ -939,8 +946,10 @@ RUN = {
     "description": (
         "Run a short MicroPython snippet on the Pico once and get what it printed - is GP15 "
         "high, scan the I2C bus, read ADC0. Stopped after ten seconds with what it printed so "
-        "far. The saved program starts again afterwards. Not for something that should keep "
-        "running: that is pico_program."
+        "far. The saved program starts again afterwards. Call it unasked whenever the board can "
+        "answer instead of them: they just finished wiring, something doesn't work, or you "
+        "would otherwise ask which pins or address - scan every pin pair in one snippet rather "
+        "than ask. Not for something that should keep running: that is pico_program."
     ),
     "parameters": {
         "type": "object",
