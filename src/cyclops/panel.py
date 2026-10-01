@@ -228,11 +228,10 @@ def offer_video(url: str, title: str, start_s: int, thumb: bytes, hold: float) -
     The panel normally takes itself back after fifteen minutes, which is right for a picture
     nobody dismissed and wrong for a twenty-six-minute video: it would go dark in the middle.
 
-    It announces. A video was asked for out loud and took several seconds to arrive, which is
-    the same case a drawing makes - see :func:`announces`.
+    It does not announce: the video's own sound is the arrival, and a cue on top of it is noise.
     """
     global _announce, _hold_s
-    _announce = True
+    _announce = False
     _hold_s = hold
     picture = JPEG_URL + base64.b64encode(thumb).decode("ascii") if thumb else ""
     return _leave({"title": title, "video": url, "start": max(0, int(start_s)), "image": picture})
