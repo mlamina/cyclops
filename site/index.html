@@ -45,6 +45,11 @@
   .use figcaption { padding: 14px 16px 18px; font-size: 16px; color: var(--muted); }
   .use b { display: block; color: var(--text); margin-bottom: 2px; }
 
+  .build { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; }
+  .build figure { margin: 0; }
+  .build img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
+  .build figcaption { font-size: 15px; color: var(--muted); margin-top: 8px; }
+
   .involved { text-align: center; padding-bottom: 96px; }
   .involved p { color: var(--muted); max-width: 30em; margin: 0 auto 28px; }
   .links { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
@@ -52,7 +57,7 @@
   .btn:hover { background: rgba(77,255,154,.1); }
   .btn.solid { background: var(--green); color: #03200f; }
 
-  @media (max-width: 820px) { .uses { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 820px) { .uses, .build { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 520px) { .uses { grid-template-columns: 1fr; } header { padding-top: 48px; } }
 </style>
 </head>
@@ -77,6 +82,17 @@
       <figure class="use"><img src="img/synth.jpg" alt="An OXI One sequencer with lit pads" loading="lazy"><figcaption><b>Programming a synth</b>Writing a bassline on an OXI One for a TD-3, with Cyclops reading the manual for me.</figcaption></figure>
       <figure class="use"><img src="img/pico.jpg" alt="Holding an LCD board above a Raspberry Pi Pico" loading="lazy"><figcaption><b>Electronics on the desk</b>An LED strip and an LCD on a Raspberry Pi Pico. Cyclops wrote and ran the code itself.</figcaption></figure>
       <figure class="use"><img src="img/stapler.jpg" alt="An open stapler on a desk" loading="lazy"><figcaption><b>…and reloading a stapler</b>Not every job is a big one.</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it's built</h2>
+    <div class="build">
+      <figure><img src="img/build-1.jpg" alt="An empty clear waterproof case held in a hand" loading="lazy"><figcaption>Day one: an empty waterproof case.</figcaption></figure>
+      <figure><img src="img/build-2.jpg" alt="A Raspberry Pi 5 sitting inside the clear case on a desk" loading="lazy"><figcaption>The Raspberry Pi 5 goes in.</figcaption></figure>
+      <figure><img src="img/build-3.jpg" alt="The case open on a workbench among drills and tools" loading="lazy"><figcaption>Drilling holes on the bench.</figcaption></figure>
+      <figure><img src="img/build-4.jpg" alt="A small speaker mounted on the case with its cable sealed through the lid" loading="lazy"><figcaption>A speaker, sealed through the lid.</figcaption></figure>
+      <figure><img src="img/build-5.jpg" alt="The finished case held in a hand, its screen lit up with a camera and microphone on top" loading="lazy"><figcaption>Done: screen, camera and mic.</figcaption></figure>
     </div>
   </section>
 
