@@ -79,10 +79,9 @@ def _pinout() -> str:
 
 
 INSTRUCTIONS = (
-    "a Raspberry Pi Pico (listed above as RP2 Boot or Board in FS mode) that you run for them "
-    "with the pico_ tools - they wire, you write the MicroPython. Listed as RP2 Boot it is "
-    "blank: your first pico_ call installs MicroPython (about ten seconds), so say you are "
-    "setting it up before you call. Onboard LED: Pin(\"LED\"), GP25, not on a pin.\n"
+    "a Raspberry Pi Pico that you run for them with the pico_ tools - they wire, you write "
+    "the MicroPython. A blank one gets MicroPython from your first pico_ call (about ten "
+    "seconds), so before your first call say you are getting it ready. Onboard LED: Pin(\"LED\"), GP25, not on a pin.\n"
     "The board is yours to drive: anything that happens on the Pico - running code, a scan, a "
     "test, a restart, a new program - you do yourself, straight away, and then say what you "
     "found. Never tell them to run, scan, reset or restart something, and never ask whether "

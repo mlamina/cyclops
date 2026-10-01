@@ -150,14 +150,15 @@ def _category(ident: str, folder: Path) -> str:
 
 
 def _name(ident: str, folder: Path) -> str:
-    """What to call it: the bus first, then the table, then the bare IDs.
+    """What to call it: the table, then the bus, then the bare IDs.
 
-    ``product`` is what the manufacturer wrote on it and is nearly always the right answer.
-    The table (:func:`known`) comes second rather than first so a device that grows a sensible
-    product string after a firmware update starts using it. ``manufacturer`` alone is a poor
-    name ("Jieli Technology") but it beats four hex digits, which is what is left.
+    The table (:func:`known`) comes first: a device an extension knows is called what the
+    extension calls it - a Pico running MicroPython says "Board in FS mode", which is no name
+    for anything. Otherwise ``product`` is what the manufacturer wrote on it and is nearly always
+    the right answer. ``manufacturer`` alone is a poor name ("Jieli Technology") but it beats
+    four hex digits, which is what is left.
     """
-    for candidate in (_read(folder, "product"), known().get(ident, ("", ""))[1],
+    for candidate in (known().get(ident, ("", ""))[1], _read(folder, "product"),
                       _read(folder, "manufacturer")):
         if tidy := _tidy(candidate):
             return tidy
