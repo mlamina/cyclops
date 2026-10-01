@@ -370,9 +370,7 @@ class Speaker:
         self.on_monitor: Callable[[bytes], None] | None = None
         # Whether his voice reaches this box's own amplifier. False while a companion is being
         # used as the speaker, and it silences *his voice only* - the sound cues play on their
-        # own stream (see cyclops.sfx) and go on sounding here, because the button they answer
-        # for is here. Turning the sink down instead took the cues with it, which left the
-        # shutter and the wake chime audible on neither the panel nor the phone.
+        # own stream and are sent to the companion by cyclops.sfx itself (sfx.divert).
         self.on_air = True
         self._status = ""
         self._warned = False

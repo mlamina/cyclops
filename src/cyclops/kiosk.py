@@ -1894,10 +1894,9 @@ class Kiosk:
         without anybody having to remember to send a "stop".
 
         **Not the sink.** Turning the volume down was the first attempt and it was wrong: it took
-        the sound cues with it, and the cues are deliberately not on the voice stream (see
-        :mod:`cyclops.sfx`), so the shutter and the wake chime were audible on neither the panel
-        nor the phone. This reaches exactly one thing - whether his voice leaves this box's amp -
-        and leaves the volume, the note behind it and everything else that plays alone.
+        the volume knob's meaning with it. This reaches exactly one thing - whether his voice
+        leaves this box's amp. The cues follow on their own (``sfx.divert``), and so does the
+        panel's video clip (panel.js asks the companion port whether it is ``listening``).
 
         Applied every poll rather than on the transition, because a session that opens during a
         handover brings a new Speaker with it, and said out loud only when the answer changes.
@@ -2420,6 +2419,7 @@ def main() -> None:
     # The second port: the picture and the voice, for a phone on the LAN. Nothing is produced
     # until something connects, and a port that will not bind costs a stream and not a panel.
     companion.serve(camera, capture)
+    sfx.divert = companion.voice  # ...and the cues go where his voice goes
     # SIGTERM (start_kiosk.sh's pkill, systemd) otherwise skips the finally below and would
     # leave a panel that looks like a dead Pi. Exit properly instead, and the light comes back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))

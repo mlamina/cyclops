@@ -41,6 +41,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import cv2
+import numpy as np
 
 from . import panel, sketch
 from .audio import BYTES_PER_FRAME, SAMPLE_RATE
@@ -99,6 +100,10 @@ class _Voice:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._sinks: list[bytearray] = []
+        # The sound cues, while a device is the speaker: what is left of the one sounding, per
+        # listener, mixed over the voice as each socket is written. Not through on_block - that
+        # only runs while a session has a Speaker, and most cues answer the box with none.
+        self._cued: dict[int, np.ndarray] = {}
 
     @property
     def listeners(self) -> int:
@@ -113,6 +118,47 @@ class _Voice:
     def leave(self, sink: bytearray) -> None:
         with self._lock:
             self._sinks = [s for s in self._sinks if s is not sink]
+            self._cued.pop(id(sink), None)
+
+    def take(self, pcm: np.ndarray, rate: int) -> bool:
+        """Play a cue here instead of on the box, if a device is the speaker. ``sfx.divert``.
+
+        One cue at a time, as on the box: a new one replaces whatever was still sounding.
+        """
+        if not listening() or not self._sinks:
+            return False
+        if rate != SAMPLE_RATE and len(pcm):
+            n = round(len(pcm) * SAMPLE_RATE / rate)
+            pcm = np.interp(
+                np.linspace(0, len(pcm) - 1, n), np.arange(len(pcm)), pcm
+            ).astype(np.int16)
+        with self._lock:
+            self._cued = {id(s): pcm for s in self._sinks}
+        return True
+
+    def hush(self) -> None:
+        """End the cue sounding on the far end - ``sfx.stop``'s other half."""
+        with self._lock:
+            self._cued = {}
+
+    def mix(self, sink: bytearray, block: bytes) -> bytes:
+        """*block* with the next stretch of any cue laid over it."""
+        rest = self._cued.get(id(sink))
+        if rest is None:
+            return block
+        with self._lock:
+            rest = self._cued.get(id(sink))
+            if rest is None:
+                return block
+            n = len(block) // BYTES_PER_FRAME
+            if len(rest) <= n:
+                del self._cued[id(sink)]
+            else:
+                self._cued[id(sink)] = rest[n:]
+        out = np.frombuffer(block, dtype="<i2").astype(np.int32)
+        take = rest[: len(out)]
+        out[: len(take)] += take
+        return np.clip(out, -32768, 32767).astype("<i2").tobytes()
 
     def on_block(self, block: bytes) -> None:
         """The Speaker's second tap. Real-time thread: no I/O, no allocation storms, never raises.
@@ -456,6 +502,8 @@ class _Handler(BaseHTTPRequestHandler):
                 "camera": bool(getattr(camera, "connected", False)),
                 "source": showing,
                 "watching": {"camera": preview.watchers, "voice": voice.listeners},
+                # Whether a device is the speaker: the panel's own clip goes quiet while it is.
+                "listening": listening(),
                 "preview": {"width": PREVIEW_WIDTH, "fps": PREVIEW_FPS},
                 "voice": {"rate": SAMPLE_RATE, "channels": 1, "format": "s16le"},
             }
@@ -611,7 +659,7 @@ class _Handler(BaseHTTPRequestHandler):
             while True:
                 time.sleep(PACE_S)
                 now = time.monotonic()
-                block = voice.drain(sink) or _silence(now - sent_at)
+                block = voice.mix(sink, voice.drain(sink) or _silence(now - sent_at))
                 sent_at = now
                 self.wfile.write(block)
         finally:

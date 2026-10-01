@@ -222,6 +222,10 @@ SAMPLES: dict[str, str] = {
 # already happened and can wait to be mentioned.
 RANK: dict[str, int] = {"iris_open": 1, "iris_close": 1, "locked_in": 1}
 
+# Somewhere else to play a cue: a companion being used as the speaker (cyclops.companion), set
+# by the kiosk. ``take(pcm, rate)`` says whether it took the cue; ``hush()`` ends one it did.
+divert = None
+
 SILENCE = np.zeros(0, dtype=np.int16)  # what a cue that would not load amounts to
 SILENCE.setflags(write=False)
 
@@ -293,6 +297,9 @@ def play(name: str, *, rate: int, device: int | str | None = None, loop: bool = 
     own and is played at that instead - see :func:`cue`.
     """
     pcm, hz = cue(name, rate)  # an unknown name is a bug, and still raises from here
+    if divert is not None and divert.take(pcm, hz):
+        sd.stop()  # whatever was sounding here ends, as it would under a new cue
+        return len(pcm) / hz
     try:
         sd.play(pcm, samplerate=hz, device=device, loop=loop)
     except Exception as exc:  # noqa: BLE001 - any PortAudio trouble here is a missing beep
@@ -306,6 +313,8 @@ def stop() -> None:
     "has no influence on streams created with ... RawOutputStream", which is what a Speaker
     is. It already swallows its own errors."""
     sd.stop()
+    if divert is not None:
+        divert.hush()
 
 
 class Cues:

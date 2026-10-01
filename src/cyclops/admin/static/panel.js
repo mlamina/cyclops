@@ -346,7 +346,20 @@ function drop() {
   stage.textContent = '';
 }
 
+// While a companion on the LAN is being used as the speaker, all of the sound goes to it - so the
+// panel's own clip plays muted, and the companion's copy of the same page is the one heard.
+const EARS = 'http://' + location.hostname + ':8081/';
+async function handedOver() {
+  const video = KIOSK && stage.querySelector('video.clip');
+  if (!video) return;
+  try {
+    const r = await fetch(EARS, { cache: 'no-store' });
+    video.muted = !!(await r.json()).listening;
+  } catch (e) { /* no companion port: the panel keeps its sound */ }
+}
+
 async function watch() {
+  handedOver();
   try {
     const r = await fetch('/api/panel', { cache: 'no-store' });
     const s = await r.json();
