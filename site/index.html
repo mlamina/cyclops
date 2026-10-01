@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cyclops — your workshop droid</title>
+<meta name="description" content="A one-eyed robot that works with you. It remembers every project, has read every manual, and answers any question — so your hands stay free and your phone stays in your pocket.">
+<meta property="og:title" content="Cyclops — your workshop droid">
+<meta property="og:description" content="A one-eyed robot on a Raspberry Pi that you just talk to. Hands free, phone in your pocket.">
+<meta property="og:image" content="img/panel.png">
+<link rel="icon" href="img/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #050b08;
+    --bg-2: #0a140f;
+    --line: #17301f;
+    --text: #d6e6dc;
+    --muted: #86a091;
+    --green: #4dff9a;
+    --green-dim: #1f7a4a;
+    --brass: #c9a46a;
+    --mono: "Share Tech Mono", ui-monospace, Menlo, monospace;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 17px/1.6 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  /* faint CRT scanlines over everything, like the panel */
+  body::after {
+    content: "";
+    position: fixed; inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(0,0,0,.18) 0 1px, transparent 1px 3px);
+    z-index: 10;
+  }
+  a { color: var(--green); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 0 16px; }
+
+  /* nav */
+  nav { display: flex; justify-content: space-between; align-items: center; padding: 20px 0; }
+  .brand { font: 20px var(--mono); letter-spacing: .3em; color: var(--green); text-shadow: 0 0 12px rgba(77,255,154,.5); }
+  nav .links { display: flex; gap: 24px; font: 15px var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+  nav .links a { color: var(--muted); }
+  nav .links a:hover { color: var(--green); text-decoration: none; }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 48px; align-items: center; padding: 56px 0 72px; }
+  .kicker { font: 14px var(--mono); color: var(--green); letter-spacing: .25em; text-transform: uppercase; margin: 0 0 16px; }
+  h1 { font: 600 clamp(38px, 6vw, 64px)/1.05 var(--sans); margin: 0 0 24px; letter-spacing: -.02em; }
+  h1 em { font-style: normal; color: var(--green); text-shadow: 0 0 24px rgba(77,255,154,.35); }
+  .lede { font-size: 19px; color: var(--muted); margin: 0 0 32px; max-width: 34em; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+  .btn {
+    font: 15px var(--mono); letter-spacing: .12em; text-transform: uppercase;
+    padding: 13px 22px; border: 1px solid var(--green); color: var(--green);
+    border-radius: 4px; transition: background .15s, box-shadow .15s;
+  }
+  .btn:hover { text-decoration: none; background: rgba(77,255,154,.08); box-shadow: 0 0 18px rgba(77,255,154,.25); }
+  .btn.solid { background: var(--green); color: #032011; }
+  .btn.solid:hover { background: #7affb5; }
+  .eye { width: 100%; border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 0 80px rgba(77,255,154,.12); display: block; }
+
+  /* sections */
+  section { padding: 80px 0; border-top: 1px solid var(--line); }
+  h2 { font: 600 clamp(28px, 4vw, 40px)/1.15 var(--sans); margin: 0 0 16px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); max-width: 40em; margin: 0 0 48px; font-size: 18px; }
+  .label { font: 13px var(--mono); color: var(--green); letter-spacing: .25em; text-transform: uppercase; margin: 0 0 12px; }
+
+  /* panel shot */
+  .bezel {
+    padding: 14px; border-radius: 22px;
+    background: linear-gradient(145deg, #3a3a36, #15140f 45%, #2b2a24);
+    border: 1px solid #4a463a;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.08);
+    max-width: 880px; margin: 0 auto;
+  }
+  .bezel img { width: 100%; display: block; border-radius: 8px; }
+  .caption { text-align: center; color: var(--muted); font-size: 15px; margin: 20px auto 0; max-width: 46em; }
+
+  /* cards */
+  .grid { display: grid; gap: 20px; }
+  .g4 { grid-template-columns: repeat(4, 1fr); }
+  .g3 { grid-template-columns: repeat(3, 1fr); }
+  .card { background: var(--bg-2); border: 1px solid var(--line); border-radius: 10px; padding: 24px; }
+  .card h3 { margin: 0 0 8px; font: 600 19px/1.3 var(--sans); }
+  .card p { margin: 0; color: var(--muted); font-size: 16px; }
+  .card .ico { font: 22px var(--mono); color: var(--green); margin-bottom: 14px; display: block; }
+  .quote { font: 15px var(--mono); color: var(--brass); margin-top: 14px; display: block; }
+
+  /* values */
+  ol.values { list-style: none; padding: 0; margin: 0; counter-reset: v; }
+  ol.values li { counter-increment: v; display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 22px 0; border-bottom: 1px solid var(--line); }
+  ol.values li::before { content: "0" counter(v); font: 28px var(--mono); color: var(--green-dim); }
+  ol.values b { display: block; font-size: 20px; margin-bottom: 4px; }
+  ol.values span { color: var(--muted); }
+
+  /* terminal */
+  pre {
+    background: #020604; border: 1px solid var(--line); border-radius: 10px;
+    padding: 24px; overflow-x: auto; margin: 0;
+    font: 14px/1.6 var(--mono); color: var(--green);
+  }
+  .how { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+  .how ul { margin: 0; padding-left: 20px; color: var(--muted); }
+  .how li { margin-bottom: 12px; }
+  .how li b { color: var(--text); font-weight: 500; }
+
+  /* parts */
+  .parts { list-style: none; padding: 0; margin: 0 0 32px; }
+  .parts li { display: flex; justify-content: space-between; gap: 16px; padding: 14px 0; border-bottom: 1px dashed var(--line); }
+  .parts li span:last-child { color: var(--muted); text-align: right; }
+  .cmd .c { color: var(--muted); }
+
+  footer { border-top: 1px solid var(--line); padding: 40px 0 56px; color: var(--muted); font-size: 15px; }
+  footer .wrap { display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; }
+  footer .brand { font-size: 16px; }
+
+  @media (max-width: 900px) {
+    .hero, .how { grid-template-columns: 1fr; }
+    .hero { padding-top: 24px; gap: 32px; }
+    .g4 { grid-template-columns: 1fr 1fr; }
+    .g3 { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    nav .links { gap: 14px; font-size: 13px; }
+    nav .links .hide-sm { display: none; }
+    .g4 { grid-template-columns: 1fr; }
+    section { padding: 56px 0; }
+    .bezel { padding: 6px; border-radius: 12px; }
+    ol.values li { grid-template-columns: 44px 1fr; }
+    ol.values li::before { font-size: 22px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <nav>
+    <span class="brand">CYCLOPS</span>
+    <div class="links">
+      <a href="#what" class="hide-sm">What it does</a>
+      <a href="#build">Build one</a>
+      <a href="https://github.com/mlamina/cyclops">GitHub</a>
+    </div>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <p class="kicker">Your workshop droid</p>
+      <h1>Help for when your <em>hands are full.</em></h1>
+      <p class="lede">A one-eyed robot that works with you. It remembers every project, has read every manual, and answers any question, so your hands stay free and your phone stays in your pocket.</p>
+      <div class="cta">
+        <a class="btn solid" href="#build">Build one</a>
+        <a class="btn" href="https://github.com/mlamina/cyclops">View source</a>
+      </div>
+    </div>
+    <img class="eye" src="img/splash.png" alt="The Cyclops boot screen: a glowing green iris above the word CYCLOPS">
+  </header>
+</div>
+
+<section>
+  <div class="wrap">
+    <p class="label">On the bench</p>
+    <h2>It sits next to you. You talk to it.</h2>
+    <p class="sub">Assistants live in phones, tablets and apps, all built for sitting down. Cyclops is a Raspberry Pi with a camera, a speaker and a 7" screen, and it lives where the work is. No app, no account, no prompt to write. You switch it on and say what you're working on.</p>
+    <div class="bezel">
+      <img src="img/panel.png" alt="The Cyclops panel mid-project: a camera view of a Raspberry Pi Pico wired to an LCD on a desk, framed by a steel bezel with gauges and a closed iris">
+    </div>
+    <p class="caption">The real panel, mid-session: a Pico and an LCD on the bench, what the camera sees in the middle, the eye's steel cover closed bottom left.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="label">Four interruptions, gone</p>
+    <h2>Stay on the work, not the tool.</h2>
+    <p class="sub">Every trip to a phone or a laptop pulls you out of what your hands are doing. Cyclops takes away four of them.</p>
+    <div class="grid g4">
+      <div class="card"><span class="ico">[ ]</span><h3>It remembers</h3><p>What was decided, what was measured, what is still open. All of it is written down and kept, and nobody has to file it.</p></div>
+      <div class="card"><span class="ico">[≡]</span><h3>It has read the manual</h3><p>Upload the PDF once. Questions get answered when you ask them, not after a search.</p></div>
+      <div class="card"><span class="ico">[⌁]</span><h3>No screen to hold</h3><p>Nothing to unlock, type into or scroll through. It sits beside you and you talk to it.</p></div>
+      <div class="card"><span class="ico">[◉]</span><h3>Good company</h3><p>It has an eye and a character. Working with it is more fun than working alone.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="what">
+  <div class="wrap">
+    <p class="label">What it does</p>
+    <h2>Talk, show, and it answers in kind.</h2>
+    <p class="sub">A low-latency speech-to-speech loop with a camera and a screen. You say it, it says it back, and when a picture says it better it puts one on the panel.</p>
+    <div class="grid g3">
+      <div class="card"><span class="ico">&gt; talk</span><h3>Just talk</h3><p>No wake word and no push-to-talk. Interrupt it mid-sentence and it stops, the way a person would.</p><span class="quote">"What torque for an M6 into aluminium?"</span></div>
+      <div class="card"><span class="ico">&gt; show</span><h3>Show it what you're holding</h3><p>Press the shutter and the photo goes straight into the conversation. It never takes a picture on its own.</p><span class="quote">"Which pin is ground on this?"</span></div>
+      <div class="card"><span class="ico">&gt; draw</span><h3>It draws on the screen</h3><p>Wiring diagrams, a sketch of the shelf, your photo redrawn with the change. And a scratchpad for the number you need to read, not hear.</p><span class="quote">"Draw how this relay goes on GPIO 17."</span></div>
+      <div class="card"><span class="ico">&gt; projects</span><h3>Every project, kept</h3><p>Each session gets filed into a project folder afterwards: a README, a log, the photos, the numbers. Next week it picks up where you left off.</p></div>
+      <div class="card"><span class="ico">&gt; sessions</span><h3>Every session, recorded</h3><p>A transcript, a stereo recording with you on one side and it on the other, the photos and a screen video. It survives a power cut.</p></div>
+      <div class="card"><span class="ico">&gt; devices</span><h3>It works the hardware too</h3><p>Plug a Raspberry Pi Pico into it and Cyclops can program it, run it and read it back while you hold the breadboard.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="label">Core values</p>
+    <h2>The tiebreakers.</h2>
+    <p class="sub">When two designs are both reasonable, the one that keeps these wins.</p>
+    <ol class="values">
+      <li><div><b>Hands stay free.</b><span>Voice in; voice and the screen out. If it needs a keyboard, a phone or a menu, it's wrong.</span></div></li>
+      <li><div><b>It never becomes the task.</b><span>No settings to tend, no attention of its own. The moment you are working on Cyclops instead of the project, it has failed.</span></div></li>
+      <li><div><b>Nothing gets lost.</b><span>Every session is written down. What was decided, measured and left open is there next week.</span></div></li>
+      <li><div><b>Good company.</b><span>It has a face and a character. More fun to work with than to work without.</span></div></li>
+      <li><div><b>It does what you expect.</b><span>Talking to it works the way talking works. Nothing to learn, nothing to be shown.</span></div></li>
+    </ol>
+  </div>
+</section>
+
+<section>
+  <div class="wrap how">
+    <div>
+      <p class="label">Under the hood</p>
+      <h2>One WebSocket, one loop.</h2>
+      <ul>
+        <li><b>OpenAI Realtime API</b> for speech to speech, with server-side voice detection.</li>
+        <li><b>Barge-in:</b> start talking and playback is cut to what you actually heard, so it knows where you stopped listening.</li>
+        <li><b>The shutter</b> shrinks a frame to 1024 px and hands it to the model, so the next answer is about what it just saw.</li>
+        <li><b>Python, on the Pi.</b> Nothing leaves the box except the audio and vision sent to OpenAI.</li>
+      </ul>
+    </div>
+<pre>mic ──PCM16 24kHz──▶ input_audio_buffer
+                         │
+                         ▼
+                  OpenAI Realtime
+                   (server VAD)
+                         │
+speakers ◀──PCM16 24kHz──┤
+                         │
+SNAP ──▶ webcam ──▶ JPEG ≤1024px
+                         │
+                         ▼
+               input_image ──▶ response</pre>
+  </div>
+</section>
+
+<section id="build">
+  <div class="wrap how">
+    <div>
+      <p class="label">Build one</p>
+      <h2>An afternoon of parts.</h2>
+      <p class="sub" style="margin-bottom:28px">Everything is off the shelf. The only key you need is an OpenAI API key.</p>
+      <ul class="parts">
+        <li><span>Raspberry Pi 5</span><span>64-bit Bookworm</span></li>
+        <li><span>Official 7" touch display</span><span>800×480 panel</span></li>
+        <li><span>Logitech C920</span><span>camera + mic</span></li>
+        <li><span>I2S amp + speaker</span><span>on the GPIO header</span></li>
+        <li><span>OpenAI API key</span><span>Realtime API</span></li>
+      </ul>
+      <a class="btn" href="https://github.com/mlamina/cyclops/blob/master/docs/raspberry-pi.md">Pi setup guide</a>
+    </div>
+<pre class="cmd"><span class="c"># on the Pi</span>
+sudo apt install -y libportaudio2
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+git clone https://github.com/mlamina/cyclops
+cd cyclops
+cp .env.example .env   <span class="c"># add OPENAI_API_KEY</span>
+uv sync
+
+<span class="c"># camera + API check, no audio needed</span>
+uv run cyclops-smoke
+
+<span class="c"># then start the panel</span>
+uv run cyclops-kiosk</pre>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <span class="brand">CYCLOPS</span>
+    <span>Open source under the MIT licence · <a href="https://github.com/mlamina/cyclops">github.com/mlamina/cyclops</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
