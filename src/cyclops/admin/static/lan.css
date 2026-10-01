@@ -216,6 +216,10 @@ body:not(.kiosk) .files .row {
   grid-template-columns: calc(46 * var(--u)) minmax(0, 1fr) auto;
   min-height: calc(50 * var(--u));
 }
+body:not(.kiosk) .sessions .row {
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
+  min-height: 0;
+}
 body:not(.kiosk) .rowtext { padding: clamp(calc(10 * var(--u)), 1.2vw, calc(16 * var(--u))); }
 /* Out of the corner and into a column of its own. Absolute plus a flat `padding-right: 96u` on
    the title was 40% of a phone's text column reserved for a date that might be six characters. */

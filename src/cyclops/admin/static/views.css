@@ -186,6 +186,11 @@ body {
   overflow: hidden;   /* the still is cut by the row's own edge rather than drawn past it */
 }
 .row:active, .row:focus-visible { border-color: var(--green); outline: none; }
+/* On the Sessions list the picture is the thing you scan by: 60% of the row, 4:3, text in the rest. */
+.sessions .row { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); min-height: 0; align-items: start; }
+.sessions .shot { aspect-ratio: 4 / 3; }
+.sessions { grid-auto-rows: max-content; }   /* else the fixed-height list squeezes rows to their border */
+.sessions .arm { left: 60%; }
 /* Holding a session row to delete it - see "deleting a session" in app.js. The row fills from
    the left as the hold lands, over the same 0.7 s the eye's collar takes to reach the SYSTEM
    menu, and then the text half becomes DELETE and CANCEL. The still stays uncovered so you can
