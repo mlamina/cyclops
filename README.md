@@ -8,6 +8,8 @@
 A one-eyed robot that works with you. It remembers every project, has read every manual, and
 answers any question — so your hands stay free and your phone stays in your pocket.
 
+![The Cyclops panel: a camera view of a Raspberry Pi Pico wired to an LCD, framed by a steel bezel with gauges](site/img/panel.png)
+
 ## Why it exists
 
 An assistant like Claude is enormously helpful on a project — but it lives in a phone, a tablet,
