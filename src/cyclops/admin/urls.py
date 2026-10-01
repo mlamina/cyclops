@@ -20,6 +20,7 @@ urlpatterns = [
     path("api/sessions", views.sessions, name="sessions"),
     path("api/session/<str:name>", views.session, name="session"),
     path("api/session/<str:name>/records", views.session_records, name="session-records"),
+    path("session/<str:name>.zip", views.download_session, name="download-session"),
     # The button, and the reel that plays what it made. Both answer the LAN as well as the
     # panel - see views.find_clips. The finished clips need no route of their own: they sit in
     # clips/ inside the session folder, which views.MEDIA_DIRS allows, and

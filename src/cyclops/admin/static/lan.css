@@ -752,3 +752,9 @@ body:not(.kiosk) .row.manual .rowwhen { color: var(--amber); }
 body:not(.kiosk) .row.manual .thumb.none {
   color: var(--amber); font-size: calc(11 * var(--u)); letter-spacing: .1em;
 }
+
+/* The session as one zip. Off the panel: there is nowhere for a download to go on the Pi. */
+body:not(.kiosk) .sdl {
+  display: inline-block; margin-top: calc(8 * var(--u)); font-size: calc(12 * var(--u));
+  color: var(--green); letter-spacing: .14em; text-transform: uppercase;
+}

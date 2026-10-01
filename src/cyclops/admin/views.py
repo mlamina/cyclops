@@ -10,6 +10,7 @@ import hashlib
 import json
 import math
 import re
+import zipfile
 from dataclasses import asdict
 from pathlib import Path
 
@@ -657,6 +658,57 @@ def delete_session(request: HttpRequest, name: str) -> HttpResponse:
         except OSError as exc:
             return HttpResponseBadRequest(f"could not delete it ({exc})")
     return JsonResponse({"sessions": library.as_dicts(_entries())})
+
+
+class _Pipe:
+    """A write-only file that hands back whatever was written since the last ``take``.
+
+    zipfile writes to anything with ``write`` and copes with one it cannot seek in, so this is
+    the whole of streaming an archive: nothing is built on the card and nothing is held in memory
+    beyond one chunk of one file.
+    """
+
+    def __init__(self) -> None:
+        self.chunks: list[bytes] = []
+
+    def write(self, data: bytes) -> int:
+        self.chunks.append(bytes(data))
+        return len(data)
+
+    def flush(self) -> None:
+        pass
+
+    def take(self) -> bytes:
+        out, self.chunks = b"".join(self.chunks), []
+        return out
+
+
+def _zipped(folder: Path):
+    pipe = _Pipe()
+    # Stored, not deflated: the bulk is an mp4 and jpgs, which do not shrink, and the Pi is hot.
+    with zipfile.ZipFile(pipe, "w", zipfile.ZIP_STORED) as archive:
+        for path in sorted(folder.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            with archive.open(f"{folder.name}/{path.relative_to(folder)}", "w") as entry:
+                with path.open("rb") as src:
+                    while chunk := src.read(1 << 20):
+                        entry.write(chunk)
+                        yield pipe.take()
+            yield pipe.take()
+    yield pipe.take()
+
+
+def download_session(request: HttpRequest, name: str) -> HttpResponse:
+    """The whole session folder as one zip - video, transcript, pictures, clips."""
+    folder = library.resolve(_settings().sessions_dir, name)
+    if folder is None:
+        raise Http404("no such session")
+    if card.locked(folder):
+        return HttpResponseBadRequest("that session is still recording")
+    response = StreamingHttpResponse(_zipped(folder), content_type="application/zip")
+    response["Content-Disposition"] = f'attachment; filename="{folder.name}.zip"'
+    return response
 
 
 def session_records(request: HttpRequest, name: str) -> JsonResponse:

@@ -66,6 +66,7 @@ const video = document.getElementById('video');
 const stitle = document.getElementById('stitle');
 const smeta = document.getElementById('smeta');
 const ssum = document.getElementById('ssum');
+const sdl = document.getElementById('sdl');
 const talk = document.getElementById('talk');
 // Companion mode's three, and they are only on the page away from the panel ({% if not local %}
 // in the template), so everything below null-checks the way the controls in status.js do.
@@ -594,6 +595,7 @@ async function showSession(name) {
     if (one.filed) bits.push('filed under ' + one.filed);
     smeta.textContent = bits.join(' · ');
     ssum.textContent = one.summary;
+    sdl.href = '/session/' + encodeURIComponent(name) + '.zip';
     if (one.video) {
       shortRanges = one.short ? one.short_ranges : [];
       video.src = one.short || '/media/' + encodeURIComponent(name) + '/video.mp4';

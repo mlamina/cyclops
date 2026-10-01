@@ -335,6 +335,7 @@ body {
   text-transform: uppercase; margin-top: calc(5 * var(--u));
 }
 .ssum { display: none; }
+.sdl { display: none; }
 .talk { display: none; }
 .line { display: grid; grid-template-columns: calc(44 * var(--u)) minmax(0, 1fr);
         gap: calc(10 * var(--u)); padding: calc(7 * var(--u)) calc(6 * var(--u)); }
