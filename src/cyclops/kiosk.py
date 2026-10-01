@@ -1156,7 +1156,12 @@ class Kiosk:
         return self._notice if time.monotonic() < self._notice_until else ""
 
     def shutter_pressed(self) -> None:
-        """A *tap* on the button beside the panel: the aperture's path, coordinates taken out.
+        """A *tap* on the button beside the panel: the most useful thing for the moment.
+
+        Whatever is on the panel (a video, a picture) is put away first, as a tap on the glass
+        would; failing that, he stops talking; only with nothing else going on is it a photo -
+        the aperture's path, coordinates taken out. One button that means "stop that" before it
+        means "shoot" is the one a pair of busy hands can use without looking.
 
         On the release rather than the press, because a tap and a hold are the same event until
         somebody lets go and the hold now means something (see :meth:`button_held`). The photo
@@ -1178,7 +1183,20 @@ class Kiosk:
             return
         if self._menu or self._wifi is not None:
             return  # modal, and two of its rows end the box: this is no answer to it
+        if self._panel_showing.is_set():
+            self._put_panel_away()
+            return
+        if self.controller.interrupt():
+            return  # False when he is not talking, which is what decides it
         self._snap()
+
+    def _put_panel_away(self) -> None:
+        """Leave the same note the page's own close does; :meth:`_watch_page` does the rest."""
+        try:
+            BROWSER_CLOSE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            BROWSER_CLOSE_FLAG.touch()
+        except OSError as exc:
+            print(f"· could not put the panel away ({exc})", file=sys.stderr, flush=True)
 
     def button_held(self) -> None:
         """The button held down: the microphone switch, without having to find the glass.

@@ -25,6 +25,7 @@ All of it is pure: no GPIO, no camera, no window.
 
 from __future__ import annotations
 
+import threading
 import time
 
 import pytest
@@ -68,6 +69,10 @@ class Controller:
     def __init__(self, state: str = "idle") -> None:
         self.state = state
         self.started = 0
+        self.talking = False
+
+    def interrupt(self) -> bool:
+        return self.talking
 
     def status(self) -> dict[str, object]:
         return {"state": self.state}
@@ -91,14 +96,15 @@ def _panel(monkeypatch: pytest.MonkeyPatch, *, real_toggle: bool = False) -> kio
     kiosk._pending = None
     kiosk._pending_at = 0.0
     kiosk._cues = Cues()
+    kiosk._panel_showing = threading.Event()
+    kiosk.controller = Controller()
     kiosk.did: list[str] = []
     monkeypatch.setattr(kiosk, "_snap", lambda: kiosk.did.append("snap"))
     monkeypatch.setattr(kiosk, "_wake", lambda: kiosk.did.append("wake"))
-    if real_toggle:
-        # The gears live inside _toggle_session, in the branch that knows a session is starting,
-        # so the one test about them has to let the real thing run.
-        kiosk.controller = Controller()
-    else:
+    monkeypatch.setattr(kiosk, "_put_panel_away", lambda: kiosk.did.append("close"))
+    # The gears live inside _toggle_session, in the branch that knows a session is starting,
+    # so the one test about them has to let the real thing run.
+    if not real_toggle:
         monkeypatch.setattr(kiosk, "_toggle_session", lambda: kiosk.did.append("toggle"))
     return kiosk
 
@@ -130,6 +136,22 @@ def test_a_press_takes_a_photo(monkeypatch: pytest.MonkeyPatch) -> None:
     kiosk.shutter_pressed()
     assert kiosk.did == ["snap"]
     assert kiosk._pressed is None, "nothing on the glass is this button's twin any more"
+
+
+def test_a_press_puts_away_whatever_is_on_the_panel(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A video or a picture up is something going on: the tap is "back to Cyclops", not a photo."""
+    kiosk = _panel(monkeypatch)
+    kiosk._panel_showing.set()
+    kiosk.controller.talking = True
+    kiosk.shutter_pressed()
+    assert kiosk.did == ["close"]
+
+
+def test_a_press_while_he_talks_stops_him(monkeypatch: pytest.MonkeyPatch) -> None:
+    kiosk = _panel(monkeypatch)
+    kiosk.controller.talking = True
+    kiosk.shutter_pressed()
+    assert kiosk.did == []
 
 
 def test_a_press_on_a_dark_panel_is_spent_waking_it(monkeypatch: pytest.MonkeyPatch) -> None:
