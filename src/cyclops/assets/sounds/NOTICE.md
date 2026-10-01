@@ -1,5 +1,11 @@
 # The shipped sound cues
 
+> **Not in the repository.** The `cyclops_*.wav` cues described below come from commercial
+> sample libraries whose licences forbid redistributing them, so they are gitignored and live
+> only on disk. Every one is optional: a missing file plays as silence and nothing else changes.
+> Drop your own mono 16-bit 48 kHz WAVs in here under the names in `sfx.SAMPLES` to hear cues.
+> The ten `voice_*.wav` are OpenAI output and are tracked.
+
 Designed cues, played by `cyclops.sfx` for the moments an oscillator has nothing to say: the box
 booting, the panel coming up, his face being pressed, something appearing on the glass, and the
 steel cover winding across his face. The synthesized cues beside them (`sfx.CUES`) are still numpy and still the default;

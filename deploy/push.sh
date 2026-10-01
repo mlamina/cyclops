@@ -24,11 +24,15 @@ DEST=cyclops
 #
 # Getting this wrong on a data directory is not a rebuild, it is a loss: --delete would take
 # every manual on the Pi the first time somebody deployed after uploading one.
+#
+# The licensed cues are gitignored, so a factory worktree has none of them; the P rule keeps
+# --delete from taking them off the Pi when a deploy comes from one.
 rsync -a --delete \
   --exclude '.env' --exclude '.venv' --exclude '.git' --exclude '__pycache__' \
   --exclude 'captures' --exclude 'recordings' --exclude 'sessions' \
   --exclude '/projects' --exclude '/manuals' \
   --exclude '.ruff_cache' --exclude 'Plans' \
+  --filter 'P /src/cyclops/assets/sounds/cyclops_*.wav' \
   src pyproject.toml uv.lock README.md docs deploy "$TARGET:$DEST/"
 
 ssh "$TARGET" "cd $DEST && ~/.local/bin/uv sync --quiet"

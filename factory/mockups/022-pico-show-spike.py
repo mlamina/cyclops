@@ -103,4 +103,4 @@ for colr, main, sub in L:
     y += 48
 d.text((W / 2, 40), "USB to your left, chip up  ·  pin 1 in column 60", font=f(30, True), fill="#fff", anchor="mm")
 
-img.save("/Users/mlamina/Downloads/pico-show-example.png")
+img.save("/tmp/pico-show-example.png")

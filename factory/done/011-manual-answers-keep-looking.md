@@ -62,7 +62,7 @@ when asked): **only when asked**.
    `MIN_SCORE`. When nothing new is left, say so in the result.
 
 **Probe without the Pi.** The OXI manual is copied to
-`/Users/mlamina/code/cyclops-fixtures/manuals/OXI One User Manual` (pages.json, the 161 page
+`../cyclops-fixtures/manuals/OXI One User Manual` (pages.json, the 161 page
 renders and the PDF, outside the repo).
 - Add a `--script manual` to `tools/talk_probe.py` that replays yesterday's questions against the
   real realtime model:

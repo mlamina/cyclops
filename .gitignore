@@ -30,3 +30,11 @@ Plans/
 # Factory working state - the job files themselves are worth keeping, this is not.
 factory/logs/
 factory/html/
+
+# Licensed sound cues: kept on disk and deployed, never pushed (src/cyclops/assets/sounds/NOTICE.md)
+/sounds/
+/src/cyclops/assets/sounds/cyclops_*.wav
+
+# Editor
+.idea/
+*.iml

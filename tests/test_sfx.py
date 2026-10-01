@@ -23,7 +23,9 @@ from cyclops import eye, sfx
 
 RATE = 24_000  # what cyclops.audio.SAMPLE_RATE is; passed explicitly so the two never drift
 SYNTH = sorted(sfx.CUES)
-SHIPPED = sorted(sfx.SAMPLES)
+# The licensed cues are gitignored (assets/sounds/NOTICE.md), so only the ones on disk are
+# checked; a checkout without them runs the rest.
+SHIPPED = sorted(n for n, f in sfx.SAMPLES.items() if (sfx.SOUNDS / f).exists())
 EVERY = SYNTH + SHIPPED
 
 # The loudest 50 ms of the busiest synthesized cue measures 0.176 of full scale, and that is the
@@ -103,6 +105,7 @@ def test_every_shipped_cue_came_out_of_its_cut(name: str) -> None:
     assert PEAK_FS[0] <= peak <= PEAK_FS[1], f"{name} peaks at {peak:.3f}, outside its headroom"
 
 
+@pytest.mark.skipif("iris_open" not in SHIPPED, reason="cue not in this checkout")
 def test_the_lid_takes_exactly_as_long_as_the_sound_of_it() -> None:
     """The one cue whose length another module has to know.
 

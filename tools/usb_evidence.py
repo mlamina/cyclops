@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 from cyclops import overlay  # noqa: E402
 from cyclops.devices import Device  # noqa: E402
 
-PHOTO = "/Users/mlamina/code/cyclops/captures/2026-08-29_18-12-01.jpg"
+PHOTO = "captures/2026-08-29_18-12-01.jpg"
 SHOT = [sys.executable, "tools/panel_shot.py", "--bg", PHOTO, "--state", "listening"]
 # Short names on purpose: the corner holds about 150 px of columns, so four REAL product
 # strings do not all fit and the sheet that is meant to show four glyphs would show two.
