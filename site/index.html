@@ -50,6 +50,14 @@
   .build img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; border: 1px solid var(--line); }
   .build figcaption { font-size: 15px; color: var(--muted); margin-top: 8px; }
 
+  .section-lede { text-align: center; color: var(--muted); max-width: 34em; margin: -12px auto 28px; }
+  .section-lede code { font-family: var(--mono); color: var(--green); }
+  .ui { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .ui figure { margin: 0; }
+  .ui img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+  .ui figcaption { font-size: 16px; color: var(--muted); margin-top: 10px; }
+  .ui b { color: var(--text); margin-right: 6px; }
+
   .involved { text-align: center; padding-bottom: 96px; }
   .involved p { color: var(--muted); max-width: 30em; margin: 0 auto 28px; }
   .links { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
@@ -58,7 +66,7 @@
   .btn.solid { background: var(--green); color: #03200f; }
 
   @media (max-width: 820px) { .uses, .build { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 520px) { .uses { grid-template-columns: 1fr; } header { padding-top: 48px; } }
+  @media (max-width: 520px) { .uses, .ui { grid-template-columns: 1fr; } header { padding-top: 48px; } }
 </style>
 </head>
 <body>
@@ -93,6 +101,17 @@
       <figure><img src="img/build-3.jpg" alt="The case open on a workbench among drills and tools" loading="lazy"><figcaption>A USB port, for connectivity.</figcaption></figure>
       <figure><img src="img/build-4.jpg" alt="A small speaker mounted on the case with its cable sealed through the lid" loading="lazy"><figcaption>A tiny speaker.</figcaption></figure>
       <figure><img src="img/build-5.jpg" alt="The finished case held in a hand, its screen lit up with a camera and microphone on top" loading="lazy"><figcaption>A 7" touchscreen.</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Everything it keeps</h2>
+    <p class="section-lede">Every session is saved and filed. Open <code>cyclops.local</code> in any browser on your network to look back through it.</p>
+    <div class="ui">
+      <figure><img src="img/ui-sessions.jpg" alt="The Sessions page: a list of past sessions with thumbnails and summaries" loading="lazy"><figcaption><b>Sessions</b>Every conversation, summarised, with its video and photos.</figcaption></figure>
+      <figure><img src="img/ui-projects.jpg" alt="The Projects page: a motorcycle rebuild, Cyclops itself, a music studio and a trike" loading="lazy"><figcaption><b>Projects</b>Sessions get filed into projects, so next week picks up where you left off.</figcaption></figure>
+      <figure><img src="img/ui-manuals.jpg" alt="The Manuals page: uploaded PDF manuals with page counts" loading="lazy"><figcaption><b>Manuals</b>Upload a PDF once and Cyclops has read it.</figcaption></figure>
+      <figure><img src="img/ui-media.jpg" alt="The Media page: a grid of photos and diagrams from sessions" loading="lazy"><figcaption><b>Media</b>Every photo it took and every diagram it drew.</figcaption></figure>
     </div>
   </section>
 
