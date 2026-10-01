@@ -1,5 +1,10 @@
 # Cyclops — your workshop droid
 
+> [!WARNING]
+> **This entire repo is vibe-coded.** I make no guarantees about code quality. The goal here is
+> to have fun and iterate quickly, not to write production software. Use it, fork it, learn from
+> it, but read before you trust it.
+
 A one-eyed robot that works with you. It remembers every project, has read every manual, and
 answers any question — so your hands stay free and your phone stays in your pocket.
 
