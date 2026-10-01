@@ -52,10 +52,18 @@
 
   .section-lede { text-align: center; color: var(--muted); max-width: 34em; margin: -12px auto 28px; }
   .section-lede code { font-family: var(--mono); color: var(--green); }
-  .ui { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-  .ui figure { margin: 0; }
-  .ui img { display: block; width: 100%; border-radius: 10px; border: 1px solid var(--line); }
-  .ui figcaption { font-size: 16px; color: var(--muted); margin-top: 10px; }
+  .ui { position: relative; max-width: 820px; margin: 0 auto; }
+  .ui figure { margin: 0; display: none; }
+  .ui figure.on { display: block; }
+  .ui img { display: block; width: 100%; aspect-ratio: 1200 / 828; border-radius: 10px; border: 1px solid var(--line); }
+  .ui figcaption { font-size: 16px; color: var(--muted); margin-top: 12px; text-align: center; }
+  .ui .nav { position: absolute; top: calc(50% - 40px); width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--green); background: rgba(5,11,8,.85); color: var(--green); font-size: 28px; line-height: 1; cursor: pointer; }
+  .ui .nav:hover { background: rgba(77,255,154,.15); }
+  .ui .prev { left: 12px; }
+  .ui .next { right: 12px; }
+  .dots { display: flex; justify-content: center; gap: 10px; margin-top: 18px; }
+  .dots button { width: 10px; height: 10px; padding: 0; border-radius: 50%; border: 1px solid var(--green); background: transparent; cursor: pointer; }
+  .dots button[aria-selected="true"] { background: var(--green); }
   .ui b { color: var(--text); margin-right: 6px; }
 
   .involved { text-align: center; padding-bottom: 96px; }
@@ -66,7 +74,7 @@
   .btn.solid { background: var(--green); color: #03200f; }
 
   @media (max-width: 820px) { .uses, .build { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 520px) { .uses, .ui { grid-template-columns: 1fr; } header { padding-top: 48px; } }
+  @media (max-width: 520px) { .uses { grid-template-columns: 1fr; } header { padding-top: 48px; } }
 </style>
 </head>
 <body>
@@ -105,14 +113,17 @@
   </section>
 
   <section>
-    <h2>Everything it keeps</h2>
-    <p class="section-lede">Every session is saved and filed. Open <code>cyclops.local</code> in any browser on your network to look back through it.</p>
+    <h2>It lives on your Wi-Fi</h2>
+    <p class="section-lede">Open <code>cyclops.local</code> on your phone, laptop or iPad. No app, no account: every session, project, manual and photo is right there.</p>
     <div class="ui">
       <figure><img src="img/ui-sessions.jpg" alt="The Sessions page: a list of past sessions with thumbnails and summaries" loading="lazy"><figcaption><b>Sessions</b>Every conversation, summarised, with its video and photos.</figcaption></figure>
       <figure><img src="img/ui-projects.jpg" alt="The Projects page: a motorcycle rebuild, Cyclops itself, a music studio and a trike" loading="lazy"><figcaption><b>Projects</b>Sessions get filed into projects, so next week picks up where you left off.</figcaption></figure>
       <figure><img src="img/ui-manuals.jpg" alt="The Manuals page: uploaded PDF manuals with page counts" loading="lazy"><figcaption><b>Manuals</b>Upload a PDF once and Cyclops has read it.</figcaption></figure>
       <figure><img src="img/ui-media.jpg" alt="The Media page: a grid of photos and diagrams from sessions" loading="lazy"><figcaption><b>Media</b>Every photo it took and every diagram it drew.</figcaption></figure>
+      <button class="nav prev" aria-label="Previous screenshot">&#8249;</button>
+      <button class="nav next" aria-label="Next screenshot">&#8250;</button>
     </div>
+    <div class="dots" role="tablist"></div>
   </section>
 
   <section class="involved">
@@ -126,5 +137,27 @@
   </section>
 </div>
 
+<script>
+  (() => {
+    const slides = [...document.querySelectorAll('.ui figure')];
+    const dots = document.querySelector('.dots');
+    let i = 0;
+    const show = n => {
+      i = (n + slides.length) % slides.length;
+      slides.forEach((s, k) => s.classList.toggle('on', k === i));
+      [...dots.children].forEach((d, k) => d.setAttribute('aria-selected', k === i));
+    };
+    slides.forEach((s, k) => {
+      const d = document.createElement('button');
+      d.setAttribute('role', 'tab');
+      d.setAttribute('aria-label', s.querySelector('b').textContent);
+      d.onclick = () => show(k);
+      dots.append(d);
+    });
+    document.querySelector('.ui .prev').onclick = () => show(i - 1);
+    document.querySelector('.ui .next').onclick = () => show(i + 1);
+    show(0);
+  })();
+</script>
 </body>
 </html>
