@@ -62,6 +62,7 @@ room for. That is the one question here answered by the stylesheet rather than b
       <button class="tab" type="button" data-go="/projects">Projects</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
+      <button class="tab" type="button" data-go="/about">About</button>
       {% else %}
       <!-- Everywhere else: both controls, and the screen picks. Six monospace words cannot share
            a 390 px row - that is the bug that made this a menu in the first place - but they sit
@@ -85,6 +86,7 @@ room for. That is the one question here answered by the stylesheet rather than b
       <button class="tab" type="button" data-go="/manuals">Manuals</button>
       <button class="tab" type="button" data-go="/media">Media</button>
       <button class="tab" type="button" data-go="/">System</button>
+      <button class="tab" type="button" data-go="/about">About</button>
 
       <!-- The narrow screen's control. A native select is what "a menu" already means on a phone
            - the platform draws its own sheet under the thumb, and there is no popup of ours to
@@ -106,6 +108,7 @@ room for. That is the one question here answered by the stylesheet rather than b
         <option value="/manuals">MANUALS</option>
         <option value="/media">MEDIA</option>
         <option value="/">SYSTEM</option>
+        <option value="/about">ABOUT</option>
       </select>
       {% endif %}
     </nav>
@@ -444,6 +447,25 @@ room for. That is the one question here answered by the stylesheet rather than b
     <div class="reelcap" id="reelcap">
       <span class="reeltitle" id="reeltitle"></span>
       <span class="reelwhen" id="reelwhen"></span>
+    </div>
+  </main>
+
+  <!-- What Cyclops is, and a code a phone can scan to read the rest. After the reel for the
+       reason the reel gives above: a new view anywhere else shifts every .view index. -->
+  <main class="view about" id="v-about">
+    <div class="qr">{{ homepage_qr }}</div>
+    <div class="abouttext">
+      <h1>Cyclops</h1>
+      <p class="tagline">Your workshop droid.</p>
+      <p>A one-eyed robot that works with you. It remembers every project, has read every manual,
+        and answers any question &mdash; so your hands stay free and your phone stays in your
+        pocket.</p>
+      <ul>
+        <li><b>Hands free.</b> No screen to unlock, nothing to type. You talk, it answers.</li>
+        <li><b>Wired in.</b> It reaches into the boards on your bench, not just the internet.</li>
+        <li><b>Yours to hack.</b> Open source, on a Pi. Fork it, rewire it, give it a new face.</li>
+      </ul>
+      <p class="link">Scan for more &mdash; <span>{{ homepage }}</span></p>
     </div>
   </main>
 

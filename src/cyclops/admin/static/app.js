@@ -28,7 +28,7 @@ const WIDE = window.matchMedia(
   getComputedStyle(document.documentElement).getPropertyValue('--wide-q').trim().slice(1, -1));
 
 const VIEWS = ['view-status', 'view-live', 'view-sessions', 'view-session', 'view-media',
-               'view-highlights', 'view-projects', 'view-project', 'view-manuals'];
+               'view-highlights', 'view-projects', 'view-project', 'view-manuals', 'view-about'];
 // The five things a project is, in the rail's order. The first is where a project opens, and an
 // address naming none of them - or one this list has never heard of - lands there too.
 const SECTIONS = ['overview', 'log', 'sheets', 'photos', 'youtube', 'files'];
@@ -1685,6 +1685,7 @@ function route() {
   }
   else if (path === '/projects') { view = 'view-projects'; tab = '/projects'; showProjects(); }
   else if (path === '/manuals') { view = 'view-manuals'; tab = '/manuals'; showManuals(); }
+  else if (path === '/about') { view = 'view-about'; tab = '/about'; }
   else if (path.startsWith('/p/')) {
     view = 'view-project'; tab = '/projects';
     const [name, asked, where] = hashParts(path.slice(3), true);

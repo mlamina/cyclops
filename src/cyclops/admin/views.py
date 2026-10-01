@@ -14,6 +14,7 @@ import zipfile
 from dataclasses import asdict
 from pathlib import Path
 
+import segno
 from django.http import (
     Http404,
     HttpRequest,
@@ -24,6 +25,7 @@ from django.http import (
     StreamingHttpResponse,
 )
 from django.shortcuts import render
+from django.utils.safestring import mark_safe
 from django.views.decorators.http import require_POST
 
 from .. import (
@@ -124,6 +126,15 @@ def _asset_version() -> str:
 
 
 ASSET_VERSION = _asset_version()
+
+# Where the About screen sends a phone. The code is drawn once, here, as inline SVG: the panel has
+# no internet to fetch a generator from, and the address never changes while the server is up.
+HOMEPAGE = "https://mlamina.github.io/cyclops/"
+HOMEPAGE_QR = mark_safe(
+    segno.make(HOMEPAGE, error="m").svg_inline(
+        scale=1, border=2, dark="#030b07", light="#56ff8c", omitsize=True
+    )
+)
 # The same shape of number for what may be dropped onto the page from a laptop. A datasheet is
 # kilobytes and a phone photo is single-digit megabytes; this is a ceiling, not a budget, and it
 # is here so that a mis-drag of something enormous is refused rather than written to the card.
@@ -244,6 +255,8 @@ def dashboard(request: HttpRequest) -> HttpResponse:
             # written above it: the payload is also /api/status, and the port of another
             # process is not one of the four readings anybody curls that for.
             "companion_port": COMPANION_PORT,
+            "homepage": HOMEPAGE,
+            "homepage_qr": HOMEPAGE_QR,
         },
     )
     # The page is the one thing that must never be stale, because it is what names the versions

@@ -41,6 +41,7 @@ dependencies = [
     # The Pico extension: MicroPython's raw REPL over the board's USB serial port. Not mpremote,
     # whose Python API is not a surface anybody promises to keep.
     "pyserial>=3.5",
+    "segno>=1.6.6",
 ]
 
 [project.scripts]
