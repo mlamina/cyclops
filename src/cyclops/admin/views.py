@@ -690,7 +690,8 @@ def _zipped(folder: Path):
         for path in sorted(folder.rglob("*")):
             if not path.is_file() or path.is_symlink():
                 continue
-            with archive.open(f"{folder.name}/{path.relative_to(folder)}", "w") as entry:
+            info = zipfile.ZipInfo.from_file(path, f"{folder.name}/{path.relative_to(folder)}")
+            with archive.open(info, "w") as entry:
                 with path.open("rb") as src:
                     while chunk := src.read(1 << 20):
                         entry.write(chunk)
