@@ -216,7 +216,7 @@ body:not(.kiosk) .files .row {
   grid-template-columns: calc(46 * var(--u)) minmax(0, 1fr) auto;
   min-height: calc(50 * var(--u));
 }
-body:not(.kiosk) .sessions .row {
+body:not(.kiosk) :is(.sessions, .projects, .manuals) .row {
   grid-template-columns: minmax(0, 3fr) minmax(0, 2fr) auto;
   min-height: 0;
 }
