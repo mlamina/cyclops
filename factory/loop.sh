@@ -117,6 +117,22 @@ state_of() {  # $1 number
   echo gone
 }
 
+# Whether a log already has an ending. A build that wrote EXIT, DONE, STALLED, STOPPED or WEDGED is
+# over, and from that moment its PID marker is a number the OS is free to hand to anything else -
+# `kill -0` on it stops being a question about this build and becomes a question about a stranger
+# who happens to have inherited the number. Job 023 finished on 2026-09-27 as pid 7113; five days
+# later 7113 was Spotlight's mdworker_shared, so this loop counted a job sitting at `state: review`
+# as a live build, measured its silence from the day it finished, and sent SIGTERM to the indexer
+# once every pass - three of them landed before anyone saw it. The ending is the one fact here that
+# cannot be read wrong: this loop writes it, and it is final.
+#
+# It also ends the repeat WEDGED line, which used to print every thirty seconds for ever: writing
+# WEDGED gives the log an ending, so the next pass skips the block that wrote it. After a wedge
+# kill there is nothing further this loop can do anyway - it sends one TERM and has no second move.
+ended() {  # $1 log
+  grep -q '^· [0-9][0-9-]* [0-9][0-9:]* \(EXIT\|DONE\|STALLED\|STOPPED\|WEDGED\)' "$1" 2>/dev/null
+}
+
 # What "007 is building" looks like in ps - the whole invocation, not the number. Claude Code's
 # Bash tool puts the command text in its shell's own argv, so a peer session running
 # `cat factory/007-something.md` has `007` on its command line, and a loop matching the number
@@ -271,7 +287,9 @@ pass() {
     # how /board reported job 002 as building for twenty minutes after it had died. A pid cannot
     # match the process asking about it, and `kill -0` only asks.
     pid=$(sed -n 's/^· .* PID \([0-9][0-9]*\)$/\1/p' "$log" 2>/dev/null | tail -1)
-    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    # An ended log is checked before the pid and not after: the point is never to ask about a
+    # number this build has finished with. See ended().
+    if [ -n "$pid" ] && ! ended "$log" && kill -0 "$pid" 2>/dev/null; then
       live=$((live + 1))
       lw=$(last_write "$n" || true)
       lwe=${lw%% *}; lwf=${lw#* }
