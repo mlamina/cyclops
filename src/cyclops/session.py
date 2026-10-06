@@ -1068,6 +1068,8 @@ def _render_record(record: dict) -> str:
             return f'*Looked for* ({at}) — "{query}" → nothing on the card matched'
         where = " and put it on the panel" if record.get("shown") else ""
         return f'*Looked for* ({at}) — "{query}" → **{title}**{where}'
+    if kind == "manual":
+        return _render_manual(record, at)
     if kind == "project":
         name = record.get("name", "")
         if record.get("action") == "tracked":
@@ -1147,6 +1149,25 @@ def _scratchpad_gist(html: str) -> str:
     if len(text) <= SCRATCHPAD_GIST_CHARS:
         return text
     return text[:SCRATCHPAD_GIST_CHARS].rstrip() + "…"
+
+
+def _render_manual(record: dict, at: str) -> str:
+    """One trip to the librarian: the question, every step it took, and what it came back with.
+
+    The steps are here in full because they are the only record of *why* an answer was wrong:
+    which pages were read, and which were never opened.
+    """
+    head = f'*Asked the manuals* ({at}) — "{record.get("question", "")}"'
+    if record.get("error"):
+        return f"{head} → failed: {record['error']}"
+    took = f"{record.get('seconds', 0):.1f} s"
+    steps = "\n".join(f"  - {step}" for step in record.get("steps") or [])
+    if record.get("answered"):
+        pages = ", ".join(record.get("pages") or [])
+        result = f"→ {record.get('answer', '')} ({pages}; {took})"
+    else:
+        result = f"→ not answered: {record.get('why_not', '')} ({took})"
+    return "\n".join(part for part in (head, steps, result) if part)
 
 
 def _render_data(record: dict, at: str) -> str:

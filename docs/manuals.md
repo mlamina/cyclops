@@ -43,17 +43,22 @@ wiring-diagram pages: nothing but looking at the page will tell you a diagram is
 
 ## Asking
 
-There is no manual tool. A page is an ordinary `recall` item, so the tool that already finds
-photos finds pages, puts one on the panel, and hands the model the pixels.
+Cyclops has one manual tool, `ask_manual`, and behind it a librarian: a small pydantic-ai agent
+(`gpt-5.4-mini`, `src/cyclops/librarian.py`) with the manuals to itself. Cyclops says "Let me check
+the manual.", hands over one self-contained question, and gets back a few speakable lines with the
+exact values and the pages they came from - or `answered: false` and the exact reason: what was
+searched, what was read, and whether the manuals do not cover it or the question was ambiguous.
 
-That last part is the rule worth knowing: **the transcription only ever finds a page, and the
-answer is read off the render.** Index text is written by a small model to make a page findable
-and is not reliable about a number - two passes over one manual page once disagreed about the
-torque printed on it. So when you ask what a figure actually is, Cyclops reads it off the page.
+The librarian can list the manuals, read a contents page, search by meaning, match exact words
+("Menu 8", "AUX1"), read a page's transcription, and look at the page itself when the text is not
+enough - wiring diagrams and wire colours, at full resolution. None of that reaches the realtime
+conversation: it pays for every token on every turn, so it only ever gets the answer. A page goes
+on the panel only when they ask to see it.
 
-**Name the part in the question.** With two manuals on the card, "how much power does it need"
-found the wrong one at a score barely over the floor; "pi 5 power and ports" found the right page
-comfortably. The session prompt tells Cyclops to do this, and it is why `aliases` matters.
+Manual pages are not in `recall` any more; that searches photos, sessions and project files.
+
+Every lookup is in the session's `session.md`: the question, each step, the answer or the reason.
+`tools/manual_eval.py` asks the questions that went wrong on the Pi and grades the answers.
 
 ## Turning it off
 

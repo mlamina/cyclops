@@ -208,20 +208,6 @@ def test_a_cover_page_is_not_indexed(settings, manual):
     ]
 
 
-def test_a_page_asked_for_by_number_is_that_page(settings):
-    """Whatever it ranks, "page 2" hands back page 2 of the manual the query is about."""
-    items = [i for i in recall.corpus(settings) if i.kind == "page"]
-    # page 1 is the better match by meaning, so only the number can pick page 2
-    one = next(n for n, i in enumerate(items) if i.path.endswith("0001.jpg"))
-    vectors = np.zeros((len(items), 2), dtype=np.float32)
-    vectors[:, 1] = 1.0
-    vectors[one] = [1.0, 0.0]
-    index = recall.Index(items=items, vectors=vectors)
-    number = recall.page_asked("show me page 2 of the mo.unit manual")
-    hit = recall.page_of(index, np.array([1.0, 0.0]), scopes=None, number=number)
-    assert hit.item.path.endswith("0002.jpg")
-
-
 def test_a_page_render_with_no_entry_is_not_indexed(settings, manual):
     """A page nobody has read yet has nothing to search by, so it is not askable for."""
     (manual.pages_dir / "0003.jpg").write_bytes(b"\xff\xd8\xff\xe0 third")
@@ -309,7 +295,6 @@ def test_a_line_that_runs_long_ends_on_a_whole_topic(manual):
 # ------------------------------------------------------------------ what the agent does with a page
 
 LOWER_NOTES = np.array([[1.0, 0.0, 0.0]], dtype=np.float32)
-BENCH_PHOTO = np.array([[0.0, 0.0, 1.0]], dtype=np.float32)
 
 
 def _jpeg(path) -> str:
@@ -326,89 +311,102 @@ class _Client:
 
 
 @pytest.fixture
-def found(tmp_path, monkeypatch):
-    """A voice agent over two manual pages that both match a question, and one photo.
-
-    Page 12 is the better match and page 18 the next one, so a second look at the same question
-    has somewhere to go. Nothing reaches the network or the real panel.
-    """
+def voice(tmp_path, monkeypatch):
+    """A voice agent that records what it sends and what goes on the panel. No network."""
     from cyclops import agent, panel, session
-
-    def item(name: str, kind: str) -> recall.Item:
-        return recall.Item(kind=kind, path=_jpeg(tmp_path / f"{name}.jpg"), scope="manual:oxi",
-                           title=name, text="", mtime_ns=0, size=0)
-
-    index = recall.Index(
-        items=[item("0012", "page"), item("0018", "page"), item("bench", "photo")],
-        vectors=np.array([[1.0, 0.0, 0.0], [0.8, 0.6, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32),
-    )
-
-    async def embed(texts, client):
-        return BENCH_PHOTO if "photo" in texts[0] else LOWER_NOTES
 
     offered: list[str] = []
     sent: list[dict] = []
+    outputs: list[dict] = []
+    notes: list[tuple] = []
 
     async def send(item):
         sent.append(item)
 
+    async def output(call_id, out):
+        outputs.append(out)
+
     async def nothing(*_):
         pass
 
-    monkeypatch.setattr(recall, "load", lambda: index)
-    monkeypatch.setattr(recall, "embed", embed)
     monkeypatch.setattr(agent, "AsyncOpenAI", _Client)
     monkeypatch.setattr(agent.VoiceAgent, "_recall_scopes", lambda self, project: None)
-    monkeypatch.setattr(session, "note", lambda *a, **k: None)
+    monkeypatch.setattr(session, "note", lambda *a, **k: notes.append((a, k)))
     monkeypatch.setattr(
         panel, "offer_image", lambda jpeg, title, **k: offered.append(title) or True
     )
     monkeypatch.setattr(panel, "show", lambda: True)
-    one = agent.VoiceAgent(Settings(api_key="test-key"))
+    return SimpleNamespace(offered=offered, sent=sent, outputs=outputs, notes=notes,
+                           make=lambda settings: _connected(agent, settings, send, output, nothing,
+                                                            monkeypatch))
+
+
+def _connected(agent, settings, send, output, nothing, monkeypatch):
+    one = agent.VoiceAgent(settings)
     one._conn = object()  # connected, as far as add_found is concerned
     monkeypatch.setattr(one, "_send_item", send)
-    monkeypatch.setattr(one, "_send_tool_output", nothing)
+    monkeypatch.setattr(one, "_send_tool_output", output)
     monkeypatch.setattr(one, "_request_response", nothing)
-    return one, offered, sent
-
-
-def _ask(query: str, **flags) -> SimpleNamespace:
-    arguments = json.dumps({"query": query, **flags})
-    return SimpleNamespace(call_id="c1", name="recall", arguments=arguments)
+    return one
 
 
 def _pictures(sent: list[dict]) -> int:
     return sum(any(part["type"] == "input_image" for part in item["content"]) for item in sent)
 
 
-def test_a_page_already_read_is_skipped_until_they_speak_again(found):
-    one, _, _ = found
+def test_recall_never_hands_back_a_manual_page(tmp_path, monkeypatch, voice):
+    """Manual pages are the librarian's. Recall finds the photo even when a page matches better."""
+    def item(name: str, kind: str, scope: str) -> recall.Item:
+        return recall.Item(kind=kind, path=_jpeg(tmp_path / f"{name}.jpg"), scope=scope,
+                           title=name, text="", mtime_ns=0, size=0)
 
-    async def look_three_times_then_hear_them():
-        looks = [await one._recall("the notes below the grid", "") for _ in range(3)]
-        await one._on_user_speech_started()
-        return [*looks, await one._recall("the notes below the grid", "")]
+    index = recall.Index(
+        items=[item("0012", "page", "manual:oxi"), item("bench", "photo", "session:today")],
+        vectors=np.array([[1.0, 0.0, 0.0], [0.6, 0.8, 0.0]], dtype=np.float32),
+    )
 
-    first, second, third, fresh = asyncio.run(look_three_times_then_hear_them())
-    assert (first["title"], second["title"]) == ("0012", "0018")
-    assert third["hits"] == 0, "nothing new was left, so nothing is handed back"
-    assert fresh["title"] == "0012", "their next words make the first page fair game again"
+    async def embed(texts, client):
+        return LOWER_NOTES
+
+    monkeypatch.setattr(recall, "load", lambda: index)
+    monkeypatch.setattr(recall, "embed", embed)
+    one = voice.make(Settings(api_key="test-key"))
+    found = asyncio.run(one._recall("the notes below the grid", ""))
+    assert found["kind"] == "photo"
 
 
-def test_a_page_goes_up_only_when_asked_and_a_photo_always_does(found):
-    one, offered, sent = found
+def test_a_manual_answer_reaches_the_conversation_as_text_only(settings, manual, monkeypatch, voice):
+    """The librarian looks at a page image; the realtime side gets words, the panel the page."""
+    from pydantic_ai.messages import ModelResponse, ToolCallPart
+    from pydantic_ai.models.function import FunctionModel
 
-    async def read_then_show_then_photo():
-        await one._run_recall(_ask("the notes below the grid"))
-        steps = [(list(offered), _pictures(sent))]
-        await one._on_user_speech_started()
-        await one._run_recall(_ask("the notes below the grid", show=True))
-        steps.append((list(offered), _pictures(sent)))
-        await one._run_recall(_ask("that photo of the bench"))
-        steps.append((list(offered), _pictures(sent)))
-        return steps
+    from cyclops import librarian
 
-    read, shown, photo = asyncio.run(read_then_show_then_photo())
-    assert read == ([], 1), "read without show: the model has the page and the panel does not"
-    assert shown == (["0012"], 2), "read with show: both"
-    assert photo == (["0012", "bench"], 3), "a photo goes up without being asked"
+    manual.pages, manual.read = PAGES, 2
+    manuals.write_identity(manual)
+    _jpeg(manual.pages_dir / "0002.jpg")
+    looked: list[bool] = []
+
+    def model(messages, info):
+        if len(messages) == 1:
+            return ModelResponse(parts=[ToolCallPart("look", {"manual": manual.key, "page": 2})])
+        looked.append(any(isinstance(getattr(p, "content", None), librarian.BinaryContent)
+                          for m in messages for p in m.parts))
+        answer = {"answered": True, "answer": "Two 1N4001 diodes, one to each turn output.",
+                  "pages": [{"manual": manual.key, "page": 2}]}
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, answer)])
+
+    monkeypatch.setattr(librarian, "build_model", lambda s: (FunctionModel(model), None))
+    monkeypatch.setattr(recall, "load", recall.empty)
+    one = voice.make(settings)
+    call = SimpleNamespace(call_id="c1", name="ask_manual",
+                           arguments=json.dumps({"question": "mo.unit: which diodes for the "
+                                                 "indicator lamps?", "show": True}))
+    asyncio.run(one._run_ask_manual(call))
+
+    assert looked == [True], "the librarian was shown the page"
+    assert voice.outputs[0]["answered"] and "1N4001" in voice.outputs[0]["answer"]
+    assert _pictures(voice.sent) == 0, "no page image entered the realtime conversation"
+    assert voice.offered == ["0002"], "show put the source page on the panel"
+    note = next(k for a, k in voice.notes if a == ("manual",))
+    assert note["steps"][-1] == f"look {manual.key} p2"

@@ -8,6 +8,7 @@ import contextlib
 import json
 import re
 import sys
+import threading
 import time
 import uuid
 from collections.abc import Callable, Coroutine
@@ -122,14 +123,9 @@ MAX_DATA_QUERY_CHARS = 120
 # this the user has been staring at "looking for…" long enough that no answer is the kinder one.
 RECALL_TIMEOUT_S = 8.0
 RECALL_HITS = 5
-# How many of those the model is told about at all. The first is already on the panel by the time
-# it reads this, so the rest are there to be offered aloud - "I've also got a caliper close-up" -
-# and three names is the most anybody wants read back at them.
-RECALL_OFFERED = 3
-# How many things recall hands back for one question before it stops looking. Told only in the
-# description, the model read six pages for "which one is the Div button?", talked through the
-# misses and took 13 s; past this the manual does not cover it, and the web is the next place.
-RECALL_READS = 3
+# The librarian is a few requests to a small model: measured median and slowest in
+# tools/manual_eval.py. Past this the question is not worth the wait, and the web is next.
+MANUAL_TIMEOUT_S = 25.0
 # A photo's title is its whole caption, which for a page of specifications is a paragraph. Cut it:
 # these are labels in a result, not the answer, and the picture itself is going to the model.
 MAX_OTHER_CHARS = 90
@@ -785,46 +781,25 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
         "touchscreen. This searches by meaning rather than by wording, so their words do not "
         "have to match what was written: photos and their descriptions, what was written up "
         "about each session of a project, and any file they put in the project folder "
-        "themselves. Reach for it in two situations. First, whenever they refer back to "
-        "something that exists - 'show me the pic of the torque spec from the manual', 'what "
-        "did we decide about the fork seals', 'find that datasheet I put in there'. Second, and "
-        "without being asked to: when they ask about a machine or a part you hold a manual for "
-        "- a spec, a torque, a clearance, a fuse rating, a part number, which wire goes where. "
-        "Looking is faster than saying you could look, so look - but not in silence. Before "
-        "the first look in a manual for a question, say 'Let me check the manual.' - those "
-        "words and nothing added: not what for, not why, not the manual's title - in the same "
-        "turn, and then call this. A second or third look for one question goes without a word. "
-        "A manual page comes back to you "
-        "alone, as the page itself - it is not on their screen unless you set show. Read the "
-        "answer off THAT and never off this tool's result, which is written to find a page and "
-        "is not reliable about a number. Then answer the way somebody who knows the machine "
-        "would: do not name the manual or the page unless they ask where it came from - and "
-        "then say both, the manual and the page number. Having read a manual is not a reason "
-        "to mention what is in it when it does not answer what was asked. If the page does not "
-        "answer what they asked, do not tell them so, do not talk them through the search and "
-        "do not offer to look further - call recall again straight away, without a word first, "
-        "with the question worded differently. Each call hands back something you have not "
-        "already been given since they last spoke. Read up to three pages for one question; if "
-        "none of them answers it, say 'The manual doesn't say.' and no more about it, then "
-        "use web_search. Never talk about the looking itself: not which pages you read, not "
-        "what they did or did not show. "
+        "themselves. Reach for it whenever they refer back to something that exists - 'show me "
+        "the pic of the torque spec', 'what did we decide about the fork seals', 'find that "
+        "datasheet I put in there'. "
         "A photo appears on the panel and stays until "
         "they tap it, so say one short sentence and then stop; they can see it, so do not "
         "describe it back at them unless they ask - and you are shown it too, so answer "
         "whatever they do ask about it by reading the picture. Read it off the picture and not "
         "off this tool's result: the words in the result were written to find the photo, not to "
         "describe it, and they are not reliable about numbers or small print. "
-        "It hands back the one best match and the names of a couple of near misses. Those are "
-        "not a menu to read out - if what came back is plainly the wrong thing, call recall "
-        "again for the right one rather than offering to. "
+        "If what came back is plainly the wrong thing, call recall again for the right one "
+        "rather than offering to. "
         "A diagram you drew earlier is kept with the photos, so this is how you put one back up "
         "when they refer to it - it is far quicker than drawing it again, and a redraw would "
         "come back different. "
-        "Do NOT use it for: a number written down with save_data - find_data looks those up "
-        "exactly and this only finds the words around them; anything about the world rather "
-        "than about their own work - that is web_search. If it finds nothing, try once more "
-        "worded differently, and if that finds nothing either, say so in a few words rather "
-        "than showing them the closest thing anyway."
+        "Do NOT use it for: a manual - that is ask_manual; a number written down with save_data "
+        "- find_data looks those up exactly and this only finds the words around them; anything "
+        "about the world rather than about their own work - that is web_search. If it finds "
+        "nothing, try once more worded differently, and if that finds nothing either, say so in "
+        "a few words rather than showing them the closest thing anyway."
     ),
     "parameters": {
         "type": "object",
@@ -833,9 +808,9 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
                 "type": "string",
                 "description": (
                     "What they are looking for, in their words and in a full phrase rather "
-                    "than keywords - 'the torque spec from the owner's manual' beats 'torque'. "
-                    "It is matched on meaning, so describing the thing works better than "
-                    "guessing at what it was called."
+                    "than keywords - 'the photo of the caliper with the torque spec' beats "
+                    "'torque'. It is matched on meaning, so describing the thing works better "
+                    "than guessing at what it was called."
                 ),
             },
             "project": {
@@ -845,18 +820,55 @@ RECALL_TOOL: RealtimeFunctionToolParam = {
                     "is plainly about a single one. Leave it out to search everything."
                 ),
             },
+        },
+        "required": ["query"],
+        "additionalProperties": False,
+    },
+}
+
+# The manuals are behind one question. Everything the lookup reads stays in the librarian's own
+# context (see cyclops.librarian), and what comes back here is a few lines of text.
+ASK_MANUAL_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "ask_manual",
+    "description": (
+        "Ask the manuals on the card a question and get back the answer, with the exact values "
+        "and press sequences printed there. A librarian reads every manual you hold for you and "
+        "answers in a few lines. Use it, without being asked to, whenever they ask about a "
+        "machine, a part or a kit you hold a manual for - a spec, a torque, a setting, a menu, "
+        "a button, a fuse rating, which wire goes where - and before the web. Before calling "
+        "it say 'Let me check the manual.' - those words and nothing added - in the same turn. "
+        "Then answer from what comes back the way somebody who knows the machine would: do not "
+        "name the manual or the page unless they ask where it came from, and then say both. "
+        "If answered is false, say in a few words that the manual doesn't say, and use "
+        "web_search if the web can answer it. Never talk about the looking itself. "
+        "Do NOT use it when they ask you to look online or search the web - that is web_search, "
+        "even for a part you hold a manual for. Not for their own photos and notes - that is "
+        "recall."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "question": {
+                "type": "string",
+                "description": (
+                    "One self-contained question the librarian can answer without having heard "
+                    "the conversation: the part or kit by name, what they are trying to do, and "
+                    "the setup you already know - 'mo.unit blue: how do I enter the setup menu? "
+                    "Bike is a BMW R80 with a Revival wiring kit.' Their wording, never a "
+                    "keyword list."
+                ),
+            },
             "show": {
                 "type": "boolean",
                 "description": (
-                    "Put a manual page on their screen as well. Only when they asked to see the "
-                    "page, or a picture on it - 'show me that page', 'what does that diagram look "
-                    "like'. Leave it out to answer a question, even one about which button or "
-                    "where: the page comes to you alone. Photos and drawings go up whatever this "
-                    "says."
+                    "Put the page the answer came from on their screen. Only when they asked to "
+                    "see the page or a diagram - 'show me that page', 'what does that diagram "
+                    "look like'. Leave it out to answer a question."
                 ),
             },
         },
-        "required": ["query"],
+        "required": ["question"],
         "additionalProperties": False,
     },
 }
@@ -1045,12 +1057,13 @@ LOOKING THINGS UP
 - When they ask something factual you are not sure about - a spec, a size, a torque value,
   whether two parts fit together, what something costs, anything that may have changed
   recently - look it up instead of guessing.
-- If it is about a thing they own and you hold a manual for it, look there FIRST, with recall,
-  and without being asked to. The manual is about their exact part; the web is about what
-  somebody said about a part like it. Do this the moment the question is asked - do not offer
-  to look and do not ask which manual. Say you are checking the manual and check it.
-- Use web_search when no manual covers it, or when the manual does not say. It takes a few
-  seconds; wait them out rather than filling them, and lead with the answer when it lands.
+- If it is about a thing they own and you hold a manual for it, look there FIRST, with
+  ask_manual, and without being asked to. The manual is about their exact part; the web is about
+  what somebody said about a part like it. Do this the moment the question is asked - do not
+  offer to look and do not ask which manual. Say you are checking the manual and check it.
+- When they ask you to look online or search the web, that is web_search, even for a part you
+  hold a manual for. Otherwise use it when no manual covers it, or when the manual does not say.
+  It takes a few seconds; wait them out rather than filling them, and lead with the answer.
 - Combine the two when it helps: ask for a photo of the thing, then search for what you saw.
   If a search comes back empty or failed, say so plainly instead of inventing an answer.
 - When what comes back is a figure they are going to work to - a torque, a clearance, a gap, a
@@ -1150,8 +1163,7 @@ RECAP_HEADER = """\
 WHERE YOU LEFT OFF
 These notes were written at the end of the last few sessions. Use them the way someone who was
 there would: if they pick up where they left off, you already know where that is. Do not recite
-them back, and do not assume today is about the same thing - wait and hear what they want. You
-recall nothing beyond these notes; if they ask about something older, say so plainly.
+them back, and do not assume today is about the same thing - wait and hear what they want.
 """
 
 
@@ -1168,16 +1180,16 @@ PROJECT_LINE_CHARS = 380
 
 # Introduces the manuals below it, and it is the whole of "answer from the manual without being
 # asked to". A tool cannot be reached for by a model that does not know there is anything to
-# reach for, so this list is what turns recall from a thing it uses when told into a thing it
+# reach for, so this list is what turns ask_manual from a thing it uses when told into a thing it
 # uses when a question arrives. Names and what each is for - never contents, the rule
 # PROJECTS_HEADER keeps for the same reason.
 # This block has one job: let the model recognise that a question in front of it is one a manual
 # on the card can answer. Nothing about *how* to use what comes back belongs here - that is in
-# RECALL_TOOL's description, which is read only when the model is already considering the tool,
+# ASK_MANUAL_TOOL's description, which is read only when the model is already considering it,
 # where this is read at the top of every session whether a manual comes up or not. At ten manuals
 # the long version of this cost about 900 tokens a session for rules that apply to none of them.
 MANUALS_HEADER = """\
-MANUALS YOU HAVE READ - use recall on one before the web, and name the part in the query.
+MANUALS YOU HAVE READ - ask_manual answers from these, before the web.
 """
 MANUALS_LISTED = 24
 
@@ -1442,16 +1454,9 @@ class VoiceAgent:
         # than being read back off `_on_panel`, which a drawing landing in that same window moves.
         self._found_image: bytes | None = None
         self._found_name = ""
-        # What kind of picture it was, so add_found can say so. A manual page and a photograph of
-        # the bench are both "found", and calling one the other is how the model ends up saying
-        # "in the photo you took" about page 28 of a manual.
-        self._found_kind = ""
-        # Whether it went up on the panel too. A manual page is read without being shown unless
-        # they asked to see it, and the model must not talk as if they can see what only it can.
-        self._found_shown = False
-        # Everything recall has handed the model since they last spoke, by item key. A page that
-        # did not answer the question would otherwise come straight back: ranking is a dot product
-        # with no memory, and three rewordings of one question land on the same page.
+        # Everything recall has handed the model since they last spoke, by item key. A thing that
+        # was the wrong one would otherwise come straight back: ranking is a dot product with no
+        # memory, and three rewordings of one question land on the same item.
         self._recalled: set[str] = set()
         # ...and, beside those three, the sentence the panel says underneath. The flags answer
         # "what mode is this?", which colours the border and picks the word on the strip, and
@@ -1711,6 +1716,8 @@ class VoiceAgent:
         # The try opens before the connect, not after it: a bad key or a dead network raises
         # from there, and that is precisely when the gears the button sounded may still be
         # going. Left outside, the finally never runs and the kiosk grinds on over a red border.
+        if self.settings.manuals:
+            threading.Thread(target=_warm_librarian, name="librarian-import", daemon=True).start()
         try:
             # Narrated in two steps because they fail in two different places and take
             # noticeably different amounts of time: the socket, and then the round trip that
@@ -2370,6 +2377,9 @@ class VoiceAgent:
         if call.name == "recall":
             await self._run_recall(call)
             return
+        if call.name == "ask_manual":
+            await self._run_ask_manual(call)
+            return
         if call.name == "watch_video":
             await self._run_watch_video(call)
             return
@@ -2530,6 +2540,81 @@ class VoiceAgent:
             self._log(f"[tool] search failed: {output['error']}", stream=sys.stderr)
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
+
+    async def _run_ask_manual(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Hand one question to the librarian and the model a few lines of answer.
+
+        Wrapped like :meth:`_run_web_search`, for its reasons: it takes seconds, so it can land
+        after they have moved on, and the Realtime API cannot withdraw a call. What comes back
+        is text only - the pages the librarian read stay in its own context, and the one picture
+        that can come of this goes to the panel, never into the conversation.
+        """
+        question = _tool_string(call.arguments, "question", MAX_QUERY_CHARS)
+        show = _tool_show(call.arguments)
+        self._log(f"[tool] ask_manual {question!r}" + (" (show)" if show else ""))
+        if not question:
+            await self._send_tool_output(call.call_id, {"ok": False, "error": "empty question"})
+            await self._request_response()
+            return
+        turn = self._turn_serial
+        self.search_active = True
+        try:
+            async with asyncio.timeout(MANUAL_TIMEOUT_S):
+                output = await self._ask_manual(question, show=show)
+        except TimeoutError:
+            output = {"ok": False, "error": f"the manual lookup timed out after {MANUAL_TIMEOUT_S:.0f}s"}
+        except Exception as exc:  # never leave the model waiting for a tool result
+            output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        finally:
+            self.search_active = False
+        if not output["ok"]:
+            session.note("manual", question=question, error=output["error"])
+            self._log(f"[tool] ask_manual failed: {output['error']}", stream=sys.stderr)
+        elif self._turn_serial != turn:
+            output["stale"] = True
+            output["note"] = (
+                "They have said something since this was asked. Answer them first, and only "
+                "mention this if it is still what they want."
+            )
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    async def _ask_manual(self, question: str, *, show: bool) -> dict[str, Any]:
+        from . import librarian  # warmed in a thread at session start; see _warm_librarian
+
+        found = await librarian.ask(question, self.settings)
+        answer = found.answer
+        sources = found.sources(manuals.catalog(self.settings))
+        shown = False
+        if show and sources:
+            manual, page = sources[0]
+            shown, _ = await asyncio.to_thread(
+                self._show_found, librarian.page_image(manual, page), page=True
+            )
+        session.note(
+            "manual",
+            question=question,
+            steps=found.steps,
+            answered=answer.answered,
+            answer=answer.answer,
+            why_not=answer.why_not,
+            pages=[f"{m.part or m.name} p{n}" for m, n in sources],
+            seconds=found.seconds,
+            shown=shown,
+        )
+        self._log(
+            f"[tool] manual: {'answered' if answer.answered else 'not answered'} in "
+            f"{found.seconds:.1f}s, {found.requests} request(s), {len(found.steps)} step(s)"
+        )
+        output: dict[str, Any] = {"ok": True, "answered": answer.answered}
+        if answer.answered:
+            output["answer"] = answer.answer
+            output["sources"] = [f"{m.part or m.name}, page {n}" for m, n in sources]
+        else:
+            output["why_not"] = answer.why_not
+        if show:
+            output["shown"] = shown
+        return output
 
     async def _run_watch_video(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Find a video, seek it to the part that answers them, and hand the panel to it.
@@ -3074,12 +3159,7 @@ class VoiceAgent:
         """
         query = _tool_query(call.arguments)
         project = _tool_string(call.arguments, "project", MAX_QUERY_CHARS)
-        show = _tool_show(call.arguments)
-        self._log(
-            f"[tool] recall {query!r}"
-            + (f" in {project!r}" if project else "")
-            + (" (show)" if show else "")
-        )
+        self._log(f"[tool] recall {query!r}" + (f" in {project!r}" if project else ""))
         if not query:
             nothing = {"ok": False, "error": "nothing to look for"}
             await self._send_tool_output(call.call_id, nothing)
@@ -3088,7 +3168,7 @@ class VoiceAgent:
         turn = self._turn_serial
         self._found_image = None
         try:
-            output = await self._recall(query, project, show=show)
+            output = await self._recall(query, project)
         except Exception as exc:  # never leave the model waiting for a tool result
             self._log(f"[tool] recall failed: {exc!r}", stream=sys.stderr)
             output = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
@@ -3108,13 +3188,11 @@ class VoiceAgent:
         # `_run_edit_photo` uses, and for the same reasons.
         found, self._found_image = self._found_image, None
         name, self._found_name = self._found_name, ""
-        kind, self._found_kind = self._found_kind, ""
-        shown, self._found_shown = self._found_shown, False
         if found is not None:
-            await self.add_found(found, name, kind=kind, shown=shown)
+            await self.add_found(found, name)
         await self._request_response()
 
-    async def _replay(self, query: str, best: recall.Hit, others: list[dict]) -> dict[str, Any]:
+    async def _replay(self, query: str, best: recall.Hit) -> dict[str, Any]:
         """Put a video reference from the card back on the panel, playing again.
 
         A reference keeps the id and the second, never the URL - a signed googlevideo link is
@@ -3134,14 +3212,12 @@ class VoiceAgent:
             )
             return {
                 "ok": True,
-                "hits": 1 + len(others),
                 "kind": "video",
                 "title": best.item.title,
                 "note": (
                     "That video is on the card but will not play right now. Its picture is on "
                     "the screen. Say what it was and that you cannot start it."
                 ),
-                "others": others,
             }
         found = Watch(
             id=about["id"],
@@ -3162,8 +3238,6 @@ class VoiceAgent:
             scope=best.item.scope,
             shown=bool(output["ok"]),
         )
-        output["hits"] = 1 + len(others)
-        output["others"] = others
         return output
 
     def _recall_scopes(self, project: str) -> set[str] | None:
@@ -3175,17 +3249,11 @@ class VoiceAgent:
         mostly noise against a question about a project, and the project is where the finished
         version of anything ends up.
 
-        Manuals are in scope always, and are why this builds the set before the early returns
-        below rather than after them. A manual belongs to a part and not to a project, so "on the
-        Honda, what is the valve clearance" - a question that names a project and so takes the
-        ``if project:`` return - must still be able to reach one. Both exits have to carry them,
-        or the feature is dead in exactly the phrasing most likely to be used.
+        Manuals are never in scope: they are the librarian's, behind ask_manual.
         """
         scopes: set[str] = set()
         if (live := session.current()) is not None:
             scopes.add(f"session:{live.dir.name}")
-        if self.settings.manuals:
-            scopes.update(one.scope for one in manuals.catalog(self.settings))
         if not self.settings.projects:
             return scopes or None
         from .projects import store
@@ -3201,34 +3269,13 @@ class VoiceAgent:
         scopes.update(f"project:{p.path.name}" for p in catalog)
         return scopes or None
 
-    def _full_page(self, path: Path, fallback: bytes | None) -> bytes | None:
-        """A manual page at the size it was rendered, for the model to read rather than glance at.
-
-        Falls back to whatever went to the panel if the file will not read - a smaller picture is
-        worse than this one but much better than none, and the page is already on their screen.
-        """
-        try:
-            return path.read_bytes()
-        except OSError:
-            return fallback
-
-    async def _recall(self, query: str, project: str, *, show: bool = False) -> dict[str, Any]:
-        """One search, and the panel if the answer is a photo or a page they asked to see.
+    async def _recall(self, query: str, project: str) -> dict[str, Any]:
+        """One search, and the panel if the answer is a picture.
 
         Nothing handed back since they last spoke is handed back again, so asking twice in one
-        turn is how the model reads the next page rather than the same one.
+        turn is how the model gets the next thing rather than the same one.
         """
-        if len(self._recalled) >= RECALL_READS:
-            return {
-                "ok": True,
-                "hits": 0,
-                "note": (
-                    "That is enough looking for one question. If nothing you were given answers "
-                    "it, say 'The manual doesn't say.' and nothing about the pages you read, "
-                    "then use web_search if the web can answer it."
-                ),
-            }
-        index = await asyncio.to_thread(recall.load)
+        index = recall.without_manuals(await asyncio.to_thread(recall.load))
         if not len(index):
             return {
                 "ok": True,
@@ -3253,20 +3300,13 @@ class VoiceAgent:
         )
         fresh = [hit for hit in ranked if hit.item.key not in self._recalled][:RECALL_HITS]
         hits = [hit for hit in fresh if hit.score >= recall.MIN_SCORE]
-        # "Page 29" means page 29. Searched by meaning it brought up page 161, three times.
-        if (number := recall.page_asked(query)) is not None:
-            pinned = recall.page_of(index, vector[0], scopes=scopes, number=number)
-            if pinned is not None and pinned.item.key not in self._recalled:
-                hits = [pinned] + [hit for hit in hits if hit.item.key != pinned.item.key]
         if not hits and any(hit.score >= recall.MIN_SCORE for hit in ranked):
             return {
                 "ok": True,
                 "hits": 0,
                 "note": (
                     "Nothing new matches that - you have already been given everything that "
-                    "does. If none of it answered the question, say 'The manual doesn't say.' "
-                    "and nothing about the pages you read, then use web_search if the web can "
-                    "answer it."
+                    "does. Say so in a few words."
                 ),
             }
         if not hits:
@@ -3282,16 +3322,8 @@ class VoiceAgent:
 
         best = hits[0]
         self._recalled.add(best.item.key)
-        # What else it could have been, for the model to offer aloud rather than to choose from -
-        # the picture is already going up by the time this is read. Titles are trimmed because a
-        # photo's title is its whole caption, which for a page of specifications runs to a
-        # paragraph and would drown the result it is a footnote to.
-        others = [
-            {"title": _shorten(hit.item.title, MAX_OTHER_CHARS), "kind": hit.item.kind}
-            for hit in hits[1:RECALL_OFFERED]
-        ]
         if best.item.playable:
-            return await self._replay(query, best, others)
+            return await self._replay(query, best)
         if not best.item.showable:
             # `what`, not `kind`: session.note takes the record's own type as its first
             # parameter and that parameter is called kind, so passing one as a field is a
@@ -3303,28 +3335,9 @@ class VoiceAgent:
                 "kind": best.item.kind,
                 "title": best.item.title,
                 "text": best.item.text,
-                "others": others,
             }
 
-        page = best.item.kind == "page"
-        if page and not show:
-            # Read, not shown: they asked a question, not to look at a page. The model reads the
-            # full render exactly as it would have, and the panel is left as it was.
-            shown, seen = False, None
-        else:
-            shown, seen = await asyncio.to_thread(
-                self._show_found, Path(best.item.path), page=page
-            )
-        if page:
-            # The panel keeps the downscaled copy - it is 800x480 and cannot use more - but the
-            # model gets the full render. `_show_found` hands back one copy for both jobs, which
-            # is right for a photograph and wrong for a page of small print: `imagine.for_panel`
-            # caps the long edge at PANEL_MAX_EDGE, so a 150 dpi A4 page reaches the model at
-            # about 87 dpi. The 0.96 transcription recall this feature rests on was measured at
-            # 120. Reading a torque figure off the page is the whole point, so it reads the page.
-            seen = await asyncio.to_thread(self._full_page, Path(best.item.path), seen)
-        self._found_kind = best.item.kind
-        self._found_shown = shown
+        shown, seen = await asyncio.to_thread(self._show_found, Path(best.item.path))
         if shown:
             # It is the picture in front of them now, so it is the one edit_photo works on. The
             # path is the file on the card, not the downscaled copy that went to the panel: an
@@ -3350,29 +3363,8 @@ class VoiceAgent:
             "kind": best.item.kind,
             "title": _shorten(best.item.title, MAX_OTHER_CHARS),
             "shown": shown,
-            "others": others,
         }
-        if others:
-            result["note"] = (
-                "The best match is on the panel. The others are near misses, not a menu - if "
-                "what you showed is plainly the wrong thing, call recall again for the right one."
-            )
-        if page and not show and len(self._recalled) >= RECALL_READS:
-            # Told only when it asks for a fourth, the model has already started hedging about
-            # "the pages I found" by then; told now, it has the line to say instead.
-            result["note"] = (
-                "Only you can see this page - it is not on their screen. It is the last one for "
-                "this question. If it answers what they asked, answer as though you know it. If "
-                "it does not, say 'The manual doesn't say.' and nothing about the pages you read, "
-                "then use web_search if the web can answer it."
-            )
-        elif page and not show:
-            result["note"] = (
-                "Only you can see this page - it is not on their screen. If it answers what they "
-                "asked, answer as though you know it. If it does not, call recall again at once, "
-                "worded differently, without a word to them first and nothing about this page."
-            )
-        elif not shown:
+        if not shown:
             result["note"] = (
                 "It was found but there is no panel free to show it on. Say what it is out loud "
                 "instead of pretending they can see it."
@@ -3406,9 +3398,7 @@ class VoiceAgent:
         small = imagine.for_page(blob) if page else imagine.for_panel(blob)
         return bool(panel.offer_image(small, path.stem, page=page) and panel.show()), small
 
-    async def add_found(
-        self, jpeg: bytes, name: str = "", *, kind: str = "", shown: bool = True
-    ) -> None:
+    async def add_found(self, jpeg: bytes, name: str = "") -> None:
         """Show the model the picture it just found. No response is asked for here.
 
         The reason this exists rather than the caption being enough: the caption is *index text*,
@@ -3421,16 +3411,7 @@ class VoiceAgent:
         The same shape as :meth:`add_edit`, and not that method, because what it says about the
         picture is the opposite: an edit is a drawing that must not be read as evidence, and this
         is a photograph of their own bench that must be.
-
-        A manual page is the same argument with a different noun, and it is worth the branch: the
-        sentence below is the only thing telling the model what it is looking at, and told it is a
-        photograph it will talk about a printed page as though they had taken it.
-
-        ``shown`` says whether it went on the panel as well. A manual page is usually read without
-        being shown, and told nothing the model assumes they are looking at what it is - "as you
-        can see there" about a page that is not on any screen.
         """
-        page = kind == "page"
         if not self.connected:
             return
         await self._send_item(
@@ -3441,35 +3422,12 @@ class VoiceAgent:
                     {
                         "type": "input_text",
                         "text": (
-                            "[The "
-                            + ("page you just looked up" if page else "picture you just found")
-                            + (
-                                ", now on their screen."
-                                if shown
-                                else ". Only you can see it - it is not on their screen."
-                            )
-                            + " This is a real "
-                            + (
-                                "page of a manual on their card"
-                                if page
-                                else "photograph from their own card"
-                            )
-                            + ", so you may read it and answer "
+                            "[The picture you just found, now on their screen. This is a real "
+                            "photograph from their own card, so you may read it and answer "
                             "questions about what is in it - and prefer reading it to anything "
-                            "the search said about it, which was written to find the "
-                            + ("page" if page else "picture")
-                            + " rather than to describe it accurately."
-                            + (
-                                " They asked to see it and now they can: say so in a few words "
-                                "and stop, with nothing offered about what else it could do."
-                                if shown and page
-                                else " They are looking at it too, so do not narrate it unprompted."
-                                if shown
-                                else " If it does not answer them, they never hear about it - "
-                                "not what it shows, not what it lacks."
-                                if page
-                                else ""
-                            )
+                            "the search said about it, which was written to find the picture "
+                            "rather than to describe it accurately. They are looking at it too, "
+                            "so do not narrate it unprompted."
                             + (f" It is called {name}." if name else "")
                             + "]"
                         ),
@@ -3995,6 +3953,7 @@ def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
         *_imagine_tools(settings),
         *_project_tools(settings),
         *_recall_tools(settings),
+        *_manual_tools(settings),
         *TUTORIAL_TOOLS,
     ]
 
@@ -4086,6 +4045,19 @@ def _recall_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     return [RECALL_TOOL] if settings.recall else []
 
 
+def _manual_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
+    """The librarian, or nothing. ``CYCLOPS_MANUALS=0`` takes it out with the manuals block."""
+    return [ASK_MANUAL_TOOL] if settings.manuals else []
+
+
+def _warm_librarian() -> None:
+    """Import the librarian before the first question needs it: about a second on the Pi."""
+    try:
+        from . import librarian  # noqa: F401
+    except Exception:  # noqa: BLE001 - a failed warm-up is the first question paying instead
+        pass
+
+
 def _project_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """The five project tools, or none of them. ``CYCLOPS_PROJECTS=0`` leaves them out entirely.
 
@@ -4149,7 +4121,7 @@ def _tool_query(arguments: str | None) -> str:
 
 
 def _tool_show(arguments: str | None) -> bool:
-    """recall's optional 'show' flag. Only a real true counts; anything else leaves the panel be."""
+    """ask_manual's optional 'show' flag. Only a real true counts; anything else leaves the panel be."""
     try:
         args = json.loads(arguments or "{}")
     except json.JSONDecodeError:
@@ -4284,6 +4256,8 @@ def _activity_line(
         return _phrase("searching for", _tool_query(args), "searching the web")
     if call.name == "take_a_look":
         return "taking a look…"
+    if call.name == "ask_manual":
+        return "checking the manual…"
     if call.name == "draw":
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
     # Barely seen - the browser covers this strip about a second later - but the chain wants no

@@ -17,6 +17,11 @@ the manual's title or a page number, or owns up to a page that missed, and the l
 each question's first look. ``--script manual-cold`` is the same
 bench with only the notes-below-the-grid question, asked before anything has been read.
 
+``--script manual-mo`` asks five mo.unit questions through ``ask_manual`` and then one "look it up
+online", inside a real session folder under the bench, so its ``session.md`` shows each lookup's
+steps. The tally is per turn: which tools, whether "Let me check the manual." came before the
+call, responses, and seconds; the folder is printed at the end.
+
 No mic, no speaker, no camera and no session folder: ``VoiceAgent`` + ``send_text``, the way
 ``cyclops-smoke`` does its text turns. Every run is a fresh session, so the greeting is a real
 greeting: it arrives on its own as the session comes up, nobody types anything to get it, and it
@@ -117,6 +122,16 @@ MANUAL_SCRIPT = (
 # The notes-below-the-grid question with nothing read before it. In MANUAL_SCRIPT the slide
 # question usually reads page 12 first, so the page is already in hand by the time it is asked.
 MANUAL_COLD_SCRIPT = MANUAL_SCRIPT[:1] + MANUAL_SCRIPT[2:3]
+# The mo.unit questions that went wrong on the Pi (sessions 2026-09-30 to 10-05), as he would say
+# them, then one "look it up online" that must go to the web and not the manual.
+MANUAL_MO_SCRIPT = (
+    "I'm wiring the mo.unit blue on the BMW. How do I get into the setup menu, exactly?",
+    "What modes can I set for the light input?",
+    "And how do I get the tail light to come on only when the engine's running?",
+    "Do the inputs take twelve volts?",
+    "What's the difference between handlebar configuration B and C?",
+    "Look it up online for me: what's the cylinder head bolt torque on a BMW R80?",
+)
 # The question the greeting was glued onto on the Pi ("Seventh run today; keep it tidy."), asked
 # after a greeting that now has a turn of its own. Its answer is about a smiley face or it failed.
 SMILEY_SCRIPT = ("Hey, can you draw a smiley face on this scratchpad?",)
@@ -153,6 +168,7 @@ SCRIPTS = {
     "tutorial": TUTORIAL_SCRIPT,
     "manual": MANUAL_SCRIPT,
     "manual-cold": MANUAL_COLD_SCRIPT,
+    "manual-mo": MANUAL_MO_SCRIPT,
     "smiley": SMILEY_SCRIPT,
     "synth": SYNTH_SCRIPT,
 }
@@ -190,6 +206,10 @@ WARMTH_WORDS = (
     "nice catch", "good thinking", "right call", "the right call", "well played", "tidy",
     "that's the one", "earned", "not bad", "decent", "handsome", "clean job", "worth it",
 )
+
+
+# The calls whose spoken preamble is measured: "Let me check the manual." belongs before them.
+LOOKUPS = ("recall", "ask_manual")
 
 
 class Turn:
@@ -230,10 +250,11 @@ class Turn:
             case "response.done":
                 calls = [call.name for call in function_calls(event.response)]
                 self.tools.extend(calls)
-                if "recall" in calls and self.before_recall is None:
+                looked = next((c for c in calls if c in LOOKUPS), None)
+                if looked and self.before_recall is None:
                     output = event.response.output or []
                     at = next(i for i, item in enumerate(output)
-                              if item.type == "function_call" and item.name == "recall")
+                              if item.type == "function_call" and item.name == looked)
                     self.before_recall = " ".join(
                         text.strip() for rid, index, text in self.spoken
                         if rid != event.response.id or index < at
@@ -276,10 +297,10 @@ def _spy_on_recall(agent: VoiceAgent, current: list[Turn]) -> None:
     """Note every recall the agent runs - what it asked for, and what it was handed back."""
     real = agent._recall
 
-    async def spy(query: str, project: str, *, show: bool = False) -> dict:
-        out = await real(query, project, show=show)
+    async def spy(query: str, project: str) -> dict:
+        out = await real(query, project)
         current[0].recalls.append(
-            {"query": query, "show": show, "title": out.get("title", ""), "hits": out.get("hits")}
+            {"query": query, "show": False, "title": out.get("title", ""), "hits": out.get("hits")}
         )
         return out
 
@@ -297,9 +318,34 @@ async def _greeting(agent: VoiceAgent, agent_task: asyncio.Task, turn: Turn) -> 
 async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT, linger=None) -> None:
     settings = load_settings()
     agent = VoiceAgent(settings)
+    if script == MANUAL_MO_SCRIPT:
+        await _logged_run(run, out, script, settings, agent)
+        return
+    await _turns(run, out, script, agent, linger)
+
+
+async def _logged_run(run: int, out, script: tuple[str, ...], settings, agent: VoiceAgent) -> None:
+    """The same turns inside a real session folder, so session.md is written as on the Pi.
+
+    Nothing is handed to cyclops.after: naming and filing a probe's session is not the question.
+    """
+    from cyclops import after
+
+    after.wanted = lambda settings: False
+    with session.SessionLog(settings, agent, entrypoint="probe") as log:
+        await _turns(run, out, script, agent, None, log.observe)
+        folder = log.dir
+    print(f"· session folder: {folder}", flush=True)
+    out.write(json.dumps({"run": run, "session": str(folder)}) + "\n")
+
+
+async def _turns(run: int, out, script, agent: VoiceAgent, linger=None, also=None) -> None:
+    def listen(turn: Turn) -> None:
+        agent.on_event = turn if also is None else (lambda event: (turn(event), also(event)))
+
     current = [Turn()]
     _spy_on_recall(agent, current)
-    agent.on_event = current[0]  # before the connect: the greeting comes with the session
+    listen(current[0])  # before the connect: the greeting comes with the session
     agent_task = asyncio.create_task(agent.run())
     try:
         for index, line in enumerate(("", *script)):
@@ -308,7 +354,9 @@ async def _one_run(run: int, out, script: tuple[str, ...] = SCRIPT, linger=None)
                 await _greeting(agent, agent_task, turn)
             else:
                 turn = current[0] = Turn()
-                agent.on_event = turn
+                listen(turn)
+                if also is not None:  # typed, so there is no transcription event to log it
+                    session.note("you", text=line)
                 await agent.send_text(line)
                 await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
             record = {
@@ -368,7 +416,7 @@ async def _manual_bench() -> None:
 
 
 async def _probe(runs: int, out_path: Path, script: tuple[str, ...] = SCRIPT) -> int:
-    if script in (MANUAL_SCRIPT, MANUAL_COLD_SCRIPT):
+    if script in (MANUAL_SCRIPT, MANUAL_COLD_SCRIPT, MANUAL_MO_SCRIPT):
         await _manual_bench()
     if script == SMILEY_SCRIPT:
         return await _smiley(runs, out_path)
@@ -909,6 +957,29 @@ def manual_tally(records: list[dict]) -> None:
         print(f"  run {r['run']} t{r['turn']} {h}: {r['cyclops']!r}")
 
 
+def manual_mo_tally(records: list[dict]) -> None:
+    """Per turn: the tools, the line before the lookup, responses, seconds and what it said."""
+    folders = [r["session"] for r in records if "session" in r]
+    turns = [r for r in records if "turn" in r and r["turn"] > 0]
+    for r in turns:
+        before = (r.get("before_recall") or "").replace("\u2019", "'")
+        manual = "ask_manual" in r["tools"]
+        web = "web_search" in r["tools"]
+        flags = [
+            "ask_manual" if manual else "", "web_search" if web else "",
+            "announced" if manual and before.strip().rstrip(".").lower() == "let me check the manual"
+            else ("ANNOUNCE?" if manual else ""),
+        ]
+        print(f"run {r['run']} t{r['turn']} {r['answer_s']:4.1f}s {r['responses']} resp "
+              f"[{' '.join(f for f in flags if f)}] tools={r['tools']}")
+        print(f"    you: {r['you']!r}")
+        if manual:
+            print(f"    before the call: {before!r}")
+        print(f"    {r['cyclops']!r}")
+    for folder in folders:
+        print(f"session.md: {folder}/session.md")
+
+
 # What the smiley's answer must not be about: the moment the greeting was about. A hit is a
 # candidate, printed for reading - "two eyes" is a number and is not the clock.
 CLOCK_WORDS = TIME_WORDS | frozenset("""
@@ -946,7 +1017,7 @@ def timing(records: list[dict]) -> None:
 
 def tally(path: Path) -> None:
     records = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    said = {r["you"] for r in records}
+    said = {r.get("you") for r in records}
     if PICO_HANDS_SCRIPT[0] in said:
         pico_hands_tally(records)
         return
@@ -955,6 +1026,9 @@ def tally(path: Path) -> None:
         return
     if MANUAL_SCRIPT[0] in said:
         manual_tally(records)
+        return
+    if MANUAL_MO_SCRIPT[0] in said:
+        manual_mo_tally(records)
         return
     if DRAW_SCRIPT[0] in said:
         draw_tally(records)

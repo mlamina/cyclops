@@ -202,7 +202,7 @@ def test_asking_for_a_video_again_plays_it_rather_than_showing_a_picture(tmp_pat
     monkeypatch.setattr(agent.VoiceAgent, "_play_video", fake_play)
     monkeypatch.setattr(session, "note", lambda *a, **k: None)
     one = agent.VoiceAgent(Settings(api_key=""))
-    out = asyncio.run(one._replay("that honing video", _hit(tmp_path), []))
+    out = asyncio.run(one._replay("that honing video", _hit(tmp_path)))
     assert out["ok"] and played["asked"] == "abc"
     assert played["found"].start == 312 and played["found"].stream.endswith("fresh.mp4")
     assert played["thumb"] == b"\xff\xd8thumb"  # the card's own copy, not fetched again
@@ -224,7 +224,7 @@ def test_a_video_that_will_not_resolve_still_puts_its_picture_up(tmp_path, monke
         agent.VoiceAgent, "_show_found", lambda self, path: (shown.setdefault("p", path), b"")
     )
     one = agent.VoiceAgent(Settings(api_key=""))
-    out = asyncio.run(one._replay("that honing video", _hit(tmp_path), []))
+    out = asyncio.run(one._replay("that honing video", _hit(tmp_path)))
     assert out["ok"] and out["kind"] == "video"
     assert "will not play" in out["note"]
     assert shown["p"].name == "a.jpg"

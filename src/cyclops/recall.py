@@ -350,31 +350,6 @@ def _images_in(folder: Path, scope: str, log_captions: dict[str, str], kind: str
 # page came back three times on 18 Sep for "copy a pattern" and "what a pattern is". Deliberately
 # narrow: "warranty" and "legal" are also in the headings of real wiring pages.
 FRONT_MATTER = re.compile(r"\b(cover|copyright|trademark)", re.IGNORECASE)
-# "page 29", "p. 29", "pg 29" - a page number asked for by name.
-PAGE_ASKED = re.compile(r"\b(?:page|pg\.?|p\.)\s*(\d{1,4})\b", re.IGNORECASE)
-
-
-def page_asked(query: str) -> int | None:
-    """The page number a query names, if it names one."""
-    found = PAGE_ASKED.search(query)
-    return int(found.group(1)) if found else None
-
-
-def page_of(index: Index, query: np.ndarray, *, scopes: set[str] | None, number: int) -> Hit | None:
-    """Page ``number`` of whichever manual the query is most about, or ``None``.
-
-    The manual is the one whose pages rank highest for the query; the page is then taken by its
-    number, not its meaning, because a page number has no meaning to embed.
-    """
-    wanted = f"{number:04d}"
-    for hit in rank(index, query, scopes=scopes, limit=len(index)):
-        if hit.item.kind != "page":
-            continue
-        for item in index.items:
-            if item.scope == hit.item.scope and item.kind == "page" and Path(item.path).stem == wanted:
-                return Hit(item=item, score=hit.score)
-        return None
-    return None
 
 
 def manual_items(folder: Path) -> list[Item]:
@@ -738,6 +713,24 @@ class Index:
 
 def empty() -> Index:
     return Index(items=[], vectors=np.zeros((0, EMBED_DIMS), dtype=np.float32))
+
+
+MANUAL_SCOPE = "manual:"
+
+
+def _keep(index: Index, manual: bool) -> Index:
+    rows = [n for n, item in enumerate(index.items) if item.scope.startswith(MANUAL_SCOPE) == manual]
+    return Index(items=[index.items[n] for n in rows], vectors=index.vectors[rows])
+
+
+def only_manuals(index: Index) -> Index:
+    """The manual rows, for :mod:`cyclops.librarian` - the one thing that searches them."""
+    return _keep(index, manual=True)
+
+
+def without_manuals(index: Index) -> Index:
+    """Everything but the manuals: what ``recall`` searches. Manuals are the librarian's."""
+    return _keep(index, manual=False)
 
 
 def dump(index: Index) -> bytes:
