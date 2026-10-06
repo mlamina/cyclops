@@ -45,8 +45,13 @@ REQUEST_TIMEOUT_S = 20.0
 # maybe one more search or a look at a diagram, answer.
 LIMITS = UsageLimits(request_limit=8, tool_calls_limit=16, cost_limit=Decimal("0.05"))
 
+# Full resolution. "high" scales a page to 768 px on its short side, and on Revival's 3300 px
+# diagram that read right turn as green and start as yellow; "original" read all five wires right,
+# for about 10k input tokens.
+IMAGE_DETAIL = "original"
 SEARCH_HITS = 8
-FIND_HITS = 12
+PRE_READ = 3  # the first search's best pages, read into the opening prompt
+FIND_HITS = 10
 SNIPPET_CHARS = 220
 MAX_PAGE_CHARS = 6000
 MAX_QUESTION_CHARS = 600
@@ -57,8 +62,9 @@ hands are full. Cyclops sends you one question; you find the answer in the manua
 a few lines it can say out loud.
 
 How to look:
-- The first search has already been run for you; its hits are under the question. Read the
-  likeliest pages before answering - a search hit is a pointer, never the answer.
+- The first search has already been run for you and its top pages read; both are under the
+  question. If those pages do not hold the whole answer, read more - a search hit is a pointer,
+  never the answer.
 - Read neighbouring pages when a procedure or a menu list runs over a page break.
 - Use find for exact words: a menu number ("Menu 8"), a terminal ("AUX1"), a button name, a
   setting. Use search again, worded differently, when the first hits miss.
@@ -70,6 +76,8 @@ How to look:
 How to answer:
 - answer: two to four short spoken sentences. Lead with the answer itself. Give the exact value,
   option letter, menu number, wire colour or press sequence as printed - never "see the manual".
+  A press sequence starts from where they are: every button in order, including the one that
+  opens the menu or mode the control lives in.
   No page numbers and no manual titles in it; Cyclops cites them only when asked.
 - pages: every page the answer came from.
 - Never answer from general knowledge. If the manuals do not say, answered is false and why_not
@@ -188,26 +196,36 @@ async def contents(ctx: RunContext[Shelf], manual: str) -> str:
     return "\n".join(f"p{n}: {page.get('heading', '')}" for n, page in pages.items())
 
 
-async def _search(shelf: Shelf, query: str, manual: str | None) -> str:
+async def _ranked(shelf: Shelf, query: str, scope: str | None) -> list[tuple[Manual, int, float]]:
+    """The best pages for a query by meaning, as (manual, page, score)."""
+    vector = await recall.embed([query], shelf.client)
+    out = []
+    # Deeper than SEARCH_HITS: each manual has one row for itself as well as one per page.
+    limit = SEARCH_HITS + len(shelf.held)
+    for hit in recall.rank(shelf.index, vector[0], scopes={scope} if scope else None, limit=limit):
+        owner = shelf.by_scope(hit.item.scope)
+        if owner is None or hit.item.kind != "page":
+            continue
+        out.append((owner, int(Path(hit.item.path).stem), hit.score))
+    return out[:SEARCH_HITS]
+
+
+async def _search(shelf: Shelf, query: str, manual: str | None) -> tuple[str, list]:
+    """The search tool's text, and the ranked pages behind it."""
     one = shelf.manual(manual) if manual else None
     if manual and one is None:
-        return _missing(shelf, manual)
+        return _missing(shelf, manual), []
     if shelf.client is None or not len(shelf.index):
-        return "Search by meaning is not available; use find or contents."
-    vector = await recall.embed([query], shelf.client)
-    scopes = {one.scope} if one else None
-    out = []
-    for hit in recall.rank(shelf.index, vector[0], scopes=scopes, limit=SEARCH_HITS):
-        owner = shelf.by_scope(hit.item.scope)
-        if owner is None:
-            continue
-        number = int(Path(hit.item.path).stem)
+        return "Search by meaning is not available; use find or contents.", []
+    ranked = await _ranked(shelf, query, one.scope if one else None)
+    lines = []
+    for owner, number, score in ranked:
         page = shelf.pages(owner).get(str(number), {})
-        out.append(
-            f"{owner.key} p{number} ({hit.score:.2f}) {page.get('heading', '')}: "
+        lines.append(
+            f"{owner.key} p{number} ({score:.2f}) {page.get('heading', '')}: "
             f"{snippet(_words(page), query)}"
         )
-    return "\n".join(out) or "Nothing matches."
+    return "\n".join(lines) or "Nothing matches.", ranked
 
 
 @librarian.tool
@@ -219,15 +237,16 @@ async def search(ctx: RunContext[Shelf], query: str, manual: str | None = None) 
         manual: a manual's key to search only that one; leave out to search all of them.
     """
     ctx.deps.steps.append(f"search {query!r}" + (f" in {manual}" if manual else ""))
-    return await _search(ctx.deps, query, manual)
+    return (await _search(ctx.deps, query, manual))[0]
 
 
 @librarian.tool
 async def find(ctx: RunContext[Shelf], words: str, manual: str | None = None) -> str:
-    """Exact text match, case-insensitive: every page containing these words.
+    """Text match, case-insensitive. Pages with the exact phrase come first, then pages holding
+    every one of the words anywhere, the most mentions first.
 
     Args:
-        words: the exact words - "Menu 8", "AUX1", "horn pushbutton".
+        words: the words - "Menu 8", "AUX1", "lower notes".
         manual: a manual's key; leave out to look in all of them.
     """
     ctx.deps.steps.append(f"find {words!r}" + (f" in {manual}" if manual else ""))
@@ -237,19 +256,29 @@ async def find(ctx: RunContext[Shelf], words: str, manual: str | None = None) ->
         if one is None:
             return _missing(ctx.deps, manual)
         held = [one]
-    wanted = " ".join(words.lower().split())
-    out = []
-    for one in held:
-        for n, page in ctx.deps.pages(one).items():
-            text = _words(page)
-            at = text.lower().find(wanted)
-            if at < 0:
-                continue
-            start = max(0, at - SNIPPET_CHARS // 2)
-            out.append(f"{one.key} p{n} {page.get('heading', '')}: …{text[start:start + SNIPPET_CHARS]}…")
-            if len(out) >= FIND_HITS:
-                return "\n".join(out) + "\n(more matches not shown)"
+    hits = sorted(_matches(ctx.deps, held, words), key=lambda hit: hit[0], reverse=True)
+    out = [line for _, line in hits[:FIND_HITS]]
+    if len(hits) > FIND_HITS:
+        out.append(f"({len(hits) - FIND_HITS} more pages match; add a word to narrow it)")
     return "\n".join(out) or f"No page contains {words!r}."
+
+
+def _matches(shelf: Shelf, held: list[Manual], words: str) -> list[tuple[float, str]]:
+    """(rank, line) for every page that holds the phrase, or failing that, all of its words."""
+    phrase = " ".join(words.lower().split())
+    terms = phrase.split()
+    found = []
+    for one in held:
+        for n, page in shelf.pages(one).items():
+            text = _words(page)
+            low = text.lower()
+            exact = low.count(phrase)
+            if not exact and not all(term in low for term in terms):
+                continue
+            rank = exact * 100 + sum(low.count(term) for term in terms)
+            line = f"{one.key} p{n} {page.get('heading', '')}: {snippet(text, phrase)}"
+            found.append((rank, line))
+    return found
 
 
 @librarian.tool
@@ -264,7 +293,11 @@ async def read(ctx: RunContext[Shelf], manual: str, page: int) -> str:
     one = ctx.deps.manual(manual)
     if one is None:
         return _missing(ctx.deps, manual)
-    found = ctx.deps.pages(one).get(str(page))
+    return _page_text(ctx.deps, one, page)
+
+
+def _page_text(shelf: Shelf, one: Manual, page: int) -> str:
+    found = shelf.pages(one).get(str(page))
     if found is None:
         return f"{one.key} has no page {page}; it has {one.pages}."
     figures = [
@@ -292,7 +325,7 @@ async def look(ctx: RunContext[Shelf], manual: str, page: int) -> BinaryContent 
         blob = page_image(one, page).read_bytes()
     except OSError:
         return f"{one.key} has no picture of page {page}."
-    return BinaryContent(blob, media_type="image/jpeg", vendor_metadata={"detail": "high"})
+    return BinaryContent(blob, media_type="image/jpeg", vendor_metadata={"detail": IMAGE_DETAIL})
 
 
 def page_image(manual: Manual, page: int) -> Path:
@@ -350,9 +383,7 @@ async def ask(
         if not shelf.held:
             answer = ManualAnswer(answered=False, why_not="There are no manuals on the card.")
             return Lookup(question, answer, [], 0.0, 0, 0.0)
-        first = await _search(shelf, question, None)
-        shelf.steps.append(f"search {question!r}")
-        prompt = f"{question}\n\nFirst search, already run:\n{first}"
+        prompt = await _opening(shelf, question)
         result = await librarian.run(
             prompt, deps=shelf, model=model, usage_limits=LIMITS, model_settings=SETTINGS
         )
@@ -371,6 +402,25 @@ async def ask(
                 await client.close()
             except Exception:  # noqa: BLE001 - closing is never worth an exception
                 pass
+
+
+async def _opening(shelf: Shelf, question: str) -> str:
+    """The question, the first search, and the top pages already read.
+
+    Read here rather than left to the model, because a request saved is a second saved, and
+    the misses in the eval were answers written off a snippet.
+    """
+    first, ranked = await _search(shelf, question, None)
+    shelf.steps.append(f"search {question!r}")
+    pages = []
+    for one, number, _ in ranked[:PRE_READ]:
+        shelf.steps.append(f"read {one.key} p{number}")
+        pages.append(_page_text(shelf, one, number))
+    read = "\n\n".join(pages)
+    return (
+        f"{question}\n\nFirst search, already run:\n{first}"
+        + (f"\n\nThe top {len(pages)} pages, already read:\n\n{read}" if pages else "")
+    )
 
 
 def _cost(messages: list) -> float:
