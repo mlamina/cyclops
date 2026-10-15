@@ -33,7 +33,7 @@
   .lede { color: var(--muted); font-size: 20px; max-width: 32em; margin: 0 auto; }
 
   .panel { margin: 0 auto; max-width: 820px; padding: 10px; border-radius: 16px; background: linear-gradient(145deg, #3a3a36, #15140f 50%, #2b2a24); box-shadow: 0 24px 70px rgba(0,0,0,.6); }
-  .panel img { display: block; width: 100%; border-radius: 8px; }
+  .panel img, .panel video { display: block; width: 100%; border-radius: 8px; }
   .caption { text-align: center; color: var(--muted); font-size: 15px; margin: 14px 0 0; }
 
   section { padding: 80px 0 0; }
@@ -84,6 +84,9 @@
 
   @media (max-width: 820px) { .ways { grid-template-columns: 1fr; } .uses, .build { grid-template-columns: 1fr 1fr; } }
   @media (max-width: 520px) { .uses { grid-template-columns: 1fr; } header { padding-top: 48px; } }
+  .demo { position: relative; }
+  .demo .play { position: absolute; inset: 10px; border: 0; border-radius: 8px; cursor: pointer; background: rgba(0,0,0,.25); }
+  .demo .play::after { content: ""; position: absolute; left: 50%; top: 50%; width: 96px; height: 96px; transform: translate(-50%,-50%); border-radius: 50%; background: rgba(0,0,0,.6) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M8 5v14l11-7z' fill='white'/%3E%3C/svg%3E") center/48px no-repeat; }
 </style>
 </head>
 <body>
@@ -99,7 +102,7 @@
     </div>
   </header>
 
-  <div class="panel"><img src="img/panel.png" alt="The Cyclops screen: a camera view of a Raspberry Pi Pico wired to an LCD, framed by a steel bezel with gauges"></div>
+  <div class="panel demo"><video src="https://storage.googleapis.com/arc-eng-videos/Cyclops%20Demo.mp4" poster="img/panel.png" playsinline preload="none" aria-label="Cyclops demo video"></video><button class="play" aria-label="Play the demo video"></button></div>
   <p class="caption">What you see when you turn Cyclops on: the camera's view of your bench, framed by its panel.</p>
 
   <section>
@@ -154,6 +157,10 @@
 </div>
 
 <script>
+  document.querySelector('.demo .play').addEventListener('click', e => {
+    const v = document.querySelector('.demo video');
+    e.currentTarget.remove(); v.controls = true; v.play();
+  });
   (() => {
     const slides = [...document.querySelectorAll('.ui figure')];
     const dots = document.querySelector('.dots');
