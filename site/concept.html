@@ -634,7 +634,7 @@ nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     if (w > 760) camera.setViewOffset(w, h, -w * 0.24, 0, w, h);
-    else camera.setViewOffset(w, h, 0, h * 0.2, w, h);
+    else camera.setViewOffset(w, h, 0, h * 0.24, w, h);
     camera.updateProjectionMatrix();
   }
   addEventListener("resize", resize); resize();
@@ -649,7 +649,9 @@ nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px
       [...dots.children].forEach((d, i) => d.classList.toggle("on", i === active));
     }
     product.rotation.y = cur.ry + (reduce ? 0 : Math.sin(t * 0.4) * 0.03);
-    camera.position.set(cur.tx, cur.ty + cur.dist * Math.sin(cur.el), cur.dist * Math.cos(cur.el));
+    // narrow screens: back the camera off so the whole device fits the width
+    const dist = cur.dist * (innerWidth <= 760 ? Math.max(1, 1.05 / camera.aspect) : 1);
+    camera.position.set(cur.tx, cur.ty + dist * Math.sin(cur.el), dist * Math.cos(cur.el));
     camera.lookAt(cur.tx, cur.ty, 0);
 
     guards.forEach(g => g.g.position.copy(g.base).addScaledVector(g.dir, cur.explode * 1.8).setZ(cur.explode * 0.5));
