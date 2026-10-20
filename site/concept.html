@@ -36,7 +36,9 @@ section { min-height: 100vh; display: flex; align-items: center; }
 .copy { max-width: 30rem; display: grid; gap: 0.9rem; }
 .label { font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
 h1, h2 { font-family: var(--display); font-weight: 700; font-stretch: 112%; letter-spacing: -0.01em; line-height: 1.02; margin: 0; text-wrap: balance; }
-h1 { font-size: clamp(2.8rem, 7vw, 5.2rem); }
+h1 { font-size: clamp(2.4rem, 5vw, 4.2rem); }
+.hero .copy { max-width: 36rem; }
+.hero .lede { max-width: 34ch; }
 h2 { font-size: clamp(1.8rem, 3.6vw, 2.7rem); }
 p { margin: 0; color: var(--muted); max-width: 34ch; font-size: 1.05rem; }
 .lede { font-size: 1.2rem; color: var(--ink); max-width: 30ch; }
@@ -70,8 +72,8 @@ nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px
 <main>
   <section class="hero" data-key="hero">
     <div class="copy">
-      <h1>Stay in the work</h1>
-      <p class="lede">Cyclops answers your questions, finds the right page and remembers where you left off. You never stop to wipe your hands and dig out a phone.</p>
+      <h1>Cyclops, your workshop droid</h1>
+      <p class="lede">A one-eyed helper that clamps next to your project. It has a camera, a screen and a voice. Talk to it while you work: it sees the part in your hands, answers your question, finds the page in the manual and remembers what you did last time.</p>
       <span class="hint">Scroll to take it apart ↓</span>
     </div>
   </section>
