@@ -19,7 +19,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from . import barge, companion, voice
-from .agent import VoiceAgent
+from .agent import CARRIED_TURNS, VoiceAgent
 from .audio import (
     EchoGuard,
     Microphone,
@@ -63,6 +63,9 @@ def failure(exc: BaseException) -> str:
     return message
 
 
+CARRY_OVER_S = 300.0  # a session starting within this of the last one is told how that one ended
+
+
 class SessionController:
     """Starts/stops a VoiceAgent on its own thread and reports a thread-safe status snapshot.
 
@@ -103,10 +106,31 @@ class SessionController:
         self._phase = ""
         self._closing = False  # a teardown is under way; see the property below
         self._ear: Ear | None = None  # what heard him, for a session a voice is starting
+        # How the last conversation ended and when, in memory only: its folder may be gone by the
+        # time the next one starts, and its summary is not written yet (arc-eng/hq#572).
+        self._last_turns: tuple[tuple[str, str], ...] = ()
+        self._last_ended_at = 0.0
 
     @property
     def _running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    @property
+    def running(self) -> bool:
+        """Is a session's thread alive, teardown included? :meth:`start` does nothing until not."""
+        return self._running
+
+    @property
+    def speaking(self) -> bool:
+        """Is his voice still coming out of the box? Read on the audio thread, so no lock."""
+        speaker = self._speaker
+        return speaker is not None and speaker.is_audible
+
+    def _earlier(self) -> tuple[tuple[str, str], ...]:
+        """What the session starting now should know about the last one."""
+        if time.monotonic() - self._last_ended_at > CARRY_OVER_S:
+            return ()
+        return self._last_turns
 
     def start(self, *, ear: Ear | None = None) -> None:
         """Start a session. ``ear`` is the listener that heard him, when a voice started it:
@@ -404,7 +428,8 @@ class SessionController:
         # variable holds - see cyclops.voice.
         live = replace(s, half_duplex=half, voice=voice.chosen(s))
         ear, self._ear = self._ear, None
-        agent = VoiceAgent(live, mic=mic, speaker=speaker, guard=guard, ear=ear)
+        earlier = self._earlier()
+        agent = VoiceAgent(live, mic=mic, speaker=speaker, guard=guard, ear=ear, earlier=earlier)
         guard.on_barge_in = agent.local_barge_in
         # Ending itself - two quiet minutes, or a goodbye - is the button's stop from the
         # agent's side, so the panel shows the same closing and the log the same teardown.
@@ -435,5 +460,8 @@ class SessionController:
             finally:
                 mic.stop()  # no more audio callbacks, so the recorder can flush what it has
                 speaker.stop()
+                # Kept across a session that said nothing, so a mis-start can't lose the thread.
+                self._last_turns = (*earlier, *agent.spoken)[-CARRIED_TURNS:]
+                self._last_ended_at = time.monotonic()
                 if ear is not None:
                     ear.close()  # a session that never got as far as taking it

@@ -173,7 +173,7 @@ PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 # before anybody concludes it is broken. Phones use half a second; this asks for a little more
 # because there is no way back from one of the two things it offers.
 LONG_PRESS_S = 0.7
-EAR_HOLD_S = 3.0  # deaf this long after a session, so its last sounds cannot start the next
+EAR_HOLD_S = 0.5  # deaf this long after a session's voice stops, so the room's tail starts nothing
 # ...and this long after any cue has finished. Cues.waiting() ends on the file's length, and 17
 # of the box's 20 sounds pass the speech gate on their own (qa, mlamina/cyclops#1): the output
 # runs behind what was handed to it, and the room rings on after.
@@ -1662,11 +1662,14 @@ class Kiosk:
     def _tend_ear(self, raw: str, now: float) -> None:
         """Keep the ear open while no session is, and start one when it hears him. Each frame.
 
-        Open only when a session could start from it: not during one or on the way in or out,
-        not over a menu or the network picker, and not with no network. Deaf while the box is
-        making a sound of its own and for :data:`EAR_HOLD_S` after a session, so the lid closing
-        and the last of his voice cannot start the next one; longer after a failed start, so a
-        bad key or a dead socket is not retried every time somebody says a word.
+        Open only when a session could start from it: not during one or on the way in, not over
+        a menu or the network picker, and not with no network. It is open on the way *out*: what
+        he says as a session closes has to reach the next one (arc-eng/hq#572), so it opens the
+        moment the close starts, collects, and hands over when the old session's thread is gone.
+        Deaf while the box is making a sound or his voice is coming out, and for
+        :data:`EAR_HOLD_S` after a session, so his last word cannot start the next one; longer
+        after a failed start, so a bad key or a dead socket is not retried every time somebody
+        says a word.
 
         On a start the ear is handed to the session and forgotten here: it goes on collecting
         what he says until the model can hear it, and the session closes it.
@@ -1676,11 +1679,11 @@ class Kiosk:
         if raw == ERROR and self._ear_state != ERROR:
             self._ear_quiet_until = now + EAR_FAILED_HOLD_S
         self._ear_state = raw
-        if session_up(raw) or self._pending is not None:
+        closing = self.controller.closing
+        if (session_up(raw) or self._pending is not None) and not closing:
             self._ear_quiet_until = max(self._ear_quiet_until, now + EAR_HOLD_S)
         wanted = (
-            not session_up(raw)
-            and self._pending is None
+            (closing or (not session_up(raw) and self._pending is None))
             and not self._menu
             and self._wifi is None
             and self._online is not False
@@ -1696,6 +1699,8 @@ class Kiosk:
                 return
         if not self._ear.heard.is_set():
             return
+        if self.controller.running:
+            return  # the last one is still closing; the ear goes on collecting until it's gone
         heard, self._ear = self._ear, None
         print("· heard somebody talking: starting a session", flush=True)
         if self._asleep:
@@ -1729,6 +1734,8 @@ class Kiosk:
         left = self._cues.waiting()
         if left > 0:
             self._ear_quiet_until = max(self._ear_quiet_until, now + left + EAR_CUE_TAIL_S)
+        if self.controller.speaking:
+            self._ear_quiet_until = max(self._ear_quiet_until, now + EAR_HOLD_S)
         return now < self._ear_quiet_until
 
     def _close_ear(self) -> None:

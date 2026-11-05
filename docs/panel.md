@@ -33,7 +33,9 @@ said and nothing sounds, so it just stops. The hold still starts and ends one, s
 
 Before a session starts, what the mic hears is held in memory for two seconds and overwritten -
 never written down, logged or sent. It is deaf while the box is making a sound of its own and for
-a few seconds after a session, so its own voice cannot start the next one.
+half a second after its voice stops, so its own voice cannot start the next one. It listens while
+a session closes, so what you say then goes to the next one, and a session starting within five
+minutes of the last knows how that conversation ended.
 
 ## Holding his eye shuts the box down
 

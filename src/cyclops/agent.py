@@ -933,6 +933,18 @@ _SOMEBODY_SPOKE = frozenset({
     "response.output_audio.delta",
 })
 QUIET_CHECK_S = 1.0  # how often the quiet timer looks; the end lands within this of the limit
+# What a session starting soon after another one is told about it (arc-eng/hq#572). The turns are
+# kept in memory by the controller, so this works when the last session was thrown away as empty
+# and before its summary exists.
+CARRIED_TURNS = 12
+CARRIED_HEADER = """\
+JUST BEFORE THIS
+You were talking with them a moment ago, and to them it is the same conversation. The last of it:
+"""
+CARRIED_FOOTER = """\
+If they pick any of this up, you know what they mean: carry on, without asking what they are
+referring to. Do not recap it, do not mention that there was a pause, and do not raise it yourself.
+"""
 GOODBYE_MAX_S = 10.0  # the longest end_session waits for the goodbye to finish sounding
 TUTORIAL_TOOL_NAMES = frozenset(tool["name"] for tool in TUTORIAL_TOOLS)
 
@@ -1349,6 +1361,14 @@ def _standing(settings: Settings, found: tuple[devices.Device, ...]) -> tuple[st
     return "\n".join(blocks), moment.text if moment else ""
 
 
+def _carried_block(turns: tuple[tuple[str, str], ...]) -> str:
+    """The end of the conversation that just stopped, or nothing if none did."""
+    if not turns:
+        return ""
+    said = "\n".join(f"{'They' if who == 'you' else 'You'}: {text}" for who, text in turns)
+    return f"\n{CARRIED_HEADER}{said}\n{CARRIED_FOOTER}"
+
+
 class SessionError(RuntimeError):
     """The server rejected something during session setup (before ``session.updated``)."""
 
@@ -1422,8 +1442,12 @@ class VoiceAgent:
         speaker: Speaker | None = None,
         guard: EchoGuard | None = None,
         ear: Ear | None = None,
+        earlier: tuple[tuple[str, str], ...] = (),
     ) -> None:
         self.settings = settings
+        # The last turns of the session that ended moments ago, if one did; see CARRIED_HEADER.
+        self.earlier = earlier
+        self.spoken: list[tuple[str, str]] = []  # ("you" or "cyclops", text), as they are said
         self.mic = mic
         self.speaker = speaker
         self.guard = guard
@@ -1677,7 +1701,8 @@ class VoiceAgent:
         self._plugged = devices.connected()
         self._extensions = extensions.load()  # once a session, so a new module needs no restart
         self._matched = extensions.matching(self._plugged, self._extensions)
-        self._prompt = _standing(self.settings, self._plugged)
+        head, clock = _standing(self.settings, self._plugged)
+        self._prompt = (head + _carried_block(self.earlier), clock)
         self._tools = _offered_tools(self.settings)
         config: RealtimeSessionCreateRequestParam = {
             "type": "realtime",
@@ -2053,6 +2078,10 @@ class VoiceAgent:
         if self.on_end is not None:
             self.on_end()
 
+    def _remember_turn(self, who: str, text: str | None) -> None:
+        if said := (text or "").strip():
+            self.spoken.append((who, said))
+
     async def _pump_mic(self) -> None:
         assert self.mic is not None
         async for chunk in self.mic.chunks():
@@ -2079,6 +2108,10 @@ class VoiceAgent:
     async def _handle_event(self, event: RealtimeServerEvent) -> None:
         if event.type in _SOMEBODY_SPOKE:
             self._heard_at = time.monotonic()
+        if event.type == "conversation.item.input_audio_transcription.completed":
+            self._remember_turn("you", event.transcript)
+        elif event.type == "response.output_audio_transcript.done":
+            self._remember_turn("cyclops", event.transcript)
         match event.type:
             case "session.created":
                 self._log(
