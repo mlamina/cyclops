@@ -38,7 +38,9 @@ from pathlib import Path
 # real project's notes (arc-eng/hq#572). The scratch folders are created empty, so the prompt is
 # smaller than on a used box - fine for a comparison, not for an absolute number.
 _SCRATCH = Path(tempfile.mkdtemp(prefix="cyclops-latency-"))
-for _name, _sub in (("SESSIONS", "sessions"), ("PROJECTS", "projects"), ("CAPTURES", "captures")):
+_DIRS = (("SESSIONS", "sessions"), ("PROJECTS", "projects"), ("CAPTURES", "captures"),
+         ("MANUALS", "manuals"))  # no manuals, so no lookup can put a page on his panel
+for _name, _sub in _DIRS:
     (_SCRATCH / _sub).mkdir()
     os.environ[f"CYCLOPS_{_name}_DIR"] = str(_SCRATCH / _sub)
 os.environ["CYCLOPS_ABOUT_FILE"] = str(_SCRATCH / "about-you.md")
@@ -201,10 +203,12 @@ def one_run(
     ended = ROOM.say(second)
     mid_s = wait_answer(ended)
     mid_heard = STOPPED[0] - ended if STOPPED else float("nan")
+    stopping = time.monotonic()
     controller.stop()
     while controller._running:  # noqa: SLF001
         time.sleep(0.05)
     return {"start_s": ready - asked, "first_s": first_s, "mid_s": mid_s,
+            "close_s": time.monotonic() - stopping,
             "first_heard_s": first_heard, "mid_heard_s": mid_heard}
 
 
@@ -220,6 +224,10 @@ def main() -> None:
     args = p.parse_args()
     install()
     settings = load_settings()
+    for where in (settings.sessions_dir, settings.projects_dir, settings.captures_dir,
+                  settings.manuals_dir, settings.about_file):
+        if not where.resolve().is_relative_to(_SCRATCH.resolve()):
+            raise SystemExit(f"refusing to run: {where} is not scratch")
     controller = ui.SessionController(settings, frames=None, entrypoint="latency-probe")
     q = [blocks(HERE / f"{'s' if args.short else 'q'}{i}.wav") for i in (1, 2)]
     rows = []
@@ -229,11 +237,13 @@ def main() -> None:
         rows.append(r)
         print(f"run {n + 1}: start {r['start_s']:.2f} s · first answer {r['first_s']:.2f} s"
               f" · mid-session {r['mid_s']:.2f} s  (he was heard to stop after"
-              f" {r['first_heard_s']:.2f} / {r['mid_heard_s']:.2f} s)", file=sys.stderr, flush=True)
+              f" {r['first_heard_s']:.2f} / {r['mid_heard_s']:.2f} s; close {r['close_s']:.2f} s)",
+              file=sys.stderr, flush=True)
         time.sleep(2.0)
     med = {k: statistics.median(r[k] for r in rows) for k in rows[0]}
     print(f"median of {len(rows)}: start {med['start_s']:.2f} s"
-          f" · first answer {med['first_s']:.2f} s · mid-session {med['mid_s']:.2f} s",
+          f" · first answer {med['first_s']:.2f} s · mid-session {med['mid_s']:.2f} s"
+          f" · close {med['close_s']:.2f} s",
           file=sys.stderr, flush=True)
 
 

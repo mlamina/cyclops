@@ -945,6 +945,7 @@ CARRIED_FOOTER = """\
 If they pick any of this up, you know what they mean: carry on, without asking what they are
 referring to. Do not recap it, do not mention that there was a pause, and do not raise it yourself.
 """
+CLOSE_TIMEOUT_S = 0.1
 GOODBYE_MAX_S = 10.0  # the longest end_session waits for the goodbye to finish sounding
 TUTORIAL_TOOL_NAMES = frozenset(tool["name"] for tool in TUTORIAL_TOOLS)
 
@@ -1767,6 +1768,9 @@ class VoiceAgent:
                 websocket_connection_options={
                     "ping_interval": KEEPALIVE_S,
                     "ping_timeout": KEEPALIVE_S,
+                    # Don't wait for the server's goodbye: nothing is left to hear, and that wait
+                    # was 2 s every close, keeping him from the next session (arc-eng/hq#572).
+                    "close_timeout": CLOSE_TIMEOUT_S,
                 },
                 max_retries=RECONNECT_ATTEMPTS,
             ) as conn:
