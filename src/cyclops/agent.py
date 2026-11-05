@@ -52,6 +52,8 @@ from .search import SearchError, search_web
 from .watch import Watch, WatchError, find_video, restream
 from .webcam import Capture, WebcamError, capture_image_async
 
+if TYPE_CHECKING:
+    from .ear import Ear
 if TYPE_CHECKING:  # the projects package pulls in pydantic_ai; the tools import it when called
     from .projects.data import Book
     from .projects.store import Project
@@ -912,6 +914,26 @@ END_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
 }
 
 TUTORIAL_TOOLS = (START_TUTORIAL_TOOL, ADVANCE_TUTORIAL_TOOL, END_TUTORIAL_TOOL)
+
+END_SESSION_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "end_session",
+    "description": (
+        "They are done for now: \"that's all\", \"thanks, bye\", \"I'm done\". Say one short "
+        "goodbye first, in the same turn, then call this. Not for a pause in the work."
+    ),
+    "parameters": {"type": "object", "properties": {}},
+}
+
+# What counts as somebody saying something, for the quiet timer: him, or Cyclops answering.
+_SOMEBODY_SPOKE = frozenset({
+    "input_audio_buffer.speech_started",
+    "input_audio_buffer.speech_stopped",
+    "conversation.item.input_audio_transcription.completed",
+    "response.output_audio.delta",
+})
+QUIET_CHECK_S = 1.0  # how often the quiet timer looks; the end lands within this of the limit
+GOODBYE_MAX_S = 10.0  # the longest end_session waits for the goodbye to finish sounding
 TUTORIAL_TOOL_NAMES = frozenset(tool["name"] for tool in TUTORIAL_TOOLS)
 
 DATA_TOOLS = frozenset({"save_data", "find_data", "forget_data"})
@@ -1417,11 +1439,23 @@ class VoiceAgent:
         mic: Microphone | None = None,
         speaker: Speaker | None = None,
         guard: EchoGuard | None = None,
+        ear: Ear | None = None,
     ) -> None:
         self.settings = settings
         self.mic = mic
         self.speaker = speaker
         self.guard = guard
+        # Set when somebody talking started this session rather than the button (cyclops.ear):
+        # it holds what they said before the model could hear, and there is no greeting - they
+        # have already spoken first. Taken, and dropped, in _listen.
+        self._ear = ear
+        self.voiced = ear is not None
+        # Why this session ended itself, when it did: "quiet" or "goodbye". The log writes it as
+        # the end reason; None means somebody else ended it (the button, the kiosk, an error).
+        self.ended_by: str | None = None
+        self.on_end: Callable[[], None] | None = None  # how it asks to be ended; the controller's
+        self._heard_at = 0.0  # last time anybody spoke, either side; see _end_when_quiet
+        self._tools_running = 0
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
         self.drawing_active = False  # True while a picture is being made (UI 'drawing')
@@ -1992,9 +2026,66 @@ class VoiceAgent:
         assert self.mic is not None
         if after_s:
             await asyncio.sleep(after_s + sfx.SETTLE_S)
+        # Woken by a voice: what the ear kept, from before the trigger up to now, goes first, and
+        # the mic's own queue - the same stretch of room, heard twice - is drained right after.
+        ear, self._ear = self._ear, None
+        opening = ear.take() if ear is not None else b""
         self.mic.drain()  # audio from before the session was configured is stale
+        if ear is not None:
+            self._spawn(asyncio.to_thread(ear.close))  # stopping a stream can block a block
+            await self._send_opening(opening)
         self._log("listening — talk, or take a photo, Ctrl+C to quit")
         await self._pump_mic()
+
+    async def _send_opening(self, pcm: bytes) -> None:
+        """Hand the model what was said before it could hear, as though it had heard it live.
+
+        Into the input buffer rather than as a conversation item, so the server's VAD finds the
+        turn in it, transcribes it, and answers it when he stops - the same path every other
+        turn takes. Half-second pieces, well under the size the server takes in one append.
+        """
+        step = SAMPLE_RATE * 2 // 2  # half a second of int16
+        for start in range(0, len(pcm), step):
+            encoded = base64.b64encode(pcm[start:start + step]).decode("ascii")
+            await self.conn.input_audio_buffer.append(audio=encoded)
+        self._log(f"woken by a voice: {len(pcm) / (SAMPLE_RATE * 2):.1f} s heard before the model")
+
+    # ---------------------------------------------------------------- ending itself
+
+    def _busy(self) -> bool:
+        """Is anything still going on that a quiet stretch should not end?"""
+        speaker = self.speaker
+        return bool(
+            self._user_speaking
+            or self._response_active
+            or (speaker is not None and speaker.is_audible)
+            or self._tools_running
+            or self.mic_shut  # a video is playing; it ends that itself
+        )
+
+    async def _end_when_quiet(self) -> None:
+        """End the session once nobody has said anything for ``quiet_end_s``.
+
+        Counted from the last thing *either* side said, and held while anything is still going
+        on - Cyclops talking, a tool or a lookup running, a video up - so it is two minutes of
+        nobody, not two minutes since he last spoke.
+        """
+        limit = self.settings.quiet_end_s
+        while self.ended_by is None:
+            await asyncio.sleep(QUIET_CHECK_S)
+            if self._busy():
+                self._heard_at = time.monotonic()
+            elif time.monotonic() - self._heard_at >= limit:
+                self._log(f"nobody has spoken for {limit} s — going to sleep")
+                self.end("quiet")
+
+    def end(self, reason: str) -> None:
+        """Ask for this session to be ended, the way the button ends it. Once."""
+        if self.ended_by is not None:
+            return
+        self.ended_by = reason
+        if self.on_end is not None:
+            self.on_end()
 
     async def _pump_mic(self) -> None:
         assert self.mic is not None
@@ -2020,6 +2111,8 @@ class VoiceAgent:
     # ---------------------------------------------------------------- events down
 
     async def _handle_event(self, event: RealtimeServerEvent) -> None:
+        if event.type in _SOMEBODY_SPOKE:
+            self._heard_at = time.monotonic()
         match event.type:
             case "session.created":
                 self._log(
@@ -2155,14 +2248,25 @@ class VoiceAgent:
         # It replaces the rising fifth that used to be here. Both said the same thing at the
         # same instant - the session is up, talk now - and with one speaker the later of the two
         # simply clipped the other; only one of them is also a picture.
-        sounding = self.cues.play("iris_open")
+        #
+        # Not when a voice started it: the ear is still collecting what he is saying, and the lid
+        # sound would go to the model in the middle of his first sentence. The lid still opens.
+        sounding = 0.0 if self.voiced else self.cues.play("iris_open")
         if self.mic is not None:
             self._spawn(self._listen(after_s=sounding))
         self._hold_for_the_lid(sounding)
-        # And it speaks first. Server VAD only answers a turn, so without this the greeting waited
-        # for his first question and came out glued to the front of its answer. Asked for here,
-        # once: a second session.updated has already returned above.
-        self._spawn(self._greet())
+        self._heard_at = time.monotonic()
+        # Only with a mic: with none (the smoke test, typed turns) nobody can be quiet in it.
+        if self.settings.quiet_end_s and self.mic is not None:
+            self._spawn(self._end_when_quiet())
+        if self.voiced:
+            session.note("woke", by="speech")
+        else:
+            # And it speaks first. Server VAD only answers a turn, so without this the greeting
+            # waited for his first question and came out glued to the front of its answer. Asked
+            # for here, once: a second session.updated has already returned above. A session he
+            # started by talking has its first turn already, and that is what gets answered.
+            self._spawn(self._greet())
         # The UI framework's import, bought now rather than on the first delta of the first
         # sketch - which is the one moment in that path where somebody is watching nothing.
         if self.settings.sketch:
@@ -2341,9 +2445,12 @@ class VoiceAgent:
         the seventh is precisely the one nobody would notice was silent.
         """
         job = self._start_doing(_activity_line(call, self._matched))
+        self._tools_running += 1
         try:
             await self._dispatch_tool(call)
         finally:
+            self._tools_running -= 1
+            self._heard_at = time.monotonic()  # a long lookup ending is not two quiet minutes
             self._done_doing(job)
 
     async def _dispatch_tool(self, call: RealtimeConversationItemFunctionCall) -> None:
@@ -2385,6 +2492,9 @@ class VoiceAgent:
             return
         if call.name in TUTORIAL_TOOL_NAMES:
             await self._run_tutorial(call)
+            return
+        if call.name == "end_session":
+            await self._run_end_session(call)
             return
         if (owned := extensions.find(self._matched, call.name)) is not None:
             await self._run_extension_tool(call, *owned)
@@ -2943,6 +3053,21 @@ class VoiceAgent:
             ),
         })
         await self._request_response()
+
+    async def _run_end_session(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """He said he is done: let the goodbye finish sounding, then end the way the button does.
+
+        No output sent and no response asked for - there is nothing left to say, and the closing
+        lid is the sound that tells him it has stopped listening.
+        """
+        self._log("[tool] end_session — he said he is done")
+        deadline = time.monotonic() + GOODBYE_MAX_S
+        # Polled: the speaker is fed and drained on the audio thread and has no event to wait on.
+        while (  # noqa: ASYNC110
+            self.speaker is not None and self.speaker.is_audible and time.monotonic() < deadline
+        ):
+            await asyncio.sleep(0.1)
+        self.end("goodbye")
 
     async def _run_tutorial(self, call: RealtimeConversationItemFunctionCall) -> None:
         """Start, move on or stop a walkthrough, and tell the model what to do next.
@@ -3955,6 +4080,7 @@ def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
         *_recall_tools(settings),
         *_manual_tools(settings),
         *TUTORIAL_TOOLS,
+        END_SESSION_TOOL,
     ]
 
 
@@ -4305,6 +4431,8 @@ def _activity_line(
         return "next step…"
     if call.name == "end_tutorial":
         return "putting the steps away…"
+    if call.name == "end_session":
+        return "going to sleep…"
     # A plugged-in device's tool says what its own file told it to.
     if (owned := extensions.find(matched, call.name)) is not None:
         return owned[0].line

@@ -25,6 +25,8 @@
 | `CYCLOPS_SCRATCHPAD`   | `1`            | Let Cyclops write on the panel himself, as a small piece of HTML, without being asked; `0` withholds `write_on_scratchpad`. |
 | `CYCLOPS_SOUNDS`       | `1`            | Cues: the box booting, waking and going to sleep, the shutter; `0` disables. |
 | `CYCLOPS_SLEEP_AFTER_S`| `60`           | Idle seconds before the panel blanks and the camera is released; `0` keeps it lit. This is the panel's own light — Cyclops has his own sleep, on the WAKE UP tab, and the glass only ever goes dark once he is already asleep. |
+| `CYCLOPS_VOICE_WAKE`   | `1`            | With no session up, listen for somebody talking and start a session when they do (see [panel.md](panel.md)); `0` leaves the hold on the button as the only way in. |
+| `CYCLOPS_QUIET_END_S`  | `120`          | A session nobody has said anything in for this many seconds ends itself; `0` never does. Cyclops talking, a tool running or a video playing all hold the count. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_REMEMBER`     | `1`            | Keep `about-you.md` up to date from what you say, and hand it to Cyclops at the start of a session; `0` turns the whole feature off and writes nothing about you. |
 | `CYCLOPS_RECORD`       | `1`            | Record the session into its folder; `0` disables. |

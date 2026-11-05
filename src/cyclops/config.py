@@ -184,6 +184,10 @@ class Settings:
     record_fps: int = 30  # video sampling rate; the screen repaints at ~29 fps
     record_width: int = 0  # cap the recorded width, never upscaling; 0 keeps the source's own
     sleep_after_s: int = 60  # untouched for this long the panel goes dark; 0 keeps it awake
+    # Somebody talking to it starts a session, with no press first (cyclops.ear). Off leaves
+    # the long press as the only way in, which is how it was until 2026-11.
+    voice_wake: bool = True
+    quiet_end_s: int = 120  # a session nobody has spoken in for this long ends; 0 never does
     button_pin: int | None = 17  # BCM17 (physical 11): the shutter button beside the panel
     button_led_pin: int | None = 27  # BCM27 (physical 13): the ring inside it; see cyclops.button
     admin_host: str = "0.0.0.0"  # the admin page is meant to be read from the LAN, not just here
@@ -371,6 +375,8 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         record_width=_count("CYCLOPS_RECORD_WIDTH", Settings.record_width),
         # _count, not `or`: 0 means "never blank", which `or` would read as unset. See _count.
         sleep_after_s=_count("CYCLOPS_SLEEP_AFTER_S", Settings.sleep_after_s),
+        voice_wake=_flag("CYCLOPS_VOICE_WAKE", Settings.voice_wake),
+        quiet_end_s=_count("CYCLOPS_QUIET_END_S", Settings.quiet_end_s),
         button_pin=_pin("CYCLOPS_BUTTON_PIN", Settings.button_pin),
         button_led_pin=_pin("CYCLOPS_BUTTON_LED_PIN", Settings.button_led_pin),
         admin_host=_env("CYCLOPS_ADMIN_HOST") or Settings.admin_host,

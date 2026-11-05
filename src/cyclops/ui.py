@@ -16,6 +16,7 @@ import asyncio
 import threading
 import time
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from . import barge, companion, voice
 from .agent import VoiceAgent
@@ -32,6 +33,9 @@ from .record import FrameSource
 from .screen import ScreenSource
 from .session import SessionLog
 from .webcam import Capture
+
+if TYPE_CHECKING:
+    from .ear import Ear  # webrtcvad and a mic stream; only the kiosk ever builds one
 
 IDLE, CONNECTING, LISTENING, SPEAKING, LOOKING, SEARCHING, DRAWING, ERROR = (
     "idle",
@@ -98,15 +102,21 @@ class SessionController:
         # have always made. See :meth:`_detail`.
         self._phase = ""
         self._closing = False  # a teardown is under way; see the property below
+        self._ear: Ear | None = None  # what heard him, for a session a voice is starting
 
     @property
     def _running(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
 
-    def start(self) -> None:
+    def start(self, *, ear: Ear | None = None) -> None:
+        """Start a session. ``ear`` is the listener that heard him, when a voice started it:
+        this session takes it over - what it kept becomes the first turn - and closes it."""
         with self._lock:
             if self._running:
+                if ear is not None:
+                    ear.close()
                 return
+            self._ear = ear
             self._error = ""
             self._phase = "waking up…"  # said on the tap; the thread does not exist yet
             self._closing = False
@@ -393,8 +403,12 @@ class SessionController:
         # the log, so the folder records the voice you were answered in rather than the one the
         # variable holds - see cyclops.voice.
         live = replace(s, half_duplex=half, voice=voice.chosen(s))
-        agent = VoiceAgent(live, mic=mic, speaker=speaker, guard=guard)
+        ear, self._ear = self._ear, None
+        agent = VoiceAgent(live, mic=mic, speaker=speaker, guard=guard, ear=ear)
         guard.on_barge_in = agent.local_barge_in
+        # Ending itself - two quiet minutes, or a goodbye - is the button's stop from the
+        # agent's side, so the panel shows the same closing and the log the same teardown.
+        agent.on_end = lambda: loop.call_soon(self.stop)
         with self._lock:
             self._speaker, self._mic, self._agent = speaker, mic, agent
             self._guard = guard
@@ -421,3 +435,5 @@ class SessionController:
             finally:
                 mic.stop()  # no more audio callbacks, so the recorder can flush what it has
                 speaker.stop()
+                if ear is not None:
+                    ear.close()  # a session that never got as far as taking it

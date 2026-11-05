@@ -304,7 +304,8 @@ class SessionLog:
                 _live = None
         self._agent.on_event = None
         self._stop_recorder()  # says "saving the video" for itself, when there is one
-        reason = _reason(exc_type)
+        # Ending itself is still a stop as far as the task is concerned; say which kind it was.
+        reason = getattr(self._agent, "ended_by", None) or _reason(exc_type)
         fields: dict[str, Any] = {
             "reason": reason,
             "seconds": self._elapsed(),
