@@ -132,7 +132,7 @@ def test_what_was_said_before_and_after_the_start_is_handed_over(an_ear) -> None
 
 
 def test_a_deaf_ear_does_not_start_one(an_ear) -> None:
-    an_ear.deaf = True
+    an_ear.deaf = lambda: True
     _hear(an_ear, _speech())
     assert not an_ear.heard.is_set()
 
@@ -307,7 +307,7 @@ class Cues:
 
 class StubEar:
     def __init__(self, **kwargs) -> None:
-        self.deaf = False
+        self.deaf = lambda: False
         self.heard = ear.threading.Event()
         self.closed = False
 
@@ -318,9 +318,19 @@ class StubEar:
         self.closed = True
 
 
+class Clock:
+    def __init__(self) -> None:
+        self.now = 100.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
 def _panel(monkeypatch, *, voice_wake: bool = True) -> kiosk_module.Kiosk:
     monkeypatch.setattr(kiosk_module.ear, "Ear", StubEar)
     kiosk = object.__new__(kiosk_module.Kiosk)
+    kiosk.clock = Clock()
+    monkeypatch.setattr(kiosk_module.time, "monotonic", kiosk.clock)
     kiosk.controller = Controller(voice_wake)
     kiosk._cues = Cues()
     kiosk._menu = False
@@ -339,13 +349,25 @@ def _panel(monkeypatch, *, voice_wake: bool = True) -> kiosk_module.Kiosk:
     return kiosk
 
 
+def _at(kiosk: kiosk_module.Kiosk, raw: str, now: float) -> None:
+    """A frame at *now*, with the audio thread's clock agreeing."""
+    kiosk.clock.now = now
+    kiosk._tend_ear(raw, now)
+
+
+def _deaf(kiosk: kiosk_module.Kiosk, now: float) -> bool:
+    """What the ear's own check says for a block heard at *now*."""
+    kiosk.clock.now = now
+    return kiosk._ear.deaf()
+
+
 def test_an_idle_kiosk_listens_and_a_voice_starts_a_session(monkeypatch) -> None:
     kiosk = _panel(monkeypatch)
-    kiosk._tend_ear(IDLE, 100.0)
+    _at(kiosk, IDLE, 100.0)
     listening = kiosk._ear
-    assert listening is not None and not listening.deaf
+    assert listening is not None and not _deaf(kiosk, 100.0)
     listening.heard.set()
-    kiosk._tend_ear(IDLE, 100.1)
+    _at(kiosk, IDLE, 100.1)
     assert kiosk.controller.started_with == [listening]  # handed over, not closed
     assert not listening.closed and kiosk._ear is None
     assert kiosk._pending == "start" and kiosk.woke == [True]
@@ -353,41 +375,43 @@ def test_an_idle_kiosk_listens_and_a_voice_starts_a_session(monkeypatch) -> None
 
 def test_no_ear_during_a_session_and_deaf_just_after(monkeypatch) -> None:
     kiosk = _panel(monkeypatch)
-    kiosk._tend_ear(IDLE, 100.0)
+    _at(kiosk, IDLE, 100.0)
     first = kiosk._ear
-    kiosk._tend_ear(LISTENING, 101.0)
+    _at(kiosk, LISTENING, 101.0)
     assert first.closed and kiosk._ear is None
-    kiosk._tend_ear(IDLE, 101.5)
-    assert kiosk._ear.deaf  # its last sounds cannot start the next one
-    kiosk._tend_ear(IDLE, 101.0 + kiosk_module.EAR_HOLD_S + 0.1)
-    assert not kiosk._ear.deaf
+    _at(kiosk, IDLE, 101.5)
+    assert _deaf(kiosk, 101.5)  # its last sounds cannot start the next one
+    assert not _deaf(kiosk, 101.0 + kiosk_module.EAR_HOLD_S + 0.1)
 
 
-def test_deaf_while_the_box_makes_a_sound(monkeypatch) -> None:
+def test_deaf_while_a_cue_sounds_and_for_a_tail_after(monkeypatch) -> None:
+    """Asked per block, not per frame: a cue that starts between two frames is still covered."""
     kiosk = _panel(monkeypatch)
-    kiosk._cues.left = 0.5
-    kiosk._tend_ear(IDLE, 100.0)
-    assert kiosk._ear.deaf
+    _at(kiosk, IDLE, 100.0)
+    kiosk._cues.left = 0.5  # a cue starts after the frame, before the next one
+    assert _deaf(kiosk, 100.1)
+    kiosk._cues.left = 0.0  # its file is over...
+    assert _deaf(kiosk, 100.6 + kiosk_module.EAR_CUE_TAIL_S / 2)  # ...but the room is not
+    assert not _deaf(kiosk, 100.6 + kiosk_module.EAR_CUE_TAIL_S + 0.1)
 
 
 def test_a_failed_start_is_not_retried_on_the_next_word(monkeypatch) -> None:
     kiosk = _panel(monkeypatch)
-    kiosk._tend_ear(CONNECTING, 100.0)
-    kiosk._tend_ear(ERROR, 101.0)
-    kiosk._tend_ear(ERROR, 110.0)
-    assert kiosk._ear.deaf
-    kiosk._tend_ear(ERROR, 101.0 + kiosk_module.EAR_FAILED_HOLD_S + 0.1)
-    assert not kiosk._ear.deaf
+    _at(kiosk, CONNECTING, 100.0)
+    _at(kiosk, ERROR, 101.0)
+    _at(kiosk, ERROR, 110.0)
+    assert _deaf(kiosk, 110.0)
+    assert not _deaf(kiosk, 101.0 + kiosk_module.EAR_FAILED_HOLD_S + 0.1)
 
 
 def test_the_switch_off_leaves_the_mic_closed(monkeypatch) -> None:
     kiosk = _panel(monkeypatch, voice_wake=False)
-    kiosk._tend_ear(IDLE, 100.0)
+    _at(kiosk, IDLE, 100.0)
     assert kiosk._ear is None
 
 
 def test_no_network_no_ear(monkeypatch) -> None:
     kiosk = _panel(monkeypatch)
     kiosk._online = False
-    kiosk._tend_ear(IDLE, 100.0)
+    _at(kiosk, IDLE, 100.0)
     assert kiosk._ear is None

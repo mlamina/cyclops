@@ -175,6 +175,10 @@ PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 # because there is no way back from one of the two things it offers.
 LONG_PRESS_S = 0.7
 EAR_HOLD_S = 3.0  # deaf this long after a session, so its last sounds cannot start the next
+# ...and this long after any cue has finished. Cues.waiting() ends on the file's length, and 17
+# of the box's 20 sounds pass the speech gate on their own (qa, mlamina/cyclops#1): the output
+# runs behind what was handed to it, and the room rings on after.
+EAR_CUE_TAIL_S = 1.0
 EAR_FAILED_HOLD_S = 30.0  # ...and this long after one failed to start
 EAR_RETRY_S = 10.0  # a mic that would not open is tried again this often
 # ...and how long a finger has to be on the *button* before it is answered with a sound at all.
@@ -1754,7 +1758,6 @@ class Kiosk:
             self._ear = self._open_ear(now)
             if self._ear is None:
                 return
-        self._ear.deaf = now < self._ear_quiet_until or self._cues.waiting() > 0
         if not self._ear.heard.is_set():
             return
         heard, self._ear = self._ear, None
@@ -1775,6 +1778,7 @@ class Kiosk:
                 gain_db=s.mic_gain_db,
                 compress=s.mic_compress,
             )
+            opened.deaf = self._ear_is_deaf
             opened.start()
         except Exception as exc:  # noqa: BLE001 - no mic means no voice start, not no kiosk
             print(f"· could not open the mic to listen ({exc}); "
@@ -1782,6 +1786,15 @@ class Kiosk:
             self._ear_retry_at = now + EAR_RETRY_S
             return None
         return opened
+
+    def _ear_is_deaf(self) -> bool:
+        """Called on the audio thread for every block: hold the ear deaf while a cue sounds,
+        for :data:`EAR_CUE_TAIL_S` after it, and through any hold :meth:`_tend_ear` has set."""
+        now = time.monotonic()
+        left = self._cues.waiting()
+        if left > 0:
+            self._ear_quiet_until = max(self._ear_quiet_until, now + left + EAR_CUE_TAIL_S)
+        return now < self._ear_quiet_until
 
     def _close_ear(self) -> None:
         if self._ear is not None:

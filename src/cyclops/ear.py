@@ -12,9 +12,9 @@ nothing is written to the card, logged or sent anywhere until a session has star
 that never starts takes it all with it when the ear is closed.
 
 It cannot tell *who* is talking or to whom - that would be a wake word. What it can do is not
-be fooled by the box itself: the kiosk holds it deaf while any cue is sounding and for a few
-seconds after a session ends (:attr:`Ear.deaf`), and a clang, a drill or music with nobody
-singing does not have the shape of speech it waits for.
+be fooled by the box itself: the kiosk holds it deaf while any cue is sounding, for a second
+after one stops and for a few after a session ends (:attr:`Ear.deaf`). A clang, a sander or
+music with nobody singing does not have the shape of speech it waits for.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from __future__ import annotations
 import sys
 import threading
 from collections import deque
+from collections.abc import Callable
 
 import numpy as np
 import sounddevice as sd
@@ -119,7 +120,10 @@ class Ear:
         self._after: list[bytes] = []
         self._taken = False
         self._closed = False
-        self.deaf = False  # set by the kiosk while the box itself is making a sound
+        # Asked on the audio thread, every block: is the box itself making a sound, or just has?
+        # A callable rather than a flag the kiosk sets each frame, because a frame is a quarter
+        # of a second behind a dark panel, and most of a cue fits in that.
+        self.deaf: Callable[[], bool] = lambda: False
         self.heard = threading.Event()  # set on the audio thread, read on the render thread
         self.source = pin_input_source(device)
         self._stream = sd.RawInputStream(
@@ -143,7 +147,7 @@ class Ear:
                     self._after.append(block)
                 return
             self._before.append(block)
-        if self.deaf:
+        if self.deaf():
             self._gate.reset()
             return
         if self._gate.feed(block):
