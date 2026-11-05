@@ -217,7 +217,7 @@ def test_a_voiced_session_answers_what_was_said_instead_of_greeting(monkeypatch)
     assert held.closed
 
 
-def test_a_button_session_still_greets(monkeypatch) -> None:
+def test_a_button_session_says_nothing_either(monkeypatch) -> None:
     made = _agent(monkeypatch)
 
     async def go():
@@ -225,7 +225,7 @@ def test_a_button_session_still_greets(monkeypatch) -> None:
         await asyncio.gather(*made._background)
 
     asyncio.run(go())
-    assert len(made._conn.responses) == 1
+    assert made._conn.responses == []
 
 
 def _ending(made: agent.VoiceAgent) -> list[str]:

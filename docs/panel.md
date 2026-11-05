@@ -28,8 +28,8 @@ Taking a photo and starting a session are the button beside the panel, not the g
 the photo, a hold is the conversation. Mostly the hold is not needed: with no session up the
 box is listening for somebody to talk (`cyclops.ear`), and talking to it starts one, with what
 was said first answered rather than lost. A session ends itself after two minutes in which
-nobody has said anything, or when you say you are done ("that's all", "thanks, bye"); the lid
-closing is the sound of it. The hold still starts and ends one either way.
+nobody has said anything, or when you say you are done ("that's all", "thanks, bye"); nothing is
+said and nothing sounds, so it just stops. The hold still starts and ends one, silently too.
 
 Before a session starts, what the mic hears is held in memory for two seconds and overwritten -
 never written down, logged or sent. It is deaf while the box is making a sound of its own and for

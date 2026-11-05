@@ -78,7 +78,6 @@ TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
 # What the first response of a session is asked for with: words, and nothing that could turn the
 # first thing they hear into a search or a drawing nobody asked for. Nobody has said anything yet.
-GREETING: RealtimeResponseCreateParamsParam = {"tool_choice": "none"}
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_QUERY_CHARS = 300
 # take_a_look in the kiosk borrows a frame the preview already has, which takes milliseconds. This
@@ -919,8 +918,9 @@ END_SESSION_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "end_session",
     "description": (
-        "They are done for now: \"that's all\", \"thanks, bye\", \"I'm done\". Say one short "
-        "goodbye first, in the same turn, then call this. Not for a pause in the work."
+        "They are done for now: \"that's all\", \"thanks, bye\", \"I'm done\". Call this straight "
+        "away. Say nothing first, or one word at most: no farewell, nothing about being here "
+        "later. Not for a pause in the work."
     ),
     "parameters": {"type": "object", "properties": {}},
 }
@@ -1003,28 +1003,10 @@ HOW YOU TALK
   could ask for, or which button makes you do it. No "if you want, I can", no "just say the
   word", no menu of what else is possible. They built you; they know what you are for. A turn
   that has answered the question is finished.
-- Open with a greeting and stop. Half a dozen words in your own voice, and a different
-  half-dozen each time. What makes it different is not a new way of saying hello: it is that you
-  are being switched on at a particular hour of a particular day, after a particular gap, for the
-  nth time today, with particular things plugged into you - WHEN IT IS below says which, and says
-  the shape of the line as well. Take the one thing about this moment that is not true of any
-  other one and say that.
-- The first word is the one they hear most often in their life with you, so it is the one that
-  goes stale. Never begin with "Morning", "Evening", "Afternoon", "Hey", "Hi", "Hello" or
-  "Back" - "back again", "back already", "back at it", "back on it", all of them. Begin on the
-  thing itself.
-- And do not build the line out of the fact that you have come on. That is identical every
-  single time you say anything at all, it is about you rather than about them, and counting it
-  turns the line into a number with a machine noun on either side of it. If how many times
-  today is the thing worth saying, say what it means about their day.
-- An observation, not an opening - the sort of thing you would have said out loud anyway, with
-  them there or not. Never "quiet" - not a quiet morning, not a quiet Sunday, not a quiet start.
-  You cannot hear the room, a day is not an atmosphere, and it is the word that turns up when
-  there was nothing to say and something got said anyway. Eight words is the ceiling and there
-  is no second clause after it: nothing beginning "let's", nothing asking what the job is,
-  nothing about what you will do next, no question, nothing telling them to go ahead. It was
-  their floor before you woke up and they switched you on already knowing what they were going
-  to say.
+- You do not open. Nothing is said when you come on, and you never mention coming on, going
+  off, a session, or how long it has been. The first thing they say gets answered like any other
+  turn, directly: no welcome, no remark about the hour or the day. A "hello" gets a word back.
+  To them this is one conversation that happens to have pauses in it.
 - One unasked-for thing is still allowed: a risk, or something left unresolved. Say it briefly
   and let it go, and never raise the same unheeded point twice.
 - Saying nothing is a real option. While they measure, count, cut or think, stay quiet. When
@@ -1520,10 +1502,6 @@ class VoiceAgent:
         self._current_item_id: str | None = None  # assistant item whose audio is being played
         self._dead_item_ids: set[str] = set()  # interrupted items: drop their in-flight output
         self._assistant_line_open = False
-        # Voice that arrived while the lid was still sounding, in order, with the item each piece
-        # belongs to. None whenever nothing is being held - which is every moment but the first
-        # second and a half of a session. See _hold_for_the_lid.
-        self._held: list[tuple[str, bytes]] | None = None
         # A sketch being typed. The only tool here whose arguments are acted on before they
         # have finished arriving, so it needs somewhere to accumulate them; see
         # ``_on_sketch_delta``. One at a time, because there is one screen.
@@ -1748,8 +1726,7 @@ class VoiceAgent:
 
     async def run(self) -> None:
         # The try opens before the connect, not after it: a bad key or a dead network raises
-        # from there, and that is precisely when the gears the button sounded may still be
-        # going. Left outside, the finally never runs and the kiosk grinds on over a red border.
+        # from there, and the finally has to run for that too.
         if self.settings.manuals:
             threading.Thread(target=_warm_librarian, name="librarian-import", daemon=True).start()
         try:
@@ -1774,9 +1751,8 @@ class VoiceAgent:
                 async for event in conn:
                     await self._handle_event(event)
         except Exception:
-            # A connect that never landed: the gears are ours to stop, because nothing else is
-            # going to - the panel just goes red, and the lid stays shut over a socket that was
-            # never there. A *cancel* is the other thing entirely, and deliberately not caught
+            # A connect that never landed: any cue still going is ours to stop - the panel just
+            # goes red, and the lid stays shut over a socket that was never there. A *cancel* is the other thing entirely, and deliberately not caught
             # here: someone pressed stop, and the sound of stopping belongs to them. Ending a
             # session is sounded by whoever owns its lifecycle (the kiosk on the tap, the CLI on
             # its way out), never from here, because this runs long before it is over - the
@@ -2013,19 +1989,9 @@ class VoiceAgent:
 
     # ---------------------------------------------------------------- audio up
 
-    async def _listen(self, *, after_s: float) -> None:
-        """Open the mic once the ready chime has finished, and pump it from there on.
-
-        The chime plays on its own stream, so the EchoGuard - which only knows about the
-        Speaker - cannot mute the mic for it, and on headphones there is no guard at all.
-        Rather than defend against hearing our own chime, we just don't listen until it has
-        stopped: the chime is the thing telling you to talk, so nobody is mid-sentence during
-        it, and this is the one moment in a session where half a second of deafness is free.
-        Draining afterwards rather than before then clears exactly the blocks it played into.
-        """
+    async def _listen(self) -> None:
+        """Open the mic and pump it from there on."""
         assert self.mic is not None
-        if after_s:
-            await asyncio.sleep(after_s + sfx.SETTLE_S)
         # Woken by a voice: what the ear kept, from before the trigger up to now, goes first, and
         # the mic's own queue - the same stretch of room, heard twice - is drained right after.
         ear, self._ear = self._ear, None
@@ -2237,69 +2203,20 @@ class VoiceAgent:
         # underneath them to hand the caption back to. From here the state's own resting line is
         # the true one, until a tool has something better to say.
         self._doing = ()
-        # His lid, on the event that opens it. Setting `ready` above is what turns the
-        # controller's CONNECTING into LISTENING, which is what the panel's lid answers to
-        # (cyclops.overlay.session_live), so the sound and the steel come off one fact and are
-        # never more than a frame apart. Sounded from here rather than from the render loop that
-        # notices afterwards, for the same reason the gears are sounded from the button's own
-        # thread: a cue that has to arrive with a movement cannot be quantised to a frame that
-        # drops to four a second behind a dark panel.
-        #
-        # It replaces the rising fifth that used to be here. Both said the same thing at the
-        # same instant - the session is up, talk now - and with one speaker the later of the two
-        # simply clipped the other; only one of them is also a picture.
-        #
-        # Not when a voice started it: the ear is still collecting what he is saying, and the lid
-        # sound would go to the model in the middle of his first sentence. The lid still opens.
-        sounding = 0.0 if self.voiced else self.cues.play("iris_open")
+        # Nothing is sounded and nothing is said: he should not notice a session starting
+        # (arc-eng/hq#572). The lid still opens, off the same `ready`, and the mic opens now.
         if self.mic is not None:
-            self._spawn(self._listen(after_s=sounding))
-        self._hold_for_the_lid(sounding)
+            self._spawn(self._listen())
         self._heard_at = time.monotonic()
         # Only with a mic: with none (the smoke test, typed turns) nobody can be quiet in it.
         if self.settings.quiet_end_s and self.mic is not None:
             self._spawn(self._end_when_quiet())
         if self.voiced:
             session.note("woke", by="speech")
-        else:
-            # And it speaks first. Server VAD only answers a turn, so without this the greeting
-            # waited for his first question and came out glued to the front of its answer. Asked
-            # for here, once: a second session.updated has already returned above. A session he
-            # started by talking has its first turn already, and that is what gets answered.
-            self._spawn(self._greet())
         # The UI framework's import, bought now rather than on the first delta of the first
         # sketch - which is the one moment in that path where somebody is watching nothing.
         if self.settings.sketch:
             self._spawn(asyncio.to_thread(sketch.warm))
-
-    def _hold_for_the_lid(self, sounding: float) -> None:
-        """Keep his voice off the speaker until the lid sound has finished.
-
-        The greeting is asked for on the same event that opens the lid, and the model answers in
-        about a second - measured, 0.8 to 1.2 s from ready to the first sound over ten sessions -
-        while the lid sounds for 1.67. Cues have no mixer (see cyclops.sfx), so without this the
-        two would be on one speaker at once. It is released on the mic's own schedule, the lid
-        plus :data:`sfx.SETTLE_S`, so he starts talking at the moment he could start listening.
-        """
-        if not sounding or self.speaker is None:
-            return
-        self._held = []
-        asyncio.get_running_loop().call_later(sounding + sfx.SETTLE_S, self._release_held)
-
-    def _release_held(self) -> None:
-        held, self._held = self._held or [], None
-        for item_id, pcm in held:
-            self._feed(item_id, pcm)
-
-    async def _greet(self) -> None:
-        """Ask for the opening line, with no user turn in front of it.
-
-        Marked active the way :meth:`_maybe_create_response` marks its own, so anything else that
-        wants a response in the meantime queues behind this one rather than racing it.
-        """
-        self._response_active = True
-        self._create_event_id = uuid.uuid4().hex
-        await self.conn.response.create(event_id=self._create_event_id, response=GREETING)
 
     def _on_error(self, err: RealtimeError) -> None:
         if err.code == "conversation_already_has_active_response":
@@ -2392,9 +2309,6 @@ class VoiceAgent:
         if self.speaker is None or item_id in self._dead_item_ids:
             return
         pcm = base64.b64decode(delta_b64)
-        if self._held is not None:  # the lid is still sounding; see _hold_for_the_lid
-            self._held.append((item_id, pcm))
-            return
         self._feed(item_id, pcm)
 
     def _feed(self, item_id: str, pcm: bytes) -> None:
@@ -3055,10 +2969,9 @@ class VoiceAgent:
         await self._request_response()
 
     async def _run_end_session(self, call: RealtimeConversationItemFunctionCall) -> None:
-        """He said he is done: let the goodbye finish sounding, then end the way the button does.
+        """He said he is done: let whatever word he got finish, then end the way the button does.
 
-        No output sent and no response asked for - there is nothing left to say, and the closing
-        lid is the sound that tells him it has stopped listening.
+        No output sent and no response asked for - there is nothing left to say.
         """
         self._log("[tool] end_session — he said he is done")
         deadline = time.monotonic() + GOODBYE_MAX_S

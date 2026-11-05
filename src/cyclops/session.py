@@ -797,21 +797,9 @@ def recent_context(settings: Settings) -> Recap:
 # and "two minutes ago" is precisely the case this exists for.
 MOMENT_HEADER = """\
 WHEN IT IS
-The clock as the eye opened. It belongs to the first thing you say and to nothing after it.
-Five things make this moment and no other: which day of the week it is, what hour of it, how
-long you were switched off, how many times today, and whatever is plugged into you (see PLUGGED
-INTO YOU RIGHT NOW, if there is anything on it). The test is whether the line would have done
-just as well yesterday - if it would, you were told this and did not use it. Take whichever of
-the five is the odd one about today and put it in your own words, never in these. Never give them
-the clock reading or the date, never explain how you know, and never claim anything these lines
-do not say - how long you have been switched off is the one a greeting gets wrong, and three
-days is not "a short break".
-Half a dozen words, and they are a remark about this moment rather than a greeting with the
-moment stapled on. Do not open on a word for hello - not "morning", not "evening", not "hey",
-not "back", not "hi" - and do not announce that you are on or that you are watching. Dry, level,
-faintly unimpressed. A nod, not a welcome, and never a status line. Then stop: no question, and
-nothing that hands them the floor or asks them to begin, because they switched you on already
-knowing what they were going to say.
+The clock as this stretch of talking began. It is here so you know what day it is if it matters
+to what they ask. Never bring it up yourself, and never remark on the hour, the day or how long
+it has been.
 """
 
 

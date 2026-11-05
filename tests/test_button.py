@@ -268,47 +268,22 @@ def test_a_finger_that_settles_does_reach_it() -> None:
     button._up()
 
 
-def test_a_hold_ends_the_rise_and_sounds_the_gears(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The three sounds of a long press, and the two edges between them.
-
-    The rise stops because the boundary arrived, not because the finger came off: it used to
-    run until the lift, which is a cue outliving the thing it was counting. And the gears are
-    sounded from this thread, on this edge - they used to come off the session's own thread once
-    that had imported an agent and opened PortAudio both ways, half a second to two seconds
-    later and never twice the same.
-    """
+def test_a_long_press_starts_a_session_without_a_sound(monkeypatch: pytest.MonkeyPatch) -> None:
     kiosk = _panel(monkeypatch, real_toggle=True)
     kiosk.button_down()
     kiosk.button_held()
-    assert kiosk._cues.heard == ["button_pressed", "gears"]
-    assert kiosk._cues.stopped == 1, "the rise ended on the boundary"
+    kiosk.button_up()
+    assert kiosk._cues.heard == []
     assert kiosk.controller.started == 1
 
-    # ...and the lift that follows has nothing left to stop, which is the whole of why the stop
-    # is conditional: by now the gears are what is sounding and they are not the finger's.
-    kiosk.button_up()
-    assert kiosk._cues.stopped == 1
 
-
-def test_the_press_that_ends_a_session_is_silent_until_it_lands(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A rise promises a machine about to run, and this gesture stops one.
-
-    Same button, same hold, and the same gears on the boundary - what tells the two apart is the
-    lid that follows, not the sound under the finger. Putting a rise here would be the box
-    getting more eager as you switch it off.
-    """
+def test_a_long_press_ends_a_session_without_a_sound(monkeypatch: pytest.MonkeyPatch) -> None:
     kiosk = _panel(monkeypatch, real_toggle=True)
     kiosk.controller.state = "listening"
     kiosk.button_down()
-    assert kiosk._cues.heard == [], "nothing is winding up"
     kiosk.button_held()
-    assert kiosk._cues.heard == ["gears"]
-
-
-# ---------------------------------------------------------------- the ring
-
+    kiosk.button_up()
+    assert kiosk._cues.heard == []
 
 def test_the_ring_says_what_the_box_is_doing(monkeypatch: pytest.MonkeyPatch) -> None:
     kiosk = _panel(monkeypatch)

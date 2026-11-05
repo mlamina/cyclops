@@ -69,7 +69,6 @@ from .config import (  # noqa: E402
     ConfigError,
     load_settings,
 )
-from .eye import COVER_OPEN_S  # noqa: E402
 from .overlay import (  # noqa: E402
     CANCEL,
     DELETE,
@@ -219,18 +218,7 @@ SESSIONS_SCREEN, SYSTEM_SCREEN = "/sessions", "/"
 PAGE_ROUTE_S = 0.5  # one poll of /api/panel, plus a little: how long the page has to route itself
 
 PENDING_TIMEOUT_S = 8.0  # give up on an optimistic state if the session never corroborates
-LOCK_LEAD_S = 0.55  # how far short of the end of the iris recording the bolt lands, and the
-# whole of what makes the pair read as one event rather than two. It started as the measured
-# quiet tail on that file - the mechanism in it runs out at 1.15 s of 1.4542 s - and Marco has
-# since walked it in past that, so the bolt cuts the last third of the movement off rather than
-# waiting behind it. Which is the right way round: what the ear is timing is the hit, not the
-# swing in front of it - and the eye is still watching the lid finish either way. It was at 0.65
-# for a round and that is too far: the sound stops nearer the middle of the picture than the end
-# of it, and the two come apart again.
-LOCK_GRACE_S = 0.25  # how late the bolt at the end of an opening lid may still be sounded. A
-# frame at TARGET_FPS is 33 ms and this loop is not the only thing that can hold it up: the admin
-# page takes the panel and parks the loop entirely, so a lid that arrives behind one would
-# otherwise be heard landing whenever that page is closed, minutes later and from nowhere.
+
 SLEEP_FPS = 4  # render rate while it is dark - there is nothing on screen but black
 SHUTDOWN_JOIN_S = 20.0  # on exit, a stopping session may still be muxing and naming itself
 BROWSERS = ("chromium-browser", "chromium")  # whichever of the two names this Pi installed
@@ -515,13 +503,6 @@ class Kiosk:
         )
         self._touched_at = time.monotonic()  # last tap, for the idle blank
         self._asleep = False  # dark panel: the camera is released until it is touched
-        self._awake: bool | None = None  # whether a session was up last frame, which is the one
-        # fact the iris answers to. None until the first frame, so a kiosk that starts up idle
-        # does not announce a lid that was already shut before anybody was in the room to hear it.
-        self._lock_at = 0.0  # when the opening lid arrives home, and the one cue on this box
-        # that is scheduled rather than fired: the sound of a bolt going home belongs to the end
-        # of a movement that takes eye.COVER_OPEN_S, and nothing else on the panel knows the
-        # cover has stopped. Zero when no lid is travelling. See the wake, below.
         self._camera_on_at = 0.0  # when the camera was last (re)started, to date its frames
         self._framing = ""  # the framing just tapped to, and...
         self._framing_until = 0.0  # ...when its name comes off the middle of the screen
@@ -1216,8 +1197,8 @@ class Kiosk:
 
         The switch that starts and ends a conversation is a 12 mm target you have to look at,
         and the moment you want to start talking to him is the moment both hands are full. This
-        is the same :meth:`_toggle_session` the switch itself calls - the gears and the
-        optimistic ``_pending`` come with it - so there is no second way for a session to begin.
+        is the same :meth:`_toggle_session` the switch itself calls - the optimistic
+        ``_pending`` comes with it - so there is no second way for a session to begin.
 
         Unlike the tap, a hold on a dark panel is not spent waking it: the tap is ambiguous
         under a black screen and this cannot be, so it lands. It has to light the glass itself,
@@ -1228,16 +1209,11 @@ class Kiosk:
         No ring state of its own and nothing on the glass to invert: the two switches that used
         to answer this button are a knob and a gauge now. ``_pending`` makes :meth:`_effective`
         report STARTING at once, which is a session as far as :meth:`_ring_state` is concerned,
-        so the ring lights as the hold lands - and the gears in :meth:`_toggle_session` say the
-        same thing out loud, which is the half of this a head under a bench can hear.
+        so the ring lights as the hold lands. No sound: a session starting or ending makes
+        none (arc-eng/hq#572).
 
-        The rise ends here and unconditionally, ahead of every branch below. What it was
-        counting is over: the boundary decides when it stops, not the length of the file and not
-        how much longer the finger stays down. Unconditional because the press was answered
-        whatever this hold turns out to do - including the modal case, which does nothing else.
         """
         self._touched_at = time.monotonic()
-        self._cues.stop_if("button_pressed")
         if self._menu or self._wifi is not None:
             return  # modal, exactly as it is for the tap above
         if self._asleep:
@@ -1245,35 +1221,11 @@ class Kiosk:
         self._toggle_session()
 
     def button_down(self) -> None:
-        """A finger has settled on the button: sound the rise under it.
-
-        Under the finger and not on the outcome, which is the whole point of it. The long press
-        that starts a session takes most of a second to land and until then the button gives
-        nothing back - a control you cannot tell you are using is one you let go of too early.
-        This is the sound of the box winding up to do what the hold is about to ask for.
-
-        Not on the press edge: :data:`PRESS_GRACE_S` stands this off until a click would already
-        have come and gone, so a photo is a shutter and nothing else. Between that and
-        :meth:`button_held` the rise has exactly the window it is cut to fill.
-
-        And only when the hold that is coming would *start* something. With a session already up
-        this same gesture ends one, and there is nothing winding up to say: what a rise promises
-        is a machine about to run, so putting one under the press that stops it is the box
-        getting more eager as you switch it off. That press is silent until it lands.
-        """
-        if session_up(str(self.controller.status()["state"])):
-            return
-        self._cues.play("button_pressed")
+        """A finger has settled on the button. Nothing to do: it used to sound a rise under the
+        hold, and starting or ending a session now makes no sound (arc-eng/hq#572)."""
 
     def button_up(self) -> None:
-        """...and it stops with the finger, if the hold has not already ended it.
-
-        Normally the hold got there first - it ends the rise on the boundary rather than on the
-        lift - so on a long press this finds the gears sounding and leaves them alone. What is
-        left for it is the press that was neither: past the grace, short of the hold. See
-        :meth:`cyclops.sfx.Cues.stop_if`.
-        """
-        self._cues.stop_if("button_pressed")
+        """The finger came off. Nothing to do; see :meth:`button_down`."""
 
     def _ring_state(self, state: str) -> str:
         """What the ring in the button should be saying: idle, listening, or a photo that failed.
@@ -1703,24 +1655,8 @@ class Kiosk:
         self._pending = "start" if starting else "stop"
         self._pending_at = time.monotonic()
         if starting:
-            # The mechanism engaging, on the edge the hold landed on and before anything slow.
-            # This used to be sounded by the session's own thread once its audio devices were
-            # open - half a second to two seconds later, and never the same twice - so the one
-            # cue on this box that is *about* a long press landing was the only thing that did
-            # not land with it.
-            self._cues.play("gears")
             self.controller.start()
         else:
-            # The same gears, on the same edge, for the same reason: ending a session and
-            # starting one are one mechanism engaging, and what tells them apart is the lid that
-            # follows. On the tap and not on the teardown - everything after this point waits on
-            # a task that has to notice it was cancelled, and the panel already shows CLOSING
-            # from here, so the sound belongs to the press the way the shutter does.
-            #
-            # It replaces a falling pair and then soft ticks for the length of the teardown. The
-            # ticks were a status light for a wait that the caption already narrates in words,
-            # and the pair was a second answer to a press this now answers once.
-            self._cues.play("gears")
             self.controller.stop()
 
     def _tend_ear(self, raw: str, now: float) -> None:
@@ -1765,8 +1701,7 @@ class Kiosk:
         if self._asleep:
             self._wake()
         self._touched_at = now
-        # The same optimistic STARTING the press gives, without the gears: the ear is still
-        # listening, and the gears would be in the first thing the model hears.
+        # The same optimistic STARTING the press gives.
         self._pending, self._pending_at = "start", now
         self.controller.start(ear=heard)
 
@@ -2241,33 +2176,6 @@ class Kiosk:
             state = working_over(state, bool(job))
             asleep = self._sleeping(state)
             self._tend_ear(str(status["state"]), started)
-
-            # The lid shutting, said out loud. It is the one thing on this panel that moves for
-            # over a second, and a mechanism that size making no noise is the tell that it is a
-            # drawing. Only the shut half is sounded from here: the open half now comes off the
-            # event that opens it, on the agent's own thread, where it lands with the movement
-            # rather than a frame behind it - see VoiceAgent._on_session_ready.
-            if self._awake is not None and awake != self._awake:
-                if not awake:
-                    self._cues.play("iris_close")
-                # ...and the bolt at the end of it, either way he is moving. Deadlined rather
-                # than fired, because nothing on this box is told the cover has got there: this
-                # loop is the only clock that knows, and the travel starts on this frame.
-                #
-                # One deadline for both directions, though the two movements are different
-                # lengths. It is the end of the lid's *sound* and the two directions are one
-                # recording - COVER_OPEN_S is that file's length to the sample, and the close is
-                # it backwards - so what this counts off is the cue, not the picture. A wake
-                # that turns straight back into a sleep re-arms it rather than cancelling it,
-                # which is right: there is a lid moving either way.
-                self._lock_at = started + COVER_OPEN_S - LOCK_LEAD_S
-            self._awake = awake
-            if self._lock_at and started >= self._lock_at:
-                late, self._lock_at = started - self._lock_at, 0.0
-                # A frame late at worst, which is what this can afford and a gesture could not:
-                # it is answering a picture this loop is drawing itself.
-                if late <= LOCK_GRACE_S:
-                    self._cues.play("locked_in")
 
             # What the ring is saying. Handed over every frame because what it reflects is a
             # state rather than an event; it only reaches the pin when the answer changes.
