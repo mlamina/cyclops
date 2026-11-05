@@ -380,6 +380,56 @@ def t5_stop_mid_answer(box: Box) -> None:
         box.wait_gone()
 
 
+def t6_talk_after_stop_mid_answer(box: Box) -> None:
+    print("T6 stopped while its voice is coming out, and he talks during the close")
+    before = box.starts
+    ROOM.say("ask")
+    end = time.monotonic() + 15
+    while box.starts == before and time.monotonic() < end:
+        time.sleep(0.02)
+    box.wait_up()
+    ROOM.out_times.clear()
+    end = time.monotonic() + 20
+    while len(ROOM.out_times) < 40 and time.monotonic() < end:  # 0.8 s into its answer
+        time.sleep(0.01)
+    print(f"   its voice out for {len(ROOM.out_times) * BLOCK_S:.2f} s when stopped")
+    DELAY_CLOSE[0] = True
+    starts = box.starts
+    box.k._pending, box.k._pending_at = "stop", time.monotonic()
+    stopped = time.monotonic()
+    box.controller.stop()
+    time.sleep(0.8)  # past the speaker's tail and the ear's hold, if neither is stuck
+    speaker = box.controller._speaker
+    print(f"   0.8 s into the close: closing={box.controller.closing}"
+          f" speaking={box.controller.speaking}"
+          f" buffered={len(speaker._buffer) if speaker else 'gone'}")  # noqa: SLF001
+    ROOM.say("again")
+    end = time.monotonic() + 15
+    while box.starts == starts and time.monotonic() < end:
+        time.sleep(0.02)
+    DELAY_CLOSE[0] = False
+    if box.starts == starts:
+        print("   LOST: no new session started")
+        return
+    print(f"   new session asked for {time.monotonic() - stopped:.2f} s after the stop")
+    box.wait_up()
+    second = box.controller._agent
+    wait_said(second, "cyclops", 0)
+    time.sleep(4)
+    print(f"   heard and said: {second.spoken}")
+    box.k._pending, box.k._pending_at = "stop", time.monotonic()
+    box.controller.stop()
+    box.wait_gone()
+
+
+def recheck_round(settings) -> None:  # noqa: ANN001
+    box = Box(settings)
+    t6_talk_after_stop_mid_answer(box)
+    time.sleep(3)
+    t6_talk_after_stop_mid_answer(box)
+    box.alive = False
+
+
 def short_word(box: Box) -> None:
     print("T4b 'Hello?' 3 s after a close: a word back, and no old topic")
     time.sleep(3)
@@ -395,12 +445,29 @@ def gate_check() -> None:
 
 
 def smoke_check() -> None:
+    import base64
+
+    import cv2
+
     from cyclops import smoke
+    from cyclops.webcam import Capture
 
-    async def no_camera(*_a, **_k):  # noqa: ANN002, ANN003
-        raise RuntimeError("no camera in this check")
+    async def picture(*_a, save_dir=None, **_k):  # noqa: ANN002, ANN003, ANN001
+        # The live kiosk holds the real camera, and a picture of his bench isn't needed here.
+        frame = np.full((480, 640, 3), 200, dtype=np.uint8)
+        cv2.rectangle(frame, (160, 120), (480, 360), (40, 40, 200), -1)
+        jpeg = cv2.imencode(".jpg", frame)[1].tobytes()
+        where = Path(save_dir or SCRATCH / "captures")
+        where.mkdir(parents=True, exist_ok=True)
+        (where / "latest.jpg").write_bytes(jpeg)
+        path = where / "qa.jpg"
+        path.write_bytes(jpeg)
+        url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+        return Capture(url, path, 640, 480, len(jpeg), 0)
 
-    smoke.capture_image_async = no_camera
+    smoke.capture_image_async = picture
+    if hasattr(agent_module, "capture_image_async"):
+        agent_module.capture_image_async = picture
     began = time.monotonic()
     try:
         smoke.main()
@@ -437,6 +504,12 @@ def main() -> None:
     print(f"scratch: {SCRATCH} · model {settings.model} · quiet_end {settings.quiet_end_s}")
     if "--second" in sys.argv:
         second_round(settings)
+        return
+    if "--smoke" in sys.argv:
+        smoke_check()
+        return
+    if "--recheck" in sys.argv:
+        recheck_round(settings)
         return
     box = Box(settings)
     t1_silent_start(box)

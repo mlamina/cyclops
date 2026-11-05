@@ -47,10 +47,12 @@ def controller() -> ui.SessionController:
 def part_1_and_2() -> bool:
     made = controller()
     gate = threading.Event()
+    at_last_act = threading.Event()
     real_new_loop = asyncio.new_event_loop
 
     class HeldLoop(asyncio.SelectorEventLoop):
         def close(self) -> None:  # the thread's last act: hold it here so the window can be read
+            at_last_act.set()
             gate.wait(5)
             super().close()
 
@@ -60,9 +62,8 @@ def part_1_and_2() -> bool:
         while made._task is None:  # noqa: SLF001
             time.sleep(0.001)
         made.stop()
-        while made.closing:
-            time.sleep(0.001)
-        state = str(made.status()["state"])
+        at_last_act.wait(5)  # thread alive, agent gone: not "until closing goes false", which
+        state = str(made.status()["state"])  # would miss this moment once closing lasts through it
         print(f"1. closing={made.closing} running={made.running} state={state!r}"
               f" session_up={kiosk_module.session_up(state)}")
 
@@ -70,15 +71,23 @@ def part_1_and_2() -> bool:
         kiosk.controller = made
         kiosk._cues = type("C", (), {"waiting": lambda self: 0.0})()  # noqa: SLF001
         kiosk._menu, kiosk._wifi, kiosk._online = False, None, True  # noqa: SLF001
+        kiosk._asleep, kiosk._touched_at = False, 0.0  # noqa: SLF001
         kiosk._pending, kiosk._pending_at = None, 0.0  # noqa: SLF001
         ear = StubEar()
         kiosk._ear = ear  # noqa: SLF001
         kiosk._ear_state, kiosk._ear_quiet_until, kiosk._ear_retry_at = "", 0.0, 0.0  # noqa: SLF001
         kiosk._tend_ear(state, time.monotonic())  # noqa: SLF001
         print(f"2. ear holding what he said, after one frame in that state: closed={ear.closed}")
+        kept = not ear.closed
         gate.set()
         made.join(5)
-        return not ear.closed
+        handed: list = []
+        made.start = lambda *, ear=None: handed.append(ear)
+        if kept:
+            kiosk._tend_ear(str(made.status()["state"]), time.monotonic())  # noqa: SLF001
+        print(f"2b. once the thread has gone, the ear is handed to the next session:"
+              f" {handed == [ear]}")
+        return kept and handed == [ear]
     finally:
         asyncio.new_event_loop = real_new_loop
 
@@ -93,7 +102,7 @@ def part_3(closes: int) -> None:
         made.stop()
         opened = None
         while made.running:
-            if not made.closing and opened is None:
+            if not made.closing and opened is None and made.running:
                 opened = time.perf_counter()
         widths.append(time.perf_counter() - opened if opened else 0.0)
     ms = sorted(w * 1000 for w in widths)
