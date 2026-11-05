@@ -13,7 +13,7 @@ that never starts takes it all with it when the ear is closed.
 
 It cannot tell *who* is talking or to whom - that would be a wake word. What it can do is not
 be fooled by the box itself: the kiosk holds it deaf while any cue is sounding, for a second
-after one stops and for a few after a session ends (:attr:`Ear.deaf`). A clang, a sander or
+after one stops and for half of one after a session ends (:attr:`Ear.deaf`). A clang, a sander or
 music with nobody singing does not have the shape of speech it waits for.
 """
 
@@ -124,6 +124,9 @@ class Ear:
         # A callable rather than a flag the kiosk sets each frame, because a frame is a quarter
         # of a second behind a dark panel, and most of a cue fits in that.
         self.deaf: Callable[[], bool] = lambda: False
+        # Is its own voice sounding right now? What's heard then isn't kept either: with a short
+        # hold, it would otherwise reach the model as the start of his first turn.
+        self.loud: Callable[[], bool] = lambda: False
         self.heard = threading.Event()  # set on the audio thread, read on the render thread
         self.source = pin_input_source(device)
         self._stream = sd.RawInputStream(
@@ -146,7 +149,10 @@ class Ear:
                 if len(self._after) < HANDOVER_BLOCKS:
                     self._after.append(block)
                 return
-            self._before.append(block)
+            if self.loud():
+                self._before.clear()
+            else:
+                self._before.append(block)
         if self.deaf():
             self._gate.reset()
             return

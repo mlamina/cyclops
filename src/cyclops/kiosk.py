@@ -1719,6 +1719,7 @@ class Kiosk:
                 compress=s.mic_compress,
             )
             opened.deaf = self._ear_is_deaf
+            opened.loud = lambda: self.controller.speaking
             opened.start()
         except Exception as exc:  # noqa: BLE001 - no mic means no voice start, not no kiosk
             print(f"· could not open the mic to listen ({exc}); "

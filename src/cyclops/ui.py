@@ -319,7 +319,7 @@ class SessionController:
         summarising used to be in that queue too. They are in another process now - see
         :mod:`cyclops.after` - which is most of why this stretch is short.)
         """
-        return self._closing
+        return self._closing and self._running
 
     def _say_phase(self, phase: str) -> None:
         """What the teardown is doing, handed to :class:`~cyclops.session.SessionLog`.
@@ -383,7 +383,8 @@ class SessionController:
                 self._loop = self._task = self._agent = self._speaker = self._mic = None
                 self._guard = None
             self._phase = ""  # the folder is written; there is nothing left to report
-            self._closing = False
+            # _closing stays set: `closing` reads it with the thread's being alive, so it goes
+            # false only when start() would work, and the ear is never dropped in between.
             loop.close()
             # Nothing sounded here. This controller is the only thing that knows when a session
             # is *finished* rather than merely cancelled - the socket, the devices and the

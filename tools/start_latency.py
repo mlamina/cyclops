@@ -45,6 +45,7 @@ for _name, _sub in _DIRS:
     os.environ[f"CYCLOPS_{_name}_DIR"] = str(_SCRATCH / _sub)
 os.environ["CYCLOPS_ABOUT_FILE"] = str(_SCRATCH / "about-you.md")
 os.environ["CYCLOPS_RECORD"] = "0"
+os.environ["HOME"] = str(_SCRATCH)  # ~/.cache/cyclops: the task list, the panel file, the index
 
 import numpy as np  # noqa: E402
 

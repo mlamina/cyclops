@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import threading as ui_threading
 import wave
 from functools import cache
 from pathlib import Path
@@ -504,4 +505,51 @@ def test_the_carried_turns_are_in_what_the_model_reads_and_only_then(monkeypatch
     monkeypatch.setattr(agent, "_standing", lambda *_: ("HEAD", "CLOCK"))
     made = agent.VoiceAgent(Settings(api_key="", sounds=False), earlier=turns)
     instructions = made.session_config()["instructions"]
-    assert instructions.index("HEAD") < instructions.index("the torque") < instructions.index("CLOCK")
+    assert instructions.index("HEAD") < instructions.index("the torque")
+    assert instructions.index("the torque") < instructions.index("CLOCK")
+
+
+def test_closing_lasts_until_start_would_work() -> None:
+    """The real controller's gap (qa on #572): closing went false with the thread still alive."""
+    made = _controller()
+    done = ui_threading.Event()
+    made._thread = ui_threading.Thread(target=done.wait, daemon=True)
+    made._thread.start()
+    made._closing = True
+    assert made.closing and made.running
+    done.set()
+    made._thread.join()
+    assert not made.closing and not made.running
+
+
+def test_its_own_voice_stays_out_of_what_the_ear_keeps(an_ear) -> None:
+    speech = _speech()[:10]
+    an_ear.loud = lambda: True
+    _hear(an_ear, speech)
+    assert an_ear.take() == b""
+
+
+def test_the_real_controller_keeps_the_ear_through_the_end_of_a_close(monkeypatch) -> None:
+    """Its thread alive, its agent gone, reporting "connecting": the frame that dropped the ear."""
+    kiosk = _panel(monkeypatch)
+    real = _controller()
+    done = ui_threading.Event()
+    real._thread = ui_threading.Thread(target=done.wait, daemon=True)
+    real._thread.start()
+    real._closing = True
+    started: list = []
+    monkeypatch.setattr(real, "start", lambda *, ear=None: started.append(ear))
+    kiosk.controller = real
+    kiosk.controller.settings = Settings(api_key="", voice_wake=True)
+
+    _at(kiosk, CONNECTING, 100.0)
+    listening = kiosk._ear
+    assert listening is not None
+    listening.heard.set()
+    _at(kiosk, CONNECTING, 100.1)
+    assert not listening.closed and started == []
+
+    done.set()
+    real._thread.join()
+    _at(kiosk, IDLE, 100.2)
+    assert started == [listening] and not listening.closed

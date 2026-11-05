@@ -76,8 +76,6 @@ KEEPALIVE_S = 15.0
 RECONNECT_ATTEMPTS = 0
 TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
-# What the first response of a session is asked for with: words, and nothing that could turn the
-# first thing they hear into a search or a drawing nobody asked for. Nobody has said anything yet.
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_QUERY_CHARS = 300
 # take_a_look in the kiosk borrows a frame the preview already has, which takes milliseconds. This
@@ -1018,7 +1016,8 @@ HOW YOU TALK
   that has answered the question is finished.
 - You do not open. Nothing is said when you come on, and you never mention coming on, going
   off, a session, or how long it has been. The first thing they say gets answered like any other
-  turn, directly: no welcome, no remark about the hour or the day. A "hello" gets a word back.
+  turn, directly: no welcome, no remark about the hour or the day. A "hello" gets one word back
+  and nothing else: never ask what they are working on or what they need.
   To them this is one conversation that happens to have pauses in it.
 - One unasked-for thing is still allowed: a risk, or something left unresolved. Say it briefly
   and let it go, and never raise the same unheeded point twice.
@@ -1340,10 +1339,7 @@ def _standing(settings: Settings, found: tuple[devices.Device, ...]) -> tuple[st
     moment = session.now_context(settings)
     print(f"· right now: {moment.note}", flush=True)
     blocks = [BASE_INSTRUCTIONS]
-    # Who, then what happened, then what is being kept, and the clock last of all. Last because
-    # the greeting is the very next thing it says and the end of the prompt is what it has just
-    # read: every rule about the first line that would not hold anywhere else - do not open on
-    # a hello, do not hand them the floor at the end of it - held once it was read here.
+    # Who, then what happened, then what is being kept, and the clock last of all.
     if about_block := _about_block(settings):
         blocks.append(about_block)
     if recap:
@@ -1355,7 +1351,7 @@ def _standing(settings: Settings, found: tuple[devices.Device, ...]) -> tuple[st
     if manuals_block := _manuals_block(settings):
         blocks.append(manuals_block)
     # After the reference and before the clock: it is about this minute rather than about what
-    # can be looked up, and the clock stays last because the greeting is the next thing said.
+    # can be looked up.
     if plugged_block := _plugged_block(found):
         blocks.append(plugged_block)
     # The extension block goes here, between the two - see _splice.

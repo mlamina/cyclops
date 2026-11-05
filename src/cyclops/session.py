@@ -805,7 +805,7 @@ it has been.
 
 @dataclass(frozen=True)
 class Moment:
-    """When a session is starting, in the terms a greeting is built out of."""
+    """When a session is starting."""
 
     now: datetime
     nth_today: int = 1  # 1 is the first wake of the day
