@@ -39,7 +39,8 @@ so a mangled one costs you one of them rather than all three.
 With no network, no key, or `CYCLOPS_SLUG=0`, the folder keeps its date-time name and gets no
 summary.
 
-**None of it happens while you wait.** The tap that ends a session ends it: teardown writes
+**None of it happens while you wait.** Whatever ends a session - the hold, two quiet minutes, a
+goodbye (the `end` record's `reason` says which: `stopped`, `quiet`, `goodbye`) - ends it: teardown writes
 `session.md` from records it already has and hands the folder to a detached `python -m
 cyclops.after`, which names it, notes anything it said about you, and files it (see
 [memory.md](memory.md)). The kiosk is asleep before the first round trip comes back. Each job

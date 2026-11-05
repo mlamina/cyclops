@@ -42,6 +42,7 @@ dependencies = [
     # whose Python API is not a surface anybody promises to keep.
     "pyserial>=3.5",
     "segno>=1.6.6",
+    "webrtcvad-wheels>=2.0.14",
 ]
 
 [project.scripts]

@@ -40,6 +40,7 @@ from . import (  # noqa: E402
     barge,
     companion,
     devices,
+    ear,
     flip,
     mixer,
     panel,
@@ -173,6 +174,9 @@ PRESS_SECONDS = 0.18  # how long the button stays visibly depressed after a tap
 # before anybody concludes it is broken. Phones use half a second; this asks for a little more
 # because there is no way back from one of the two things it offers.
 LONG_PRESS_S = 0.7
+EAR_HOLD_S = 3.0  # deaf this long after a session, so its last sounds cannot start the next
+EAR_FAILED_HOLD_S = 30.0  # ...and this long after one failed to start
+EAR_RETRY_S = 10.0  # a mic that would not open is tried again this often
 # ...and how long a finger has to be on the *button* before it is answered with a sound at all.
 # A click is over in about a tenth of a second and should be a shutter and nothing else, so the
 # rise that says "this is going somewhere" cannot start on the press edge: half of every photo
@@ -492,6 +496,11 @@ class Kiosk:
         self._power_at = 0.0  # ...but not before the row you pressed has been seen to invert
         self._pending: str | None = None  # "start"/"stop" until the session catches up
         self._pending_at = 0.0
+        # Listening for him to start talking while no session is up - see _tend_ear.
+        self._ear: ear.Ear | None = None
+        self._ear_quiet_until = 0.0  # deaf until then: a session just ended, or failed
+        self._ear_retry_at = 0.0  # the mic would not open; try again from then
+        self._ear_state = ""  # the controller's state last frame, for noticing an ERROR arrive
         self._snap_busy = threading.Event()  # one shutter at a time; see _snap
         # The shutter sound is the kiosk's own: a photo can be taken with no session running,
         # so it cannot wait for an agent to exist to own the noise.
@@ -1710,6 +1719,75 @@ class Kiosk:
             self._cues.play("gears")
             self.controller.stop()
 
+    def _tend_ear(self, raw: str, now: float) -> None:
+        """Keep the ear open while no session is, and start one when it hears him. Each frame.
+
+        Open only when a session could start from it: not during one or on the way in or out,
+        not over a menu or the network picker, and not with no network. Deaf while the box is
+        making a sound of its own and for :data:`EAR_HOLD_S` after a session, so the lid closing
+        and the last of his voice cannot start the next one; longer after a failed start, so a
+        bad key or a dead socket is not retried every time somebody says a word.
+
+        On a start the ear is handed to the session and forgotten here: it goes on collecting
+        what he says until the model can hear it, and the session closes it.
+        """
+        if not self.controller.settings.voice_wake:
+            return
+        if raw == ERROR and self._ear_state != ERROR:
+            self._ear_quiet_until = now + EAR_FAILED_HOLD_S
+        self._ear_state = raw
+        if session_up(raw) or self._pending is not None:
+            self._ear_quiet_until = max(self._ear_quiet_until, now + EAR_HOLD_S)
+        wanted = (
+            not session_up(raw)
+            and self._pending is None
+            and not self._menu
+            and self._wifi is None
+            and self._online is not False
+        )
+        if not wanted:
+            self._close_ear()
+            return
+        if self._ear is None:
+            if now < self._ear_retry_at:
+                return
+            self._ear = self._open_ear(now)
+            if self._ear is None:
+                return
+        self._ear.deaf = now < self._ear_quiet_until or self._cues.waiting() > 0
+        if not self._ear.heard.is_set():
+            return
+        heard, self._ear = self._ear, None
+        print("· heard somebody talking: starting a session", flush=True)
+        if self._asleep:
+            self._wake()
+        self._touched_at = now
+        # The same optimistic STARTING the press gives, without the gears: the ear is still
+        # listening, and the gears would be in the first thing the model hears.
+        self._pending, self._pending_at = "start", now
+        self.controller.start(ear=heard)
+
+    def _open_ear(self, now: float) -> ear.Ear | None:
+        s = self.controller.settings
+        try:
+            opened = ear.Ear(
+                device=resolve_device(s.input_device),
+                gain_db=s.mic_gain_db,
+                compress=s.mic_compress,
+            )
+            opened.start()
+        except Exception as exc:  # noqa: BLE001 - no mic means no voice start, not no kiosk
+            print(f"· could not open the mic to listen ({exc}); "
+                  f"trying again in {EAR_RETRY_S:g} s", file=sys.stderr, flush=True)
+            self._ear_retry_at = now + EAR_RETRY_S
+            return None
+        return opened
+
+    def _close_ear(self) -> None:
+        if self._ear is not None:
+            self._ear.close()
+            self._ear = None
+
     def _effective(self, raw: str) -> str:
         """Overlay the tap's intent on the session's own state until the two agree.
 
@@ -2123,6 +2201,10 @@ class Kiosk:
                 self._wifi = None  # ...and the same for a picker nobody is using
 
             status = self.controller.status()
+            # A session ending itself (two quiet minutes, a goodbye) shows the same closing the
+            # button's stop does - see SessionController.closing and _effective.
+            if self.controller.closing and self._pending is None:
+                self._pending, self._pending_at = "stop", started
             state = self._effective(str(status["state"]))
             self._sync_network(started, session_up(str(status["state"])))
             # Something is running in the background - a picture being made, or the child
@@ -2145,6 +2227,7 @@ class Kiosk:
             awake = session_live(state)
             state = working_over(state, bool(job))
             asleep = self._sleeping(state)
+            self._tend_ear(str(status["state"]), started)
 
             # The lid shutting, said out loud. It is the one thing on this panel that moves for
             # over a second, and a mechanism that size making no noise is the tell that it is a
@@ -2493,6 +2576,7 @@ def main() -> None:
         panel.withdraw()  # nothing should be waiting for a panel that is gone
         PICTURE_UP_FLAG.unlink(missing_ok=True)  # ...and nothing is on the glass either
         webcam.set_live_source(None)
+        kiosk._close_ear()
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away
         camera.stop()

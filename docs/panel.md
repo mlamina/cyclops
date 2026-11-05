@@ -25,7 +25,15 @@ underneath. The fault is the one lit state that does not move, which is the rule
 keeps: nothing on this screen blinks at you about something broken twice.
 
 Taking a photo and starting a session are the button beside the panel, not the glass: a tap is
-the photo, a hold is the conversation.
+the photo, a hold is the conversation. Mostly the hold is not needed: with no session up the
+box is listening for somebody to talk (`cyclops.ear`), and talking to it starts one, with what
+was said first answered rather than lost. A session ends itself after two minutes in which
+nobody has said anything, or when you say you are done ("that's all", "thanks, bye"); the lid
+closing is the sound of it. The hold still starts and ends one either way.
+
+Before a session starts, what the mic hears is held in memory for two seconds and overwritten -
+never written down, logged or sent. It is deaf while the box is making a sound of its own and for
+a few seconds after a session, so its own voice cannot start the next one.
 
 ## Holding his eye shuts the box down
 
