@@ -1,4 +1,4 @@
-"""Cyclops speaks first: one greeting asked for as the session comes up, and never over the lid."""
+"""A session coming up says nothing and sounds nothing: he should not notice it (hq#572)."""
 
 from __future__ import annotations
 
@@ -8,11 +8,10 @@ from types import SimpleNamespace
 
 import pytest
 
-from cyclops import agent, sfx
+from cyclops import agent
 from cyclops.config import Settings
 
 UP = SimpleNamespace(type="session.updated")
-LID_S = 0.05  # the lid sound, shortened: the suite has ten seconds for everything
 
 
 class FakeConn:
@@ -54,7 +53,10 @@ async def _settle(made: agent.VoiceAgent) -> None:
     await asyncio.gather(*made._background)
 
 
-def test_one_greeting_is_asked_for_and_a_second_ready_asks_for_nothing(voice):
+def test_a_session_coming_up_asks_for_nothing_and_sounds_nothing(voice, monkeypatch):
+    played: list[str] = []
+    monkeypatch.setattr(voice.cues, "play", lambda name, **_: played.append(name) or 0.0)
+
     async def go():
         await voice._handle_event(UP)
         await _settle(voice)
@@ -62,36 +64,18 @@ def test_one_greeting_is_asked_for_and_a_second_ready_asks_for_nothing(voice):
         await _settle(voice)
 
     asyncio.run(go())
-    assert len(voice.conn.responses) == 1
-    assert voice.conn.items == [], "nobody said anything: there is no user turn in front of it"
+    assert voice.conn.responses == []
+    assert voice.conn.items == []
+    assert played == []
 
 
-def test_the_greeting_cannot_call_a_tool(voice):
-    async def go():
-        await voice._handle_event(UP)
-        await _settle(voice)
-
-    asyncio.run(go())
-    (asked,) = voice.conn.responses
-    assert asked["response"]["tool_choice"] == "none"
-
-
-def test_voice_waits_for_the_lid_and_then_plays_at_once(voice, monkeypatch):
+def test_voice_plays_at_once(voice):
     speaker = voice.speaker = FakeSpeaker()
-    monkeypatch.setattr(voice.cues, "play", lambda name, **_: LID_S)
-    monkeypatch.setattr(sfx, "SETTLE_S", 0.0)
-
-    def say(pcm: bytes) -> None:
-        voice._play("greeting", base64.b64encode(pcm).decode("ascii"))
 
     async def go():
         await voice._handle_event(UP)
-        say(b"early")
-        assert speaker.fed == [], "the lid is still sounding"
-        await asyncio.sleep(LID_S * 2)
+        voice._play("first", base64.b64encode(b"early").decode("ascii"))
         assert speaker.fed == [b"early"]
-        say(b"late")
-        assert speaker.fed == [b"early", b"late"]
         await _settle(voice)
 
     asyncio.run(go())

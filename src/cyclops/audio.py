@@ -353,6 +353,7 @@ class Speaker:
     def __init__(self, *, device: int | str | None = None) -> None:
         self._lock = threading.Lock()
         self._buffer = bytearray()
+        self._stopped = False  # stop() closed the stream for good: nothing fed now would ever play
         self._played_frames = 0  # total frames ever handed to PortAudio
         self._item_start_frame = 0  # playback position at which the current item begins
         self._last_output_at = 0.0  # monotonic time we last handed real audio to PortAudio
@@ -433,7 +434,8 @@ class Speaker:
             samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) * vol
             pcm = np.clip(samples, -32768, 32767).astype(np.int16).tobytes()
         with self._lock:
-            self._buffer.extend(pcm)
+            if not self._stopped:
+                self._buffer.extend(pcm)
 
     def flush(self) -> int:
         """Drop everything not yet played. Returns ms of the current item that *was* played."""
@@ -467,6 +469,11 @@ class Speaker:
     def stop(self) -> None:
         self._stream.stop()
         self._stream.close()
+        # Nothing plays this now, and is_audible counts what's buffered, so keeping it would leave
+        # the ear deaf for the rest of the close (arc-eng/hq#572). What did go out keeps its tail.
+        with self._lock:
+            self._stopped = True
+            self._buffer.clear()
 
 
 class EchoGuard:

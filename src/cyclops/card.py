@@ -117,7 +117,7 @@ KNOWN = frozenset(
 # they are two different arguments for keeping a folder and whoever adds the next record type
 # needs to know which one they are adding to: they spoke, or something was made.
 #
-# `cyclops` is in neither. Cyclops greets every wake before anybody has said a word, so a line of
+# `cyclops` is in neither. A session used to open with a greeting, and a line of
 # its own is what a tap-and-stop looks like now, and counting it would keep every accidental tap
 # as a session - named, summarised, and counted into "the nth time today". Until the greeting it
 # only ever spoke after a `you` turn, so leaving it out cannot empty a folder that was kept.

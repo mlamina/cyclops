@@ -126,8 +126,8 @@ async def _main() -> int:
         await _await_or_fail(agent_task, agent.ready, READY_TIMEOUT_S)
         print("· session ready")
 
-        # Nothing typed: the greeting is asked for by the session coming up, and `turn` has been
-        # listening since before the connect, so it is already collecting it.
+        # Typed: a session coming up says nothing of its own any more (arc-eng/hq#572).
+        await agent.send_text("Say hello in one short sentence.")
         await _await_or_fail(agent_task, turn.done, TURN_TIMEOUT_S)
         print(f"· turn 1: {turn.seconds_of_audio:.1f}s audio, transcript={turn.transcripts!r}")
         if turn.audio_bytes == 0:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import threading as ui_threading
 import wave
 from functools import cache
 from pathlib import Path
@@ -21,7 +22,7 @@ from cyclops import agent, ear
 from cyclops import kiosk as kiosk_module
 from cyclops.audio import BLOCK_FRAMES, SAMPLE_RATE
 from cyclops.config import Settings
-from cyclops.ui import CONNECTING, ERROR, IDLE, LISTENING
+from cyclops.ui import CONNECTING, ERROR, IDLE, LISTENING, SessionController
 
 SOUNDS = Path(agent.__file__).parent / "assets" / "sounds"
 BLOCK_BYTES = BLOCK_FRAMES * 2
@@ -217,7 +218,7 @@ def test_a_voiced_session_answers_what_was_said_instead_of_greeting(monkeypatch)
     assert held.closed
 
 
-def test_a_button_session_still_greets(monkeypatch) -> None:
+def test_a_button_session_says_nothing_either(monkeypatch) -> None:
     made = _agent(monkeypatch)
 
     async def go():
@@ -225,7 +226,7 @@ def test_a_button_session_still_greets(monkeypatch) -> None:
         await asyncio.gather(*made._background)
 
     asyncio.run(go())
-    assert len(made._conn.responses) == 1
+    assert made._conn.responses == []
 
 
 def _ending(made: agent.VoiceAgent) -> list[str]:
@@ -291,6 +292,8 @@ class Controller:
     def __init__(self, voice_wake: bool = True) -> None:
         self.settings = Settings(api_key="", voice_wake=voice_wake)
         self.closing = False
+        self.running = False
+        self.speaking = False
         self.started_with: list = []
 
     def start(self, *, ear=None) -> None:
@@ -379,8 +382,8 @@ def test_no_ear_during_a_session_and_deaf_just_after(monkeypatch) -> None:
     first = kiosk._ear
     _at(kiosk, LISTENING, 101.0)
     assert first.closed and kiosk._ear is None
-    _at(kiosk, IDLE, 101.5)
-    assert _deaf(kiosk, 101.5)  # its last sounds cannot start the next one
+    _at(kiosk, IDLE, 101.2)
+    assert _deaf(kiosk, 101.2)  # its last sounds cannot start the next one
     assert not _deaf(kiosk, 101.0 + kiosk_module.EAR_HOLD_S + 0.1)
 
 
@@ -415,3 +418,138 @@ def test_no_network_no_ear(monkeypatch) -> None:
     kiosk._online = False
     _at(kiosk, IDLE, 100.0)
     assert kiosk._ear is None
+
+
+# ---------------------------------------------------------------- talking again right after (#572)
+
+
+def test_the_ear_opens_as_a_session_closes_and_hands_over_only_when_it_has_gone(
+    monkeypatch,
+) -> None:
+    """What he says during the close reaches the next session: start() would drop an ear given to
+    it while the old thread is alive, so the kiosk holds on to it until then."""
+    kiosk = _panel(monkeypatch)
+    _at(kiosk, LISTENING, 100.0)
+    assert kiosk._ear is None
+    kiosk.controller.closing = kiosk.controller.running = True
+    _at(kiosk, LISTENING, 101.0)
+    listening = kiosk._ear
+    assert listening is not None and not listening.closed
+    assert not _deaf(kiosk, 101.0 + kiosk_module.EAR_HOLD_S + 0.1)
+
+    listening.heard.set()
+    _at(kiosk, LISTENING, 102.0)
+    assert kiosk.controller.started_with == [] and not listening.closed
+
+    kiosk.controller.closing = False  # the close is done, but the thread is still on its way out
+    _at(kiosk, IDLE, 102.1)
+    assert kiosk.controller.started_with == [] and not listening.closed
+
+    kiosk.controller.running = False
+    _at(kiosk, IDLE, 102.2)
+    assert kiosk.controller.started_with == [listening] and not listening.closed
+
+
+def test_deaf_while_his_voice_is_coming_out_even_during_the_close(monkeypatch) -> None:
+    kiosk = _panel(monkeypatch)
+    kiosk.controller.closing = kiosk.controller.running = True
+    _at(kiosk, LISTENING, 100.0)
+    kiosk.controller.speaking = True
+    assert _deaf(kiosk, 100.1)
+    kiosk.controller.speaking = False
+    assert _deaf(kiosk, 100.1 + kiosk_module.EAR_HOLD_S / 2)
+    assert not _deaf(kiosk, 100.1 + kiosk_module.EAR_HOLD_S + 0.1)
+
+
+def test_a_session_keeps_what_both_sides_said(monkeypatch) -> None:
+    made = _agent(monkeypatch)
+
+    async def go():
+        for kind, text in (
+            ("conversation.item.input_audio_transcription.completed", " one more thing "),
+            ("conversation.item.input_audio_transcription.completed", ""),
+            ("response.output_audio_transcript.done", "Go on."),
+        ):
+            event = SimpleNamespace(type=kind, transcript=text, item_id="i", content_index=0)
+            await made._handle_event(event)
+
+    asyncio.run(go())
+    assert made.spoken == [("you", "one more thing"), ("cyclops", "Go on.")]
+
+
+def _controller() -> SessionController:
+    return SessionController(Settings(api_key=""), frames=None, entrypoint="test")
+
+
+def test_the_next_session_gets_the_last_turns_only_soon_after(monkeypatch) -> None:
+    from cyclops import ui
+
+    made = _controller()
+    now = [1000.0]
+    monkeypatch.setattr(ui.time, "monotonic", lambda: now[0])
+    assert made._earlier() == ()
+    made._last_turns = (("you", "the torque on the plugs"),)
+    made._last_ended_at = 1000.0
+    now[0] += ui.CARRY_OVER_S - 1
+    assert made._earlier() == made._last_turns
+    now[0] += 2
+    assert made._earlier() == ()
+
+
+def test_the_carried_turns_are_in_what_the_model_reads_and_only_then(monkeypatch) -> None:
+    turns = (("you", "the torque on the plugs"), ("cyclops", "Twenty newton metres."))
+    plain = agent._carried_block(())
+    block = agent._carried_block(turns)
+    assert plain == ""
+    assert "the torque on the plugs" in block and "Twenty newton metres." in block
+    monkeypatch.setattr(agent, "_standing", lambda *_: ("HEAD", "CLOCK"))
+    made = agent.VoiceAgent(Settings(api_key="", sounds=False), earlier=turns)
+    instructions = made.session_config()["instructions"]
+    assert instructions.index("HEAD") < instructions.index("the torque")
+    assert instructions.index("the torque") < instructions.index("CLOCK")
+
+
+def test_closing_lasts_until_start_would_work() -> None:
+    """The real controller's gap (qa on #572): closing went false with the thread still alive."""
+    made = _controller()
+    done = ui_threading.Event()
+    made._thread = ui_threading.Thread(target=done.wait, daemon=True)
+    made._thread.start()
+    made._closing = True
+    assert made.closing and made.running
+    done.set()
+    made._thread.join()
+    assert not made.closing and not made.running
+
+
+def test_its_own_voice_stays_out_of_what_the_ear_keeps(an_ear) -> None:
+    speech = _speech()[:10]
+    an_ear.loud = lambda: True
+    _hear(an_ear, speech)
+    assert an_ear.take() == b""
+
+
+def test_the_real_controller_keeps_the_ear_through_the_end_of_a_close(monkeypatch) -> None:
+    """Its thread alive, its agent gone, reporting "connecting": the frame that dropped the ear."""
+    kiosk = _panel(monkeypatch)
+    real = _controller()
+    done = ui_threading.Event()
+    real._thread = ui_threading.Thread(target=done.wait, daemon=True)
+    real._thread.start()
+    real._closing = True
+    started: list = []
+    monkeypatch.setattr(real, "start", lambda *, ear=None: started.append(ear))
+    kiosk.controller = real
+    kiosk.controller.settings = Settings(api_key="", voice_wake=True)
+
+    _at(kiosk, CONNECTING, 100.0)
+    listening = kiosk._ear
+    assert listening is not None
+    listening.heard.set()
+    _at(kiosk, CONNECTING, 100.1)
+    assert not listening.closed and started == []
+
+    done.set()
+    real._thread.join()
+    _at(kiosk, IDLE, 100.2)
+    assert started == [listening] and not listening.closed
