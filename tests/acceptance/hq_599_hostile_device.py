@@ -39,7 +39,7 @@ assert str(jobs.LEDGER).startswith(str(SCRATCH)), jobs.LEDGER
 assert str(tasks.TASKS_FILE).startswith(str(SCRATCH)), tasks.TASKS_FILE
 
 ROOT = Path("/var/lib/cyclops-worker")
-QA = ROOT / "home" / "qa"
+QA = ROOT / "qa"  # not home/: since d55cf60 a restart empties that
 SETTINGS = replace(
     load_settings(require_api_key=False),
     worker=True,
@@ -117,7 +117,10 @@ def ask(words: str) -> str:
     jobs.collect(SETTINGS)  # settle whatever came before, as the index service would
     answer = jobs.submit(SETTINGS, words)
     assert answer == jobs.STARTED, (words, answer, jobs._read()[-2:])  # noqa: SLF001
-    return str(jobs._read()[-1]["id"])  # noqa: SLF001
+    # By request and state, not rows[-1]: past KEEP rows the ledger puts old untold ones last, and
+    # this harness never tells any. That had it waiting on the wrong id (2026-11-05, round 3).
+    rows = [r for r in jobs._read() if r.get("request") == words and r.get("state") == jobs.RUNNING]  # noqa: SLF001
+    return str(rows[-1]["id"])
 
 
 def wait_file(path: Path, seconds: float) -> bool:
@@ -214,7 +217,7 @@ def linger() -> None:
         time.sleep(1)
         running = started and ticking(tick)
         note(f"the unit started by itself after the job: {running}")
-        if not running:
+        if not running and Path("/var/lib/systemd/linger/cyclops-worker").exists():
             # The job's end can catch the manager. The linger file stays, and at boot this is what
             # systemd does with it. A reboot is what's being stood in for here, not done.
             subprocess.run(["sudo", "-n", "systemctl", "start", "user@999.service"], check=False)
@@ -319,24 +322,30 @@ def output_fifo() -> None:
 
 
 def done_is_a_file() -> None:
-    before = restarts()
     job = ask("QA-DONE-IS-A-FILE")
-    time.sleep(20)
-    note(f"answer as Cyclops reads it: {answer_of(job)}")
-    state = sh("systemctl", "is-active", "cyclops-worker")
-    note(f"service {state}, restarts {before} -> {restarts()}")
+    time.sleep(12)  # the crash, RestartSec, and the repair
+    up = still_up(5)
     check(
-        "the worker survives `done` replaced by a file",
-        restarts() == before and state == "active",
-        f"{state}, {restarts() - before} restarts",
+        "the worker comes back by itself after `done` is replaced by a file",
+        up,
+        f"{restarts()} restarts",
     )
-    as_worker("rm", "-f", str(ROOT / "done"))
-    as_worker("mv", str(ROOT / "done.qa"), str(ROOT / "done"))
-    restart_service()
+    check(
+        "the job is answered as cut off",
+        (answer_of(job) or {}).get("reason") == worker.INTERRUPTED,
+        answer_of(job),
+    )
+    info = (ROOT / "done").stat()
+    check(
+        "`done` is a folder again, group cyclops, setgid",
+        oct(info.st_mode)[-4:] == "2750",
+        oct(info.st_mode),
+    )
+    as_worker("rm", "-rf", str(ROOT / "done.qa"))
     jobs.collect(SETTINGS)
     control = ask("QA-COUNT control")
     check(
-        "control: runs again once a person has cleared it",
+        "control: runs again with nobody clearing it",
         wait_file(ROOT / "done" / f"{control}.json", 30),
     )
 
@@ -349,27 +358,60 @@ def long_name() -> None:
     up = still_up()
     note(f"service {sh('systemctl', 'is-active', 'cyclops-worker')}, restarts since: {restarts()}")
     check("the worker starts with a job folder whose name is too long to answer for", up)
-    as_worker(
-        "find",
-        str(ROOT / "jobs"),
-        "-maxdepth",
-        "1",
-        "-name",
-        "xxxxxxxxxx*",
-        "-exec",
-        "rm",
-        "-rf",
-        "{}",
-        "+",
-    )
-    assert not list((ROOT / "jobs").glob("xxxxxxxxxx*")), "the planted folder is still there"
-    restart_service()
+    check("the planted folder is gone", not list((ROOT / "jobs").glob("xxxxxxxxxx*")))
     jobs.collect(SETTINGS)
     control = ask("QA-COUNT control")
     check(
-        "control: runs again once a person has cleared it",
+        "control: runs again with nobody clearing it",
         wait_file(ROOT / "done" / f"{control}.json", 30),
     )
+
+
+def stop() -> None:
+    """kill -STOP on the program that enforces the limit, and no time limit is counting."""
+    job = ask("QA-STOP")
+    started = time.monotonic()
+    answered = wait_file(ROOT / "done" / f"{job}.json", 100)
+    answer = answer_of(job) or {}
+    check(
+        "a frozen worker is restarted, and the job answered as cut off",
+        answered and answer.get("reason") == worker.INTERRUPTED,
+        f"{time.monotonic() - started:.0f} s, {answer}",
+    )
+    time.sleep(3)
+    left = worker_processes()
+    check("the job is gone", len(left) == 1 and "worker.py" in left[0], left)
+
+
+def land_traps() -> None:
+    for word in ("QA-LAND-PIPE", "QA-DONE-FOLDER"):
+        job = ask(word)
+        check(f"{word}: answered", wait_file(ROOT / "done" / f"{job}.json", 25), answer_of(job))
+        time.sleep(3)
+        up = sh("systemctl", "is-active", "cyclops-worker")
+        check(f"{word}: the service is up", up == "active", up)
+
+
+def sockets() -> None:
+    """The bus was one local socket a job could reach. What else can it connect to?"""
+    job = ask("QA-SOCKETS")
+    wait_file(ROOT / "done" / f"{job}.json", 40)
+    print(log_of(job), flush=True)
+    check(
+        "the system bus isn't among them",
+        "dbus/system_bus_socket" not in log_of(job).split("--- reached")[-1],
+    )
+
+
+def proc_mem() -> None:
+    job = ask("QA-PROC-MEM")
+    wait_file(ROOT / "done" / f"{job}.json", 40)
+    print(log_of(job), flush=True)
+    check(
+        "a job can't open the worker's memory to write",
+        "mem open for writing: allowed" not in log_of(job),
+    )
+    check("a job can't ptrace the worker", "ptrace seize: allowed" not in log_of(job))
 
 
 def real_job() -> None:
@@ -381,8 +423,8 @@ def real_job() -> None:
         "a real job on this code gets an answer", answered and answer.get("state") == "ok", answer
     )
     check(
-        "a hook left in the worker's home by an earlier job ran in this one",
-        False if not (QA / "from-hook").exists() else True,
+        "a hook left in the old home or the top folder doesn't run in this one",
+        not (QA / "from-hook").exists(),
     )
     print(f"   said: {jobs.collect(SETTINGS)}", flush=True)
     landed = sorted(p.name for p in SETTINGS.manuals_dir.iterdir())
@@ -400,6 +442,10 @@ CASES = {
     "done_is_a_file": done_is_a_file,
     "long_name": long_name,
     "limit": limit,
+    "stop": stop,
+    "land_traps": land_traps,
+    "sockets": sockets,
+    "proc_mem": proc_mem,
     "real_job": real_job,
 }
 
