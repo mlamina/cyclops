@@ -152,8 +152,8 @@ cancelled. By the time a row appears the work is already running. Its only job i
 whether anything is going on.
 
 **Cyclops never opens a task himself.** He calls a tool, and the tool spawns the work and opens
-the row. Three things do so today: `draw`, `edit_photo`, and the three jobs
-`cyclops.after` runs once a session has ended.
+the row. Four things do so today: `draw`, `edit_photo`, `background_job`
+([worker.md](worker.md)), and the three jobs `cyclops.after` runs once a session has ended.
 
 **Where you see it.** The panel's terminal, along the bottom — the same line that says
 "searching the web…", with its cursor blinking. It is the last thing that line falls back to,

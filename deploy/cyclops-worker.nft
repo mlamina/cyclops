@@ -1,0 +1,25 @@
+#!/usr/sbin/nft -f
+# What the worker's account may reach. Loaded by cyclops-worker.service before it starts, so the
+# worker can't run without it. By account rather than by address, because the box's address
+# changes with the wifi. Only this account is touched: everything else on the box is unaffected.
+
+# Declared, then deleted, then defined: the way to reload this with no version-specific "destroy".
+table inet cyclops_worker {}
+delete table inet cyclops_worker
+
+table inet cyclops_worker {
+  chain output {
+    type filter hook output priority filter; policy accept;
+    meta skuid != "cyclops-worker" accept
+
+    # Name lookups, which may be answered by the router.
+    meta l4proto { tcp, udp } th dport 53 accept
+
+    # Nothing on this device, whatever address it's asked by: port 80 serves his sessions.
+    fib daddr type local counter drop
+
+    # Nothing else on his network either.
+    ip daddr { 10.0.0.0/8, 100.64.0.0/10, 172.16.0.0/12, 192.168.0.0/16, 169.254.0.0/16, 224.0.0.0/4 } counter drop
+    ip6 daddr { fc00::/7, fe80::/10, ff00::/8 } counter drop
+  }
+}

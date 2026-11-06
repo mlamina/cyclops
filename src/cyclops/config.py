@@ -165,6 +165,10 @@ class Settings:
     remember: bool = True  # keep about-you.md up to date from what is said (cyclops.about)
     projects: bool = True  # keep projects/ up to date, and offer the two project tools
     diagrams: bool = True  # offer draw, and keep what it draws in photos/
+    # Offer the background worker (cyclops.jobs). Off unless asked for: without the service, its
+    # account and its key on the box, the tool could only ever say it isn't available.
+    worker: bool = False
+    worker_dir: Path = Path("/var/lib/cyclops-worker")
     recall: bool = True  # offer the recall tool, and index what is on the card (cyclops.indexer)
     # Read uploaded PDFs into searchable pages (cyclops.reading). Separate from `recall` rather
     # than folded into it: a manual costs one vision call per page the moment it lands, which is
@@ -360,6 +364,8 @@ def load_settings(*, require_api_key: bool = True) -> Settings:
         remember=_flag("CYCLOPS_REMEMBER", Settings.remember),
         projects=_flag("CYCLOPS_PROJECTS", Settings.projects),
         diagrams=_flag("CYCLOPS_DIAGRAMS", Settings.diagrams),
+        worker=_flag("CYCLOPS_WORKER", Settings.worker),
+        worker_dir=Path(_env("CYCLOPS_WORKER_DIR") or Settings.worker_dir).expanduser(),
         recall=_flag("CYCLOPS_RECALL", Settings.recall),
         manuals=_flag("CYCLOPS_MANUALS", Settings.manuals),
         video=_flag("CYCLOPS_VIDEO", Settings.video),

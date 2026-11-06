@@ -1,0 +1,57 @@
+# The background worker: Claude Code on one job at a time, walled off from everything of his.
+# Install with deploy/install-worker.sh. docs/worker.md says what each wall is for.
+#
+# The wall is this file and the firewall it loads, not Claude Code's settings: inside it, nothing
+# is ever asked for permission, because nobody is there to answer.
+#
+# Host-specific lines: none. It deliberately runs nothing from /home/cyclops, which it can't see.
+
+[Unit]
+Description=Cyclops background worker (one Claude Code job at a time)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=cyclops-worker
+Group=cyclops-worker
+UMask=0027
+
+# As root (the +), and before it starts: if the rule won't load, the worker doesn't run. The admin
+# page has no login and serves his sessions to anything that can reach port 80, this box included,
+# so a separate account alone would not keep the worker away from them.
+ExecStartPre=+/usr/sbin/nft -f /opt/cyclops-worker/firewall.nft
+ExecStart=/usr/bin/python3 /opt/cyclops-worker/worker.py
+Restart=always
+RestartSec=5
+
+# Files: only its own folder.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cyclops-worker
+ProtectHome=yes
+PrivateTmp=yes
+# No admin rights, however it asks.
+NoNewPrivileges=yes
+# No camera, mic or anything else plugged in.
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+# The internet, and local sockets for what Claude Code runs. Nothing lower-level than that.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Never at the cost of a live conversation. The memory limit is a first guess until one real job
+# has been watched: going over kills the job, and he hears that it didn't finish.
+MemoryMax=1500M
+CPUQuota=100%
+CPUWeight=20
+IOWeight=20
+Nice=10
+TasksMax=128
+OOMScoreAdjust=500
+
+[Install]
+WantedBy=multi-user.target

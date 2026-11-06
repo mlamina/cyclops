@@ -35,6 +35,7 @@ from . import (
     devices,
     extensions,
     imagine,
+    jobs,
     manuals,
     panel,
     point,
@@ -219,6 +220,31 @@ WATCH_VIDEO_TOOL: RealtimeFunctionToolParam = {
     },
 }
 
+BACKGROUND_JOB_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "background_job",
+    "description": (
+        "Find a PDF on the web and download it to their Manuals, in the background: a manual, a "
+        "datasheet, a guide. Use it when they ask you to find and download or fetch a document. "
+        "It takes minutes and you keep talking meanwhile. Say in a few words that you're on it, "
+        "then carry on. You will be told when it finishes or fails, and you tell them then. "
+        "It does nothing else: it can't see their notes, and it isn't for ordinary questions. "
+        "Only one at a time."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "request": {
+                "type": "string",
+                "description": (
+                    "What to find, with every detail they gave: make, model, revision, language. "
+                    "Whoever does it sees only this and nothing of your conversation."
+                ),
+            },
+        },
+        "required": ["request"],
+    },
+}
 DRAW_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "draw",
@@ -930,6 +956,9 @@ _SOMEBODY_SPOKE = frozenset({
     "conversation.item.input_audio_transcription.completed",
     "response.output_audio.delta",
 })
+TELL_CHECK_S = 1.0  # how often a finished background job looks for a pause to be told in
+TELL_PAUSE_S = 2.0  # nobody has said anything for this long: a pause, not a breath
+TELL_RETRY_S = 30.0  # after a telling that didn't complete, so a failing call can't repeat at once
 QUIET_CHECK_S = 1.0  # how often the quiet timer looks; the end lands within this of the limit
 # What a session starting soon after another one is told about it (arc-eng/hq#572). The turns are
 # kept in memory by the controller, so this works when the last session was thrown away as empty
@@ -1459,6 +1488,9 @@ class VoiceAgent:
         self.on_end: Callable[[], None] | None = None  # how it asks to be ended; the controller's
         self._heard_at = 0.0  # last time anybody spoke, either side; see _end_when_quiet
         self._tools_running = 0
+        self._he_spoke = False  # a finished job waits until he has said something this session
+        self._telling: str | None = None  # the job the response in flight is telling him about
+        self._tell_not_before = 0.0
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
         self.drawing_active = False  # True while a picture is being made (UI 'drawing')
@@ -1798,6 +1830,7 @@ class VoiceAgent:
     async def send_text(self, text: str) -> None:
         """Inject a typed user turn (used by the headless smoke test)."""
         self._recalled.clear()  # a typed turn is them speaking, as far as recall is concerned
+        self._he_spoke = True
         await self._send_item(
             {"type": "message", "role": "user", "content": [{"type": "input_text", "text": text}]}
         )
@@ -2124,6 +2157,7 @@ class VoiceAgent:
                 self._on_error(event.error)
             case "input_audio_buffer.speech_started":
                 self._user_speaking = True
+                self._he_spoke = True
                 self._turn_serial += 1  # any search still running is now answering an old question
                 self._confirm_local_barge_in()
                 await self._on_user_speech_started()
@@ -2244,6 +2278,8 @@ class VoiceAgent:
         # Only with a mic: with none (the smoke test, typed turns) nobody can be quiet in it.
         if self.settings.quiet_end_s and self.mic is not None:
             self._spawn(self._end_when_quiet())
+        if self.settings.worker:
+            self._spawn(self._tell_when_quiet())
         if self.voiced:
             session.note("woke", by="speech")
         # The UI framework's import, bought now rather than on the first delta of the first
@@ -2354,6 +2390,7 @@ class VoiceAgent:
 
     async def _on_response_done(self, response: RealtimeResponse) -> None:
         self._response_active = False
+        await self._told(response.status == "completed")
         self._dead_item_ids.clear()  # all of a response's output precedes its response.done
         calls = function_calls(response)
         if response.status == "completed":
@@ -2424,6 +2461,9 @@ class VoiceAgent:
             return
         if call.name == "draw":
             await self._run_draw(call)
+            return
+        if call.name == "background_job":
+            await self._run_background_job(call)
             return
         if call.name == "edit_photo":
             await self._run_edit_photo(call)
@@ -3537,6 +3577,90 @@ class VoiceAgent:
         )
         await self._request_response()
 
+    # ---- the background worker ----
+
+    async def _run_background_job(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Hand a request to the worker and answer at once. See :mod:`cyclops.jobs`.
+
+        Nothing waits on it, and it deliberately doesn't count as busy: two quiet minutes still
+        end the session with a job running, because the job is built to outlive the session.
+        """
+        request = _tool_string(call.arguments, "request", jobs.MAX_REQUEST_CHARS)
+        self._log(f"[tool] background_job {request!r}")
+        if not request:
+            output = {"ok": False, "error": "nothing described"}
+        else:
+            try:
+                answer = await asyncio.to_thread(jobs.submit, self.settings, request)
+            except Exception as exc:  # noqa: BLE001 - the model must always get an answer
+                self._log(f"[tool] background_job failed: {exc!r}", stream=sys.stderr)
+                answer = jobs.UNAVAILABLE
+            session.note("background_job", request=request[:200], answer=answer)
+            output = {
+                jobs.STARTED: {
+                    "ok": True,
+                    "started": True,
+                    "note": (
+                        "It's started and takes minutes. Say in a few words that you're on it, "
+                        "then carry on. You'll be told when it finishes or fails."
+                    ),
+                },
+                jobs.BUSY: {
+                    "ok": False,
+                    "error": "Another is still running. Say you're still on the other one.",
+                },
+            }.get(answer, {"ok": False, "error": "The background worker isn't available now."})
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    async def _tell_when_quiet(self) -> None:
+        """Bring up a finished job at a pause, for as long as this session lasts."""
+        while self.ended_by is None:
+            await asyncio.sleep(TELL_CHECK_S)
+            try:
+                await self._tell_if_due()
+            except Exception as exc:  # noqa: BLE001 - this must never cost him the conversation
+                self._log(f"[jobs] {exc!r}", stream=sys.stderr)
+
+    async def _tell_if_due(self) -> None:
+        """Tell him about one finished job, if this is a moment to.
+
+        Only after he has spoken, so a new session still opens with nothing said (arc-eng/hq#572),
+        and only in a real pause, so it never talks over him or over itself.
+        """
+        now = time.monotonic()
+        if (
+            not self._he_spoke
+            or self._telling is not None
+            or self._want_response
+            or self._busy()
+            or now - self._heard_at < TELL_PAUSE_S
+            or now < self._tell_not_before
+        ):
+            return
+        row = await asyncio.to_thread(jobs.to_tell)
+        if row is None:
+            return
+        self._telling = str(row.get("id"))
+        self._tell_not_before = now + TELL_RETRY_S
+        await self.announce(jobs.announcement(row))
+
+    async def _told(self, completed: bool) -> None:
+        """A response ended. If it was the telling and it finished, he has heard: once only.
+
+        Not marked until the reply has finished, so one he talked over is told again at the next
+        pause, and one lost to a power cut is told in the next session. He may hear it twice in
+        that one gap, which beats never hearing it.
+        """
+        job_id, self._telling = self._telling, None
+        if job_id is None or not completed:
+            return
+        try:
+            await asyncio.to_thread(jobs.mark_told, job_id)
+            session.note("background_job_told", id=job_id)
+        except Exception as exc:  # noqa: BLE001 - never at the cost of the response in hand
+            self._log(f"[jobs] {exc!r}", stream=sys.stderr)
+
     # ---- imagined pictures ----
 
     async def _run_edit_photo(self, call: RealtimeConversationItemFunctionCall) -> None:
@@ -4025,6 +4149,7 @@ def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
         *_project_tools(settings),
         *_recall_tools(settings),
         *_manual_tools(settings),
+        *([BACKGROUND_JOB_TOOL] if settings.worker else []),
         *TUTORIAL_TOOLS,
         END_SESSION_TOOL,
     ]
@@ -4332,6 +4457,8 @@ def _activity_line(
         return "checking the manual…"
     if call.name == "draw":
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
+    if call.name == "background_job":
+        return "handing that off…"
     # Barely seen - the browser covers this strip about a second later - but the chain wants no
     # silent branches, and the recording is still watching while it is up.
     if call.name == "write_on_scratchpad":

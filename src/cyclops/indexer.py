@@ -44,7 +44,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import around, captions, card, cut, manuals, reading, recall
+from . import around, captions, card, cut, jobs, manuals, reading, recall, worker
 from .config import RECALL_FILE, RECALL_LOCK, ConfigError, Settings, load_settings
 
 # How long the card must be quiet before a burst of events is treated as finished. Filing one
@@ -259,7 +259,16 @@ async def reconcile(settings: Settings, *, rebuild: bool = False) -> bool:
 
 
 async def _guarded(settings: Settings, *, rebuild: bool = False) -> None:
-    """One reconcile and one video, neither of which can take the service down."""
+    """One worker pass, one reconcile and one video, none of which can take the service down."""
+    # First, so a PDF landing now is read by the reconcile just below. Its own except, for the
+    # reason the cut has one: a bad job must not cost the sweep.
+    if settings.worker:
+        try:
+            for said in await asyncio.to_thread(jobs.collect, settings):
+                _say(said)
+        except Exception as exc:  # noqa: BLE001
+            _say(f"background jobs: {type(exc).__name__}: {exc}", error=True)
+
     try:
         async with asyncio.timeout(RECONCILE_BUDGET_S):
             await reconcile(settings, rebuild=rebuild)
@@ -436,6 +445,12 @@ def _folders_to_watch(settings: Settings) -> list[Path]:
             out.extend(p for p in folder.rglob("*") if p.is_dir())
         except OSError:
             continue
+    # The worker's answers, so a job that finishes is settled now rather than at the next sweep.
+    # Only this one folder: this service has no business watching the rest of what it writes.
+    if settings.worker:
+        answers = settings.worker_dir.expanduser() / worker.DONE
+        if answers.is_dir():
+            out.append(answers)
     return out
 
 
