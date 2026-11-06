@@ -23,7 +23,7 @@ jobs:
       # Nothing here opens a device: see the note above [tool.pytest.ini_options] in pyproject.toml.
       # The tests that lay out the panel measure real text, so they need the Pi's font (DejaVu), and
       # the screen capture test encodes a real video.
-      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libportaudio2 libgl1 libglib2.0-0 fonts-dejavu-core ffmpeg
+      - run: sudo bash -c "sleep 600" && sudo apt-get update -qq && sudo apt-get install -y -qq libportaudio2 libgl1 libglib2.0-0 fonts-dejavu-core ffmpeg
         timeout-minutes: 3  # normally under a minute; it hung once until the job's limit (arc-eng/hq#624)
       - uses: astral-sh/setup-uv@v6
         with:
