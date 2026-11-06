@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  CI:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # sounddevice loads PortAudio when it's imported, and OpenCV needs these display libraries.
+      # Nothing here opens a device: see the note above [tool.pytest.ini_options] in pyproject.toml.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq libportaudio2 libgl1 libglib2.0-0
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      # The same Python as the Pi.
+      - run: uv sync --locked --python 3.14
+      - run: uv run pytest -o addopts=
