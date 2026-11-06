@@ -314,45 +314,42 @@ def test_it_stays_in_its_own_corner() -> None:
             assert corner < pod_left, f"it runs into the pod with {len(plugged)} plugged in"
 
 
-# What usb_fit gave for each prefix of each list before the pod moved into the other corner, off
-# the code at 844f601. The 480x320 window is left out on purpose: its room used to be a smaller
-# share of the panel than at the Pi's size, and the fixed room gives it the same share instead.
+# Which devices usb_fit showed for each prefix of each list before the pod moved into the other
+# corner, off the code at 844f601. The 480x320 window is left out on purpose: its room used to be a
+# smaller share of the panel than at the Pi's size, and the fixed room gives it the same share
+# instead. Names and not pixels: text measures differently where Pillow has Raqm, as on the Pi and
+# not on a Mac, so the module's width comes to 162 on one and 158 on the other for the same list.
 MIX = SHORT[:1] + RAIL + SHORT[1:]
 SHOWED = {
-    (800, 480): {
-        "RAIL": [((), 126), (("Endoscope",), 126), (("Endoscope", "MiniLab 3"), 158),
-                 (("Endoscope", "MiniLab 3"), 158)],
-        "SHORT": [((), 126), (("Cam",), 126), (("Cam", "Synth"), 126),
-                  (("Cam", "Synth", "Card"), 128), (("Cam", "Synth", "Card", "Uno"), 161)],
-        "MIX": [((), 126), (("Cam",), 126), (("Cam", "Endoscope"), 126),
-                (("Cam", "Endoscope"), 126), (("Cam", "Endoscope"), 126),
-                (("Cam", "Endoscope", "Synth"), 163), (("Cam", "Endoscope", "Synth"), 163),
-                (("Cam", "Endoscope", "Synth"), 163)],
-    },
-    (1280, 720): {
-        "RAIL": [((), 189), (("Endoscope",), 189), (("Endoscope", "MiniLab 3"), 246),
-                 (("Endoscope", "MiniLab 3"), 246)],
-        "SHORT": [((), 189), (("Cam",), 189), (("Cam", "Synth"), 189),
-                  (("Cam", "Synth", "Card"), 198), (("Cam", "Synth", "Card", "Uno"), 249)],
-        "MIX": [((), 189), (("Cam",), 189), (("Cam", "Endoscope"), 189),
-                (("Cam", "Endoscope"), 189), (("Cam", "Endoscope"), 189),
-                (("Cam", "Endoscope", "Synth"), 253), (("Cam", "Endoscope", "Synth"), 253),
-                (("Cam", "Endoscope", "Synth"), 253)],
-    },
+    "RAIL": [(), ("Endoscope",), ("Endoscope", "MiniLab 3"), ("Endoscope", "MiniLab 3")],
+    "SHORT": [(), ("Cam",), ("Cam", "Synth"), ("Cam", "Synth", "Card"),
+              ("Cam", "Synth", "Card", "Uno")],
+    "MIX": [(), ("Cam",), ("Cam", "Endoscope"), ("Cam", "Endoscope"), ("Cam", "Endoscope"),
+            ("Cam", "Endoscope", "Synth"), ("Cam", "Endoscope", "Synth"),
+            ("Cam", "Endoscope", "Synth")],
 }
 
 
 def test_it_shows_what_it_showed_before_the_pod_moved() -> None:
     """Which devices show, how wide the module comes to, and where the list drops off."""
     lists = {"RAIL": RAIL, "SHORT": SHORT, "MIX": MIX}
-    for (w, h), table in SHOWED.items():
+    for w, h in ((800, 480), (1280, 720)):
         ov = overlay.Overlay(w, h)
-        for name, want in table.items():
-            got = []
-            for n in range(len(lists[name]) + 1):
+        # Reference px, written out so that moving the constants fails here: 10 inside each end,
+        # 12 between two devices, and a floor of 126 that the legend in its rail sets.
+        pad, gap, floor = 10 * ov.scale, 12 * ov.scale, 126 * ov.scale
+        for name, want in SHOWED.items():
+            for n, names in enumerate(want):
                 shown, right = ov.usb_fit(lists[name][:n])
-                got.append((tuple(device.name for device, _, _ in shown), round(right)))
-            assert got == want, f"{w}x{h} {name}"
+                got = tuple(device.name for device, _, _ in shown)
+                assert got == names, f"{w}x{h} {name}[:{n}]"
+                columns = [ov._usb_col(device)[1] for device, _, _ in shown]
+                used = sum(columns) + gap * (len(columns) - 1) + 2 * pad
+                wide = max(floor, round(used)) if columns else floor
+                assert right == wide, f"{w}x{h} {name}[:{n}]"
+                # The sum above trusts the columns' own measure, so hold that to the text.
+                for _, label, column in shown:
+                    assert column >= ov.font_micro.getlength(label), f"{w}x{h} {name}[:{n}] {label}"
 
 
 def test_it_is_as_wide_as_its_contents() -> None:
