@@ -135,6 +135,7 @@ def filmed(tmp_path, monkeypatch):
         )
         with log:
             log.event("you", text="is this being recorded?")  # so the folder is kept
+            log.start_recording()
             during()
         records, _ = card.read_log(log.dir / card.LOG_NAME)
         said = next(r for r in records if r["type"] == "recording")

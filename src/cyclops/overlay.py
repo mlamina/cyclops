@@ -6042,8 +6042,8 @@ class Overlay:
     def _taping(state: str, recording: bool) -> bool:
         """Is a recording actually being made? Configured to record is not the same thing.
 
-        ``recording`` only says the setting is on. The tag has to mean "tape is running", or a
-        panel sitting at ASLEEP claims to be filming the room.
+        ``recording`` says a video is being made, which he asks for by voice. The session has to
+        be up as well, or a panel sitting at ASLEEP claims to be filming the room.
         """
         return recording and session_up(state)
 

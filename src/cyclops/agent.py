@@ -912,6 +912,22 @@ END_TUTORIAL_TOOL: RealtimeFunctionToolParam = {
 
 TUTORIAL_TOOLS = (START_TUTORIAL_TOOL, ADVANCE_TUTORIAL_TOOL, END_TUTORIAL_TOOL)
 
+RECORDING_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "recording",
+    "description": (
+        "Start or stop recording video of this session: the whole screen and both voices. Sessions "
+        "aren't recorded unless they ask, so use it when they say record this, film this, start "
+        "or stop recording. Never start it on your own. Say what happened in a few words, and "
+        "never say it's recording unless this said so."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {"action": {"type": "string", "enum": ["start", "stop"]}},
+        "required": ["action"],
+    },
+}
+
 END_SESSION_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "end_session",
@@ -930,6 +946,8 @@ _SOMEBODY_SPOKE = frozenset({
     "conversation.item.input_audio_transcription.completed",
     "response.output_audio.delta",
 })
+RECORD_LIMIT_S = 60 * 60  # a forgotten recording can't fill the card; he's told when it stops
+RECORD_CHECK_S = 1.0
 QUIET_CHECK_S = 1.0  # how often the quiet timer looks; the end lands within this of the limit
 # What a session starting soon after another one is told about it (arc-eng/hq#572). The turns are
 # kept in memory by the controller, so this works when the last session was thrown away as empty
@@ -2052,6 +2070,8 @@ class VoiceAgent:
             or (speaker is not None and speaker.is_audible)
             or self._tools_running
             or self.mic_shut  # a video is playing; it ends that itself
+            # He may well be filming himself working in silence. RECORD_LIMIT_S bounds this.
+            or session.recording()
         )
 
     async def _end_when_quiet(self) -> None:
@@ -2424,6 +2444,9 @@ class VoiceAgent:
             return
         if call.name == "draw":
             await self._run_draw(call)
+            return
+        if call.name == "recording":
+            await self._run_recording(call)
             return
         if call.name == "edit_photo":
             await self._run_edit_photo(call)
@@ -3537,6 +3560,53 @@ class VoiceAgent:
         )
         await self._request_response()
 
+    # ---- recording, only when asked for ----
+
+    async def _run_recording(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Start or stop the video, and answer with what really happened.
+
+        Off the loop's thread both ways: a start waits for a first frame, a stop for the mux.
+        """
+        action = _tool_string(call.arguments, "action", 8)
+        log = session.current()
+        self._log(f"[tool] recording {action}")
+        if log is None or action not in ("start", "stop"):
+            output = {"ok": False, "error": "There's no session to record."}
+        else:
+            starting = action == "start"
+            why = await asyncio.to_thread(log.start_recording if starting else log.stop_recording)
+            if why:
+                output = {"ok": False, "recording": log.recording, "error": why}
+            elif starting:
+                self._spawn(self._watch_recording(log))
+                output = {
+                    "ok": True,
+                    "recording": True,
+                    "note": f"It's recording. It stops by itself after {RECORD_LIMIT_S // 60} min.",
+                }
+            else:
+                output = {"ok": True, "recording": False, "note": "Stopped; the video is saved."}
+        await self._send_tool_output(call.call_id, output)
+        await self._request_response()
+
+    async def _watch_recording(self, log: session.SessionLog) -> None:
+        """Stop a recording that hit the limit or broke, and tell him. Ends when it does."""
+        started = time.monotonic()
+        while self.ended_by is None and log.recording:
+            await asyncio.sleep(RECORD_CHECK_S)
+            if not log.recording:
+                return
+            problem = log.recording_problem
+            if not problem and time.monotonic() - started < RECORD_LIMIT_S:
+                continue
+            await asyncio.to_thread(log.stop_recording)
+            await self.announce(
+                f"[The recording has stopped by itself: {problem or 'it reached its time limit'}. "
+                + ("There may be no video. " if problem else "The video is saved. ")
+                + "Tell them plainly in a few words.]"
+            )
+            return
+
     # ---- imagined pictures ----
 
     async def _run_edit_photo(self, call: RealtimeConversationItemFunctionCall) -> None:
@@ -4025,6 +4095,7 @@ def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
         *_project_tools(settings),
         *_recall_tools(settings),
         *_manual_tools(settings),
+        *([RECORDING_TOOL] if settings.record else []),
         *TUTORIAL_TOOLS,
         END_SESSION_TOOL,
     ]
@@ -4332,6 +4403,8 @@ def _activity_line(
         return "checking the manual…"
     if call.name == "draw":
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
+    if call.name == "recording":
+        return "recording…" if _tool_string(args, "action", 8) == "start" else "saving the video…"
     # Barely seen - the browser covers this strip about a second later - but the chain wants no
     # silent branches, and the recording is still watching while it is up.
     if call.name == "write_on_scratchpad":

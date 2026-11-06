@@ -2264,7 +2264,7 @@ class Kiosk:
                     awake=awake,
                     level=float(status["level"]),
                     elapsed=None if elapsed is None else float(elapsed),
-                    recording=self.controller.settings.record,
+                    recording=session.recording(),
                     flash=flash,
                     pressed=self._pressed_now(),
                     # The controller's own sentence: what is being searched for, which
