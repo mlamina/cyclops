@@ -341,11 +341,15 @@ def test_it_shows_what_it_showed_before_the_pod_moved() -> None:
         for name, want in SHOWED.items():
             for n, names in enumerate(want):
                 shown, right = ov.usb_fit(lists[name][:n])
-                assert tuple(device.name for device, _, _ in shown) == names, f"{w}x{h} {name}[:{n}]"
+                got = tuple(device.name for device, _, _ in shown)
+                assert got == names, f"{w}x{h} {name}[:{n}]"
                 columns = [ov._usb_col(device)[1] for device, _, _ in shown]
                 used = sum(columns) + gap * (len(columns) - 1) + 2 * pad
                 wide = max(floor, round(used)) if columns else floor
                 assert right == wide, f"{w}x{h} {name}[:{n}]"
+                # The sum above trusts the columns' own measure, so hold that to the text.
+                for _, label, column in shown:
+                    assert column >= ov.font_micro.getlength(label), f"{w}x{h} {name}[:{n}] {label}"
 
 
 def test_it_is_as_wide_as_its_contents() -> None:
