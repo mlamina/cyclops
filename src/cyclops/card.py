@@ -138,7 +138,9 @@ KNOWN = frozenset(
 # question and would blunt the second, where MADE is what outranks a model saying this was a mic
 # check.
 SPOKEN = frozenset({"you", "transcript_failed"})
-MADE = frozenset({"photo", "screen", "project", "data", "code"})
+# recording_asked: he asked for that video, so it's kept whatever else did or didn't happen. A
+# video on its own is still no reason to keep a folder: only one from before he had to ask.
+MADE = frozenset({"photo", "screen", "project", "data", "code", "recording_asked"})
 
 
 # ------------------------------------------------------------------ writing

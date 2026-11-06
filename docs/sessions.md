@@ -10,7 +10,7 @@ sessions/
     session.jsonl     the same events, one JSON object per line, for a program
     summary.md        one sentence and one paragraph: what this session was
     project.md        which project this got filed under, or why it didn't
-    video.mp4         the recording - the whole screen, or the camera (kiosk only)
+    video.mp4         the recording, if you asked for one - the whole screen, or the camera
     clips/
       plan.json       what was decided about this session, and when
       1.mp4           the whole session, quiet stretches played fast - see "Clips" below
@@ -65,6 +65,17 @@ The line printed when a session connects says what was handed over:
 ```
 
 ## The video
+
+**A session records nothing unless you ask.** Say "record this" and it starts from that moment; say
+stop and it stops. If you don't, it stops when the session ends. It's one `recording` tool, and
+`CYCLOPS_RECORD=0` withholds it. So most sessions have no `video.mp4`, no sound to listen back to,
+and no entry on the **HIGHLIGHTS** screen. Everything else about them is the same.
+
+While it's recording, two quiet minutes don't end the session, because you may be filming yourself
+working in silence. It stops by itself after an hour, so a forgotten recording can't fill the card,
+and Cyclops tells you. It won't start with under 1 GB free, and one session makes one recording,
+because a second would land on the same file. **The timestamps in `session.md` count from the start
+of the session, not of the video**, so the two only line up if you asked straight away.
 
 H.264 with a **stereo** audio track, **you on the left channel and Cyclops on the right**. The
 two voices are never mixed, so you can listen to either side alone. Only the kiosk records:
@@ -134,7 +145,8 @@ talking played at **8×**. Nothing is chosen and nothing is cut out, no model is
 and it needs no key and no network, so the same recording always comes out the same way. It is
 what the **HIGHLIGHTS** screen plays, titled with the first line of `summary.md`.
 
-**Who gets one.** The log is read first, for free. A session with no turns from you, fewer than
+**Who gets one.** Any recording you asked for. For recordings from before you had to ask, the log is
+read first, for free: a session with no turns from you, fewer than
 two from Cyclops, under thirty seconds, or barely any words in it gets no video and costs no
 `ffprobe` and no `ffmpeg` — that is a button pressed to check the microphone.
 

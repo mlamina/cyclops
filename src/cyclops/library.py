@@ -287,19 +287,25 @@ def live(sessions_dir: Path) -> str | None:
 def records(sessions_dir: Path, name: str) -> list[dict]:
     """A session's transcript: the log, filtered to what is worth reading, media resolved to URLs.
 
-    The JSONL and not ``session.md``, because every line carries the ``t`` that is also its
-    position in the video, and the markdown is only a rendering of these.
+    The JSONL and not ``session.md``, because every line carries the ``t`` that gives its
+    position in the video, and the markdown is only a rendering of these. A video he asked for
+    starts part way through, so ``video_t`` is that position, 0 for what came before it.
     """
     folder = resolve(sessions_dir, name)
     if folder is None:
         return []
     found, _ = read_log(folder / LOG_NAME)
+    began = 0.0  # sessions from before arc-eng/hq#602 recorded from the start
+    for record in found:
+        if record.get("type") == "recording_asked":
+            began = float(record.get("video_at") or 0.0)
     out = []
     for record in found:
         kind = record.get("type")
         if kind not in SPOKEN:
             continue
         line = dict(record)
+        line["video_t"] = round(max(0.0, float(record.get("t") or 0.0) - began), 2)
         if kind == "photo" and record.get("file"):
             line["url"] = media_url(name, str(record["file"]))
         elif kind == "recall":
