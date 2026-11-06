@@ -60,6 +60,11 @@ Manual pages are not in `recall` any more; that searches photos, sessions and pr
 Every lookup is in the session's `session.md`: the question, each step, the answer or the reason.
 `tools/manual_eval.py` asks the questions that went wrong on the Pi and grades the answers.
 
+## Asking for one
+
+Cyclops can also go and find a PDF itself, in the background: see [worker.md](worker.md). It lands
+here the same way an upload does, under a new name if the one it wanted is taken.
+
 ## Turning it off
 
 `CYCLOPS_MANUALS=0` in `.env` stops manuals being read and takes the list out of the session

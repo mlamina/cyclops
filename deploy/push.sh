@@ -65,6 +65,13 @@ ssh "$TARGET" "install -d ~/.config/pipewire/pipewire.conf.d \
 ssh "$TARGET" "sudo install -m 644 $DEST/deploy/user/cyclops-*.service /etc/systemd/user/ \
   && XDG_RUNTIME_DIR=/run/user/\$(id -u) systemctl --user daemon-reload" || true
 
+# The worker can't see this checkout, so it runs a copy, and only on a box that has it installed.
+# A restart can land on a job, which is answered as cut off and not run again: see docs/worker.md.
+ssh "$TARGET" "if [ -d /opt/cyclops-worker ]; then \
+  sudo install -m 644 $DEST/src/cyclops/worker.py /opt/cyclops-worker/worker.py \
+  && sudo install -m 644 $DEST/deploy/cyclops-worker.nft /opt/cyclops-worker/firewall.nft \
+  && sudo systemctl restart cyclops-worker; fi" || true
+
 # The two long-lived system units. `|| true` on both for the same reason: a box where one of them
 # was never installed is a box being set up, not a failed deploy - install-admin.sh and
 # install-index.sh are what enable them, once, per Pi. The indexer is restarted here rather than

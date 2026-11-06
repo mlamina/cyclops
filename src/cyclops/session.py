@@ -1158,6 +1158,8 @@ def _render_record(record: dict) -> str:
     if kind == "code":
         what = f"*Programmed the {record.get('device', 'board')}* ({at}) — {record.get('name', '')}"
         return f"{what}\n\n```python\n{record.get('code', '').rstrip()}\n```"
+    if kind == "background_job":
+        return f"*Background job* ({at}) — {record.get('request', '')}: {record.get('answer', '')}"
     if kind == "transcript_failed":
         return f"*You said something that could not be transcribed* ({at})"
     if kind == "error":

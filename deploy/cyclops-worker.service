@@ -1,0 +1,75 @@
+# The background worker: Claude Code on one job at a time, walled off from everything of his.
+# Install with deploy/install-worker.sh. docs/worker.md says what each wall is for.
+#
+# The wall is this file and the firewall it loads, not Claude Code's settings: inside it, nothing
+# is ever asked for permission, because nobody is there to answer.
+#
+# Host-specific lines: none. It deliberately runs nothing from /home/cyclops, which it can't see.
+
+[Unit]
+Description=Cyclops background worker (one Claude Code job at a time)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+NotifyAccess=main
+# A job can freeze worker.py with kill -STOP, and then nothing enforces its time limit. The worker
+# reports in every few seconds, and only the main process counts, so a job can't do it for it.
+WatchdogSec=60
+User=cyclops-worker
+Group=cyclops-worker
+UMask=0027
+
+# As root (the +), and before it starts: if the rule won't load, the worker doesn't run. The admin
+# page has no login and serves his sessions to anything that can reach port 80, this box included,
+# so a separate account alone would not keep the worker away from them.
+ExecStartPre=+/usr/sbin/nft -f /opt/cyclops-worker/firewall.nft
+# As root too, with the job's processes gone: puts its folders back however a job left them, so a
+# wrecked folder can't crash-loop the service until a person comes. The worker can't do this itself.
+ExecStartPre=+/bin/sh /opt/cyclops-worker/repair.sh
+ExecStart=/usr/bin/python3 /opt/cyclops-worker/worker.py
+Restart=always
+RestartSec=5
+
+# Files: only its own folder.
+ProtectSystem=strict
+ReadWritePaths=/var/lib/cyclops-worker
+ProtectHome=yes
+PrivateTmp=yes
+# No admin rights, however it asks.
+NoNewPrivileges=yes
+# No local services: the firewall covers the network, not sockets on this box. /run is where they
+# live - his printer (a web page steering a job into printing), avahi, the hotkey daemon, and the
+# system bus: polkit lets an account turn on lingering for itself (loginctl enable-linger), and what
+# it leaves runs in a user manager, outside everything in this file. So none of /run, whatever
+# appears there later, but the one socket the watchdog needs. /tmp and homes are hidden above.
+TemporaryFileSystem=/run:ro
+BindReadOnlyPaths=/run/systemd/notify
+# No camera, mic or anything else plugged in.
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+# The internet, and local sockets for what Claude Code runs. Nothing lower-level than that.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+# Never at the cost of a live conversation. MemoryMax is NOT here on purpose: this kernel boots with
+# cgroup_disable=memory, so systemd would accept it, show it back and enforce nothing. Turning that
+# on means editing the boot line and rebooting, for what's a prototype. So instead:
+# - LimitAS: per process, and enforced regardless. 4G is what Claude Code has run under on this box.
+# - OOMScoreAdjust=1000: if the box does run short, the kernel kills the worker first.
+# Neither caps the job's total. CPUQuota and TasksMax are enforced: those controllers are on.
+LimitAS=4G
+CPUQuota=100%
+CPUWeight=20
+IOWeight=20
+Nice=10
+TasksMax=128
+OOMScoreAdjust=1000
+
+[Install]
+WantedBy=multi-user.target
