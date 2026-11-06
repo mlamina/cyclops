@@ -224,13 +224,16 @@ BACKGROUND_JOB_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "background_job",
     "description": (
-        "Find a PDF on the web and download it to their Manuals, in the background: a manual, a "
-        "datasheet, a guide. Use it when they ask you to find and download or fetch a document. "
-        "Call this straight away and say nothing first: only one can run, so you don't know yet "
-        "whether it started. Its answer tells you what to say. It takes minutes and you keep "
-        "talking meanwhile. You will be told when it finishes or fails, and you tell them then. "
-        "It does nothing else: it can't see their notes, and it isn't for ordinary questions. "
-        "Only one at a time."
+        "Hand a bigger job to a capable agent that works in the background while you keep "
+        "talking. It has the open web, a shell and a private folder, and up to 15 minutes. Use it "
+        "for work that takes several steps or minutes: research across several pages, comparing "
+        "options, finding something specific and fetching it, working with files it fetched, "
+        "calculations and small programs. Call this straight away, without searching first and "
+        "saying nothing first: only one can run, so you don't know yet whether it started. Its "
+        "answer tells you what to say. You will be told when it finishes or fails, and you tell "
+        "them then. Not for a quick fact, or for anything about their notes, photos, manuals, "
+        "camera, screen or this conversation: it can't see any of those, and can't reach their "
+        "accounts, devices or network."
     ),
     "parameters": {
         "type": "object",
@@ -238,13 +241,24 @@ BACKGROUND_JOB_TOOL: RealtimeFunctionToolParam = {
             "request": {
                 "type": "string",
                 "description": (
-                    "What to find, with every detail they gave: make, model, revision, language. "
-                    "Whoever does it sees only this and nothing of your conversation."
+                    "The whole job, with every detail they gave and everything from the "
+                    "conversation it needs: names, models, sizes, what they care about. Whoever "
+                    "does it sees only this, and can't ask them anything."
                 ),
             },
         },
         "required": ["request"],
     },
+}
+CHECK_BACKGROUND_JOB_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "check_background_job",
+    "description": (
+        "See how the background job is going right now: whether one is running, how long it has "
+        "been at it, how many steps it has taken and what it is doing. Use it whenever they ask "
+        "how it's going, and answer only from what comes back. Never guess at its progress."
+    ),
+    "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
 }
 DRAW_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
@@ -1130,8 +1144,8 @@ LOOKING THINGS UP
   ask_manual, and without being asked to. The manual is about their exact part; the web is about
   what somebody said about a part like it. Do this the moment the question is asked - do not
   offer to look and do not ask which manual. Say you are checking the manual and check it.
-- When they ask you to look online or search the web, that is web_search, even for a part you
-  hold a manual for. Otherwise use it when no manual covers it, or when the manual does not say.
+- When they ask you to look something up online or search the web, that is web_search, even for a
+  part you hold a manual for. Otherwise use it when no manual covers it, or when the manual does not say.
   It takes a few seconds; wait them out rather than filling them, and lead with the answer.
 - Combine the two when it helps: ask for a photo of the thing, then search for what you saw.
   If a search comes back empty or failed, say so plainly instead of inventing an answer.
@@ -1384,6 +1398,27 @@ def _splice(head: str, extension_block: str, tail: str) -> str:
     return "\n".join(part for part in (head, extension_block, tail) if part)
 
 
+# Only in a session offering the tool, so nothing here ever names one that isn't there.
+WORKER_BLOCK = """\
+
+BIGGER JOBS
+You have a helper for work too big for this conversation: background_job. It works while you keep
+talking, for up to 15 minutes.
+- Hand it anything that takes several steps or minutes: research across several pages, comparing
+  options and picking one, finding something specific on the web and getting it, working with files
+  it fetched, calculations and small programs. When a job is like that, call it at once. Do not run
+  web_search first to see, and do not say you can't: that is what it is for.
+- Keep what you can do now: a fact one search answers, and a one-off look online - that stays
+  web_search. Keep everything about their notes, photos, manuals, the camera, the screen and what was
+  said: it can't see any of that, and your own tools can.
+- The difference when they say "look online": for one fact, search. If they want something found and
+  fetched, or several things looked into and weighed up, it is the helper's, whatever words they used.
+- It sees only what you pass it, so pass everything: every name, model, size and preference.
+- When they ask how it's going, use check_background_job and say what it returns. If nothing is
+  running, say so. You will be told when it finishes or fails.
+"""
+
+
 def _standing(settings: Settings, found: tuple[devices.Device, ...]) -> tuple[str, str]:
     """Everything :func:`build_instructions` says, as the text before the extension block and
     the clock after it."""
@@ -1407,6 +1442,8 @@ def _standing(settings: Settings, found: tuple[devices.Device, ...]) -> tuple[st
     # can be looked up.
     if plugged_block := _plugged_block(found):
         blocks.append(plugged_block)
+    if settings.worker:
+        blocks.append(WORKER_BLOCK)
     # The extension block goes here, between the two - see _splice.
     return "\n".join(blocks), moment.text if moment else ""
 
@@ -1514,6 +1551,7 @@ class VoiceAgent:
         self._tools_running = 0
         self._he_spoke = False  # a finished job waits until he has said something this session
         self._telling: str | None = None  # the job the response in flight is telling him about
+        self._telling_item: str | None = None  # the conversation item carrying its report
         self._tell_not_before = 0.0
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
@@ -2438,12 +2476,20 @@ class VoiceAgent:
         if self._want_response and not self._response_active and not self._user_speaking:
             self._response_active = True
             self._create_event_id = uuid.uuid4().hex
+            if self._telling_item is not None:
+                # A job's report is in this one: free text off the web. Whatever it says, this
+                # reply can only be spoken. See _tell_if_due.
+                await self.conn.response.create(
+                    event_id=self._create_event_id, response={"tool_choice": "none"}
+                )
+                return
             await self.conn.response.create(event_id=self._create_event_id)
 
-    async def _send_item(self, item: ConversationItemParam) -> None:
+    async def _send_item(self, item: ConversationItemParam) -> str:
         item_id = uuid.uuid4().hex  # server caps item ids at 32 chars
         self._unacked_item_ids.add(item_id)
         await self.conn.conversation.item.create(item={"id": item_id, **item})  # type: ignore[misc]
+        return item_id
 
     # ---------------------------------------------------------------- the tools
 
@@ -2490,6 +2536,9 @@ class VoiceAgent:
             return
         if call.name == "background_job":
             await self._run_background_job(call)
+            return
+        if call.name == "check_background_job":
+            await self._run_check_background_job(call)
             return
         if call.name == "recording":
             await self._run_recording(call)
@@ -3642,6 +3691,26 @@ class VoiceAgent:
         await self._send_tool_output(call.call_id, output)
         await self._request_response()
 
+    async def _run_check_background_job(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Answer "how's that going?" from the job's real state. See :func:`jobs.status`.
+
+        Never carries the report. A job that has just finished is told by :meth:`_tell_if_due`, at
+        the next pause, so there's one way for a report to reach the model.
+        """
+        try:
+            found = await asyncio.to_thread(jobs.status, self.settings)
+        except Exception as exc:  # noqa: BLE001 - the model must always get an answer
+            self._log(f"[tool] check_background_job failed: {exc!r}", stream=sys.stderr)
+            found = {"ok": False, "error": "Couldn't read the job's state. Say you can't tell."}
+        if found.get("running") is False:
+            found["note"] = (
+                "It has just finished, and you'll be told how it went at the next pause. Say so."
+                if found.get("finished_not_told_yet")
+                else "Nothing is running. Say so."
+            )
+        await self._send_tool_output(call.call_id, found)
+        await self._request_response()
+
     async def _tell_when_quiet(self) -> None:
         """Bring up a finished job at a pause, for as long as this session lasts."""
         while self.ended_by is None:
@@ -3656,6 +3725,12 @@ class VoiceAgent:
 
         Only after he has spoken, so a new session still opens with nothing said (arc-eng/hq#572),
         and only in a real pause, so it never talks over him or over itself.
+
+        A job's report is free text off the web, reaching a model that can read his notes and send
+        things out through a search or another job. So its text is in front of the model for one
+        reply only, with no tools on offer (:meth:`_maybe_create_response`), and is deleted from
+        the conversation when that reply ends (:meth:`_told`). After that the model has only what
+        it said aloud, which he heard. See ``docs/worker.md``.
         """
         now = time.monotonic()
         if (
@@ -3670,9 +3745,18 @@ class VoiceAgent:
         row = await asyncio.to_thread(jobs.to_tell)
         if row is None:
             return
+        if not self.connected:
+            return
         self._telling = str(row.get("id"))
         self._tell_not_before = now + TELL_RETRY_S
-        await self.announce(jobs.announcement(row))
+        self._telling_item = await self._send_item(
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": jobs.announcement(row)}],
+            }
+        )
+        await self._request_response()
 
     async def _told(self, completed: bool) -> None:
         """A response ended. If it was the telling and it finished, he has heard: once only.
@@ -3682,6 +3766,13 @@ class VoiceAgent:
         that one gap, which beats never hearing it.
         """
         job_id, self._telling = self._telling, None
+        item_id, self._telling_item = self._telling_item, None
+        if item_id is not None and self.connected:
+            try:
+                # Whether or not it finished: a telling he talked over is sent afresh next time.
+                await self.conn.conversation.item.delete(item_id=item_id)
+            except Exception as exc:  # noqa: BLE001 - never at the cost of the response in hand
+                self._log(f"[jobs] {exc!r}", stream=sys.stderr)
         if job_id is None or not completed:
             return
         try:
@@ -4225,7 +4316,7 @@ def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
         *_project_tools(settings),
         *_recall_tools(settings),
         *_manual_tools(settings),
-        *([BACKGROUND_JOB_TOOL] if settings.worker else []),
+        *([BACKGROUND_JOB_TOOL, CHECK_BACKGROUND_JOB_TOOL] if settings.worker else []),
         *([RECORDING_TOOL] if settings.record else []),
         *TUTORIAL_TOOLS,
         END_SESSION_TOOL,
@@ -4536,6 +4627,8 @@ def _activity_line(
         return _phrase("drawing", _tool_string(args, "request", MAX_QUERY_CHARS), "drawing")
     if call.name == "background_job":
         return "handing that off…"
+    if call.name == "check_background_job":
+        return "checking on that…"
     if call.name == "recording":
         return "recording…" if _tool_string(args, "action", 8) == "start" else "saving the video…"
     # Barely seen - the browser covers this strip about a second later - but the chain wants no

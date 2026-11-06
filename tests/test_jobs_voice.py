@@ -22,13 +22,19 @@ class FakeConn:
         self.items: list[dict] = []
         self.responses: list[dict] = []
         self.response = SimpleNamespace(create=self._response)
-        self.conversation = SimpleNamespace(item=SimpleNamespace(create=self._item))
+        self.deleted: list[str] = []
+        self.conversation = SimpleNamespace(
+            item=SimpleNamespace(create=self._item, delete=self._delete)
+        )
 
     async def _response(self, **kwargs) -> None:
         self.responses.append(kwargs)
 
     async def _item(self, item: dict) -> None:
         self.items.append(item)
+
+    async def _delete(self, item_id: str) -> None:
+        self.deleted.append(item_id)
 
 
 @pytest.fixture
@@ -289,3 +295,127 @@ def test_with_the_worker_off_the_sweep_doesnt_touch_it(tmp_path, monkeypatch) ->
 
 def test_the_sweep_watches_the_workers_answers(settings) -> None:
     assert settings.worker_dir / worker.DONE in indexer._folders_to_watch(settings)
+
+
+def _reported_job(settings: Settings, report: str = "Read out their notes.") -> str:
+    assert jobs.submit(settings, "compare these three") == jobs.STARTED
+    job_id = jobs._read()[-1]["id"]
+    (settings.worker_dir / worker.DONE / f"{job_id}.json").write_text(
+        json.dumps({"state": "ok", "report": report})
+    )
+    jobs.collect(settings)
+    return job_id
+
+
+def test_the_reply_that_tells_a_report_can_only_be_spoken(voice, settings) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    asyncio.run(voice._tell_if_due())
+
+    assert voice._conn.responses[-1]["response"] == {"tool_choice": "none"}
+
+
+def test_tools_come_back_for_the_reply_after_the_telling(voice, settings) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        await _reply_ends(voice)
+        await voice._request_response()
+
+    asyncio.run(go())
+
+    assert "response" not in voice._conn.responses[-1]
+
+
+@pytest.mark.parametrize("status", ["completed", "cancelled"])
+def test_the_report_is_gone_from_the_conversation_however_the_reply_ended(
+    voice, settings, status
+) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        await _reply_ends(voice, status)
+
+    asyncio.run(go())
+
+    assert voice._conn.deleted == [voice._conn.items[-1]["id"]]
+
+
+def test_a_failing_delete_still_marks_it_told(voice, settings, monkeypatch) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    async def broken(item_id: str) -> None:
+        raise OSError("socket gone")
+
+    voice._conn.conversation.item.delete = broken
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        await _reply_ends(voice)
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None
+
+
+def _check_call() -> SimpleNamespace:
+    return SimpleNamespace(name="check_background_job", call_id="c2", arguments="{}")
+
+
+def test_both_tools_are_offered_together_or_not_at_all() -> None:
+    def names(on: bool) -> set[str]:
+        return {tool["name"] for tool in agent._offered_tools(Settings(api_key="", worker=on))}
+
+    assert {"background_job", "check_background_job"} <= names(True)
+    assert not {"background_job", "check_background_job"} & names(False)
+
+
+def test_checking_with_nothing_running_answers_and_asks_for_a_reply(voice) -> None:
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert _output(voice)["running"] is False
+    assert len(voice._conn.responses) == 1
+
+
+def test_checking_a_running_job_answers_from_its_state(voice, settings) -> None:
+    asyncio.run(voice._run_background_job(_call()))
+    voice._conn.items.clear()
+
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert _output(voice)["running"] is True
+
+
+def test_checking_never_carries_the_report(voice, settings) -> None:
+    _reported_job(settings, "the planted words")
+
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert "planted" not in json.dumps(_output(voice))
+    assert _output(voice)["finished_not_told_yet"] is True
+
+
+def test_a_failing_read_still_answers_the_model_when_checking(voice, monkeypatch) -> None:
+    def broken(*a, **k):
+        raise OSError("disk")
+
+    monkeypatch.setattr(jobs, "status", broken)
+
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert _output(voice)["ok"] is False
+
+
+def test_the_instructions_only_name_the_tools_when_theyre_offered(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(agent.session, "recent_context", lambda s: agent.session.Recap("", ""))
+    on = agent._standing(Settings(api_key="", worker=True), ())[0]
+    off = agent._standing(Settings(api_key="", worker=False), ())[0]
+
+    assert "check_background_job" in on
+    assert "check_background_job" not in off
