@@ -299,7 +299,8 @@ CHROME_FLAGS = (
     # for everything but two things. Loopback, which Chromium never sends through a proxy, covers
     # every port the page uses (the admin page, ears, camera, sketch). And the one place the panel
     # goes off-box: a video asked for out loud plays straight from a signed googlevideo.com URL
-    # (panel.js), so that host goes around the wall, and it's only reached while one is playing.
+    # (panel.js), so that host goes around the wall. It's only reached while one is up: panel.js
+    # lets go of the stream when a video comes off (emptyStage), or the connection would stay.
     # DNS doesn't go through a proxy, and Chromium upgrades this box's resolvers (8.8.8.8) to DNS
     # over HTTPS, so the resolver rule stops that too. A feature flag for it had no effect.
     "--disable-background-networking",

@@ -151,7 +151,7 @@ async function shot(url) {
   img.alt = '';
   img.src = url;
   try { await img.decode(); } catch (e) { /* show it anyway: a slow decode beats nothing */ }
-  stage.textContent = '';
+  emptyStage();
   stage.appendChild(img);
   stage.scrollTop = 0;  // a page opens at the top, whatever the last one was scrolled to
 }
@@ -222,7 +222,7 @@ async function clip(url, start) {
   // still applies, so take the browser's refusal and play it muted rather than not at all.
   video.muted = false;
   video.src = url;
-  stage.textContent = '';
+  emptyStage();
   stage.appendChild(video);
   // The class before the bar: the stage has to be a two-row grid before the bar is measured, or
   // fit() reads a picture that is still the full height of the stage.
@@ -273,7 +273,7 @@ async function scratchpad(html) {
     // in the ordinary case and a late frame rather than a hang in every other.
     setTimeout(done, SCRATCHPAD_PAINT_MS);
   });
-  stage.textContent = '';
+  emptyStage();
   stage.appendChild(frame);
   await loaded;
   return frame;
@@ -338,11 +338,22 @@ async function show(id) {
 function drop() {
   window.__drawing(false);
   document.body.classList.remove('photo', 'paper', 'sketching', 'clipping', 'page');
-  // Paused before it is dropped. Detaching the element is enough in practice, but "in practice"
-  // is doing a lot of work there and the failure would be a voice still talking from a screen
-  // showing something else.
+  emptyStage();
+}
+
+// Everything that clears the stage comes through here. Paused before it is dropped: detaching the
+// element is enough in practice, but "in practice" is doing a lot of work there and the failure
+// would be a voice still talking from a screen showing something else. And the source let go of
+// explicitly, because a detached video keeps its stream: taken off partway, its connection to the
+// video host stayed up for as long as anyone watched, with no session open (arc-eng/hq#619).
+// All in one tick with the removal, so the emptied element is never painted.
+function emptyStage() {
   const playing = stage.querySelector('video');
-  if (playing) playing.pause();
+  if (playing) {
+    playing.pause();
+    playing.removeAttribute('src');
+    playing.load();
+  }
   stage.textContent = '';
 }
 
