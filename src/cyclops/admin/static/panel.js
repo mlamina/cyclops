@@ -241,9 +241,13 @@ async function clip(url, start) {
     video.addEventListener('error', settle, { once: true });
     setTimeout(settle, CLIP_READY_MS);
   });
+  // Put away while it was starting (a press on a companion drops it straight off). It has no source
+  // now, and play() on that never settles, which would stop this page's poll for good.
+  if (!video.isConnected) return;
   try {
     await video.play();
   } catch (e) {
+    if (!video.isConnected) return;
     video.muted = true;
     try { await video.play(); } catch (e2) { /* a still frame beats a blank stage */ }
   }
