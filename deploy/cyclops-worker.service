@@ -43,15 +43,19 @@ LockPersonality=yes
 # The internet, and local sockets for what Claude Code runs. Nothing lower-level than that.
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
-# Never at the cost of a live conversation. The memory limit is a first guess until one real job
-# has been watched: going over kills the job, and he hears that it didn't finish.
-MemoryMax=1500M
+# Never at the cost of a live conversation. MemoryMax is NOT here on purpose: this kernel boots with
+# cgroup_disable=memory, so systemd would accept it, show it back and enforce nothing. Turning that
+# on means editing the boot line and rebooting, for what's a prototype. So instead:
+# - LimitAS: per process, and enforced regardless. 4G is what Claude Code has run under on this box.
+# - OOMScoreAdjust=1000: if the box does run short, the kernel kills the worker first.
+# Neither caps the job's total. CPUQuota and TasksMax are enforced: those controllers are on.
+LimitAS=4G
 CPUQuota=100%
 CPUWeight=20
 IOWeight=20
 Nice=10
 TasksMax=128
-OOMScoreAdjust=500
+OOMScoreAdjust=1000
 
 [Install]
 WantedBy=multi-user.target

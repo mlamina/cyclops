@@ -48,10 +48,15 @@ it in: the operating system is.
 | `NoNewPrivileges=yes`, not in `sudo` or `docker` | the unit | getting admin rights or using Docker |
 | Firewall by account | `cyclops-worker.nft` | the admin page and companion, which have no login and serve sessions over the network, and the rest of the LAN |
 | `PrivateDevices=yes` | the unit | the camera, mic and anything plugged in |
-| `MemoryMax`, `CPUQuota`, `CPUWeight`, `Nice` | the unit | starving a live conversation |
+| `CPUQuota`, `CPUWeight`, `Nice`, `TasksMax` | the unit | starving a live conversation of CPU |
+| `LimitAS=4G` per process, `OOMScoreAdjust=1000` | the unit | running the box out of memory: no process past 4 GB of address space, and the worker dies first if it's short |
 | 15-minute limit, killed as a process group | `worker.py` | a job that never ends |
 
 The firewall loads in `ExecStartPre`: if it won't load, the worker doesn't start.
+
+**There's no memory limit on the job as a whole.** This kernel boots with `cgroup_disable=memory`, so
+`MemoryMax` would be accepted, shown back by `systemctl show`, and enforced by nothing. Getting a real
+one means editing the boot line and rebooting.
 
 **Nothing from the worker is believed.** `cyclops.jobs` runs as `cyclops`, which can read everything,
 and the worker chooses what's at the end of the path. So:
@@ -80,8 +85,9 @@ The worker runs on Marco's Claude subscription, with a one-year token from `clau
 The docs say it can only make model requests. It isn't a copy of the login on any machine.
 
 **So no separate bill and no monthly cap.** Jobs share his Max limits with whatever else runs on that
-account. Each job has `--max-budget-usd 1`, but that's checked against Claude Code's own estimate and
-the docs don't say it applies on a subscription. The limit to rely on is 15 minutes, one job at a
+account. Each job has `--max-budget-usd 1`, but that's checked against Claude Code's own estimate, and
+it's only checked between turns: on the device, a $0.0001 budget stopped a job after one turn,
+having spent about $0.065. So it's a soft limit, and the one to rely on is 15 minutes, one job at a
 time. No other unprivileged account can read the token; `cyclops` can, because it has admin rights.
 
 ## Install

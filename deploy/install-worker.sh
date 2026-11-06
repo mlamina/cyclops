@@ -37,7 +37,16 @@ install -d -m 755 "$OPT" "$OPT/bin"
 install -m 644 "$HERE/../src/cyclops/worker.py" "$OPT/worker.py"
 install -m 644 "$HERE/cyclops-worker.nft" "$OPT/firewall.nft"
 # A copy of its own: the one in /home/cyclops is out of its sight, and it mustn't update itself.
-install -m 755 "$(readlink -f /home/cyclops/.local/bin/claude)" "$OPT/bin/claude"
+# The program, not ~/.local/bin/claude, which on this box is a wrapper that runs a path under
+# /home. A wrapper or an empty file (failed updates leave those) would fail on every job.
+CLAUDE=/home/cyclops/.local/bin/claude-real
+[ -x "$CLAUDE" ] || CLAUDE=/home/cyclops/.local/bin/claude
+CLAUDE=$(readlink -f "$CLAUDE")
+if [ ! -s "$CLAUDE" ] || head -c 2 "$CLAUDE" | grep -q '#!'; then
+  echo "error: $CLAUDE isn't the Claude Code program" >&2
+  exit 1
+fi
+install -m 755 "$CLAUDE" "$OPT/bin/claude"
 
 install -d -m 755 /etc/cyclops-worker
 if [ ! -s /etc/cyclops-worker/claude-token ]; then

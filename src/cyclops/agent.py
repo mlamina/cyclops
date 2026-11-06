@@ -226,8 +226,9 @@ BACKGROUND_JOB_TOOL: RealtimeFunctionToolParam = {
     "description": (
         "Find a PDF on the web and download it to their Manuals, in the background: a manual, a "
         "datasheet, a guide. Use it when they ask you to find and download or fetch a document. "
-        "It takes minutes and you keep talking meanwhile. Say in a few words that you're on it, "
-        "then carry on. You will be told when it finishes or fails, and you tell them then. "
+        "Call this straight away and say nothing first: only one can run, so you don't know yet "
+        "whether it started. Its answer tells you what to say. It takes minutes and you keep "
+        "talking meanwhile. You will be told when it finishes or fails, and you tell them then. "
         "It does nothing else: it can't see their notes, and it isn't for ordinary questions. "
         "Only one at a time."
     ),
@@ -3601,8 +3602,8 @@ class VoiceAgent:
                     "ok": True,
                     "started": True,
                     "note": (
-                        "It's started and takes minutes. Say in a few words that you're on it, "
-                        "then carry on. You'll be told when it finishes or fails."
+                        "It's started and takes minutes. Say once, in a few words, that you're on "
+                        "it, then carry on. You'll be told when it finishes or fails."
                     ),
                 },
                 jobs.BUSY: {

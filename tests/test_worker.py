@@ -88,7 +88,8 @@ def test_a_link_is_left_for_cyclops_to_refuse_not_followed_here(root, key, tmp_p
 
 
 def test_over_budget_is_said_as_that(root, key, tmp_path) -> None:
-    out = '{"subtype": "error_max_budget_usd", "is_error": true, "total_cost_usd": 1.01}'
+    # is_error is false on the real thing: seen on the device, Claude Code 2.1.61, on a subscription.
+    out = '{"subtype": "error_max_budget_usd", "is_error": false, "total_cost_usd": 1.01}'
 
     done = _run(root, _claude(tmp_path, f"echo '{out}'"), key)
 

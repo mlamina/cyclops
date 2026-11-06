@@ -39,8 +39,8 @@ WORK = "work"
 RESULT = "result.pdf"
 OUTPUT = "output.json"
 
-# Per job. Claude Code checks this against its own estimate, and it runs on a subscription token
-# here, so JOB_LIMIT_S is the limit to rely on: see docs/worker.md.
+# Per job. Claude Code checks this against its own estimate, between turns, so it overshoots.
+# JOB_LIMIT_S is the limit to rely on: see docs/worker.md.
 BUDGET_USD = 1.00
 JOB_LIMIT_S = 15 * 60
 POLL_S = 2.0
