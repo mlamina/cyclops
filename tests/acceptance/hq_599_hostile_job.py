@@ -173,8 +173,11 @@ def forged_name() -> None:
 
 
 print(f"scratch: {SCRATCH}")
+# Only the steps named on the command line run those two. On one account every request now counts as
+# forged and the account sweep is off, so self_queue and escape_limit prove nothing on a laptop since
+# 51f1f04: the real versions are `forge`, `outlive` and `limit` in hq_599_hostile_device.py.
 for step in (fifo_answer, link_answer, huge_answer, forged_name, escape_limit, self_queue):
-    if sys.argv[1:] and step.__name__ not in sys.argv[1:]:
+    if step.__name__ not in sys.argv[1:] and (sys.argv[1:] or step in (escape_limit, self_queue)):
         continue
     try:
         step()
