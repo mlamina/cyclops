@@ -332,6 +332,7 @@ body {
 .playing { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; gap: calc(8 * var(--u)); }
 .video { width: 100%; height: 100%; min-height: 0; background: #000; display: block;
          object-fit: contain; position: relative; z-index: 10; }
+.video[hidden] { display: none; }  /* `display: block` above would otherwise beat the attribute */
 .stitle {
   font-size: calc(16 * var(--u)); color: var(--green); line-height: 1.3;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;

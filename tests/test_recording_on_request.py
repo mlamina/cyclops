@@ -9,12 +9,13 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from cyclops import agent, card, cut, session
+from cyclops import agent, card, cut, library, session
 from cyclops.config import Settings
 
 
@@ -31,6 +32,7 @@ class Recorder:
 
     def start(self) -> bool:
         self.failed = Recorder.start_says
+        self.began = time.monotonic()
         return not self.failed
 
     def stop(self) -> Path | None:
@@ -197,6 +199,42 @@ def test_a_second_recording_cant_overwrite_the_first(make_log) -> None:
         log.stop_recording()
         assert log.start_recording(), "refused, with a reason"
     assert len(Recorder.made) == 1
+
+
+def test_a_recording_that_broke_isnt_called_the_sessions_one(make_log) -> None:
+    log = make_log()
+    with log:
+        log.start_recording()
+        Recorder.made[-1].finish_fails = "the encoder died"
+        log.stop_recording()
+        first = log.start_recording()
+    with make_log() as other:
+        other.start_recording()
+        other.stop_recording()
+        fine = other.start_recording()
+    assert first and fine and first != fine
+
+
+def test_transcript_lines_land_on_the_video_that_started_part_way(make_log, settings) -> None:
+    log = make_log()
+    with log:
+        log.event("you", text="before it")
+        time.sleep(0.05)
+        log.start_recording()
+        log.event("you", text="during it")
+    began = next(r for r in _records(log) if r["type"] == "recording_asked")["video_at"]
+    assert began > 0
+
+    lines = {r["text"]: r for r in library.records(log.dir.parent, log.dir.name) if r["type"] == "you"}
+    assert lines["before it"]["video_t"] == 0
+    assert lines["during it"]["video_t"] == pytest.approx(lines["during it"]["t"] - began, abs=0.01)
+
+
+def test_a_session_recorded_from_its_start_keeps_its_clock(tmp_path) -> None:
+    folder = tmp_path / "2026-08-26_14-32-05"
+    folder.mkdir()
+    (folder / card.LOG_NAME).write_text(json.dumps({"t": 12.5, "type": "you", "text": "hi"}) + "\n")
+    assert library.records(tmp_path, folder.name)[0]["video_t"] == 12.5
 
 
 def test_a_start_that_fails_says_why_and_leaves_it_able_to_try_again(make_log) -> None:

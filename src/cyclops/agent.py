@@ -919,7 +919,9 @@ RECORDING_TOOL: RealtimeFunctionToolParam = {
         "Start or stop recording video of this session: the whole screen and both voices. Sessions "
         "aren't recorded unless they ask, so use it when they say record this, film this, start "
         "or stop recording. Never start it on your own. Say what happened in a few words, and "
-        "never say it's recording unless this said so."
+        "never say it's recording unless this said so. It's recording only if you started it in "
+        "this session and it hasn't stopped. Each session has its own recording, so when they ask "
+        "for one, call this and let it answer: never refuse from what was said before."
     ),
     "parameters": {
         "type": "object",
@@ -960,6 +962,8 @@ You were talking with them a moment ago, and to them it is the same conversation
 CARRIED_FOOTER = """\
 If they pick any of this up, you know what they mean: carry on, without asking what they are
 referring to. Do not recap it, do not mention that there was a pause, and do not raise it yourself.
+That session has ended and this is a new one. Whatever it was recording ended with it, so nothing is
+recording now, and what was said above about recording no longer applies.
 """
 CLOSE_TIMEOUT_S = 0.1
 GOODBYE_MAX_S = 10.0  # the longest end_session waits for the goodbye to finish sounding
@@ -3603,7 +3607,7 @@ class VoiceAgent:
             await self.announce(
                 f"[The recording has stopped by itself: {problem or 'it reached its time limit'}. "
                 + ("There may be no video. " if problem else "The video is saved. ")
-                + "Tell them plainly in a few words.]"
+                + "Tell them it stopped and why, in a few words.]"
             )
             return
 

@@ -463,7 +463,7 @@ function line(record) {
   const kind = record.type;
   if (kind === 'you' || kind === 'cyclops') {
     const mark = record.interrupted ? ' (interrupted)' : '';
-    return '<div class="line ' + kind + '" data-t="' + (record.t || 0) + '">' + at +
+    return '<div class="line ' + kind + '" data-t="' + (record.video_t || 0) + '">' + at +
       '<span><span class="who">' + (kind === 'you' ? 'You' : 'Cyclops') + mark + '</span>' +
       '<span class="said">' + esc(record.text || '') + '</span></span></div>';
   }
@@ -472,7 +472,7 @@ function line(record) {
     shot = '<img class="inline" loading="lazy" draggable="false" src="' +
            esc(record.url) + '" alt="">';
   }
-  return '<div class="line ' + (kind === 'error' ? 'bad' : '') + '" data-t="' + (record.t || 0) + '">' +
+  return '<div class="line ' + (kind === 'error' ? 'bad' : '') + '" data-t="' + (record.video_t || 0) + '">' +
     at + '<span><span class="aside">' + aside(record) + '</span>' + shot + '</span></div>';
 }
 
@@ -556,7 +556,7 @@ async function transcript(name) {
 // The panel and the laptop are not the same screen, and a window can become the other one.
 WIDE.addEventListener('change', () => {
   if (!openName) return;
-  solo(!WIDE.matches);
+  solo(!WIDE.matches && !video.hidden);
   if (WIDE.matches && !talk.childElementCount) transcript(openName);
   else if (!WIDE.matches) talk.innerHTML = '';
 });
@@ -618,6 +618,8 @@ async function showSession(name) {
       video.removeAttribute('src');
       video.load();
       video.hidden = true;
+      // Solo is the video filling the panel. With none, its name and the way back are what's left.
+      solo(false);
     }
   } catch (e) {
     stitle.textContent = 'that session is not on the card';

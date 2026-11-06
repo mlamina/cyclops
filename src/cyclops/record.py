@@ -239,6 +239,11 @@ class SessionRecorder:
         self._agent_at = 0.0  # monotonic time the speaker last had something in it to play
         self._reported = False
 
+    @property
+    def began(self) -> float:
+        """The monotonic time of the video's first second."""
+        return self._t0
+
     # ---------------------------------------------------------------- lifecycle
 
     def start(self) -> bool:

@@ -102,6 +102,7 @@ class Recorder:
     def __init__(self, frames, folder, **kw) -> None:
         self.frames = frames
         self.failed = ""
+        self.began = 0.0
         Recorder.made.append(self)
 
     def start(self) -> bool:

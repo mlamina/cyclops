@@ -257,6 +257,7 @@ class SessionLog:
         self._recording_lock = threading.Lock()
         self._closing = False
         self._recorded = False  # one per session: a second would land on the same video.mp4
+        self._record_broke = False  # and its parts, which are all that's left of one that broke
         self._record_why = ""
         self._reported = False
         # observe() state
@@ -373,6 +374,8 @@ class SessionLog:
                 return "The session is ending, so it isn't recording."
             if self._recorder is not None:
                 return "It's already recording. Nothing changed."
+            if self._record_broke:
+                return "This session's recording broke. A new session can make another."
             if self._recorded:
                 return "This session already has its one recording. A new session can make another."
             if not self.settings.record:
@@ -387,7 +390,8 @@ class SessionLog:
             self._record_why = ""
             if not self._start_recorder():
                 return f"It can't record: {self._record_why or 'there is nothing to film'}."
-            self.event("recording_asked")
+            # Where the video's first second falls on this log's clock: see library.records.
+            self.event("recording_asked", video_at=round(self._recorder.began - self._t0, 2))
             return ""
 
     def stop_recording(self) -> str:
@@ -401,6 +405,7 @@ class SessionLog:
             recorder = self._recorder
             self._stop_recorder(quietly=True)
             if recorder.failed:
+                self._record_broke = True
                 return f"The recording failed: {recorder.failed}."
             return ""
 
