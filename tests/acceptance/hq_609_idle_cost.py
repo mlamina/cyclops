@@ -11,14 +11,20 @@ loud, and the network is refused, so it can't file anything or reach anyone.
 from __future__ import annotations
 
 import glob
+import os
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
-from cyclops import ear
-from cyclops.audio import BLOCK_FRAMES, SAMPLE_RATE
+# The library under test may write to the home folder, and the real one is his (arc-eng/hq#609).
+os.environ["HOME"] = tempfile.mkdtemp(prefix="swe-609-home-")
+os.environ["XDG_CACHE_HOME"] = os.path.join(os.environ["HOME"], ".cache")
+
+from cyclops import ear  # noqa: E402
+from cyclops.audio import BLOCK_FRAMES, SAMPLE_RATE  # noqa: E402
 
 SIZE = BLOCK_FRAMES * 2
 BLOCK_S = BLOCK_FRAMES / SAMPLE_RATE
@@ -96,7 +102,7 @@ def main() -> None:
             report_at = now + 30
     made.close()
     assert not TRIED_NETWORK, f"tried the network: {TRIED_NETWORK}"
-    print("no network attempts", flush=True)
+    print("no network attempts from Python (native code: strace it)", flush=True)
 
 
 if __name__ == "__main__":

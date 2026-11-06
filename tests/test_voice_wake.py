@@ -255,6 +255,28 @@ def test_a_check_that_breaks_mid_run_falls_back_to_the_first_one(an_ear, monkeyp
     assert an_ear.heard.is_set()
 
 
+def test_two_checks_at_once_keep_their_own_state() -> None:
+    """An ear closing while the next one opens: the model remembers, so they can't share one."""
+    blocks = _speech()[:60]
+    alone = ear.SpeechCheck()
+    expected = [alone.feed(block) for block in blocks]
+    assert any(expected)
+    one, other = ear.SpeechCheck(), ear.SpeechCheck()
+    noise = SILENCE
+    got = []
+    for block in blocks:
+        got.append(one.feed(block))
+        other.feed(noise)
+    assert got == expected
+
+
+def test_nothing_that_phones_home_is_installed() -> None:
+    """onnxruntime's wheel reports to Microsoft with no session open, and its switch doesn't stop
+    it (arc-eng/hq#609). A check that reaches for it again has to answer for that first."""
+    lock = Path(agent.__file__).parents[2] / "uv.lock"
+    assert 'name = "onnxruntime"' not in lock.read_text()
+
+
 # ------------------------------------------------------------------ the agent
 
 UP = SimpleNamespace(type="session.updated")

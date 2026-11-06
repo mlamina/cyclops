@@ -20,14 +20,13 @@ after one stops and for half of one after a session ends (:attr:`Ear.deaf`).
 
 from __future__ import annotations
 
+import os
 import queue
 import sys
 import threading
 import time
 from collections import deque
 from collections.abc import Callable
-from functools import lru_cache
-from pathlib import Path
 
 import numpy as np
 import sounddevice as sd
@@ -55,9 +54,13 @@ PREROLL_BLOCKS = int(PREROLL_S * SAMPLE_RATE / BLOCK_FRAMES)
 HANDOVER_MAX_S = 15.0  # a connect slower than this is a failed one; stop collecting
 HANDOVER_BLOCKS = int(HANDOVER_MAX_S * SAMPLE_RATE / BLOCK_FRAMES)
 
-# The second check. Silero takes 512 samples at 16 kHz, 32 ms: about 0.3 ms of a core on the Pi.
-CHECK_MODEL = Path(__file__).parent / "assets" / "silero_vad.onnx"
-CHECK_FRAME = 512
+# The second check. Silero takes 512 samples at 16 kHz, 32 ms. It runs on pysilero-vad (ggml), not
+# onnxruntime: onnxruntime's wheel reports to Microsoft on its own, and its off switch doesn't stop
+# that (arc-eng/hq#609). Nothing leaves this box before a session starts, so don't swap it back.
+CHECK_FRAME_BYTES = 512 * 2
+# Its worker threads spin between frames unless told not to: 7% of a core against 3.6% during a
+# check on the Pi. Read once, when the library loads. It's a fan, so CPU matters.
+os.environ.setdefault("OMP_WAIT_POLICY", "passive")
 CHECK_THRESHOLD = 0.7  # how sure a frame must be; with the run below, 1.3% of noise clips got by
 CHECK_RUN = 12  # this many frames in a row, 0.38 s. Longer starts losing one-word starts.
 CHECK_S = 1.5  # after this long with no steady speech it was a noise: back to the first check
@@ -109,15 +112,12 @@ class SpeechGate:
         self._window.clear()
 
 
-@lru_cache(maxsize=1)
 def _check_model():
-    """The detector, loaded once for the life of the process. Importing its runtime takes over a
-    second on the Pi, so this only ever runs on an ear's worker thread, never a frame's."""
-    import onnxruntime as ort
+    """A fresh detector: each holds its own state, so ears and attempts can't share one. Only runs
+    on an ear's worker thread, never a frame's: the first import has to load a library."""
+    from pysilero_vad import SileroVoiceActivityDetector
 
-    options = ort.SessionOptions()
-    options.intra_op_num_threads = options.inter_op_num_threads = 1  # CPU matters: it's a fan
-    return ort.InferenceSession(str(CHECK_MODEL), options, providers=["CPUExecutionProvider"])
+    return SileroVoiceActivityDetector()
 
 
 class SpeechCheck:
@@ -128,25 +128,17 @@ class SpeechCheck:
 
     def __init__(self) -> None:
         self._model = _check_model()
-        self._state = np.zeros((2, 1, 128), dtype=np.float32)
-        self._context = np.zeros(64, dtype=np.float32)  # the model expects the last frame's tail
-        self._pending = np.zeros(0, dtype=np.float32)
+        self._pending = b""
         self._run = 0
 
     def feed(self, block: bytes) -> bool:
         """Judge one block. True once enough frames in a row were speech."""
-        samples = np.frombuffer(to_vad_rate(block), dtype=np.int16).astype(np.float32) / 32768
-        self._pending = np.concatenate([self._pending, samples])
+        self._pending += to_vad_rate(block)
         passed = False
-        while self._pending.size >= CHECK_FRAME:
-            frame, self._pending = self._pending[:CHECK_FRAME], self._pending[CHECK_FRAME:]
-            out, self._state = self._model.run(None, {
-                "input": np.concatenate([self._context, frame])[None, :],
-                "state": self._state,
-                "sr": np.array(VAD_RATE, dtype=np.int64),
-            })
-            self._context = frame[-64:]
-            self._run = self._run + 1 if float(out[0][0]) >= CHECK_THRESHOLD else 0
+        while len(self._pending) >= CHECK_FRAME_BYTES:
+            frame = self._pending[:CHECK_FRAME_BYTES]
+            self._pending = self._pending[CHECK_FRAME_BYTES:]
+            self._run = self._run + 1 if self._model(frame) >= CHECK_THRESHOLD else 0
             passed = passed or self._run >= CHECK_RUN
         return passed
 
