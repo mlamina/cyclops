@@ -3,7 +3,7 @@
 # Expects the copy in /tmp/qa-609 (src, tests) and swe's build venv and clips in /tmp/swe-609.
 # Nothing is played aloud and the real mic isn't opened. Refuses to start during a session.
 Q=/tmp/qa-609
-PY=/tmp/swe-609/build/.venv/bin/python
+PY=/tmp/swe-609/build2/.venv/bin/python
 CLIPS=/tmp/swe-609/clips
 SUM=$Q/tests/acceptance/hq_572_records_sum.sh
 cd ~/cyclops || exit 1
@@ -25,14 +25,26 @@ idle
 bash "$SUM" $Q/before.txt
 touch $Q/stamp
 
-echo "=== does the library's own switch stop what it sends?"
-QA_DISABLE_TELEMETRY=1 bash "$Q/tests/acceptance/hq_609_native_net.sh" 150 2>&1 | grep -vE 'AF_UNIX|ENOTSOCK|sendto\(1|sendmsg\(1|sendto\(8, "W' | cut -c1-200
-grep -E 'htons\(443\)|htons\(53\)' $Q/strace.log | cut -c1-140
-echo "connections to 443: $(grep -c 'htons(443)' $Q/strace.log)"
+echo "=== the check alone: anything native on the network?"
+bash "$Q/tests/acceptance/hq_609_native_net.sh" 300 2>&1 | cut -c1-200
+echo "internet sockets: $(grep -cE 'AF_INET6?[,)]' $Q/strace.log)  connections to 443 or 53: $(grep -cE 'htons\((443|53)\)' $Q/strace.log)"
+records
+
+echo "=== the real Ear with no session, noise looping: anything native on the network?"
+idle
+PYTHONPATH=$Q/src strace -f -qq -e trace=network -o $Q/strace-ear.log timeout 500 "$PY" -u "$Q/tests/acceptance/hq_609_idle_cost.py" 300 "$CLIPS"/keyboard_typing/*.wav "$CLIPS"/door_wood_knock/*.wav "$CLIPS"/music/*.wav 2>&1 | tail -4 | cut -c1-160
+echo "network system calls: $(wc -l < $Q/strace-ear.log)  internet sockets: $(grep -cE 'AF_INET6?[,)]' $Q/strace-ear.log)  connections to 443 or 53: $(grep -cE 'htons\((443|53)\)' $Q/strace-ear.log)"
+grep -E 'AF_INET6?[,)]' $Q/strace-ear.log | cut -c1-160 | head -10
+records
+
+echo "=== a fresh detector per attempt, and a new worker per Ear: does it give back?"
+idle
+PYTHONPATH=$Q/src timeout 2400 "$PY" -u "$Q/tests/acceptance/hq_609_churn.py" 2000 200 2>&1 | grep -v -E '^(whisper|ggml)_' | tail -20 | cut -c1-160
+records
 
 echo "=== swe's replay of 592 clips through the real Ear, repeated"
 idle
-PYTHONPATH=$Q/src timeout 1500 "$PY" -u "$Q/tests/acceptance/hq_609_noise.py" "$CLIPS" 2>&1 | tail -30 | cut -c1-160
+PYTHONPATH=$Q/src timeout 2400 "$PY" -u "$Q/tests/acceptance/hq_609_noise.py" "$CLIPS" 2>&1 | tail -30 | cut -c1-160
 records
 
 echo "=== real model, real Ear, kiosk's start path"

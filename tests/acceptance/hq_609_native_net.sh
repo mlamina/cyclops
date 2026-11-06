@@ -4,9 +4,9 @@
 # Usage: bash hq_609_native_net.sh [seconds]
 SECONDS_ALIVE=${1:-150}
 Q=/tmp/qa-609
-PY=/tmp/swe-609/build/.venv/bin/python
+PY=/tmp/swe-609/build2/.venv/bin/python
 OUT=$Q/strace.log
-"$PY" -c 'import onnxruntime; print("onnxruntime", onnxruntime.__version__)'
+"$PY" -c 'import importlib.metadata as m, importlib.util as u; print("pysilero-vad", m.version("pysilero-vad"), "onnxruntime installed:", u.find_spec("onnxruntime") is not None)'
 PYTHONPATH=$Q/src strace -f -qq -e trace=network -o "$OUT" \
   "$PY" -u "$Q/tests/acceptance/hq_609_native_net.py" "$SECONDS_ALIVE"
 echo "exit=$? network system calls: $(wc -l < "$OUT")"
