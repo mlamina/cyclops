@@ -200,6 +200,61 @@ def s_ended(settings, box: h.Box) -> None:  # noqa: ANN001
     stop(box)
 
 
+def s_voiced(settings, box: h.Box) -> None:  # noqa: ANN001
+    """s_ended's next session is a press, which never meets the ear. With the second check merged, a
+    session starts later: is a job's news still told once, after his first words, when he starts it
+    by talking? Timeline, because Room.talk splits speech between an ear and a session's mic."""
+    ours = h.FIXTURES
+    from hq_609_real_sessions import Timeline
+
+    h.FIXTURES = ours  # importing it points them at its own folder
+
+    print("VOICED: job ends with no session; the next one starts by voice, through the second check", flush=True)
+    agent = start(box)
+    say(box, agent, "job")
+    check("the tool started it", bool(CALLS and CALLS[0][1].get("started")), str(CALLS))
+    stop(box)
+    row = settled()
+    check("the job completes with no session open", row is not None and row.get("state") == jobs.LANDED, str(row))
+    if row is None:
+        return
+    time.sleep(2.0)  # past the ear's hold
+    timeline = Timeline()
+    timeline.install()
+    box.k._close_ear()  # noqa: SLF001  (it was opened on the old stream; the frame loop opens a new one)
+    time.sleep(1.0)
+    guard_live()
+    check("the second check is what's running", "pysilero_vad" in sys.modules or _check_loads(), "")
+    before = box.starts
+    timeline.say(h.line("ask"))
+    end = time.monotonic() + 15
+    while box.starts == before and time.monotonic() < end:
+        time.sleep(0.02)
+    check("his voice starts the session", box.starts != before)
+    if box.starts == before:
+        return
+    box.wait_up()
+    agent = box.controller._agent  # noqa: SLF001
+    check("not told before he spoke", not any(w == "cyclops" for w, _ in agent.spoken), str(agent.spoken))
+    h.wait_said(agent, "you", 0, timeout=25)
+    words = after_told(box, agent, row, 0)
+    said = " ".join(t for w, t in agent.spoken if w == "you").lower()
+    print(f"   he said: {said!r}", flush=True)
+    check("his first words reached it", "torque" in said and "spark" in said, said)
+    told = [t for t in words if "pico" in t.lower() or "datasheet" in t.lower()]
+    check("the news came once", len(told) == 1, str(words))
+    print(f"   JUDGE, in order: {agent.spoken}", flush=True)
+    stop(box)
+
+
+def _check_loads() -> bool:
+    """The merged ear falls back to the first check alone if it can't load: that'd look like a pass."""
+    from cyclops import ear
+
+    ear.SpeechCheck()
+    return True
+
+
 def s_fail(settings, box: h.Box) -> None:  # noqa: ANN001
     print("FAIL: nothing to find", flush=True)
     agent = start(box)
@@ -233,7 +288,7 @@ def main() -> None:
     print(f"scratch: {SCRATCH} · worker folder {settings.worker_dir} · code {agent_module.__file__}", flush=True)
     threading.Thread(target=collecting, args=(settings,), daemon=True).start()
     box = h.Box(settings)
-    {"open": s_open, "ended": s_ended, "fail": s_fail}[sys.argv[1]](settings, box)
+    {"open": s_open, "ended": s_ended, "fail": s_fail, "voiced": s_voiced}[sys.argv[1]](settings, box)
     STOP_COLLECT.set()
     box.alive = False
     failed = [r for r in RESULTS if not r[1]]
