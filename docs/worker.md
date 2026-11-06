@@ -54,14 +54,18 @@ it in: the operating system is.
 | 15-minute limit | `worker.py` | a job that never ends |
 | Everything on its account killed when a job ends | `worker.py` | a process that detached itself going on using the internet and the token |
 | Requests only count from another account | `worker.py` | a job queuing more jobs for itself, each with a fresh budget |
+| No system bus (`InaccessiblePaths=/run/dbus`) | the unit | a job turning on lingering for its account: polkit allows that, and what it leaves runs in a user manager, outside everything above |
+| A new home for each job | `worker.py` | one hijacked job planting a hook that runs in every later one |
+| `WatchdogSec`, heard only from the main process | the unit | a job freezing the program that enforces its limit |
+| Folder put back before every start, as root | `cyclops-worker-repair.sh` | a job wrecking the folder so the service crash-loops until a person comes |
 
 The firewall loads in `ExecStartPre`: if it won't load, the worker doesn't start.
 
 The job runs as the same account as the program watching it, so it can write anything in the
 folder and can kill that program. If it does, systemd stops everything in the service and restarts
-it, and the job is answered as cut off. It can also read that it's on a shared system bus: it can
-list services and see that wifi connections exist, but holds no permissions there, reads no wifi
-password, and rebooting asks for authorization it can't give.
+it, and the job is answered as cut off. If it freezes that program instead (`kill -STOP`), the
+limit stops counting, so the watchdog restarts the service within a minute. If it wrecks the folder,
+a root step puts it back before every start, and what can't be answered is passed over.
 
 **There's no memory limit on the job as a whole.** This kernel boots with `cgroup_disable=memory`, so
 `MemoryMax` would be accepted, shown back by `systemctl show`, and enforced by nothing. Getting a real
@@ -88,6 +92,10 @@ and the worker chooses what's at the end of the path. So:
   capped, which reduces the risk and doesn't remove it. The librarian, which reads PDFs, can only
   read manuals.
 - Reading a PDF that landed costs OpenAI money outside the job's budget, about a penny per 45 pages.
+- Parsing a landed PDF happens under the ledger's lock, in the index service, outside the worker's
+  limits. The worst of five hostile 128 MB files took 15.9 s and 1.4 GB on the device. A request made
+  in that window waits, and the audio carries on.
+- Nothing caps what a job writes to disk.
 
 ## The token
 

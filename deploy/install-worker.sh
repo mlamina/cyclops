@@ -28,12 +28,11 @@ fi
 id "$USER_NAME" >/dev/null 2>&1 || \
   useradd --system --no-create-home --home-dir "$ROOT/home" --shell /usr/sbin/nologin "$USER_NAME"
 
-# Setgid, so everything the worker makes stays readable by the voice side through the group. The
-# worker is not in that group: this gives Cyclops a way in and gives the worker no way out.
-install -d -o "$USER_NAME" -g "$SHARED_GROUP" -m 2770 "$ROOT" "$ROOT/inbox"
-install -d -o "$USER_NAME" -g "$SHARED_GROUP" -m 2750 "$ROOT/jobs" "$ROOT/done" "$ROOT/home"
-
 install -d -m 755 "$OPT" "$OPT/bin"
+install -m 644 "$HERE/cyclops-worker-repair.sh" "$OPT/repair.sh"
+printf '%s\n' "$SHARED_GROUP" > "$OPT/shared-group"
+sh "$OPT/repair.sh"
+
 install -m 644 "$HERE/../src/cyclops/worker.py" "$OPT/worker.py"
 install -m 644 "$HERE/cyclops-worker.nft" "$OPT/firewall.nft"
 # A copy of its own: the one in /home/cyclops is out of its sight, and it mustn't update itself.

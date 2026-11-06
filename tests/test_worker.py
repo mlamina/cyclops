@@ -6,10 +6,14 @@ that lives in the service unit and the firewall, which a test here can't reach.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import signal
+import socket
 import stat
+import tempfile
+import threading
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -337,3 +341,111 @@ def test_an_account_with_no_name_kills_nothing(monkeypatch) -> None:
     monkeypatch.setattr(worker.pwd, "getpwuid", no_such_account)
     worker._clear_account()
     assert sent == []
+
+
+def _within(seconds: float, call) -> None:
+    """Call it on a thread, so a regression that hangs fails here rather than hanging the suite."""
+    done = threading.Event()
+
+    def run() -> None:
+        call()
+        done.set()
+
+    threading.Thread(target=run, daemon=True).start()
+    assert done.wait(seconds), "hung"
+
+
+def test_a_pipe_in_place_of_its_answer_settles_as_broken(root, key, tmp_path) -> None:
+    claude = _claude(tmp_path, "rm ../output.json\nmkfifo ../output.json")
+    seen: list[dict] = []
+
+    _within(5, lambda: seen.append(_run(root, claude, key)))
+
+    assert seen[0]["reason"] == worker.BROKEN
+
+
+@pytest.mark.parametrize("plant", ["pipe at the scratch name", "folder at the final name"])
+def test_what_a_job_plants_in_done_cant_stop_it_being_answered(root, key, tmp_path, plant) -> None:
+    done = "../../../done"
+    make = (
+        f"mkfifo {done}/.abcdef01.json.tmp"
+        if plant.startswith("pipe")
+        else f"mkdir -p {done}/abcdef01.json/inside"
+    )
+    seen: list[dict] = []
+
+    _within(5, lambda: seen.append(_run(root, _claude(tmp_path, make), key)))
+
+    assert seen[0]["state"] == "failed"
+
+
+def test_a_folder_for_the_running_marker_doesnt_answer_a_job_twice(root, key, tmp_path) -> None:
+    claude = _claude(tmp_path, f"rm ../running\nmkdir ../running\ncat <<'EOF'\n{GOOD}\nEOF")
+    _run(root, claude, key)
+
+    assert worker.recover(root) == []
+
+
+def test_a_job_folder_with_a_name_too_long_to_answer_doesnt_stop_a_start(root) -> None:
+    junk = root / worker.JOBS / ("a" * 250)
+    junk.mkdir()
+    (junk / worker.RUNNING).touch()
+    real = root / worker.JOBS / "abcdef03"
+    real.mkdir()
+    (real / worker.RUNNING).touch()
+
+    assert worker.recover(root) == ["abcdef03"]
+    assert not junk.exists()
+
+
+def test_a_cut_off_job_it_cant_answer_doesnt_stop_the_others(root) -> None:
+    for job_id in ("abcdef03", "abcdef04"):
+        (root / worker.JOBS / job_id).mkdir()
+        (root / worker.JOBS / job_id / worker.RUNNING).touch()
+    # A folder that can't be replaced: only a path this process can't clear will do.
+    stuck = root / worker.DONE / "abcdef03.json"
+    stuck.mkdir()
+    (stuck / "inside").touch()
+    stuck.chmod(0o500)
+    try:
+        assert "abcdef04" in worker.recover(root)
+    finally:
+        stuck.chmod(0o700)
+
+
+def test_each_job_gets_a_new_home_so_nothing_planted_reaches_the_next(root, key, tmp_path) -> None:
+    body = f"echo \"$HOME\" >> {tmp_path}/homes\ntouch \"$HOME/planted\"\necho '{{}}'"
+    claude = _claude(tmp_path, body)
+    _run(root, claude, key)
+    _ask(root, "abcdef02")
+    taken = worker.take_next(root)
+    worker.run_job(root, *taken, claude=claude, token_file=key)
+
+    first, second = (tmp_path / "homes").read_text().split()
+    assert first != second
+    assert Path(first).parent.name == "abcdef01" and Path(second).parent.name == "abcdef02"
+
+
+def test_it_reports_in_while_a_job_runs_and_the_job_cant_see_where(
+    root, key, tmp_path, monkeypatch
+) -> None:
+    # A short path of its own: a socket's path is limited, and tmp_path can be longer than that.
+    with tempfile.TemporaryDirectory(dir="/tmp") as short, socket.socket(
+        socket.AF_UNIX, socket.SOCK_DGRAM
+    ) as listener:
+        where = f"{short}/n"
+        listener.bind(where)
+        listener.settimeout(2)
+        monkeypatch.setenv("NOTIFY_SOCKET", where)
+        monkeypatch.setattr(worker, "BEAT_S", 0.05)
+        claude = _claude(tmp_path, f"sleep 0.3\nenv > {tmp_path}/env\necho '{{}}'")
+
+        _run(root, claude, key)
+
+        beats = [listener.recv(64)]
+        listener.settimeout(0)
+        with contextlib.suppress(BlockingIOError):
+            while True:
+                beats.append(listener.recv(64))
+    assert set(beats) == {b"WATCHDOG=1"} and len(beats) > 2
+    assert "NOTIFY_SOCKET" not in (tmp_path / "env").read_text()

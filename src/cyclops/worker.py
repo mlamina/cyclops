@@ -10,6 +10,7 @@ The folder it owns, shared with Cyclops only through its group::
     inbox/<id>.json          a request; Cyclops writes these (cyclops.jobs)
     jobs/<id>/running        there from the moment the job starts until it has an answer
     jobs/<id>/work/          where Claude Code runs; a finished job leaves result.pdf here
+    jobs/<id>/home/          its home, new for each job, so nothing planted carries to the next
     done/<id>.json           how it went; Cyclops reads these and owes this side nothing back
 
 Nothing here decides whether a job *succeeded*. It reports what happened, and Cyclops checks the
@@ -31,6 +32,7 @@ import pwd
 import re
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -50,6 +52,7 @@ OUTPUT = "output.json"
 BUDGET_USD = 1.00
 JOB_LIMIT_S = 15 * 60
 POLL_S = 2.0
+BEAT_S = 5.0  # well inside the unit's WatchdogSec, which is what catches this process frozen
 KEEP_S = 24 * 3600  # finished job folders, so a failure can still be looked at the next day
 # A request this old when the worker starts was made before whatever stopped it. Younger, and the
 # box is simply still booting: a voice session can be up before this service is.
@@ -88,14 +91,45 @@ Your last message must be only this JSON, with no other text:
 """
 
 
+def _clear(path: Path) -> None:
+    """Whatever is at this path, gone, without following it. A job may have put anything there."""
+    try:
+        if stat.S_ISDIR(path.lstat().st_mode):
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _alive() -> None:
+    """Tell systemd this process is still running. A job can stop it (``kill -STOP``), and then
+    nothing here can enforce the time limit, so the unit's watchdog restarts the service. Only the
+    main process counts (``NotifyAccess=main``), so a job can't send this on its behalf."""
+    where = os.environ.get("NOTIFY_SOCKET", "")
+    if not where:
+        return
+    with contextlib.suppress(OSError), socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
+        sock.sendto(b"WATCHDOG=1", "\0" + where[1:] if where[0] == "@" else where)
+
+
 def land(path: Path, record: dict) -> None:
-    """Write a record whole or not at all: scratch name, fsync, rename."""
+    """Write a record whole or not at all: scratch name, fsync, rename.
+
+    The job knows its own id, so it can have put anything at either name: a pipe at the scratch
+    name would hang this open, and a folder at the final name would fail the rename on every start.
+    """
     tmp = path.with_name(f".{path.name}.tmp")
-    with open(tmp, "w", encoding="utf-8") as handle:
+    _clear(tmp)
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o640)
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(record, handle)
         handle.flush()
         os.fsync(handle.fileno())
     os.chmod(tmp, 0o640)
+    with contextlib.suppress(OSError):
+        if stat.S_ISDIR(path.lstat().st_mode):
+            _clear(path)
     os.replace(tmp, path)
 
 
@@ -103,7 +137,7 @@ def finish(root: Path, job_id: str, state: str, **fields: object) -> None:
     """Say how a job went, and only then take down its running marker."""
     land(root / DONE / f"{job_id}.json", {"id": job_id, "state": state, **fields})
     with contextlib.suppress(OSError):
-        (root / JOBS / job_id / RUNNING).unlink()
+        _clear(root / JOBS / job_id / RUNNING)
 
 
 def recover(root: Path, *, now: float | None = None) -> list[str]:
@@ -112,14 +146,23 @@ def recover(root: Path, *, now: float | None = None) -> list[str]:
     A job with its marker still up was cut off, by a power cut or a kill. A request nobody started
     and that is old enough to predate this start is the same thing one step earlier: running it
     now, however long after he asked, would be a surprise and would spend money on it.
+
+    What a job left must not stop this: every start would crash the same way, and only a person
+    could clear it. So a name this worker would never make is removed, and one that can't be
+    answered is passed over.
     """
     now = time.time() if now is None else now
     answered: list[str] = []
     jobs = root / JOBS
     for folder in sorted(jobs.iterdir()) if jobs.is_dir() else []:
-        if (folder / RUNNING).exists():
-            finish(root, folder.name, "failed", reason=INTERRUPTED)
-            answered.append(folder.name)
+        try:
+            if not ID_PATTERN.match(folder.name):
+                _clear(folder)
+            elif (folder / RUNNING).exists():
+                finish(root, folder.name, "failed", reason=INTERRUPTED)
+                answered.append(folder.name)
+        except OSError as exc:
+            print(f"job folder {folder.name[:40]}: {exc.strerror}", file=sys.stderr, flush=True)
     for request in _requests(root):
         try:
             if not _from_outside(request):
@@ -228,9 +271,15 @@ def command(claude: str) -> list[str]:
 
 
 def read_outcome(path: Path) -> dict:
-    """What Claude Code said it did, as a dict. Anything unreadable comes back empty."""
+    """What Claude Code said it did, as a dict. Anything unreadable comes back empty.
+
+    The job can replace this file, so no link is followed and a pipe can't hang the read.
+    """
     try:
-        with open(path, "rb") as handle:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as handle:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return {}
             raw = handle.read(MAX_OUTPUT_BYTES)
         found = json.loads(raw.decode("utf-8", errors="replace"))
     except (OSError, ValueError):
@@ -277,11 +326,19 @@ def _run_claude(argv: list[str], *, prompt: str, cwd: Path, env: dict, output: P
             stderr=subprocess.DEVNULL,
             start_new_session=True,
         )
+        deadline = time.monotonic() + JOB_LIMIT_S
+        words: bytes | None = prompt.encode("utf-8")
         try:
-            process.communicate(prompt.encode("utf-8"), timeout=JOB_LIMIT_S)
-            return True
-        except subprocess.TimeoutExpired:
-            return False
+            while True:
+                _alive()
+                left = deadline - time.monotonic()
+                if left <= 0:
+                    return False
+                try:
+                    process.communicate(words, timeout=min(left, BEAT_S))
+                    return True
+                except subprocess.TimeoutExpired:
+                    words = None  # sent by the first call; a retry with it raises
         finally:
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
@@ -318,11 +375,12 @@ def run_job(root: Path, job_id: str, request: str, *, claude: str, token_file: P
         token = token_file.read_text(encoding="utf-8").strip()
         if not token:
             raise ValueError("empty token file")
+        (folder / "home").mkdir(exist_ok=True)
         finished = _run_claude(
             command(claude),
             prompt=PROMPT.format(request=request, result=RESULT),
             cwd=work,
-            env=_environment(root, token),
+            env=_environment(folder, token),
             output=folder / OUTPUT,
         )
         timing["seconds"] = round(time.monotonic() - started, 1)
@@ -350,11 +408,11 @@ def run_job(root: Path, job_id: str, request: str, *, claude: str, token_file: P
         finish(root, job_id, "failed", reason=BROKEN, **timing)
 
 
-def _environment(root: Path, token: str) -> dict[str, str]:
+def _environment(folder: Path, token: str) -> dict[str, str]:
     """All it gets. Not inherited, so nothing from the service's own environment leaks in."""
     return {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
-        "HOME": str(root / "home"),
+        "HOME": str(folder / "home"),
         "LANG": "C.UTF-8",
         "CLAUDE_CODE_OAUTH_TOKEN": token,  # from `claude setup-token`: model requests only
         "DISABLE_AUTOUPDATER": "1",
@@ -369,12 +427,12 @@ def tidy(root: Path, *, now: float | None = None) -> None:
     for folder in jobs.iterdir() if jobs.is_dir() else []:
         with contextlib.suppress(OSError):
             if not (folder / RUNNING).exists() and now - folder.stat().st_mtime > KEEP_S:
-                shutil.rmtree(folder, ignore_errors=True)
+                _clear(folder)
                 (root / DONE / f"{folder.name}.json").unlink(missing_ok=True)
 
 
 def prepare(root: Path) -> None:
-    for name in (INBOX, JOBS, DONE, "home"):
+    for name in (INBOX, JOBS, DONE):
         (root / name).mkdir(parents=True, exist_ok=True)
 
 
@@ -384,6 +442,7 @@ def serve(root: Path, *, claude: str, token_file: Path) -> None:
     for job_id in recover(root):
         print(f"job {job_id}: cut off by the last stop", flush=True)
     while True:
+        _alive()
         taken = take_next(root)
         if taken is None:
             time.sleep(POLL_S)
