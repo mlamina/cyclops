@@ -297,6 +297,9 @@ def worth_asking(records: list[dict]) -> str:
     A button pressed to check the microphone costs one read and gets an empty plan, never an
     ffprobe. ``WORTH_SECONDS`` is what turns away thirty "you" turns inside four seconds.
     """
+    # He asked for this one, and it may well be of him working in silence (arc-eng/hq#602).
+    if any(r.get("type") == "recording_asked" for r in records):
+        return ""
     you = [r for r in records if r.get("type") == "you"]
     cyclops = [r for r in records if r.get("type") == "cyclops"]
     if len(you) < WORTH_YOU or len(cyclops) < WORTH_CYCLOPS:

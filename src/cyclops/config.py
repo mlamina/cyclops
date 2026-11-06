@@ -184,7 +184,8 @@ class Settings:
     # place rather than sitting beside it, because two doors onto the same glass is a choice
     # the model would have to make mid-sentence, every time.
     sketch: bool = False
-    record: bool = True  # record the session to its folder: the whole screen, else the camera
+    # Offer the recording tool. Nothing records until he asks: the whole screen, else the camera.
+    record: bool = True
     record_fps: int = 30  # video sampling rate; the screen repaints at ~29 fps
     record_width: int = 0  # cap the recorded width, never upscaling; 0 keeps the source's own
     sleep_after_s: int = 60  # untouched for this long the panel goes dark; 0 keeps it awake

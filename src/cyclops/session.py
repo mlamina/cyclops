@@ -48,6 +48,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -63,6 +64,8 @@ from typing import TYPE_CHECKING, Any
 from . import card, slug
 from .config import ConfigError, Settings, load_settings
 from .record import SessionRecorder, mux
+
+MIN_FREE_BYTES = 1024**3  # refused below this: a recording should never be what fills the card
 
 if TYPE_CHECKING:  # importing these for real would be a cycle - agent.py imports this module
     from openai.types.realtime import RealtimeServerEvent
@@ -127,6 +130,12 @@ def photo_target(settings: Settings, *, by: str) -> tuple[Path, str]:
     if live is None:
         return settings.captures_dir, ""
     return live.photos_dir, by
+
+
+def recording() -> bool:
+    """Is a video being made right now? Whether it's allowed to is a setting, and another matter."""
+    live = current()
+    return live is not None and live.recording
 
 
 def note(kind: str, **fields: Any) -> None:
@@ -243,6 +252,13 @@ class SessionLog:
         self._handle = None
         self._records: list[dict] = []
         self._recorder: SessionRecorder | None = None
+        # Recording starts and stops from a tool's thread now, and ends with the session on
+        # another: this is what stops a start landing after the teardown and running on unowned.
+        self._recording_lock = threading.Lock()
+        self._closing = False
+        self._recorded = False  # one per session: a second would land on the same video.mp4
+        self._record_broke = False  # and its parts, which are all that's left of one that broke
+        self._record_why = ""
         self._reported = False
         # observe() state
         self._speech: deque[tuple[float, float]] = deque(maxlen=16)
@@ -286,7 +302,6 @@ class SessionLog:
                     and (self._frames is not None or self._screen is not None)
                 ),
             )
-            self._start_recorder()
             self._agent.on_event = self.observe
         except Exception as exc:  # a dead log, never an exception into the session thread
             self._give_up(f"{type(exc).__name__}: {exc}")
@@ -303,7 +318,9 @@ class SessionLog:
             if _live is self:
                 _live = None
         self._agent.on_event = None
-        self._stop_recorder()  # says "saving the video" for itself, when there is one
+        with self._recording_lock:
+            self._closing = True
+            self._stop_recorder()  # says "saving the video" for itself, when there is one
         # Ending itself is still a stop as far as the task is concerned; say which kind it was.
         reason = getattr(self._agent, "ended_by", None) or _reason(exc_type)
         fields: dict[str, Any] = {
@@ -334,13 +351,70 @@ class SessionLog:
         if not self._discard():
             self._after()  # named, remembered and filed in another process, on its own time
 
-    def _start_recorder(self) -> None:
-        """Tap the mic and the speaker for this session's video, if there is anything to film."""
-        if not self.settings.record or self._mic is None or self._speaker is None:
-            return
+    # ---- recording, only when asked for (arc-eng/hq#602) ----
+
+    @property
+    def recording(self) -> bool:
+        return self._recorder is not None
+
+    @property
+    def recording_problem(self) -> str:
+        """Why the recording in progress has stopped working, or "" if it hasn't."""
+        recorder = self._recorder
+        return (recorder.failed or "") if recorder is not None else ""
+
+    def start_recording(self) -> str:
+        """Start the video from this moment. "" if it's running; otherwise why it isn't.
+
+        Blocking: waits for a first frame. The answer is what the voice model tells him, so it
+        says nothing it can't stand behind. "" means an encoder is really running.
+        """
+        with self._recording_lock:
+            if self._closing:
+                return "The session is ending, so it isn't recording."
+            if self._recorder is not None:
+                return "It's already recording. Nothing changed."
+            if self._record_broke:
+                return "This session's recording broke. A new session can make another."
+            if self._recorded:
+                return "This session already has its one recording. A new session can make another."
+            if not self.settings.record:
+                return "Recording is switched off on this device."
+            if self._mic is None or self._speaker is None:
+                return "There's nothing to record with here."
+            try:
+                if shutil.disk_usage(self.dir).free < MIN_FREE_BYTES:
+                    return "There isn't enough space left to record."
+            except OSError as exc:
+                return f"It can't record, because the card can't be read ({exc})."
+            self._record_why = ""
+            if not self._start_recorder():
+                return f"It can't record: {self._record_why or 'there is nothing to film'}."
+            # Where the video's first second falls on this log's clock: see library.records.
+            self.event("recording_asked", video_at=round(self._recorder.began - self._t0, 2))
+            return ""
+
+    def stop_recording(self) -> str:
+        """Stop and finish the video now. "" if it's done; otherwise why there's no video.
+
+        Blocking: the mux takes a couple of seconds, and up to ``record.MUX_TIMEOUT_S``.
+        """
+        with self._recording_lock:
+            if self._recorder is None:
+                return "It isn't recording. Nothing changed."
+            recorder = self._recorder
+            self._stop_recorder(quietly=True)
+            if recorder.failed:
+                self._record_broke = True
+                return f"The recording failed: {recorder.failed}."
+            return ""
+
+    def _start_recorder(self) -> bool:
+        """Tap the mic and the speaker for this session's video. True if an encoder is running."""
         frames = self._filmed()
         if frames is None:
-            return
+            self._record_why = "there is nothing to film"
+            return False
         recorder = SessionRecorder(
             frames,
             self.dir,
@@ -348,11 +422,14 @@ class SessionLog:
             width=self.settings.record_width,
         )
         if not recorder.start():  # it has said why; a session is never blocked on recording
+            self._record_why = recorder.failed or ""
             self._release_screen()  # nothing of ours is going to sample it
-            return
+            return False
         self._mic.on_block = recorder.on_mic_block
         self._speaker.on_block = recorder.on_speaker_block
         self._recorder = recorder
+        self._recorded = True
+        return True
 
     def _filmed(self) -> FrameSource | None:
         """The screen, once it has delivered a frame; the camera when it cannot. Logged either way.
@@ -392,22 +469,28 @@ class SessionLog:
             self._holding = False
             self._screen.release()
 
-    def _stop_recorder(self) -> None:
+    def _stop_recorder(self, *, quietly: bool = False) -> None:
         recorder, self._recorder = self._recorder, None
         try:
             if recorder is not None:
-                self._finish(recorder)
+                # Before the tracks close: the audio threads go on running if the session does.
+                if self._mic is not None:
+                    self._mic.on_block = None
+                if self._speaker is not None:
+                    self._speaker.on_block = None
+                self._finish(recorder, quietly=quietly)
         finally:
             # Whatever happened above, and whether or not a recorder ever started: this session's
             # hold on the capture ends with it. Whether the capture itself ends depends on
             # whether anybody else is still watching.
             self._release_screen()
 
-    def _finish(self, recorder: SessionRecorder) -> None:
+    def _finish(self, recorder: SessionRecorder, *, quietly: bool = False) -> None:
         # Named on the panel because this is the long pole of a teardown - ffmpeg gets up to
         # record.MUX_TIMEOUT_S, and even the usual couple of seconds is a couple of seconds the
         # caption used to spend saying nothing more useful than "closing the link".
-        self._say("saving the video…")
+        if not quietly:  # mid-session, the tool's own line is what the caption is saying
+            self._say("saving the video…")
         finished = recorder.stop()
         if finished is not None:
             self.event("video", file=finished.name, seconds=self._elapsed())

@@ -25,8 +25,9 @@ is always running, so a job finishes properly with no session open.
   running, two seconds of quiet.
 - **Session ended:** you're told in the next one, after you've spoken, so a session still opens with
   nothing said.
-- **Once:** a telling counts when the reply finishes. One you talk over is told again at the next
-  pause. If the power goes in that gap you could hear it twice, which beats never.
+- **Once:** a telling counts when the reply finishes being generated, which can be before it has
+  finished playing. So if you talk over the end you may not hear all of it and it isn't repeated. If
+  the reply fails or the power goes before then, you're told again.
 - **One at a time:** a second request gets "still on the other one".
 - **Power cut:** the worker restarts by itself, answers for the job that was cut off, and doesn't run
   it again. A request older than two minutes at start-up is treated the same way, not run late.
@@ -50,9 +51,17 @@ it in: the operating system is.
 | `PrivateDevices=yes` | the unit | the camera, mic and anything plugged in |
 | `CPUQuota`, `CPUWeight`, `Nice`, `TasksMax` | the unit | starving a live conversation of CPU |
 | `LimitAS=4G` per process, `OOMScoreAdjust=1000` | the unit | running the box out of memory: no process past 4 GB of address space, and the worker dies first if it's short |
-| 15-minute limit, killed as a process group | `worker.py` | a job that never ends |
+| 15-minute limit | `worker.py` | a job that never ends |
+| Everything on its account killed when a job ends | `worker.py` | a process that detached itself going on using the internet and the token |
+| Requests only count from another account | `worker.py` | a job queuing more jobs for itself, each with a fresh budget |
 
 The firewall loads in `ExecStartPre`: if it won't load, the worker doesn't start.
+
+The job runs as the same account as the program watching it, so it can write anything in the
+folder and can kill that program. If it does, systemd stops everything in the service and restarts
+it, and the job is answered as cut off. It can also read that it's on a shared system bus: it can
+list services and see that wifi connections exist, but holds no permissions there, reads no wifi
+password, and rebooting asks for authorization it can't give.
 
 **There's no memory limit on the job as a whole.** This kernel boots with `cgroup_disable=memory`, so
 `MemoryMax` would be accepted, shown back by `systemctl show`, and enforced by nothing. Getting a real
@@ -66,8 +75,10 @@ and the worker chooses what's at the end of the path. So:
 - It must start as a PDF and open as one, within 128 MB and 500 pages. What's checked and what's kept
   are the same bytes.
 - A landing never replaces a manual. `manuals.receive` overwrites, so a name in use gets a number.
-- The name is cleaned before it's used, and the description is capped and handed to the voice model
-  marked as a description. Why a job failed is always one of our own words, never the worker's text.
+- The answer file gets the same care: no links, a regular file only, at most 64 KB. A pipe or a huge
+  file there settles the job as failed instead of holding the ledger's lock.
+- The name is cleaned and capped, the description is capped, and both reach the voice model marked as
+  a label. Why a job failed is always one of our own words, never the worker's text.
 
 **What this doesn't stop:**
 

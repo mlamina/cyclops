@@ -30,7 +30,7 @@
 | `CYCLOPS_QUIET_END_S`  | `120`          | A session nobody has said anything in for this many seconds ends itself; `0` never does. Cyclops talking, a tool running or a video playing all hold the count. |
 | `CYCLOPS_SLUG`         | `1`            | Name **and** summarise each finished session from its transcript; `0` leaves it date-stamped with no `summary.md` (and so with nothing to carry into the next session). |
 | `CYCLOPS_REMEMBER`     | `1`            | Keep `about-you.md` up to date from what you say, and hand it to Cyclops at the start of a session; `0` turns the whole feature off and writes nothing about you. |
-| `CYCLOPS_RECORD`       | `1`            | Record the session into its folder; `0` disables. |
+| `CYCLOPS_RECORD`       | `1`            | Let it record a session when asked; `0` withholds the tool. Nothing records unless asked. |
 | `CYCLOPS_RECORD_FPS`   | `30`           | Frame rate of the recorded video. The screen repaints at about 29 fps, so more buys nothing. |
 | `CYCLOPS_RECORD_WIDTH` | `0`            | Cap the recorded width, never upscaling. `0` keeps whatever the source is — the screen 1:1 at 800 wide, or the camera at its own resolution when the screen cannot be captured. |
 | `CYCLOPS_ADMIN_HOST`   | `0.0.0.0`      | Interface the admin page binds; `127.0.0.1` keeps it off the LAN. |

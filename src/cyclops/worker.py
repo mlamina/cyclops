@@ -15,6 +15,10 @@ The folder it owns, shared with Cyclops only through its group::
 Nothing here decides whether a job *succeeded*. It reports what happened, and Cyclops checks the
 file for itself before anybody is told anything, because whatever runs under this account has been
 reading the web and may have been talked into something.
+
+The job runs as this same account, so it can write anything this process can. Two things follow:
+a request counts only if another account wrote it (:func:`_from_outside`), and when a job ends
+everything else on the account is killed (:func:`_clear_account`).
 """
 
 from __future__ import annotations
@@ -23,9 +27,11 @@ import argparse
 import contextlib
 import json
 import os
+import pwd
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -50,6 +56,8 @@ KEEP_S = 24 * 3600  # finished job folders, so a failure can still be looked at 
 STALE_REQUEST_S = 120
 MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 MAX_FIELD_CHARS = 200
+MAX_REQUEST_BYTES = 16 * 1024
+ACCOUNT = "cyclops-worker"
 
 MODEL = "sonnet"
 TOOLS = "Bash,WebSearch,WebFetch,Read,Write"
@@ -114,7 +122,10 @@ def recover(root: Path, *, now: float | None = None) -> list[str]:
             answered.append(folder.name)
     for request in _requests(root):
         try:
-            if now - request.stat().st_mtime < STALE_REQUEST_S:
+            if not _from_outside(request):
+                request.unlink()
+                continue
+            if now - request.lstat().st_mtime < STALE_REQUEST_S:
                 continue
             job_id = request.stem
             if ID_PATTERN.match(job_id):
@@ -129,11 +140,42 @@ def recover(root: Path, *, now: float | None = None) -> list[str]:
 def _requests(root: Path) -> list[Path]:
     """The waiting requests, oldest first. Scratch files are not requests yet."""
     inbox = root / INBOX
+    found: list[tuple[float, str, Path]] = []
     try:
-        found = [p for p in inbox.iterdir() if p.suffix == ".json" and not p.name.startswith(".")]
+        for path in inbox.iterdir():
+            if path.suffix == ".json" and not path.name.startswith("."):
+                # lstat: a dangling link planted here must not raise and stop the whole loop.
+                with contextlib.suppress(OSError):
+                    found.append((path.lstat().st_mtime, path.name, path))
     except OSError:
         return []
-    return sorted(found, key=lambda p: (p.stat().st_mtime, p.name))
+    return [path for _, _, path in sorted(found)]
+
+
+def _from_outside(path: Path) -> bool:
+    """Did another account write this? A job runs as this one, so it can't have.
+
+    The inbox has to be writable from here for requests to be taken out of it, so the folder's
+    rights can't tell Cyclops's requests from a job's. Who owns the file can: a job can't give a
+    file away, and can't hard-link one of Cyclops's (``fs.protected_hardlinks``, on by default).
+    """
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode) and info.st_uid != os.geteuid()
+
+
+def _read_request(path: Path) -> str:
+    """The words of one request. Raises if it can't be read. Never blocks and follows no link."""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as handle:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise ValueError("not a file")
+        request = json.loads(handle.read(MAX_REQUEST_BYTES))["request"]
+    if not isinstance(request, str) or not request.strip():
+        raise ValueError("no request")
+    return request
 
 
 def take_next(root: Path) -> tuple[str, str] | None:
@@ -143,11 +185,15 @@ def take_next(root: Path) -> tuple[str, str] | None:
     """
     for path in _requests(root):
         job_id = path.stem
+        if not _from_outside(path):
+            # Not answered either: nobody asked, and Cyclops has no row waiting for it.
+            print(f"request {job_id}: not from Cyclops, refused", flush=True)
+            with contextlib.suppress(OSError):
+                path.unlink()
+            continue
         try:
-            request = json.loads(path.read_text(encoding="utf-8"))["request"]
-            if not isinstance(request, str) or not request.strip():
-                raise ValueError("no request")
-        except (OSError, ValueError, KeyError, TypeError):
+            request = _read_request(path)
+        except (OSError, ValueError, KeyError, TypeError, RecursionError):
             if ID_PATTERN.match(job_id):
                 finish(root, job_id, "failed", reason=BROKEN)
             with contextlib.suppress(OSError):
@@ -216,8 +262,10 @@ def _run_claude(argv: list[str], *, prompt: str, cwd: Path, env: dict, output: P
     """Run it to the end or the limit. True if it finished in time.
 
     Its own process group, because the limit has to take down whatever it started as well: a
-    ``curl`` left running would go on filling a folder after the job was answered for. Output goes
-    to a file rather than a pipe, so a chatty run can't fill memory or block on a full pipe.
+    ``curl`` left running would go on filling a folder after the job was answered for. A group is
+    only what a job stays in by choice, so :func:`_clear_account` takes the rest. Either way this
+    happens when it ends in time too, because a job can leave something behind and exit. Output
+    goes to a file rather than a pipe, so a chatty run can't fill memory or block on a full pipe.
     """
     with open(output, "wb") as sink:
         process = subprocess.Popen(
@@ -233,10 +281,31 @@ def _run_claude(argv: list[str], *, prompt: str, cwd: Path, env: dict, output: P
             process.communicate(prompt.encode("utf-8"), timeout=JOB_LIMIT_S)
             return True
         except subprocess.TimeoutExpired:
-            with contextlib.suppress(ProcessLookupError):
+            return False
+        finally:
+            with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.killpg(process.pid, signal.SIGKILL)
             process.wait()
-            return False
+            _clear_account()
+
+
+def _clear_account() -> None:
+    """Kill every process on this account but this one, so nothing of the job's is left running.
+
+    ``setsid`` leaves the process group, and systemd's ``KillMode`` only acts when the service
+    stops. ``kill(-1)`` reaches everything this account may signal, in one step, so nothing can
+    fork its way out from under it. This account exists only for this service.
+
+    **Only ever under that account.** Anywhere else, ``kill(-1)`` is every process the person
+    running it owns: their whole login. So this checks who it's running as, and does nothing else.
+    """
+    try:
+        if pwd.getpwuid(os.geteuid()).pw_name != ACCOUNT:
+            return
+    except KeyError:
+        return
+    with contextlib.suppress(ProcessLookupError, PermissionError):
+        os.kill(-1, signal.SIGKILL)
 
 
 def run_job(root: Path, job_id: str, request: str, *, claude: str, token_file: Path) -> None:

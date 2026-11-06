@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import stat
 import time
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -31,10 +33,19 @@ def _claude(tmp_path: Path, body: str) -> str:
 
 
 @pytest.fixture
-def root(tmp_path: Path) -> Path:
+def root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The worker's folder, with this process posing as another account: what the test writes is
+    what Cyclops writes. A uid with no account also keeps _clear_account well away from kill(-1)."""
+    monkeypatch.setattr(os, "geteuid", lambda: os.getuid() + 100000)
     folder = tmp_path / "worker"
     worker.prepare(folder)
     return folder
+
+
+@pytest.fixture
+def own_account(monkeypatch: pytest.MonkeyPatch) -> None:
+    """What the test writes from here on is what a job writes: the worker's own account."""
+    monkeypatch.setattr(os, "geteuid", os.getuid)
 
 
 @pytest.fixture
@@ -236,3 +247,93 @@ def test_it_imports_nothing_from_cyclops_or_outside_the_standard_library() -> No
         elif isinstance(node, ast.Import):
             names.update(alias.name.split(".")[0] for alias in node.names)
     assert names <= set(sys.stdlib_module_names) | {"__future__"}
+
+
+def test_a_request_written_from_its_own_account_never_runs(root, own_account) -> None:
+    """A hijacked job could otherwise queue itself a fresh budget, forever and with nobody told."""
+    _ask(root)
+
+    assert worker.take_next(root) is None
+    assert not list((root / worker.INBOX).iterdir())
+    assert not (root / worker.JOBS / "abcdef01").exists()
+    assert not (root / worker.DONE / "abcdef01.json").exists()
+
+
+def test_a_request_from_its_own_account_is_not_kept_for_after_a_restart(root, own_account) -> None:
+    _ask(root)
+
+    assert worker.recover(root, now=time.time() + 10 * worker.STALE_REQUEST_S) == []
+    assert not list((root / worker.INBOX).iterdir())
+
+
+@pytest.mark.parametrize("plant", ["fifo", "link", "dangling", "folder"])
+def test_something_planted_in_the_inbox_cant_hang_or_stop_it(root, tmp_path, plant) -> None:
+    path = root / worker.INBOX / "abcdef09.json"
+    if plant == "fifo":
+        os.mkfifo(path)
+    elif plant == "link":
+        secret = tmp_path / "his.json"
+        secret.write_text(json.dumps({"request": "planted through a link"}))
+        path.symlink_to(secret)
+    elif plant == "dangling":
+        path.symlink_to(tmp_path / "nothing-here")
+    else:
+        path.mkdir()
+    _ask(root, "abcdef02")
+
+    taken = worker.take_next(root)
+
+    assert taken == ("abcdef02", "the relay manual")
+
+
+def test_a_job_that_exits_leaves_nothing_of_its_group_running(root, key, tmp_path) -> None:
+    pid_file = tmp_path / "child.pid"
+    claude = _claude(tmp_path, f"sleep 30 &\necho $! > {pid_file}\ncat <<'EOF'\n{GOOD}\nEOF")
+
+    _run(root, claude, key)
+
+    pid = int(pid_file.read_text())
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.02)
+    pytest.fail("what the job started outlived its answer")
+
+
+def _account(monkeypatch: pytest.MonkeyPatch, name: str) -> list[tuple[int, int]]:
+    """Pose as an account and catch kill. The real kill(-1) here would end this whole login."""
+    sent: list[tuple[int, int]] = []
+    monkeypatch.setattr(worker.pwd, "getpwuid", lambda _uid: SimpleNamespace(pw_name=name))
+    monkeypatch.setattr(worker.os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    return sent
+
+
+def test_when_a_job_ends_everything_on_the_workers_account_is_killed(
+    root, key, tmp_path, monkeypatch
+) -> None:
+    sent = _account(monkeypatch, worker.ACCOUNT)
+    claude = _claude(tmp_path, f"cat <<'EOF'\n{GOOD}\nEOF")
+
+    _run(root, claude, key)
+
+    assert sent == [(-1, signal.SIGKILL)]
+
+
+def test_on_any_other_account_nothing_is_ever_killed_that_way(monkeypatch) -> None:
+    sent = _account(monkeypatch, "mlamina")
+    worker._clear_account()
+    assert sent == []
+
+
+def test_an_account_with_no_name_kills_nothing(monkeypatch) -> None:
+    sent = _account(monkeypatch, "unused")
+
+    def no_such_account(_uid: int) -> None:
+        raise KeyError(_uid)
+
+    monkeypatch.setattr(worker.pwd, "getpwuid", no_such_account)
+    worker._clear_account()
+    assert sent == []
