@@ -269,8 +269,10 @@ def run_job(root: Path, job_id: str, request: str, *, claude: str, token_file: P
         if not outcome or outcome.get("is_error"):
             finish(root, job_id, "failed", reason=BROKEN, **timing)
             return
-        # The file decides, not the model's account of it.
-        if not (work / RESULT).exists():
+        # The file decides, not the model's account of it. lexists, because following a link is
+        # what raises here, on a link into a home folder this account is walled off from. Whether
+        # it's a real file is for Cyclops to judge when it takes it in (cyclops.jobs).
+        if not os.path.lexists(work / RESULT):
             finish(root, job_id, "failed", reason=NOTHING_FOUND, **timing)
             return
         finish(root, job_id, "ok", **read_about(outcome.get("result")), **timing)

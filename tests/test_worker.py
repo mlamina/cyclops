@@ -74,6 +74,19 @@ def test_no_file_is_nothing_found_whatever_the_model_claims(root, key, tmp_path)
     assert (done["state"], done["reason"]) == ("failed", worker.NOTHING_FOUND)
 
 
+def test_a_link_is_left_for_cyclops_to_refuse_not_followed_here(root, key, tmp_path) -> None:
+    """On the device a link into /home raises a permission error when followed (arc-eng/hq#599)."""
+    blocked = tmp_path / "blocked"
+    blocked.mkdir(mode=0o000)
+    claude = _claude(tmp_path, f"ln -s {blocked}/.env {worker.RESULT}\ncat <<'EOF'\n{GOOD}\nEOF")
+    try:
+        done = _run(root, claude, key)
+    finally:
+        blocked.chmod(0o700)
+
+    assert done["state"] == "ok", "what it is gets decided by the hand-in, which refuses a link"
+
+
 def test_over_budget_is_said_as_that(root, key, tmp_path) -> None:
     out = '{"subtype": "error_max_budget_usd", "is_error": true, "total_cost_usd": 1.01}'
 
