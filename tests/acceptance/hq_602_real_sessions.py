@@ -489,7 +489,26 @@ def main() -> None:
         # blocks of speech from each other and the model heard nonsense ("Hegyesek").
         which = sys.argv[sys.argv.index("--one") + 1]
         guard_live()
-        if which == "nospace":
+        if which in ("quiet", "goodbye"):
+            # The room's echo at 0.5 can send the model into answering its own voice, which holds
+            # the quiet timer open and looks like a regression (round 2, S2). Off for these two.
+            h.ECHO_GAIN = 0.0
+            box = make_box(settings)
+            if which == "quiet":
+                print("Q record, stop, then nobody says anything", flush=True)
+                agent = start(box)
+                say(box, agent, "record")
+                check("recording", session.recording(), str(CALLS))
+                say(box, agent, "stop")
+                check("stopped", not session.recording(), str(CALLS))
+                released = time.monotonic()
+                gone = box.wait_gone(QUIET + 25)
+                check("quiet ends it after the stop", gone and agent.ended_by == "quiet",
+                      f"ended_by={agent.ended_by} after {time.monotonic() - released:.1f} s")
+            else:
+                s3_never_stopped(box)
+            box.alive = False
+        elif which == "nospace":
             box = make_box(settings)
             s5_cant_record(box, "no space", session,
                            disk_usage=lambda _p: type("U", (), {"free": 10 * 1024**2})())
