@@ -28,6 +28,11 @@ put this in `~/.config/labwc/autostart`:
 cd /home/<you>/cyclops && .venv/bin/cyclops-kiosk >/tmp/kiosk_live.log 2>&1 &
 ```
 
+**The panel's browser stays off the internet.** It only ever talks to this box, so it starts with
+a proxy that goes nowhere (`CHROME_FLAGS` in `kiosk.py`), which stops Chromium's own background
+connections to Google. Loopback skips the proxy. A page on the panel that needs the internet would
+need that changed.
+
 **What a boot looks like, and why nothing flickers.** The panel is one OpenCV window and the
 admin page is a Chromium kept warm behind it, and a compositor puts whichever mapped last on
 top — so the browser is started *before* the kiosk has a window at all, with the panel's light

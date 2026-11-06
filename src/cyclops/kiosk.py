@@ -293,6 +293,14 @@ CHROME_FLAGS = (
     # at boot, where the panel is dark anyway, and everything on the one start somebody watches:
     # the slow path in _ensure_browser, after the warm one has died.
     "--default-background-color=FF000000",
+    # The panel only ever talks to this box, and nothing should leave it with no session open
+    # (arc-eng/hq#619). Left alone, Chromium holds connections to Google for push messaging, with
+    # no sign-in and nothing using them. The background flag alone doesn't stop that, so the proxy
+    # is the wall: a port nothing listens on, for everything but loopback, which Chromium never
+    # sends through a proxy. That covers every port the page uses (the admin page, ears, camera,
+    # sketch) and needs no list of what Chromium calls home to.
+    "--disable-background-networking",
+    "--proxy-server=127.0.0.1:9",
 )
 
 
