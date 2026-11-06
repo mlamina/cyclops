@@ -35,7 +35,7 @@ from openai import AsyncOpenAI  # noqa: E402
 from cyclops import agent, jobs, tasks, worker  # noqa: E402
 from cyclops.config import load_settings  # noqa: E402
 
-WATCH_S = 15.0
+WATCH_S = 8.0
 
 
 def start_job(root: Path, job_id: str, request: str) -> subprocess.Popen:
@@ -73,7 +73,8 @@ async def tell(settings, row: dict, turns: list[str]) -> None:
 def main() -> int:
     request, turns = sys.argv[1], sys.argv[2:]
     root = Path(tempfile.mkdtemp(prefix="qa-643-run-", dir="/tmp"))
-    root.chmod(0o777)
+    # As the real folder is: setgid to Cyclops's group, because records are written 0640.
+    root.chmod(0o2777)
     settings = dataclasses.replace(load_settings(), worker_dir=root)
     if not settings.manuals_dir.resolve().is_relative_to(v.SCRATCH):
         raise SystemExit("ABORT: manuals outside scratch")

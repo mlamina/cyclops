@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """hq#599: how long can a hostile PDF hold the ledger's lock? jobs._hand_in parses under that lock.
 
-Builds PDFs a job could leave as result.pdf, all within the 128 MB limit, and times the exact call
+Builds PDFs a job could leave as its result, all within the 128 MB limit, and times the exact call
 _hand_in makes (reading.page_count) in a child process with a time limit and an address-space limit
 where the OS enforces one (Linux). Writes only to a temp folder, makes no network or model call.
 

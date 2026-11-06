@@ -1416,6 +1416,9 @@ talking, for up to 15 minutes.
 - It sees only what you pass it, so pass everything: every name, model, size and preference.
 - When they ask how it's going, use check_background_job and say what it returns. If nothing is
   running, say so. You will be told when it finishes or fails.
+- You see its report once, to tell them. After that you have only what you said. Asked for more than
+  that, say it isn't what you have, and offer to send the helper back. Never fill in reasons or
+  details of your own and let them sound like what it found.
 """
 
 
