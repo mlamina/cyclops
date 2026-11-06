@@ -27,7 +27,8 @@ keeps: nothing on this screen blinks at you about something broken twice.
 Taking a photo and starting a session are the button beside the panel, not the glass: a tap is
 the photo, a hold is the conversation. Mostly the hold is not needed: with no session up the
 box is listening for somebody to talk (`cyclops.ear`), and talking to it starts one, with what
-was said first answered rather than lost. A session ends itself after two minutes in which
+was said first answered rather than lost. Speech does that, not just any sound in the room: a
+detector on the box itself has to hear it. A session ends itself after two minutes in which
 nobody has said anything, or when you say you are done ("that's all", "thanks, bye"); nothing is
 said and nothing sounds, so it just stops. The hold still starts and ends one, silently too.
 
