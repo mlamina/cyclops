@@ -293,6 +293,20 @@ CHROME_FLAGS = (
     # at boot, where the panel is dark anyway, and everything on the one start somebody watches:
     # the slow path in _ensure_browser, after the warm one has died.
     "--default-background-color=FF000000",
+    # Nothing should leave this box with no session open (arc-eng/hq#619). Left alone, Chromium
+    # holds connections to Google for push messaging, with no sign-in and nothing using them. The
+    # background flag alone doesn't stop that, so the proxy is the wall: a port nothing listens on,
+    # for everything but two things. Loopback, which Chromium never sends through a proxy, covers
+    # every port the page uses (the admin page, ears, camera, sketch). And the one place the panel
+    # goes off-box: a video asked for out loud plays straight from a signed googlevideo.com URL
+    # (panel.js), so that host goes around the wall. It's only reached while one is up: panel.js
+    # lets go of the stream when a video comes off (emptyStage), or the connection would stay.
+    # DNS doesn't go through a proxy, and Chromium upgrades this box's resolvers (8.8.8.8) to DNS
+    # over HTTPS, so the resolver rule stops that too. A feature flag for it had no effect.
+    "--disable-background-networking",
+    "--proxy-server=127.0.0.1:9",
+    "--proxy-bypass-list=*.googlevideo.com",
+    "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE *.googlevideo.com, EXCLUDE localhost, EXCLUDE 127.0.0.1",
 )
 
 

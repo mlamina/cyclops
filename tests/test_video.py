@@ -53,6 +53,20 @@ def test_the_page_looks_for_a_video_before_it_looks_for_a_picture() -> None:
     assert js.index("found.video") < js.index("found.image")
 
 
+def test_a_video_coming_off_the_stage_lets_go_of_its_stream() -> None:
+    """Same reason as the lint above: this needs Chromium to see, so it reads the source.
+
+    A detached video keeps its stream, and with it a connection to the video host with no session
+    open (arc-eng/hq#619). So the stage is only ever cleared in one place, the one that lets go,
+    and hq_619_ways_off.py checks the connection itself.
+    """
+    js = (STATIC / "panel.js").read_text()
+    assert js.count("stage.textContent = ''") == 1
+    helper = js[js.index("function emptyStage()") :]
+    assert helper.index("removeAttribute('src')") < helper.index("stage.textContent = ''")
+    assert helper.index("load()") < helper.index("stage.textContent = ''")
+
+
 def test_the_mic_is_shut_while_a_video_is_up_and_opens_when_it_comes_down() -> None:
     one = agent.VoiceAgent(Settings(api_key=""))
     assert not one.mic_shut
