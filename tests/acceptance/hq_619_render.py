@@ -20,7 +20,12 @@ shots, port, other = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 base = f"http://127.0.0.1:{port}"
 shots.mkdir(parents=True, exist_ok=True)
 ROUTES = ("/#/sessions", "/#/p/demo/overview", "/#/s/2026-01-02_10-00-00_torque-check")
-NEW = ("--disable-background-networking", "--proxy-server=127.0.0.1:9")
+NEW = (
+    "--disable-background-networking",
+    "--proxy-server=127.0.0.1:9",
+    "--proxy-bypass-list=*.googlevideo.com",
+    "--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE *.googlevideo.com, EXCLUDE localhost, EXCLUDE 127.0.0.1",
+)
 assert all(flag in CHROME_FLAGS for flag in NEW), "the wall isn't in CHROME_FLAGS"
 
 
