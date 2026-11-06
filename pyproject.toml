@@ -43,6 +43,7 @@ dependencies = [
     "pyserial>=3.5",
     "segno>=1.6.6",
     "webrtcvad-wheels>=2.0.14",
+    "pysilero-vad>=3.4",  # the second check in cyclops.ear; no onnxruntime, which phones home
 ]
 
 [project.scripts]

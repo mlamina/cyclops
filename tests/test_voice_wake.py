@@ -106,12 +106,16 @@ class FakeStream:
 def an_ear(monkeypatch) -> ear.Ear:
     monkeypatch.setattr(ear.sd, "RawInputStream", FakeStream)
     monkeypatch.setattr(ear, "pin_input_source", lambda device: None)
-    return ear.Ear(compress=False)
+    made = ear.Ear(compress=False)
+    made.start()
+    yield made
+    made.close()
 
 
 def _hear(made: ear.Ear, blocks) -> None:
     for block in blocks:
         made._callback(block, BLOCK_FRAMES, None, None)
+        made._jobs.join()  # the check runs on its own thread; a block at a time keeps tests exact
 
 
 def test_before_a_start_only_the_last_two_seconds_are_kept(an_ear) -> None:
@@ -144,6 +148,133 @@ def test_closing_drops_what_it_kept(an_ear) -> None:
     an_ear.close()  # twice is fine
     assert an_ear.take() == b""
     assert an_ear._stream.closed
+
+
+@cache
+def _rumble() -> tuple[bytes, ...]:
+    """A motor, wavering: harmonics like a voice's, so it fools the first check. Three seconds."""
+    t = np.arange(SAMPLE_RATE * 3) / SAMPLE_RATE
+    harmonics = sum(np.sin(2 * np.pi * 90 * k * t + k) / k for k in range(1, 12))
+    return tuple(_blocks(4000 * harmonics * (1 + 0.5 * np.sin(2 * np.pi * 6 * t))))
+
+
+def test_noise_that_fools_the_first_check_does_not_start_one(an_ear) -> None:
+    assert _triggers(_rumble()), "else this test proves nothing"
+    _hear(an_ear, _rumble())
+    assert not an_ear.heard.is_set()
+
+
+def test_the_first_words_survive_the_second_check(an_ear) -> None:
+    speech = _speech()
+    _hear(an_ear, [SILENCE] * 10 + list(speech[:150]))
+    assert an_ear.heard.is_set()
+    assert an_ear.take().startswith(SILENCE * 10 + speech[0])
+
+
+def test_speech_right_after_noise_still_starts_one(an_ear) -> None:
+    _hear(an_ear, _rumble())
+    _hear(an_ear, [SILENCE] * 10)
+    assert not an_ear.heard.is_set()
+    _hear(an_ear, _speech())
+    assert an_ear.heard.is_set()
+
+
+def test_a_long_noise_keeps_no_more_than_two_seconds_once_it_gives_up(an_ear) -> None:
+    _hear(an_ear, _rumble())
+    _hear(an_ear, [SILENCE] * (ear.CHECK_BLOCKS + 5))
+    assert not an_ear.heard.is_set()
+    assert len(an_ear.take()) <= (ear.PREROLL_BLOCKS + ear.CHECK_BLOCKS) * BLOCK_BYTES
+
+
+class _HeldCheck:
+    """A second check that says yes, but only once it's let go."""
+
+    released = ui_threading.Event()
+
+    def feed(self, block: bytes) -> bool:
+        return _HeldCheck.released.wait(10)
+
+
+def _hear_without_waiting(made: ear.Ear, blocks) -> None:
+    for block in blocks:
+        made._callback(block, BLOCK_FRAMES, None, None)
+
+
+def _wait_for_jobs(made: ear.Ear) -> None:
+    _HeldCheck.released.set()
+    made._jobs.join()
+    _HeldCheck.released.clear()
+
+
+def test_a_slow_check_never_holds_up_the_audio_thread(an_ear, monkeypatch) -> None:
+    monkeypatch.setattr(ear, "SpeechCheck", _HeldCheck)
+    _hear_without_waiting(an_ear, _speech()[:60])  # would take 10 s a block if it ran here
+    assert not an_ear.heard.is_set()
+    _wait_for_jobs(an_ear)
+    assert an_ear.heard.is_set()
+
+
+def test_a_verdict_that_comes_after_going_deaf_counts_for_nothing(an_ear, monkeypatch) -> None:
+    monkeypatch.setattr(ear, "SpeechCheck", _HeldCheck)
+    _hear_without_waiting(an_ear, _speech()[:60])
+    an_ear.deaf = lambda: True
+    _hear_without_waiting(an_ear, [SILENCE])
+    _wait_for_jobs(an_ear)
+    assert not an_ear.heard.is_set()
+
+
+def test_closing_in_the_middle_of_a_check_starts_nothing(an_ear, monkeypatch) -> None:
+    monkeypatch.setattr(ear, "SpeechCheck", _HeldCheck)
+    _hear_without_waiting(an_ear, _speech()[:60])
+    an_ear.close()
+    _wait_for_jobs(an_ear)
+    assert not an_ear.heard.is_set()
+
+
+def test_with_no_second_check_the_first_one_decides(monkeypatch) -> None:
+    def broken():
+        raise RuntimeError("no model")
+
+    monkeypatch.setattr(ear, "_check_model", broken)
+    monkeypatch.setattr(ear.sd, "RawInputStream", FakeStream)
+    monkeypatch.setattr(ear, "pin_input_source", lambda device: None)
+    made = ear.Ear(compress=False)
+    made.start()
+    _hear(made, _speech())
+    assert made.heard.is_set()
+    made.close()
+
+
+def test_a_check_that_breaks_mid_run_falls_back_to_the_first_one(an_ear, monkeypatch) -> None:
+    class Bad:
+        def feed(self, block: bytes) -> bool:
+            raise ValueError("bad output")
+
+    monkeypatch.setattr(ear, "SpeechCheck", Bad)
+    _hear(an_ear, _speech())
+    assert an_ear.heard.is_set()
+
+
+def test_two_checks_at_once_keep_their_own_state() -> None:
+    """An ear closing while the next one opens: the model remembers, so they can't share one."""
+    blocks = _speech()[:60]
+    alone = ear.SpeechCheck()
+    expected = [alone.feed(block) for block in blocks]
+    assert any(expected)
+    one, other = ear.SpeechCheck(), ear.SpeechCheck()
+    noise = SILENCE
+    got = []
+    for block in blocks:
+        got.append(one.feed(block))
+        other.feed(noise)
+    assert got == expected
+
+
+def test_nothing_that_phones_home_is_installed() -> None:
+    """onnxruntime's wheel reports to Microsoft with no session open, and its switch doesn't stop
+    it (arc-eng/hq#609). A check that reaches for it again has to answer for that first."""
+    lock = Path(agent.__file__).parents[2] / "uv.lock"
+    assert 'name = "onnxruntime"' not in lock.read_text()
 
 
 # ------------------------------------------------------------------ the agent
