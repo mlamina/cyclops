@@ -449,3 +449,26 @@ def test_it_reports_in_while_a_job_runs_and_the_job_cant_see_where(
                 beats.append(listener.recv(64))
     assert set(beats) == {b"WATCHDOG=1"} and len(beats) > 2
     assert "NOTIFY_SOCKET" not in (tmp_path / "env").read_text()
+
+
+class _Libc:
+    def __init__(self, answer: int) -> None:
+        self.answer = answer
+        self.calls: list[tuple] = []
+
+    def prctl(self, *args) -> int:
+        self.calls.append(args)
+        return self.answer
+
+
+def test_it_turns_off_attaching_to_itself(monkeypatch) -> None:
+    libc = _Libc(0)
+    monkeypatch.setattr(worker.ctypes, "CDLL", lambda *a, **k: libc)
+    worker._no_attaching()
+    assert libc.calls == [(worker.PR_SET_DUMPABLE, 0, 0, 0, 0)]
+
+
+def test_it_wont_run_if_a_job_could_attach_to_it(monkeypatch) -> None:
+    monkeypatch.setattr(worker.ctypes, "CDLL", lambda *a, **k: _Libc(-1))
+    with pytest.raises(OSError):
+        worker._no_attaching()

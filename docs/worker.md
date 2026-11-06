@@ -54,9 +54,10 @@ it in: the operating system is.
 | 15-minute limit | `worker.py` | a job that never ends |
 | Everything on its account killed when a job ends | `worker.py` | a process that detached itself going on using the internet and the token |
 | Requests only count from another account | `worker.py` | a job queuing more jobs for itself, each with a fresh budget |
-| No system bus (`InaccessiblePaths=/run/dbus`) | the unit | a job turning on lingering for its account: polkit allows that, and what it leaves runs in a user manager, outside everything above |
+| Nothing of `/run` but the watchdog's socket (`TemporaryFileSystem`) | the unit | local services the firewall can't see: printing on his printer through CUPS, avahi, the hotkey daemon, and the system bus, where polkit lets a job turn on lingering, and what that leaves runs in a user manager, outside everything above |
 | A new home for each job | `worker.py` | one hijacked job planting a hook that runs in every later one |
 | `WatchdogSec`, heard only from the main process | the unit | a job freezing the program that enforces its limit |
+| Can't be attached to (`PR_SET_DUMPABLE`) | `worker.py` | a job, on the same account, writing the worker's memory or ptracing it to undo its limit |
 | Folder put back before every start, as root | `cyclops-worker-repair.sh` | a job wrecking the folder so the service crash-loops until a person comes |
 
 The firewall loads in `ExecStartPre`: if it won't load, the worker doesn't start.

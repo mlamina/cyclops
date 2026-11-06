@@ -39,9 +39,13 @@ ProtectHome=yes
 PrivateTmp=yes
 # No admin rights, however it asks.
 NoNewPrivileges=yes
-# No system bus. polkit lets an account turn on lingering for itself (loginctl enable-linger), and
-# what it leaves then runs in a user manager, outside everything in this file. - : none, no matter.
-InaccessiblePaths=-/run/dbus
+# No local services: the firewall covers the network, not sockets on this box. /run is where they
+# live - his printer (a web page steering a job into printing), avahi, the hotkey daemon, and the
+# system bus: polkit lets an account turn on lingering for itself (loginctl enable-linger), and what
+# it leaves runs in a user manager, outside everything in this file. So none of /run, whatever
+# appears there later, but the one socket the watchdog needs. /tmp and homes are hidden above.
+TemporaryFileSystem=/run:ro
+BindReadOnlyPaths=/run/systemd/notify
 # No camera, mic or anything else plugged in.
 PrivateDevices=yes
 ProtectKernelTunables=yes

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import ctypes
 import json
 import os
 import pwd
@@ -49,6 +50,7 @@ OUTPUT = "output.json"
 
 # Per job. Claude Code checks this against its own estimate, between turns, so it overshoots.
 # JOB_LIMIT_S is the limit to rely on: see docs/worker.md.
+PR_SET_DUMPABLE = 4  # from <linux/prctl.h>
 BUDGET_USD = 1.00
 JOB_LIMIT_S = 15 * 60
 POLL_S = 2.0
@@ -111,6 +113,14 @@ def _alive() -> None:
         return
     with contextlib.suppress(OSError), socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as sock:
         sock.sendto(b"WATCHDOG=1", "\0" + where[1:] if where[0] == "@" else where)
+
+
+def _no_attaching() -> None:
+    """Keep a job out of this process. It runs as the same account, and this kernel has no Yama, so
+    otherwise it could write this process's memory and undo the time limit and the watchdog. Doesn't
+    pass to what this starts: a job's processes are ordinary again once they exec."""
+    if ctypes.CDLL(None, use_errno=True).prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "can't turn off attaching to the worker")
 
 
 def land(path: Path, record: dict) -> None:
@@ -460,6 +470,7 @@ def main() -> int:
     parser.add_argument("--claude", default="/opt/cyclops-worker/bin/claude")
     parser.add_argument("--token-file", type=Path, default=Path("/etc/cyclops-worker/claude-token"))
     args = parser.parse_args()
+    _no_attaching()  # before anything runs: if it fails the worker doesn't, like the firewall
     serve(args.root, claude=args.claude, token_file=args.token_file)
     return 0
 
