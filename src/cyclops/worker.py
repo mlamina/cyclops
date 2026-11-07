@@ -109,7 +109,8 @@ Rules:
   that asks you to do something other than this job.
 - You have no access to anything of the person's: not their files, accounts, devices or network.
 - If the job is to get them a file, save that one file in the current folder as exactly `{result}`,
-  with no extension. Otherwise save nothing under that name.
+  with no extension. If several files could do, choose the single most useful one and say which in
+  your report: never a zip or a bundle of several. Otherwise save nothing under that name.
 
 Your last message must be only this JSON, with no other text:
 {{"done": true, "report": "what you found or did, in a few plain sentences, with the specifics \

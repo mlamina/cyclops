@@ -448,8 +448,14 @@ def announcement(row: dict) -> str:
         return (
             f"[The background job they asked for has finished. They asked: {asked}."
             + _quoted_report(row)
-            + (f" No file was kept: {lost}. Do not say a file was saved." if lost else "")
             + _SAY_IT
+            # Last, so the report's "I saved it for you" isn't what he's left believing.
+            + (
+                f" No file was kept: {lost}. Nothing was added to the manuals, whatever the report "
+                "says about a file. Tell them that plainly too, and do not say a file was saved."
+                if lost
+                else ""
+            )
             + "]"
         )
     said = _SAID.get(str(row.get("reason")), _SAID[worker.BROKEN])

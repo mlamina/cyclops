@@ -130,6 +130,31 @@ async def followup(client, settings, instructions, tools, runs: int) -> int:
     return 0
 
 
+async def not_kept(client, settings, instructions, tools, runs: int) -> int:
+    """The report says a bundle was saved, and code dropped it: is he told, or left believing it?"""
+    row = {
+        "state": jobs.ANSWERED,
+        "request": "find the manual for the Raspberry Pi Pico 2 and download it",
+        "not_kept": jobs.NOT_A_PDF,
+        "report": "This is the Pico 2 documentation bundle you asked for. There are five official "
+        "Raspberry Pi documents, including the datasheet and the getting started guide, saved as "
+        "result.",
+    }
+    wrong = 0
+    for _ in range(runs):
+        async with _Session(client, settings, instructions, tools) as conn:
+            await _user(conn, row["request"])
+            await _turn(conn, tools_off=True)
+            await _user(conn, jobs.announcement(row))
+            said, _ = await _turn(conn, tools_off=True)
+        print(f"told={said!r}", flush=True)
+        # A loose word check, to find the runs worth reading: the printed words are the evidence.
+        told = any(w in said.lower() for w in ("wasn't kept", "not kept", "couldn't keep", "can't be kept", "didn't keep", "wasn't saved", "not saved", "couldn't be kept", "couldn't be saved", "no file", "nothing was added", "only real pdfs", "only pdfs", "only keep"))
+        wrong += not told
+    print(f"not_kept: {wrong} of {runs} didn't say so, by the word check", flush=True)
+    return wrong
+
+
 async def check(client, settings, instructions, tools, runs: int) -> int:
     """How's that going, with an answer shaped by jobs.status fed back: mid-job and nothing on."""
     outputs = {
@@ -321,6 +346,7 @@ async def main() -> int:
         "notes": notes,
         "soft": soft,
         "followup": followup,
+        "not_kept": not_kept,
         "check": check,
     }[which]
     wrong = await run(client, settings, instructions, tools, runs)

@@ -336,7 +336,11 @@ def test_a_file_we_wont_keep_doesnt_lose_the_report_or_claim_the_file(settings: 
     jobs.collect(settings)
 
     assert (_row()["state"], _row()["not_kept"]) == (jobs.ANSWERED, jobs.NOT_A_PDF)
-    assert "No file was kept" in jobs.announcement(_row())
+    said = jobs.announcement(_row())
+    assert "No file was kept" in said
+    # Not only "don't claim it": he has to be told, and that comes after the report's own claim.
+    assert "Tell them that plainly" in said
+    assert said.index("I saved the spreadsheet") < said.index("No file was kept")
     assert not settings.manuals_dir.exists() or not list(settings.manuals_dir.iterdir())
 
 
