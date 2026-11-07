@@ -348,7 +348,7 @@ def read_about(text: object) -> dict:
         found = json.loads(text[start : end + 1]) if 0 <= start < end else None
     except (ValueError, RecursionError):
         found = None
-    if not isinstance(found, dict):
+    if not isinstance(found, dict) or not {"report", "name", "description", "done"} & found.keys():
         return {"report": text.strip()[:MAX_REPORT_CHARS]} if text.strip() else {}
     about: dict = {
         key: found[key].strip()[:MAX_FIELD_CHARS]

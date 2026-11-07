@@ -77,6 +77,9 @@ KEEPALIVE_S = 15.0
 RECONNECT_ATTEMPTS = 0
 TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe"
 DEFAULT_REASONING_EFFORT = "low"  # OpenAI's recommendation for production voice agents
+# Marks the one reply that tells a job's report: the server echoes it on that response, and not on
+# the ones it starts itself. See VoiceAgent._tell_if_due.
+TELLING = {"cyclops": "telling"}
 REASONING_MODEL = re.compile(r"^gpt-realtime-2(\.\d+)?(-mini)?$")  # not gpt-realtime-2025-08-28
 MAX_QUERY_CHARS = 300
 # take_a_look in the kiosk borrows a frame the preview already has, which takes milliseconds. This
@@ -2362,12 +2365,17 @@ class VoiceAgent:
         if err.event_id and err.event_id == self._create_event_id:
             self._response_active = False  # our response.create was rejected outright
             self._want_response = False
+            if self._telling_item is not None:  # no reply is coming to clear it
+                self._spawn(self._told(False))
         self._log(f"error {err.type}/{err.code}: {err.message}", stream=sys.stderr)
         if not self.ready.is_set():
             raise SessionError(err.message, code=err.code)
 
     async def _on_user_speech_started(self) -> None:
         self._recalled.clear()  # a new question; a page that missed the last one may answer this
+        # The server answers him itself when he stops, with every tool on offer, so a job's report
+        # must be gone before then. It's told again at the next pause.
+        await self._told(False)
         # The server cancels the in-progress response itself (interrupt_response=True). Locally:
         # stop playback, ignore late output for that item, and tell the server what was heard.
         item_id = self._current_item_id
@@ -2457,9 +2465,16 @@ class VoiceAgent:
 
     async def _on_response_done(self, response: RealtimeResponse) -> None:
         self._response_active = False
-        await self._told(response.status == "completed")
+        telling = (getattr(response, "metadata", None) or {}).get("cyclops") == TELLING["cyclops"]
+        saw_report = telling or self._telling_item is not None
+        await self._told(telling and response.status == "completed")
         self._dead_item_ids.clear()  # all of a response's output precedes its response.done
         calls = function_calls(response)
+        if saw_report and calls:
+            # Should never happen: a telling has no tools, and speech clears the report before the
+            # server can answer. If it does, a reply written with a report in front of it can't act.
+            self._log(f"skipped {len(calls)} tool call(s): a job's report was in that reply")
+            calls = []
         if response.status == "completed":
             for call in calls:
                 self._spawn(self._run_tool(call))
@@ -2483,7 +2498,8 @@ class VoiceAgent:
                 # A job's report is in this one: free text off the web. Whatever it says, this
                 # reply can only be spoken. See _tell_if_due.
                 await self.conn.response.create(
-                    event_id=self._create_event_id, response={"tool_choice": "none"}
+                    event_id=self._create_event_id,
+                    response={"tool_choice": "none", "metadata": TELLING},
                 )
                 return
             await self.conn.response.create(event_id=self._create_event_id)
@@ -3748,7 +3764,8 @@ class VoiceAgent:
         row = await asyncio.to_thread(jobs.to_tell)
         if row is None:
             return
-        if not self.connected:
+        # That read let other things run, and he may have started talking.
+        if not self.connected or self._want_response or self._busy():
             return
         self._telling = str(row.get("id"))
         self._tell_not_before = now + TELL_RETRY_S
@@ -3759,14 +3776,19 @@ class VoiceAgent:
                 "content": [{"type": "input_text", "text": jobs.announcement(row)}],
             }
         )
+        # So did that send. The item's id wasn't known while it ran, so speech couldn't clear it.
+        if self._want_response or self._busy():
+            await self._told(False)
+            return
         await self._request_response()
 
     async def _told(self, completed: bool) -> None:
-        """A response ended. If it was the telling and it finished, he has heard: once only.
+        """The telling is over: take the report back, and mark it heard only if ``completed``.
 
-        Not marked until the reply has finished, so one he talked over is told again at the next
-        pause, and one lost to a power cut is told in the next session. He may hear it twice in
-        that one gap, which beats never hearing it.
+        ``completed`` means the reply that ended was the telling itself and it finished. Any other
+        reply, or his talking over it, leaves it to be told again at the next pause, and one lost
+        to a power cut is told in the next session. He may hear it twice in that one gap, which
+        beats never hearing it.
         """
         job_id, self._telling = self._telling, None
         item_id, self._telling_item = self._telling_item, None

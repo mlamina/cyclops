@@ -78,6 +78,11 @@ new `background_job`, which goes straight to a worker on the open web. So:
   reply can only be spoken.
 - **Forgotten.** The item holding it is deleted from the conversation when that reply ends. After that
   the model has only what it said aloud, which he heard.
+- **Gone if he talks.** The server answers him by itself when he stops, with every tool on offer. So the
+  report is checked for before it's sent and again after, and deleted the moment he starts speaking. It's
+  told again at the next pause.
+- **Only the telling counts.** That reply carries a marker the server echoes back. No other reply marks a
+  job as told, and no reply that had a report in front of it can run a tool.
 - **One way in.** Only the telling carries a report.
 
 The cost of forgetting: asked for more detail afterwards, the model has only what it said, so the
