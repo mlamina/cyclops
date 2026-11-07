@@ -686,3 +686,17 @@ def test_the_echo_guards_barge_in_tells_it_again(voice, settings) -> None:
     asyncio.run(go())
 
     assert jobs.to_tell()["id"] == job_id
+
+
+def test_a_finger_on_the_glass_counts_as_heard(voice, settings) -> None:
+    """He chose to stop it, so it isn't told again."""
+    _job, speaker = _telling_sent(voice, settings)
+
+    async def go() -> None:
+        speaker.flush()  # the panel cuts playback before it calls this
+        voice.stop_talking(800)
+        await voice._tell_if_due()
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None
