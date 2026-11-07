@@ -10,7 +10,7 @@ JOB=$(basename "$(dirname "$WORK")")
 mkdir -p "$QA"
 echo "$JOB" >> "$QA/runs.log"
 say() { echo "$*" >> "$QA/$JOB.log"; }
-good() { echo '{"is_error":false,"result":"{}"}'; }
+good() { echo '{"type":"result","is_error":false,"result":"{}"}'; }
 
 detach() {  # a process out of the job's group and session, forking once more on the way
   python3 -c '

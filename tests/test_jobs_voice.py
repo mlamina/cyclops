@@ -22,13 +22,19 @@ class FakeConn:
         self.items: list[dict] = []
         self.responses: list[dict] = []
         self.response = SimpleNamespace(create=self._response)
-        self.conversation = SimpleNamespace(item=SimpleNamespace(create=self._item))
+        self.deleted: list[str] = []
+        self.conversation = SimpleNamespace(
+            item=SimpleNamespace(create=self._item, delete=self._delete)
+        )
 
     async def _response(self, **kwargs) -> None:
         self.responses.append(kwargs)
 
     async def _item(self, item: dict) -> None:
         self.items.append(item)
+
+    async def _delete(self, item_id: str) -> None:
+        self.deleted.append(item_id)
 
 
 @pytest.fixture
@@ -83,7 +89,10 @@ def _told_items(voice: agent.VoiceAgent) -> list[str]:
 async def _reply_ends(voice: agent.VoiceAgent, status: str = "completed") -> None:
     """The server says the response is over, through the path the real event takes."""
     voice._want_response = False  # response.created clears this
-    await voice._on_response_done(SimpleNamespace(status=status, output=[]))
+    asked = voice._conn.responses[-1].get("response", {}) if voice._conn.responses else {}
+    await voice._on_response_done(
+        SimpleNamespace(status=status, output=[], metadata=asked.get("metadata"))
+    )
 
 
 def _output(voice: agent.VoiceAgent) -> dict:
@@ -289,3 +298,405 @@ def test_with_the_worker_off_the_sweep_doesnt_touch_it(tmp_path, monkeypatch) ->
 
 def test_the_sweep_watches_the_workers_answers(settings) -> None:
     assert settings.worker_dir / worker.DONE in indexer._folders_to_watch(settings)
+
+
+def _reported_job(settings: Settings, report: str = "Read out their notes.") -> str:
+    assert jobs.submit(settings, "compare these three") == jobs.STARTED
+    job_id = jobs._read()[-1]["id"]
+    (settings.worker_dir / worker.DONE / f"{job_id}.json").write_text(
+        json.dumps({"state": "ok", "report": report})
+    )
+    jobs.collect(settings)
+    return job_id
+
+
+def test_the_reply_that_tells_a_report_can_only_be_spoken(voice, settings) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    asyncio.run(voice._tell_if_due())
+
+    assert voice._conn.responses[-1]["response"]["tool_choice"] == "none"
+
+
+def test_tools_come_back_for_the_reply_after_the_telling(voice, settings) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        await _reply_ends(voice)
+        await voice._request_response()
+
+    asyncio.run(go())
+
+    assert "response" not in voice._conn.responses[-1]
+
+
+@pytest.mark.parametrize("status", ["completed", "cancelled"])
+def test_the_report_is_gone_from_the_conversation_however_the_reply_ended(
+    voice, settings, status
+) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        await _reply_ends(voice, status)
+
+    asyncio.run(go())
+
+    assert voice._conn.deleted == [voice._conn.items[-1]["id"]]
+
+
+def test_a_failing_delete_still_marks_it_told(voice, settings, monkeypatch) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+
+    async def broken(item_id: str) -> None:
+        raise OSError("socket gone")
+
+    voice._conn.conversation.item.delete = broken
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        await _reply_ends(voice)
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None
+
+
+def _check_call() -> SimpleNamespace:
+    return SimpleNamespace(name="check_background_job", call_id="c2", arguments="{}")
+
+
+def test_both_tools_are_offered_together_or_not_at_all() -> None:
+    def names(on: bool) -> set[str]:
+        return {tool["name"] for tool in agent._offered_tools(Settings(api_key="", worker=on))}
+
+    assert {"background_job", "check_background_job"} <= names(True)
+    assert not {"background_job", "check_background_job"} & names(False)
+
+
+def test_checking_with_nothing_running_answers_and_asks_for_a_reply(voice) -> None:
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert _output(voice)["running"] is False
+    assert len(voice._conn.responses) == 1
+
+
+def test_checking_a_running_job_answers_from_its_state(voice, settings) -> None:
+    asyncio.run(voice._run_background_job(_call()))
+    voice._conn.items.clear()
+
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert _output(voice)["running"] is True
+
+
+def test_checking_never_carries_the_report(voice, settings) -> None:
+    _reported_job(settings, "the planted words")
+
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert "planted" not in json.dumps(_output(voice))
+    assert _output(voice)["finished_not_told_yet"] is True
+
+
+def test_a_failing_read_still_answers_the_model_when_checking(voice, monkeypatch) -> None:
+    def broken(*a, **k):
+        raise OSError("disk")
+
+    monkeypatch.setattr(jobs, "status", broken)
+
+    asyncio.run(voice._run_check_background_job(_check_call()))
+
+    assert _output(voice)["ok"] is False
+
+
+def test_the_instructions_only_name_the_tools_when_theyre_offered(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(agent.session, "recent_context", lambda s: agent.session.Recap("", ""))
+    on = agent._standing(Settings(api_key="", worker=True), ())[0]
+    off = agent._standing(Settings(api_key="", worker=False), ())[0]
+
+    assert "check_background_job" in on
+    assert "check_background_job" not in off
+
+
+# ---- speech at the wrong moment (arc-eng/hq#643, qa round 1) ----
+
+
+def _server_reply_with_a_search() -> SimpleNamespace:
+    """What the server starts by itself when he stops talking: no marker, every tool on offer."""
+    call = SimpleNamespace(type="function_call", name="web_search", call_id="s1", arguments="{}")
+    return SimpleNamespace(status="completed", output=[call], metadata=None)
+
+
+@pytest.mark.parametrize("during", ["read", "send"])
+def test_speech_while_a_telling_is_being_set_up_leaves_no_report(
+    voice, settings, monkeypatch, during
+) -> None:
+    job_id = _reported_job(settings)
+    voice._he_spoke = True
+    ran: list[str] = []
+
+    async def run(call) -> None:
+        ran.append(call.name)
+
+    monkeypatch.setattr(voice, "_run_tool", run)
+    if during == "read":
+        real = jobs.to_tell
+
+        def read():
+            voice._user_speaking = True
+            return real()
+
+        monkeypatch.setattr(agent.jobs, "to_tell", read)
+    else:
+        real_send = voice._send_item
+
+        async def send(item):
+            voice._user_speaking = True
+            return await real_send(item)
+
+        monkeypatch.setattr(voice, "_send_item", send)
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        voice._user_speaking = False
+        await voice._on_response_done(_server_reply_with_a_search())
+        await asyncio.sleep(0)
+
+    asyncio.run(go())
+
+    sent = [i["id"] for i in voice._conn.items if i.get("role") == "user"]
+    assert set(sent) <= set(voice._conn.deleted), "nothing of the report stays in the conversation"
+    if during == "read":
+        assert sent == [], "and it was never sent"
+    assert voice._telling_item is None and voice._telling is None
+    assert voice._conn.responses == [], "no telling was asked for while he talks"
+    assert ran == ["web_search"], "the report was gone, so his reply keeps its tools"
+    assert jobs.to_tell()["id"] == job_id, "not counted as told"
+
+
+def test_speech_after_the_telling_is_sent_clears_the_report_at_once(voice, settings) -> None:
+    job_id = _reported_job(settings)
+    voice._he_spoke = True
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        item = voice._telling_item
+        voice._user_speaking = True
+        await voice._on_user_speech_started()
+        assert voice._conn.deleted == [item], "gone at once, before the server can answer him"
+        await _reply_ends(voice, "cancelled")
+
+    asyncio.run(go())
+
+    assert jobs.to_tell()["id"] == job_id
+
+
+def test_it_is_told_again_at_the_next_pause_after_being_talked_over(voice, settings) -> None:
+    job_id = _reported_job(settings)
+    voice._he_spoke = True
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        voice._user_speaking = True
+        await voice._on_user_speech_started()
+        await _reply_ends(voice, "cancelled")
+        voice._user_speaking = False
+        voice._tell_not_before = 0
+        voice._conn.responses.clear()
+        await voice._tell_if_due()
+        assert voice._conn.responses[-1]["response"]["tool_choice"] == "none"
+        await _reply_ends(voice)
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None, "told, once"
+    assert job_id
+
+
+def test_another_reply_ending_doesnt_count_as_the_telling_and_cant_act(
+    voice, settings, monkeypatch
+) -> None:
+    job_id = _reported_job(settings)
+    voice._he_spoke = True
+    ran: list[str] = []
+
+    async def run(call) -> None:
+        ran.append(call.name)
+
+    monkeypatch.setattr(voice, "_run_tool", run)
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        item = voice._telling_item
+        assert item is not None
+        await voice._on_response_done(_server_reply_with_a_search())
+        await asyncio.sleep(0)
+        assert voice._conn.deleted == [item]
+
+    asyncio.run(go())
+
+    assert ran == [], "a reply with the report in front of it runs no tool"
+    assert jobs.to_tell()["id"] == job_id, "and it isn't what he heard"
+
+
+def test_a_telling_that_somehow_asks_for_a_tool_runs_none(voice, settings, monkeypatch) -> None:
+    _reported_job(settings)
+    voice._he_spoke = True
+    ran: list[str] = []
+
+    async def run(call) -> None:
+        ran.append(call.name)
+
+    monkeypatch.setattr(voice, "_run_tool", run)
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        reply = _server_reply_with_a_search()
+        reply.metadata = voice._conn.responses[-1]["response"]["metadata"]
+        await voice._on_response_done(reply)
+        await asyncio.sleep(0)
+
+    asyncio.run(go())
+
+    assert ran == []
+
+
+def test_a_rejected_telling_takes_the_report_back(voice, settings) -> None:
+    job_id = _reported_job(settings)
+    voice._he_spoke = True
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        item = voice._telling_item
+        voice._on_error(
+            SimpleNamespace(
+                code="bad", type="invalid_request_error", message="no",
+                event_id=voice._create_event_id,
+            )
+        )
+        await asyncio.sleep(0.01)
+        assert voice._conn.deleted == [item]
+        assert voice._telling_item is None and voice._telling is None
+
+    voice.ready.set()
+    asyncio.run(go())
+
+    assert jobs.to_tell()["id"] == job_id
+
+
+# ---- heard, not just sent (arc-eng/hq#643, qa round 2) ----
+
+
+class PlayingSpeaker:
+    """A speaker with the telling's audio still going out, as it is when response.done arrives."""
+
+    def __init__(self) -> None:
+        self.is_audible = True
+        self.has_unplayed_audio = True
+
+    def flush(self) -> int:
+        self.is_audible = self.has_unplayed_audio = False
+        return 1500
+
+    def played_out(self) -> None:
+        self.is_audible = self.has_unplayed_audio = False
+
+
+def _telling_sent(voice, settings) -> tuple[str, PlayingSpeaker]:
+    job_id = _reported_job(settings)
+    voice._he_spoke = True
+    speaker = PlayingSpeaker()
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        voice.speaker = speaker
+        await _reply_ends(voice)
+
+    asyncio.run(go())
+    return job_id, speaker
+
+
+def test_sent_isnt_heard_until_the_audio_has_played_out(voice, settings) -> None:
+    job_id, speaker = _telling_sent(voice, settings)
+
+    assert voice._telling_item is None, "the report is gone at once: that protects the tools"
+    assert voice._conn.deleted
+    assert jobs.to_tell()["id"] == job_id, "but it isn't heard yet"
+
+    asked = len(voice._conn.responses)
+    asyncio.run(voice._tell_if_due())
+    assert jobs.to_tell()["id"] == job_id
+    assert len(voice._conn.responses) == asked, "and it isn't told again while it plays"
+
+    speaker.played_out()
+    voice._tell_not_before = 0
+    asyncio.run(voice._tell_if_due())
+    assert jobs.to_tell() is None, "heard, once"
+    assert len(voice._conn.responses) == asked
+
+
+def test_talking_over_the_audio_tells_it_again(voice, settings) -> None:
+    job_id, speaker = _telling_sent(voice, settings)
+
+    async def go() -> None:
+        voice._user_speaking = True
+        await voice._on_user_speech_started()
+        assert jobs.to_tell()["id"] == job_id, "he didn't hear all of it"
+        speaker.played_out()
+        voice._user_speaking = False
+        voice._tell_not_before = 0
+        voice._conn.responses.clear()
+        await voice._tell_if_due()
+        assert voice._conn.responses, "told again at the next pause"
+        await _reply_ends(voice)
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None, "and heard that time"
+
+
+def test_talking_after_the_last_of_it_counts_as_heard(voice, settings) -> None:
+    _job, speaker = _telling_sent(voice, settings)
+    speaker.has_unplayed_audio = False  # played out, in the audible tail
+
+    async def go() -> None:
+        voice._user_speaking = True
+        await voice._on_user_speech_started()
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None
+
+
+def test_the_echo_guards_barge_in_tells_it_again(voice, settings) -> None:
+    job_id, speaker = _telling_sent(voice, settings)
+
+    async def go() -> None:
+        voice.local_barge_in(800, 3.0)
+        voice._barge_in_timer.cancel()
+        speaker.played_out()
+        await voice._tell_if_due()
+
+    asyncio.run(go())
+
+    assert jobs.to_tell()["id"] == job_id
+
+
+def test_a_finger_on_the_glass_counts_as_heard(voice, settings) -> None:
+    """He chose to stop it, so it isn't told again."""
+    _job, speaker = _telling_sent(voice, settings)
+
+    async def go() -> None:
+        speaker.flush()  # the panel cuts playback before it calls this
+        voice.stop_talking(800)
+        await voice._tell_if_due()
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None

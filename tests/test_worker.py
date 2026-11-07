@@ -23,7 +23,13 @@ import pytest
 from cyclops import worker
 
 GOOD = json.dumps({
-    "result": json.dumps({"name": "Relay manual", "description": "A manual."}),
+    "type": "result",
+    "result": json.dumps({
+        "done": True,
+        "report": "Found it.",
+        "name": "Relay manual",
+        "description": "A manual.",
+    }),
     "total_cost_usd": 0.12,
 })
 
@@ -83,10 +89,155 @@ def test_a_finished_job_reports_its_file_name_and_cost(root, key, tmp_path) -> N
     assert not (root / worker.JOBS / "abcdef01" / worker.RUNNING).exists()
 
 
-def test_no_file_is_nothing_found_whatever_the_model_claims(root, key, tmp_path) -> None:
+def test_a_report_with_no_file_is_a_finished_job(root, key, tmp_path) -> None:
     done = _run(root, _claude(tmp_path, f"cat <<'EOF'\n{GOOD}\nEOF"), key)
 
+    assert (done["state"], done["report"]) == ("ok", "Found it.")
+
+
+def _said(message: object) -> str:
+    return "echo '" + json.dumps({"type": "result", "result": json.dumps(message)}) + "'"
+
+
+def test_no_report_and_no_file_is_nothing_found(root, key, tmp_path) -> None:
+    done = _run(root, _claude(tmp_path, _said({"done": True})), key)
+
     assert (done["state"], done["reason"]) == ("failed", worker.NOTHING_FOUND)
+
+
+def test_a_job_that_says_it_couldnt_is_a_failure_even_with_a_file(root, key, tmp_path) -> None:
+    body = f"touch {worker.RESULT}\n" + _said({"done": False, "report": "The site was down."})
+
+    done = _run(root, _claude(tmp_path, body), key)
+
+    assert (done["state"], done["reason"]) == ("failed", worker.GAVE_UP)
+    assert done["report"] == "The site was down."
+
+
+def test_a_long_report_is_capped(root, key, tmp_path) -> None:
+    done = _run(root, _claude(tmp_path, _said({"report": "x" * 9000})), key)
+
+    assert len(done["report"]) == worker.MAX_REPORT_CHARS
+
+
+def test_a_last_message_that_isnt_the_json_is_still_the_report(root, key, tmp_path) -> None:
+    out = '{"type": "result", "result": "The second one, because it is {cheaper."}'
+
+    done = _run(root, _claude(tmp_path, f"echo '{out}'"), key)
+
+    assert (done["state"], done["report"]) == ("ok", "The second one, because it is {cheaper.")
+
+
+def test_the_closing_event_is_found_past_a_huge_stream(root, key, tmp_path) -> None:
+    """Everything a tool returned is in the stream, so its size is up to the job."""
+    long_line = f"head -c {worker.MAX_OUTPUT_BYTES * 2} /dev/zero | tr '\\\\0' x; echo"
+
+    done = _run(root, _claude(tmp_path, f"{long_line}\ncat <<'EOF'\n{GOOD}\nEOF"), key)
+
+    assert (done["state"], done["report"]) == ("ok", "Found it.")
+
+
+def _turn(*tools: str) -> str:
+    content = [{"type": "text", "text": "ok"}]
+    content += [{"type": "tool_use", "name": tool, "input": {}} for tool in tools]
+    return json.dumps({"type": "assistant", "message": {"content": content}}) + "\n"
+
+
+def _progress_of(tmp_path: Path) -> tuple[Path, worker._Progress]:
+    stream = tmp_path / "stream"
+    stream.write_text("")
+    return stream, worker._Progress(stream, tmp_path / "progress.json")
+
+
+def test_progress_counts_the_steps_and_names_the_latest_tool(tmp_path) -> None:
+    stream, progress = _progress_of(tmp_path)
+    stream.write_text(_turn("WebSearch") + _turn("Bash", "WebFetch"))
+
+    progress.beat()
+
+    assert json.loads(progress.where.read_text()) == {"steps": 3, "tool": "WebFetch"}
+
+
+def test_progress_waits_for_a_whole_line(tmp_path) -> None:
+    stream, progress = _progress_of(tmp_path)
+    line = _turn("Bash")
+    stream.write_text(line[:20])
+    progress.beat()
+    assert not progress.where.exists()
+
+    with stream.open("a") as handle:
+        handle.write(line[20:])
+    progress.beat()
+
+    assert json.loads(progress.where.read_text())["steps"] == 1
+
+
+def test_progress_ignores_what_tools_returned(tmp_path) -> None:
+    """A page can say anything, including something shaped like a step."""
+    stream, progress = _progress_of(tmp_path)
+    planted = json.dumps({"type": "user", "text": _turn("Bash")})
+    stream.write_text(planted + "\n")
+
+    progress.beat()
+
+    assert not progress.where.exists()
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [
+        b"not json\n",
+        b'{"type":"assistant","message":7}\n',
+        b'{"type":"assistant","message":{"content":[7,{"type":"tool_use","name":9}]}}\n',
+        b"[" * 100_000 + b"\n",
+    ],
+)
+def test_progress_survives_junk_and_keeps_counting(tmp_path, junk) -> None:
+    stream, progress = _progress_of(tmp_path)
+    stream.write_bytes(junk + _turn("Bash").encode())
+
+    progress.beat()
+
+    assert json.loads(progress.where.read_text())["steps"] == 1
+
+
+def test_a_line_too_long_to_hold_is_skipped_and_counting_goes_on(tmp_path) -> None:
+    stream, progress = _progress_of(tmp_path)
+    stream.write_bytes(b"x" * (worker.MAX_STREAM_LINE * 2))
+    progress.beat()
+    assert len(progress.partial) == 0, "held in memory otherwise"
+
+    with stream.open("ab") as handle:
+        handle.write(b"still the long line\n" + _turn("Grep").encode())
+    progress.beat()
+
+    assert json.loads(progress.where.read_text()) == {"steps": 1, "tool": "Grep"}
+
+
+@pytest.mark.parametrize("swap", ["pipe", "link", "gone"])
+def test_progress_cant_be_hung_or_led_astray_by_the_stream(tmp_path, swap) -> None:
+    stream, progress = _progress_of(tmp_path)
+    stream.unlink()
+    if swap == "pipe":
+        os.mkfifo(stream)
+    elif swap == "link":
+        (tmp_path / "secret").write_text(_turn("Bash"))
+        stream.symlink_to(tmp_path / "secret")
+
+    _within(5, progress.beat)
+
+    assert not progress.where.exists()
+
+
+def test_a_running_job_leaves_its_progress_for_cyclops(root, key, tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(worker, "BEAT_S", 0.05)
+    turn = _turn("WebFetch").strip()
+    body = f"cat <<'EOF'\n{turn}\nEOF\nsleep 0.4\ncat <<'EOF'\n{GOOD}\nEOF"
+
+    _run(root, _claude(tmp_path, body), key)
+
+    found = json.loads((root / worker.JOBS / "abcdef01" / worker.PROGRESS).read_text())
+    assert found == {"steps": 1, "tool": "WebFetch"}
 
 
 def test_a_link_is_left_for_cyclops_to_refuse_not_followed_here(root, key, tmp_path) -> None:
@@ -104,7 +255,10 @@ def test_a_link_is_left_for_cyclops_to_refuse_not_followed_here(root, key, tmp_p
 
 def test_over_budget_is_said_as_that(root, key, tmp_path) -> None:
     # is_error is false on the real thing: seen on the device, Claude Code 2.1.61, on a subscription.
-    out = '{"subtype": "error_max_budget_usd", "is_error": false, "total_cost_usd": 1.01}'
+    out = (
+        '{"type": "result", "subtype": "error_max_budget_usd", "is_error": false, '
+        '"total_cost_usd": 1.01}'
+    )
 
     done = _run(root, _claude(tmp_path, f"echo '{out}'"), key)
 
@@ -114,7 +268,13 @@ def test_over_budget_is_said_as_that(root, key, tmp_path) -> None:
 
 @pytest.mark.parametrize(
     "body",
-    ["echo 'this is not json'", "exit 3", "echo '[1, 2]'", "echo '{\"is_error\": true}'"],
+    [
+        "echo 'this is not json'",
+        "exit 3",
+        "echo '[1, 2]'",
+        "echo '{\"result\": \"no type, so not the closing event\"}'",
+        "echo '{\"type\": \"result\", \"is_error\": true}'",
+    ],
 )
 def test_a_bad_read_of_its_output_is_a_failure_not_a_crash(root, key, tmp_path, body) -> None:
     done = _run(root, _claude(tmp_path, body), key)
@@ -123,7 +283,7 @@ def test_a_bad_read_of_its_output_is_a_failure_not_a_crash(root, key, tmp_path, 
 
 
 def test_a_mangled_last_message_still_counts_if_the_file_is_there(root, key, tmp_path) -> None:
-    out = '{"result": "Done! I found it."}'
+    out = '{"type": "result", "result": "Done! I found it."}'
     claude = _claude(tmp_path, f"touch {worker.RESULT}\necho '{out}'")
 
     done = _run(root, claude, key)
