@@ -588,3 +588,101 @@ def test_a_rejected_telling_takes_the_report_back(voice, settings) -> None:
     asyncio.run(go())
 
     assert jobs.to_tell()["id"] == job_id
+
+
+# ---- heard, not just sent (arc-eng/hq#643, qa round 2) ----
+
+
+class PlayingSpeaker:
+    """A speaker with the telling's audio still going out, as it is when response.done arrives."""
+
+    def __init__(self) -> None:
+        self.is_audible = True
+        self.has_unplayed_audio = True
+
+    def flush(self) -> int:
+        self.is_audible = self.has_unplayed_audio = False
+        return 1500
+
+    def played_out(self) -> None:
+        self.is_audible = self.has_unplayed_audio = False
+
+
+def _telling_sent(voice, settings) -> tuple[str, PlayingSpeaker]:
+    job_id = _reported_job(settings)
+    voice._he_spoke = True
+    speaker = PlayingSpeaker()
+
+    async def go() -> None:
+        await voice._tell_if_due()
+        voice.speaker = speaker
+        await _reply_ends(voice)
+
+    asyncio.run(go())
+    return job_id, speaker
+
+
+def test_sent_isnt_heard_until_the_audio_has_played_out(voice, settings) -> None:
+    job_id, speaker = _telling_sent(voice, settings)
+
+    assert voice._telling_item is None, "the report is gone at once: that protects the tools"
+    assert voice._conn.deleted
+    assert jobs.to_tell()["id"] == job_id, "but it isn't heard yet"
+
+    asked = len(voice._conn.responses)
+    asyncio.run(voice._tell_if_due())
+    assert jobs.to_tell()["id"] == job_id
+    assert len(voice._conn.responses) == asked, "and it isn't told again while it plays"
+
+    speaker.played_out()
+    voice._tell_not_before = 0
+    asyncio.run(voice._tell_if_due())
+    assert jobs.to_tell() is None, "heard, once"
+    assert len(voice._conn.responses) == asked
+
+
+def test_talking_over_the_audio_tells_it_again(voice, settings) -> None:
+    job_id, speaker = _telling_sent(voice, settings)
+
+    async def go() -> None:
+        voice._user_speaking = True
+        await voice._on_user_speech_started()
+        assert jobs.to_tell()["id"] == job_id, "he didn't hear all of it"
+        speaker.played_out()
+        voice._user_speaking = False
+        voice._tell_not_before = 0
+        voice._conn.responses.clear()
+        await voice._tell_if_due()
+        assert voice._conn.responses, "told again at the next pause"
+        await _reply_ends(voice)
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None, "and heard that time"
+
+
+def test_talking_after_the_last_of_it_counts_as_heard(voice, settings) -> None:
+    _job, speaker = _telling_sent(voice, settings)
+    speaker.has_unplayed_audio = False  # played out, in the audible tail
+
+    async def go() -> None:
+        voice._user_speaking = True
+        await voice._on_user_speech_started()
+
+    asyncio.run(go())
+
+    assert jobs.to_tell() is None
+
+
+def test_the_echo_guards_barge_in_tells_it_again(voice, settings) -> None:
+    job_id, speaker = _telling_sent(voice, settings)
+
+    async def go() -> None:
+        voice.local_barge_in(800, 3.0)
+        voice._barge_in_timer.cancel()
+        speaker.played_out()
+        await voice._tell_if_due()
+
+    asyncio.run(go())
+
+    assert jobs.to_tell()["id"] == job_id

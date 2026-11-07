@@ -1558,6 +1558,7 @@ class VoiceAgent:
         self._he_spoke = False  # a finished job waits until he has said something this session
         self._telling: str | None = None  # the job the response in flight is telling him about
         self._telling_item: str | None = None  # the conversation item carrying its report
+        self._telling_playing: str | None = None  # told, and the job whose audio is still going out
         self._tell_not_before = 0.0
         self.tool_active = False  # True while a photo is going up (UI 'looking')
         self.search_active = False  # True while a web search is in flight (UI 'searching')
@@ -2376,6 +2377,7 @@ class VoiceAgent:
         # The server answers him itself when he stops, with every tool on offer, so a job's report
         # must be gone before then. It's told again at the next pause.
         await self._told(False)
+        await self._talked_over_telling()
         # The server cancels the in-progress response itself (interrupt_response=True). Locally:
         # stop playback, ignore late output for that item, and tell the server what was heard.
         item_id = self._current_item_id
@@ -2399,6 +2401,7 @@ class VoiceAgent:
         """
         item_id = self._current_item_id
         self._current_item_id = None
+        self._telling_playing = None  # cut off: told again at the next pause
         self._end_assistant_line()
         self._log(f"(barge-in: {strength:.0f}x over the echo; interrupted after {played_ms} ms)")
         if item_id is not None:
@@ -3751,6 +3754,11 @@ class VoiceAgent:
         the conversation when that reply ends (:meth:`_told`). After that the model has only what
         it said aloud, which he heard. See ``docs/worker.md``.
         """
+        if self._telling_playing is not None:
+            if self.speaker is not None and self.speaker.is_audible:
+                return
+            job_id, self._telling_playing = self._telling_playing, None
+            await self._mark_told(job_id)
         now = time.monotonic()
         if (
             not self._he_spoke
@@ -3785,10 +3793,11 @@ class VoiceAgent:
     async def _told(self, completed: bool) -> None:
         """The telling is over: take the report back, and mark it heard only if ``completed``.
 
-        ``completed`` means the reply that ended was the telling itself and it finished. Any other
-        reply, or his talking over it, leaves it to be told again at the next pause, and one lost
-        to a power cut is told in the next session. He may hear it twice in that one gap, which
-        beats never hearing it.
+        ``completed`` means the reply that ended was the telling itself and the server finished
+        sending it. That can be well before it has finished playing, so it's marked heard only
+        once the audio has played out (:meth:`_tell_if_due`). Any other reply, or his talking over
+        it, leaves it to be told again at the next pause, and one lost to a power cut is told in
+        the next session. He may hear it twice in that one gap, which beats never hearing it.
         """
         job_id, self._telling = self._telling, None
         item_id, self._telling_item = self._telling_item, None
@@ -3800,6 +3809,18 @@ class VoiceAgent:
                 self._log(f"[jobs] {exc!r}", stream=sys.stderr)
         if job_id is None or not completed:
             return
+        if self.speaker is not None and self.speaker.is_audible:
+            self._telling_playing = job_id
+            return
+        await self._mark_told(job_id)
+
+    async def _talked_over_telling(self) -> None:
+        """He started talking. If he'd already heard all of it, it counts; if not, it's told again."""
+        job_id, self._telling_playing = self._telling_playing, None
+        if job_id is not None and not (self.speaker is not None and self.speaker.has_unplayed_audio):
+            await self._mark_told(job_id)
+
+    async def _mark_told(self, job_id: str) -> None:
         try:
             await asyncio.to_thread(jobs.mark_told, job_id)
             session.note("background_job_told", id=job_id)

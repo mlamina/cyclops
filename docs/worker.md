@@ -32,9 +32,10 @@ is always running, so a job finishes properly with no session open.
   running, two seconds of quiet.
 - **Session ended:** you're told in the next one, after you've spoken, so a session still opens with
   nothing said.
-- **Once:** a telling counts when the reply finishes being generated, which can be before it has
-  finished playing. So if you talk over the end you may not hear all of it and it isn't repeated. If
-  the reply fails or the power goes before then, you're told again.
+- **Once:** a telling counts when its audio has finished playing. If you talk over it, or the reply
+  fails, or the power goes before then, you're told again at the next pause. Stopping it with a finger
+  on the glass counts as heard: you chose to. You may hear one twice if the power goes in the last
+  second.
 - **One at a time:** a second request gets "still on the other one".
 - **Power cut:** the worker restarts by itself, answers for the job that was cut off, and doesn't run
   it again. A request older than two minutes at start-up is treated the same way, not run late.
