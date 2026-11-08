@@ -442,7 +442,25 @@ def test_the_module_sends_its_whole_wide_frame_and_the_panel_still_gets_its_size
     cap = webcam._RpicamCapture(proc, width, height, (webcam.FRAME_WIDTH, webcam.FRAME_HEIGHT))
     ok, shown = cap.read()
     assert ok and shown.shape[:2] == (webcam.FRAME_HEIGHT, webcam.FRAME_WIDTH)
-    assert cap.full.shape[:2] == (height, width)
+    assert webcam.bgr_of(cap.full).shape == (height, width, 3)
+
+
+def test_the_panel_picture_has_the_same_colours_as_the_whole_frame() -> None:
+    """Shrinking the planes before converting must not swap or smear U and V."""
+    import cv2
+
+    from cyclops import webcam
+
+    width, height = webcam.LAPSE_SIZE
+    bgr = np.zeros((height, width, 3), dtype=np.uint8)
+    bgr[:, : width // 2] = (30, 160, 220)  # an orange half and a blue half
+    bgr[:, width // 2 :] = (200, 90, 20)
+    plane = cv2.cvtColor(bgr, cv2.COLOR_BGR2YUV_I420)
+    small = cv2.cvtColor(webcam.shrink_i420(plane, (1280, 720)), cv2.COLOR_YUV2BGR_I420)
+    whole = cv2.resize(webcam.bgr_of(plane), (1280, 720), interpolation=cv2.INTER_AREA)
+    assert small.shape == (720, 1280, 3)
+    for x in (300, 1000):
+        assert np.abs(small[360, x].astype(int) - whole[360, x].astype(int)).max() <= 6
 
 
 def _take(buffer: list[bytes], n: int) -> bytes:

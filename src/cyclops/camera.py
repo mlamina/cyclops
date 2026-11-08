@@ -34,7 +34,7 @@ from collections import deque
 import cv2
 
 from . import steady, webcam
-from .webcam import DEFAULT_FRAMING, FRAMINGS, LAPSE, RPICAM, WebcamError, open_camera
+from .webcam import DEFAULT_FRAMING, FRAMINGS, LAPSE, RPICAM, WebcamError, bgr_of, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
 RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
@@ -192,8 +192,10 @@ class CameraSource:
             if self._frame is None or time.monotonic() - self._stamp > STALE_AFTER_S:
                 return None
             if self._held_from is not None and self._index == RPICAM:
-                return self._full  # None until the module is sending whole frames
-            return self._frame
+                full = self._full  # None until the module is sending whole frames
+            else:
+                return self._frame
+        return bgr_of(full)  # outside the lock: the reader never waits on a conversion
 
     def reopen(self) -> None:
         """Open the module again with the flags it would be opened with now - the flip's

@@ -303,6 +303,33 @@ def _open_useeplus() -> tuple[_UseeplusCapture, str]:
     return _UseeplusCapture(camera, lambda: bool(list_devices())), USEEPLUS
 
 
+def shrink_i420(plane: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    """A YUV420 frame scaled to ``size`` plane by plane, before any colour conversion.
+
+    Linear rather than area: 4.0 ms a frame on the Pi 5 against 11.9 ms, for a picture the panel
+    shows at 800x480 anyway. Measured 2026-11-07, 2304x1296 to 1280x720.
+    """
+    height, width = plane.shape[0] * 2 // 3, plane.shape[1]
+    out_w, out_h = size
+    quarter = height // 4
+    planes = [
+        cv2.resize(plane[:height], (out_w, out_h), interpolation=cv2.INTER_LINEAR),
+        *(
+            cv2.resize(chroma.reshape(height // 2, width // 2), (out_w // 2, out_h // 2),
+                       interpolation=cv2.INTER_LINEAR).reshape(-1, out_w)
+            for chroma in (plane[height : height + quarter], plane[height + quarter :])
+        ),
+    ]  # fmt: skip
+    return np.vstack(planes)
+
+
+def bgr_of(full) -> np.ndarray | None:
+    """A kept frame in colour: :attr:`_RpicamCapture.full` is still YUV420, anything else is BGR."""
+    if full is None or full.ndim == 3:
+        return full
+    return cv2.cvtColor(full, cv2.COLOR_YUV2BGR_I420)
+
+
 class _RpicamCapture:
     """The CSI camera module wearing :class:`cv2.VideoCapture`'s clothes.
 
@@ -331,7 +358,7 @@ class _RpicamCapture:
         self._proc = proc
         self._width, self._height = width, height
         self._shown = shown  # read() hands this size back, and keeps the frame it came from
-        self.full = None  # that frame, while a time-lapse wants it
+        self.full = None  # that frame, still YUV420, while a time-lapse wants it; see bgr_of
         self._frame_bytes = width * height * 3 // 2  # YUV420: Y, then two quarter-size planes
         self._first = None  # the frame prime() read, handed to the first read() that asks
 
@@ -359,11 +386,12 @@ class _RpicamCapture:
         if buf is None:
             return False, None
         plane = np.frombuffer(buf, np.uint8).reshape(self._height * 3 // 2, self._width)
-        frame = cv2.cvtColor(plane, cv2.COLOR_YUV2BGR_I420)
         if self._shown is None:
-            return True, frame
-        self.full = frame
-        return True, cv2.resize(frame, self._shown, interpolation=cv2.INTER_AREA)
+            return True, cv2.cvtColor(plane, cv2.COLOR_YUV2BGR_I420)
+        # Kept as it came, and turned into colour only when a time-lapse takes one, once a second:
+        # converting all thirty a second and then shrinking them cost a whole core (hq#669).
+        self.full = plane
+        return True, cv2.cvtColor(shrink_i420(plane, self._shown), cv2.COLOR_YUV2BGR_I420)
 
     def _fill(self, want: int) -> bytes | None:
         """Read exactly one frame, or None once the stream has ended.
