@@ -34,7 +34,7 @@ from collections import deque
 import cv2
 
 from . import steady, webcam
-from .webcam import DEFAULT_FRAMING, FRAMINGS, RPICAM, WebcamError, open_camera
+from .webcam import DEFAULT_FRAMING, FRAMINGS, LAPSE, RPICAM, WebcamError, bgr_of, open_camera
 
 STALE_AFTER_S = 2.0  # a frame older than this means the camera stopped delivering
 RECONNECT_EVERY_S = 2.0  # how often to look for a camera that is absent, or has come back
@@ -131,6 +131,8 @@ class CameraSource:
         self._cap: cv2.VideoCapture | None = None
         self._index: int | str | None = None
         self._framing = DEFAULT_FRAMING  # read by the reader thread, which stands down for it
+        self._held_from: str | None = None  # the framing a time-lapse took over from
+        self._full = None  # the newest whole frame, for a time-lapse; see full_frame
         self._error = ""
         self._generation = 0  # bumped by start(); a supervisor with a stale one retires itself
         self.film = Film(self)
@@ -160,11 +162,40 @@ class CameraSource:
         nothing to cycle. Answering None rather than restarting them for no change matters: a
         C920 taken down and put back up is the exact move that wedges it (see :meth:`stop`).
         """
-        if self._index != RPICAM:
-            return None
+        if self._index != RPICAM or self._held_from is not None:
+            return None  # a time-lapse keeps the wide framing until it stops (arc-eng/hq#669)
         order = list(FRAMINGS)
         self._framing = order[(order.index(self._framing) + 1) % len(order)]
         return self._framing
+
+    def hold_full(self, on: bool) -> None:
+        """While on, the module sends its whole wide frame, and the panel is shown it scaled down.
+
+        A framing change like any other - the same stand-down and the same kept frames - into
+        :data:`webcam.LAPSE`, and back to whatever it was when the time-lapse stops. Elsewhere a
+        camera has the one size, and :meth:`full_frame` is just its newest frame.
+        """
+        with self._lock:
+            self._full = None  # never a frame from before the switch
+        if on and self._held_from is None:
+            self._held_from = self._framing
+            if self._index == RPICAM:
+                self._framing = LAPSE
+        elif not on and self._held_from is not None:
+            if self._index == RPICAM:
+                self._framing = self._held_from
+            self._held_from = None
+
+    def full_frame(self):
+        """The newest whole frame, nothing steadied or drawn on it, or None. For a time-lapse."""
+        with self._lock:
+            if self._frame is None or time.monotonic() - self._stamp > STALE_AFTER_S:
+                return None
+            if self._held_from is not None and self._index == RPICAM:
+                full = self._full  # None until the module is sending whole frames
+            else:
+                return self._frame
+        return bgr_of(full)  # outside the lock: the reader never waits on a conversion
 
     def reopen(self) -> None:
         """Open the module again with the flags it would be opened with now - the flip's
@@ -417,8 +448,10 @@ class CameraSource:
             else:
                 shift, shown = None, frame
             now = time.monotonic()
+            full = getattr(cap, "full", None) if framing == LAPSE else None
             with self._lock:
                 self._frame, self._live, self._shift, self._stamp = frame, shown, shift, now
+                self._full = full
                 self._recent.append((frame, now, score))  # raw: photos are never steadied
 
     def wait_for_frame(self, timeout: float = 5.0) -> None:

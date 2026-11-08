@@ -61,7 +61,7 @@ from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import card, slug
+from . import card, lapse, slug
 from .config import ConfigError, Settings, load_settings
 from .record import SessionRecorder, mux
 
@@ -380,6 +380,8 @@ class SessionLog:
                 return "This session already has its one recording. A new session can make another."
             if not self.settings.record:
                 return "Recording is switched off on this device."
+            if lapse.running_now():
+                return "A time-lapse is running. Stop it first."
             if self._mic is None or self._speaker is None:
                 return "There's nothing to record with here."
             try:
@@ -833,6 +835,8 @@ def recent_context(settings: Settings) -> Recap:
     """
     picked: list[tuple[Path, str, str]] = []
     for folder in reversed(_folders(settings.sessions_dir)):
+        if card.is_lapse(folder):  # nothing was said in it (arc-eng/hq#669)
+            continue
         title, paragraph = read_summary(folder)
         if not title:
             continue
@@ -980,7 +984,7 @@ def now_context(settings: Settings, now: datetime | None = None) -> Moment:
     if settings.sessions_dir.is_dir():
         for folder in reversed(_folders(settings.sessions_dir)):
             started = _started(folder)
-            if started is None or not card.written(folder / PAGE_NAME):
+            if started is None or not card.written(folder / PAGE_NAME) or card.is_lapse(folder):
                 continue
             if last is None:
                 last = _ended(folder, started)
@@ -1384,6 +1388,16 @@ def _fix(folder: Path, state: card.State | None = None) -> list[str]:
     state = state or card.triage(folder)
     log = folder / LOG_NAME
     parts, video = folder / PARTS, folder / VIDEO
+    if state.parts and lapse.is_lapse(folder):
+        # A time-lapse has no sound to mux in, and its own way back from an unplug.
+        ok, why = lapse.finish(folder)
+        if ok:
+            _append(log, {"type": "video", "file": video.name, "repaired": True})
+            did.append(f"finished the time-lapse {video.name}")
+        else:
+            _append(log, {"type": "video", "error": why})
+            did.append(f"could not finish the time-lapse ({why})")
+        return did
     if state.parts:
         # No "and the video is missing" here any more. `parts/` is removed only when a mux
         # returns zero (record.mux), so its survival *is* the statement that one did not - and

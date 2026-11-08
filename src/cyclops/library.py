@@ -34,6 +34,7 @@ from .card import (
     STAMP,
     SUMMARY_NAME,
     VIDEO,
+    is_lapse,
     locked,
     read_log,
     triage,
@@ -279,7 +280,7 @@ def live(sessions_dir: Path) -> str | None:
     costs two more ``flock`` probes and stops that being an assumption.
     """
     for folder in _folders(sessions_dir)[:3]:
-        if locked(folder):
+        if locked(folder) and not is_lapse(folder):  # a time-lapse isn't a live view (hq#669)
             return folder.name
     return None
 

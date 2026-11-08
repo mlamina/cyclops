@@ -54,6 +54,11 @@ FRAMINGS: dict[str, list[str]] = {
     ZOOMED: ["--mode", "4608:2592", "--roi", "0.361,0.361,0.278,0.278"],
 }
 DEFAULT_FRAMING = WIDE
+# A time-lapse's framing, never cycled to: the wide mode's own 2304x1296, all of it, with the panel
+# still shown 1280x720 off it (arc-eng/hq#669). The sensor mode doesn't change, only how much of it
+# reaches us; the full frame is :attr:`_RpicamCapture.full`.
+LAPSE = "lapse"
+LAPSE_SIZE = (2304, 1296)
 V4L_NODES = Path("/sys/class/video4linux")  # absent off Linux, which is what picks the fallback
 PIPE_CHUNK = 1 << 16  # a pipe hands back its buffer, not your frame; see _RpicamCapture._fill
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
@@ -298,6 +303,33 @@ def _open_useeplus() -> tuple[_UseeplusCapture, str]:
     return _UseeplusCapture(camera, lambda: bool(list_devices())), USEEPLUS
 
 
+def shrink_i420(plane: np.ndarray, size: tuple[int, int]) -> np.ndarray:
+    """A YUV420 frame scaled to ``size`` plane by plane, before any colour conversion.
+
+    Linear rather than area: 4.0 ms a frame on the Pi 5 against 11.9 ms, for a picture the panel
+    shows at 800x480 anyway. Measured 2026-11-07, 2304x1296 to 1280x720.
+    """
+    height, width = plane.shape[0] * 2 // 3, plane.shape[1]
+    out_w, out_h = size
+    quarter = height // 4
+    planes = [
+        cv2.resize(plane[:height], (out_w, out_h), interpolation=cv2.INTER_LINEAR),
+        *(
+            cv2.resize(chroma.reshape(height // 2, width // 2), (out_w // 2, out_h // 2),
+                       interpolation=cv2.INTER_LINEAR).reshape(-1, out_w)
+            for chroma in (plane[height : height + quarter], plane[height + quarter :])
+        ),
+    ]  # fmt: skip
+    return np.vstack(planes)
+
+
+def bgr_of(full) -> np.ndarray | None:
+    """A kept frame in colour: :attr:`_RpicamCapture.full` is still YUV420, anything else is BGR."""
+    if full is None or full.ndim == 3:
+        return full
+    return cv2.cvtColor(full, cv2.COLOR_YUV2BGR_I420)
+
+
 class _RpicamCapture:
     """The CSI camera module wearing :class:`cv2.VideoCapture`'s clothes.
 
@@ -320,9 +352,13 @@ class _RpicamCapture:
     of one core and delivered every frame asked for.
     """
 
-    def __init__(self, proc: subprocess.Popen, width: int, height: int) -> None:
+    def __init__(
+        self, proc: subprocess.Popen, width: int, height: int, shown: tuple[int, int] | None = None
+    ) -> None:
         self._proc = proc
         self._width, self._height = width, height
+        self._shown = shown  # read() hands this size back, and keeps the frame it came from
+        self.full = None  # that frame, still YUV420, while a time-lapse wants it; see bgr_of
         self._frame_bytes = width * height * 3 // 2  # YUV420: Y, then two quarter-size planes
         self._first = None  # the frame prime() read, handed to the first read() that asks
 
@@ -350,7 +386,12 @@ class _RpicamCapture:
         if buf is None:
             return False, None
         plane = np.frombuffer(buf, np.uint8).reshape(self._height * 3 // 2, self._width)
-        return True, cv2.cvtColor(plane, cv2.COLOR_YUV2BGR_I420)
+        if self._shown is None:
+            return True, cv2.cvtColor(plane, cv2.COLOR_YUV2BGR_I420)
+        # Kept as it came, and turned into colour only when a time-lapse takes one, once a second:
+        # converting all thirty a second and then shrinking them cost a whole core (hq#669).
+        self.full = plane
+        return True, cv2.cvtColor(shrink_i420(plane, self._shown), cv2.COLOR_YUV2BGR_I420)
 
     def _fill(self, want: int) -> bytes | None:
         """Read exactly one frame, or None once the stream has ended.
@@ -435,6 +476,7 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
     """
     if shutil.which("rpicam-vid") is None:
         raise WebcamError("no rpicam-vid installed")
+    width, height = LAPSE_SIZE if framing == LAPSE else (FRAME_WIDTH, FRAME_HEIGHT)
     proc = subprocess.Popen(
         # -n because the kiosk owns the screen: rpicam-vid's own preview would open a second
         # window on top of it. -t 0 because the supervisor decides when this ends, not a timeout.
@@ -446,9 +488,9 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
             "--codec",
             "yuv420",
             "--width",
-            str(FRAME_WIDTH),
+            str(width),
             "--height",
-            str(FRAME_HEIGHT),
+            str(height),
             "--framerate",
             str(FRAME_RATE),
             "--rotation",
@@ -456,7 +498,7 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
             str(0 if flip.enabled() else RPICAM_ROTATION),
             "--autofocus-mode",
             RPICAM_AF,
-            *FRAMINGS[framing],
+            *FRAMINGS[WIDE if framing == LAPSE else framing],
             "-o",
             "-",
         ],
@@ -464,7 +506,8 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
         stderr=subprocess.DEVNULL,  # libcamera greets every start with a dozen INFO lines
         bufsize=0,
     )
-    cap = _RpicamCapture(proc, FRAME_WIDTH, FRAME_HEIGHT)
+    shown = (FRAME_WIDTH, FRAME_HEIGHT) if framing == LAPSE else None
+    cap = _RpicamCapture(proc, width, height, shown)
     if not cap.prime():
         cap.release()
         raise WebcamError("no CSI camera module (rpicam-vid produced no frame)")

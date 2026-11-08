@@ -56,7 +56,9 @@ def unfiled(settings: Settings, *, again: bool = False) -> list[Path]:
     the session before it left behind, so filing them out of order would produce a page that does
     not know about work that already happened, and then a log entry underneath it that does.
     """
-    return [f for f in _folders(settings) if again or not store.is_filed(f)]
+    # A time-lapse has nothing said in it to file (arc-eng/hq#669).
+    found = _folders(settings)
+    return [f for f in found if (again or not store.is_filed(f)) and not card.is_lapse(f)]
 
 
 # ------------------------------------------------------------------ filing one session

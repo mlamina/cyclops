@@ -42,6 +42,7 @@ from . import (  # noqa: E402
     devices,
     ear,
     flip,
+    lapse,
     mixer,
     panel,
     point,
@@ -76,6 +77,7 @@ from .overlay import (  # noqa: E402
     HEAT,
     IDLE,
     JOIN,
+    LAPSE_WORD,
     MORE,
     NET,
     POWER_OFF,
@@ -159,6 +161,22 @@ USB_POLL_S = 1.0  # ...and how often the bus is read. Faster, because a cable go
 # speed of a hand and the label appearing is the only acknowledgement there is. A pass over
 # sysfs costs well under a millisecond a device, so this is a rounding error on a Pi's core
 NOTICE_S = 4.0  # how long one of the kiosk's own lines holds the caption
+# Why a time-lapse stopped by itself, on the panel for long enough that a glance across the bench
+# catches it. The next conversation is told too (agent._tell_lapse_if_due).
+LAPSE_NOTICE_S = 10 * 60
+_LAPSE_STOPPED = {
+    lapse.NO_SPACE: "time-lapse stopped: the card is nearly full",
+    lapse.BROKE: "time-lapse stopped: recording broke",
+}
+
+
+
+def _lapse_stopped_line(why: str, saved: bool) -> str:
+    """What the panel says about a run that stopped by itself, true about whether it was saved."""
+    said = _LAPSE_STOPPED.get(why, _LAPSE_STOPPED[lapse.BROKE])
+    return f"{said} · {'saved' if saved else 'NOT saved'}"
+
+
 FLASH_SECONDS = 0.45
 # How long the framing's name stays in the middle of the reticle after a tap, and how much of
 # that is spent fading. A second, because that is about what the camera takes to come back with
@@ -1154,10 +1172,10 @@ class Kiosk:
             return "eye"
         return self._pressed if time.monotonic() < self._press_until else None
 
-    def _say(self, message: str) -> None:
+    def _say(self, message: str, seconds: float = NOTICE_S) -> None:
         """Put one of the kiosk's own lines in the caption for a few seconds. Any thread."""
         self._notice = message
-        self._notice_until = time.monotonic() + NOTICE_S
+        self._notice_until = time.monotonic() + seconds
 
     def _saying(self) -> str:
         """That line while it is still current, else "" - and then the controller's own wins."""
@@ -2074,8 +2092,10 @@ class Kiosk:
         # ...and so does somebody watching from the next room. Sleeping releases the camera,
         # which is the one thing a companion is here for; a panel that went dark under a phone
         # would take the picture with it and there is nobody at the glass to tap it back.
+        # ...and so does a time-lapse, which films for hours with nobody at the glass and needs
+        # the camera the dark panel would release (arc-eng/hq#669).
         if (session_up(state) or self._page_busy.is_set() or self._menu or self._wifi is not None
-                or companion.watching()):
+                or companion.watching() or lapse.running_now()):
             self._touched_at = now
         elif after and not self._asleep and now - self._touched_at > after:
             self._sleep()
@@ -2273,12 +2293,18 @@ class Kiosk:
                     canvas = message(width, height, NO_CAMERA)
                 flash = max(0.0, (self._flash_until - time.monotonic()) / FLASH_SECONDS)
                 elapsed = status["elapsed"]
+                # A time-lapse shows the finished video's length, never time spent, whether or
+                # not a conversation is open (arc-eng/hq#669, Marco's pick on hq#673).
+                lapser = lapse.current()
+                lapsing = lapser is not None and lapser.running()
+                if lapsing:
+                    elapsed = lapser.seconds()
                 chrome = self.overlay.render(
                     state=state,
                     awake=awake,
                     level=float(status["level"]),
                     elapsed=None if elapsed is None else float(elapsed),
-                    recording=session.recording(),
+                    recording=LAPSE_WORD if lapsing else session.recording(),
                     flash=flash,
                     pressed=self._pressed_now(),
                     # The controller's own sentence: what is being searched for, which
@@ -2431,6 +2457,10 @@ def main() -> None:
         print(f"· no camera yet: {exc}", file=sys.stderr, flush=True)
 
     _phase("camera settled" if camera.connected else "camera absent; carrying on")
+    # The one time-lapse, held here and not by a conversation, so it outlives the one that
+    # started it and any later one can stop it (arc-eng/hq#669). It only ever starts by voice.
+    timelapse = lapse.TimeLapse(settings.sessions_dir, camera.full_frame, hold=camera.hold_full)
+    lapse.install(timelapse)
     webcam.set_live_source(camera)  # the shutter shoots from this same camera, always
     # A session's video is of the whole screen, taken off the compositor - see cyclops.screen. The
     # camera is what it records instead when the screen cannot be captured, and it is handed over
@@ -2447,6 +2477,9 @@ def main() -> None:
         entrypoint="kiosk",
     )
     kiosk = Kiosk(controller, camera, fullscreen, screen)
+    timelapse.on_stop = lambda why: kiosk._say(
+        _lapse_stopped_line(why, bool(timelapse.last.get("saved"))), LAPSE_NOTICE_S
+    )
     panel.set_kiosk(kiosk)  # so a finished picture can find a panel to appear on
     # Nothing can be waiting for a panel that has only just come up, so anything here is a
     # leftover from a process that is gone - and the browser warmed below would paint it.
@@ -2520,6 +2553,8 @@ def main() -> None:
         PICTURE_UP_FLAG.unlink(missing_ok=True)  # ...and nothing is on the glass either
         webcam.set_live_source(None)
         kiosk._close_ear()
+        timelapse.stop()  # saved, not lost: a quit or a restart ends a run the way a stop does
+        lapse.install(None)
         controller.stop()
         controller.join(SHUTDOWN_JOIN_S)  # let it finish writing before the camera goes away
         camera.stop()

@@ -36,6 +36,7 @@ from . import (
     extensions,
     imagine,
     jobs,
+    lapse,
     manuals,
     panel,
     point,
@@ -975,6 +976,29 @@ RECORDING_TOOL: RealtimeFunctionToolParam = {
     },
 }
 
+TIMELAPSE_TOOL: RealtimeFunctionToolParam = {
+    "type": "function",
+    "name": "timelapse",
+    "description": (
+        "A time-lapse of the bench from the camera: one picture a second, played back fast. Not "
+        "the same as recording: use this only when they say time-lapse (start a time-lapse, stop "
+        "the time-lapse, is the time-lapse running). One exception, status only: when they ask "
+        "whether anything is recording or running, call this with status, as one may still be "
+        "going from an earlier conversation. Only this: never call recording to check, as it can "
+        "only start or stop; whether this session is recording you already know. Never start it "
+        "on your own. It keeps going "
+        "after this conversation ends, and any later conversation can stop it. Call this straight "
+        "away and say nothing first. Then say what happened in a few words: on a stop, how long "
+        "the finished video is. Never say one is running unless this said so, and ask it with "
+        "status whenever they ask, whatever was said before."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {"action": {"type": "string", "enum": ["start", "stop", "status"]}},
+        "required": ["action"],
+    },
+}
+
 END_SESSION_TOOL: RealtimeFunctionToolParam = {
     "type": "function",
     "name": "end_session",
@@ -1011,7 +1035,8 @@ CARRIED_FOOTER = """\
 If they pick any of this up, you know what they mean: carry on, without asking what they are
 referring to. Do not recap it, do not mention that there was a pause, and do not raise it yourself.
 That session has ended and this is a new one. Whatever it was recording ended with it, so nothing is
-recording now, and what was said above about recording no longer applies.
+recording now, and what was said above about recording no longer applies. A time-lapse is not a
+recording and may still be running: only the timelapse tool can say.
 """
 CLOSE_TIMEOUT_S = 0.1
 GOODBYE_MAX_S = 10.0  # the longest end_session waits for the goodbye to finish sounding
@@ -2565,6 +2590,9 @@ class VoiceAgent:
         if call.name == "recording":
             await self._run_recording(call)
             return
+        if call.name == "timelapse":
+            await self._run_timelapse(call)
+            return
         if call.name == "edit_photo":
             await self._run_edit_photo(call)
             return
@@ -3771,6 +3799,8 @@ class VoiceAgent:
             return
         row = await asyncio.to_thread(jobs.to_tell)
         if row is None:
+            if await self._tell_lapse_if_due():
+                self._tell_not_before = now + TELL_RETRY_S
             return
         # That read let other things run, and he may have started talking.
         if not self.connected or self._want_response or self._busy():
@@ -3873,6 +3903,29 @@ class VoiceAgent:
                 + "Tell them it stopped and why, in a few words.]"
             )
             return
+
+    # ---- the time-lapse, which outlives the conversation (arc-eng/hq#669) ----
+
+    async def _run_timelapse(self, call: RealtimeConversationItemFunctionCall) -> None:
+        """Start, stop or ask about the kiosk's one time-lapse, and answer with what really is."""
+        action = _tool_string(call.arguments, "action", 8)
+        self._log(f"[tool] timelapse {action}")
+        await self._send_tool_output(call.call_id, await asyncio.to_thread(_timelapse, action))
+        await self._request_response()
+
+    async def _tell_lapse_if_due(self) -> bool:
+        """A time-lapse that stopped by itself, told once at a pause. True if it was told."""
+        recorder = lapse.current()
+        untold = recorder.take_untold() if recorder is not None else None
+        if untold is None:
+            return False
+        why = "the card was nearly full" if untold.get("stopped") == lapse.NO_SPACE else "it broke"
+        saved = _length(untold.get("seconds")) if untold.get("saved") else "no video"
+        await self.announce(
+            f"[The time-lapse stopped by itself because {why}. What was saved: {saved}. "
+            "Tell them in a few words.]"
+        )
+        return True
 
     # ---- imagined pictures ----
 
@@ -4348,6 +4401,39 @@ def _tool_string(arguments: str | None, key: str, limit: int) -> str:
     return str(args.get(key) or "")[:limit]
 
 
+def _length(seconds) -> str:
+    if not isinstance(seconds, int | float):
+        return "a video"
+    whole = round(seconds)
+    return f"{whole // 60} min {whole % 60} s of video" if whole >= 60 else f"{whole} s of video"
+
+
+def _timelapse(action: str) -> dict:
+    """The timelapse tool's answer, from the recorder itself and never from the conversation."""
+    recorder = lapse.current()
+    if recorder is None or action not in ("start", "stop", "status"):
+        return {"ok": False, "error": "There's no camera for a time-lapse here."}
+    if action == "status":
+        if not recorder.running():
+            return {"ok": True, "running": False}
+        return {"ok": True, "running": True, "video_so_far": _length(recorder.seconds())}
+    if action == "stop":
+        if not recorder.running():
+            return {"ok": False, "running": False, "error": "No time-lapse is running."}
+        last = recorder.stop()
+        if not last.get("saved"):
+            problem = last.get("problem")
+            return {"ok": False, "running": False, "error": f"It stopped, but {problem}"}
+        return {"ok": True, "running": False, "video": _length(last.get("seconds")), "saved": True}
+    log = session.current()
+    if log is not None and log.recording:
+        return {"ok": False, "running": False, "error": "A video is recording. Stop that first."}
+    why = recorder.start()
+    if why:
+        return {"ok": False, "running": recorder.running(), "error": why}
+    return {"ok": True, "running": True, "note": "Started. It runs until they stop it."}
+
+
 def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
     """Every built-in tool a session opens with, before any extension adds its own."""
     return [
@@ -4363,7 +4449,7 @@ def _offered_tools(settings: Settings) -> list[RealtimeFunctionToolParam]:
         *_recall_tools(settings),
         *_manual_tools(settings),
         *([BACKGROUND_JOB_TOOL, CHECK_BACKGROUND_JOB_TOOL] if settings.worker else []),
-        *([RECORDING_TOOL] if settings.record else []),
+        *([RECORDING_TOOL, TIMELAPSE_TOOL] if settings.record else []),
         *TUTORIAL_TOOLS,
         END_SESSION_TOOL,
     ]
@@ -4677,6 +4763,11 @@ def _activity_line(
         return "checking on that…"
     if call.name == "recording":
         return "recording…" if _tool_string(args, "action", 8) == "start" else "saving the video…"
+    if call.name == "timelapse":
+        action = _tool_string(args, "action", 8)
+        return {"start": "starting a time-lapse…", "stop": "saving the time-lapse…"}.get(
+            action, "checking the time-lapse…"
+        )
     # Barely seen - the browser covers this strip about a second later - but the chain wants no
     # silent branches, and the recording is still watching while it is up.
     if call.name == "write_on_scratchpad":

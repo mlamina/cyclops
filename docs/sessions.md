@@ -136,6 +136,37 @@ detail does. Nothing is ever pruned; delete what you don't want — hold a sessi
 panel for 0.7 s and press **DELETE**, which takes the folder, its video, photos, clips and
 watched-video bookmarks with it (see `docs/admin-page.md`). What a project filed from it stays.
 
+## Time-lapse
+
+**Say "start a time-lapse" and it films the bench from the camera, one picture a second, played
+back at 30** (an hour becomes two minutes). Say stop, in this conversation or any later one, and
+it's saved. It is its own `timelapse` tool, separate from `recording`, so "record this" still makes a
+normal video. Like a video, it never starts itself (arc-eng/hq#602). It's withheld with recording
+by `CYCLOPS_RECORD=0`.
+
+- **It outlives the conversation.** The kiosk holds it (`cyclops.lapse`), not the session, so the
+  conversation ends as usual and the mic goes back to waiting. The panel stays lit for the whole
+  run, as sleeping would release the camera.
+- **The panel shows the finished length**, in the video timer's place: the red tag reads `LAPSE`
+  and the clock counts video seconds (frames ÷ 30), never time spent.
+- **Only the camera**, at 2304×1296: the module's whole wide frame, the same sensor mode the panel
+  uses, with no screen elements and no sound. Framing taps do nothing during a run. The full
+  12 MP mode was turned down: the Pi decodes it at 14 fps, so it couldn't play back at 30.
+- **No time limit.** It stops by itself only at the 1 GB free line, saves what it has, puts why on
+  the panel for 10 minutes, and the next conversation is told once, at a pause. A video and a
+  time-lapse never run together: each is refused while the other runs.
+- **An unplug keeps what was recorded.** It's written as fragmented MP4, a fragment and a sync to
+  the card every 30 s, so a power cut loses about the last minute at most. Boot recovery turns what's left into `video.mp4`.
+
+Each run is its own folder, `<stamp>_time-lapse`, with `lapse.json` marking it. It lists and plays
+like any session, has its own name and summary so no model is asked to name it, and filing and the
+highlight cut skip it.
+
+Measured on the Pi 5, 2026-11-07, 12-minute runs on a still bench: the camera alone at 1280×720 is
+59% of one core; a time-lapse running is 84% (the whole frame read 30 times a second, one encoded a
+second), 53 °C against 56–59 °C. About 14 MB an hour. The saved video's length matched the
+panel's last reading to 0.01 s.
+
 ## Clips
 
 A recording is an archive, not something anybody watches: most of its running time is somebody

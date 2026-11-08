@@ -374,6 +374,7 @@ HEAT_LAMP = {"hot": AMBER, "throttled": RED}
 # you went and looked at, so it may go amber where cyclops.stats.temp_band does.
 HEAT_INK = {"ok": GREEN, "warn": AMBER, "hot": RED}
 HEAT_WORD = "HOT"
+LAPSE_WORD = "LAPSE"  # the record tag during a time-lapse (arc-eng/hq#669, Marco on hq#673)
 
 BUSY_MARK = "…"  # the last character of a caption that ends in a blinking cursor. Stripped
 # before the line is drawn - it marks the cursor rather than being punctuation - so a caption
@@ -3673,7 +3674,8 @@ class Overlay:
         # Both tags, measured the same way and to the same width - they sit side by side and a
         # pair of slabs that differ by two pixels reads as a mistake. The face is not guaranteed
         # monospaced (see _FONT_CANDIDATES' last resort), so this is a max and not one call.
-        self._tag_w = max(map(self.font_micro.getlength, (HEAT_WORD, "REC"))) + round(7 * scale) * 2
+        tags = (HEAT_WORD, "REC", LAPSE_WORD)
+        self._tag_w = max(map(self.font_micro.getlength, tags)) + round(7 * scale) * 2
         self._gap = max(4, round(18 * scale))
         self._seg = (max(3, round(9 * scale)), max(6, round(16 * scale)), max(2, round(5 * scale)))
         # The three spines. Each is [edge, knee, knee, edge], and the ramp between the knees is
@@ -3883,7 +3885,7 @@ class Overlay:
         # cannot be baked into the strip either. Keyed on the tag count alone, because that is
         # the whole of what moves it - the word and the colour are constants and the x comes off
         # _readouts - which makes this a cache of at most two small tiles.
-        self._rec: dict[int, tuple[Image.Image, tuple[int, int]]] = {}
+        self._rec: dict[tuple[str, int], tuple[Image.Image, tuple[int, int]]] = {}
         # ...the USB module, one per width it comes to, and one tile per thing in it. A width
         # is a handful of numbers and a bench is a handful of cables, so both are bounded by what
         # is actually plugged into the box rather than by anything here.
@@ -6039,13 +6041,14 @@ class Overlay:
         return int(self._taping(state, recording)) + int(heat in HEAT_LAMP)
 
     @staticmethod
-    def _taping(state: str, recording: bool) -> bool:
+    def _taping(state: str, recording: bool | str) -> bool:
         """Is a recording actually being made? Configured to record is not the same thing.
 
         ``recording`` says a video is being made, which he asks for by voice. The session has to
-        be up as well, or a panel sitting at ASLEEP claims to be filming the room.
+        be up as well, or a panel sitting at ASLEEP claims to be filming the room. A time-lapse
+        (``LAPSE_WORD``) is the exception: it outlives the conversation, and so does its tag.
         """
-        return recording and session_up(state)
+        return recording == LAPSE_WORD or (bool(recording) and session_up(state))
 
     def _readouts(self, tags: int) -> tuple[float, float, float]:
         """The clock's right edge, the tags' left edge, and the meter's right edge.
@@ -6144,7 +6147,7 @@ class Overlay:
         state: str,
         level: float,
         elapsed: float | None = None,
-        recording: bool = False,
+        recording: bool | str = False,  # or LAPSE_WORD, while a time-lapse runs
         flash: float = 0.0,
         pressed: str | None = None,
         detail: str = "",
@@ -6236,7 +6239,8 @@ class Overlay:
         d = ImageDraw.Draw(layer)
 
         self._draw_readouts(d, halo, level, elapsed, self._tag_count(state, recording, heat),
-                            self._taping(state, recording), phase)
+                            self._taping(state, recording), phase,
+                            LAPSE_WORD if recording == LAPSE_WORD else "REC")
         # ...and the module in the opposite corner, which says what is plugged into the box.
         # Composited rather than baked, because a device arriving IS the feedback that it
         # arrived, and a layer built once per state cannot say so without being thrown away.
@@ -6887,7 +6891,7 @@ class Overlay:
         cached = self._digits[key] = (tile, pad)
         return cached
 
-    def _rec_tile(self, tags: int) -> tuple[Image.Image, tuple[int, int]]:
+    def _rec_tile(self, tags: int, word: str = "REC") -> tuple[Image.Image, tuple[int, int]]:
         """The record light as a kept tile, for a pod showing *tags* of them.
 
         The one tag that is not baked into the base. It blinks, and a thing that blinks cannot
@@ -6899,10 +6903,10 @@ class Overlay:
         count is the whole of what decides where it sits, and taking it from the same place the
         layout does is what stops the lit tag and the gap it leaves being two different boxes.
         """
-        cached = self._rec.get(tags)
+        cached = self._rec.get((word, tags))
         if cached is None:
             _, at, _ = self._readouts(tags)
-            cached = self._rec[tags] = self._tag_tile("REC", RED, tags, at, self.row)
+            cached = self._rec[(word, tags)] = self._tag_tile(word, RED, tags, at, self.row)
         return cached
 
     def _pocket(self, layer: Image.Image, cx: float, cy: float, w: float) -> None:
@@ -7370,8 +7374,13 @@ class Overlay:
         tags: int,
         taping: bool = False,
         phase: float = 0.0,
+        word: str = "REC",
     ) -> None:
-        """The half that moves: the record light, the signal bar, and the clock counting up."""
+        """The half that moves: the record light, the signal bar, and the clock counting up.
+
+        During a time-lapse the clock is the finished video's length, not time spent: the
+        caller hands that in as ``elapsed`` and ``word`` is ``LAPSE`` (arc-eng/hq#669).
+        """
         clock_right, _, meter_right = self._readouts(tags)
         # Red, and a filled tag rather than a dot. Red is what a record light is on every other
         # machine anybody has ever used, which is worth more here than the panel's preference for
@@ -7388,7 +7397,7 @@ class Overlay:
         # The slot it sits in is held by _tag_count whether this frame draws it or not, so the
         # lamp beside it and the clock after it do not shuffle left every second.
         if taping and phase % REC_PERIOD_S < REC_PERIOD_S * REC_DUTY:
-            d._image.alpha_composite(*self._rec_tile(tags))
+            d._image.alpha_composite(*self._rec_tile(tags, word))
         whole = 0 if elapsed is None else int(elapsed)
         clock = "--:--" if elapsed is None else f"{whole // 60:02d}:{whole % 60:02d}"
         # Phosphor at rest with nothing to count, the state's accent the moment there is - the
