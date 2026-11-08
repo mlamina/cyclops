@@ -12,9 +12,9 @@ spends a model call on a video with nothing said in it. ``lapse.json`` is what m
 the highlight cut skip any folder that holds one.
 
 What it must never do is lose a night to an unplug. The video is written as fragmented MP4, a
-fragment per keyframe and a keyframe every ``KEYFRAME_EVERY`` frames, and synced to the card once a
-minute, so a power cut costs the last minute at most. :func:`finish` turns whatever survived into
-a plain ``video.mp4``, here on a stop and in boot recovery after an unplug.
+fragment per keyframe and a keyframe every ``KEYFRAME_EVERY`` frames, synced to the card every 30 s,
+so a power cut costs about the last minute at most. :func:`finish` turns whatever survived into a
+plain ``video.mp4``, here on a stop and in boot recovery after an unplug.
 """
 
 from __future__ import annotations
@@ -35,8 +35,8 @@ from . import card
 
 CAPTURE_EVERY_S = 1.0  # one frame a second of real time...
 PLAYBACK_FPS = 30  # ...played at 30: an hour becomes two minutes
-KEYFRAME_EVERY = 60  # frames per fragment: a minute of recording, two seconds of video
-SYNC_EVERY_S = 60.0  # what an unplug can cost, at most
+KEYFRAME_EVERY = 30  # frames per fragment: 30 s of recording, one second of video
+SYNC_EVERY_S = 30.0  # with a fragment as long, an unplug costs about a minute at most
 SPACE_EVERY_S = 10.0
 MIN_FREE_BYTES = 1024**3  # the same line a normal recording is refused at
 FINISH_TIMEOUT_S = 600

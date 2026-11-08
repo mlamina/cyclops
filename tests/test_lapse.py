@@ -111,9 +111,8 @@ def test_the_encoder_writes_fragments_and_no_sound(tmp_path) -> None:
     lapser.stop()
     argv = ff.argv[0]
     assert "-an" in argv and "2304x1296" in argv and argv[argv.index("-framerate") + 1] == "30"
-    assert (
-        "frag_keyframe" in argv[argv.index("-movflags") + 1] and argv[argv.index("-g") + 1] == "60"
-    )
+    assert "frag_keyframe" in argv[argv.index("-movflags") + 1]
+    assert argv[argv.index("-g") + 1] == str(lapse.KEYFRAME_EVERY)
 
 
 def test_a_second_run_is_refused_while_one_records(tmp_path) -> None:
