@@ -61,7 +61,7 @@ from html import unescape
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from . import card, slug
+from . import card, lapse, slug
 from .config import ConfigError, Settings, load_settings
 from .record import SessionRecorder, mux
 
@@ -1384,6 +1384,16 @@ def _fix(folder: Path, state: card.State | None = None) -> list[str]:
     state = state or card.triage(folder)
     log = folder / LOG_NAME
     parts, video = folder / PARTS, folder / VIDEO
+    if state.parts and lapse.is_lapse(folder):
+        # A time-lapse has no sound to mux in, and its own way back from an unplug.
+        ok, why = lapse.finish(folder)
+        if ok:
+            _append(log, {"type": "video", "file": video.name, "repaired": True})
+            did.append(f"finished the time-lapse {video.name}")
+        else:
+            _append(log, {"type": "video", "error": why})
+            did.append(f"could not finish the time-lapse ({why})")
+        return did
     if state.parts:
         # No "and the video is missing" here any more. `parts/` is removed only when a mux
         # returns zero (record.mux), so its survival *is* the statement that one did not - and

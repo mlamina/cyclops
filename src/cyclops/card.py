@@ -95,6 +95,7 @@ CUT = "cut.mp4"
 # The four CUT_* names above are the one-video-per-session design this replaced. They stay
 # here, and in session._remove, so a folder still holding one can still be deleted.
 CLIPS = "clips"
+LAPSE_MARK = "lapse.json"  # what makes a folder a time-lapse; see cyclops.lapse
 CLIP_PLAN = "plan.json"
 # Programs put on a board plugged into the box - the Pico's main.py, one file per version, so
 # what was running on the breadboard last week is here and not only on the board.
@@ -109,7 +110,7 @@ STAMPED = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$")  # a folder nobod
 KNOWN = frozenset(
     {
         LOG_NAME, PAGE_NAME, SUMMARY_NAME, RECEIPT_NAME, VIDEO, PHOTOS, PARTS, CLIPS, VIDEOS, CODE,
-        CUT_REQUEST, CUT_PLAN, CUT_SUBS, CUT,
+        CUT_REQUEST, CUT_PLAN, CUT_SUBS, CUT, LAPSE_MARK,
     }
 )
 
@@ -140,7 +141,8 @@ KNOWN = frozenset(
 SPOKEN = frozenset({"you", "transcript_failed"})
 # recording_asked: he asked for that video, so it's kept whatever else did or didn't happen. A
 # video on its own is still no reason to keep a folder: only one from before he had to ask.
-MADE = frozenset({"photo", "screen", "project", "data", "code", "recording_asked"})
+# timelapse: the same, for a time-lapse he started (arc-eng/hq#669), where nothing is ever said.
+MADE = frozenset({"photo", "screen", "project", "data", "code", "recording_asked", "timelapse"})
 
 
 # ------------------------------------------------------------------ writing
@@ -336,6 +338,11 @@ def claim(handle) -> bool:
     except (OSError, ValueError, AttributeError):
         return False
     return True
+
+
+def is_lapse(folder: Path) -> bool:
+    """Is this folder a time-lapse (cyclops.lapse)? One stat, so the sweeps that ask stay cheap."""
+    return written(folder / LAPSE_MARK)
 
 
 def locked(folder: Path) -> bool:

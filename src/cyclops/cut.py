@@ -219,6 +219,8 @@ def work(sessions_dir: Path) -> Work | None:
             continue
         if card.locked(folder) or not settled(folder):
             continue
+        if card.is_lapse(folder):  # no talking to cut around (arc-eng/hq#669)
+            continue
         plan = read_plan(folder)
         if plan is None:
             if plan_path(folder).exists():  # broken by hand: replaced, not decided every bell
