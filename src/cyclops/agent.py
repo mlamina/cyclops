@@ -982,7 +982,11 @@ TIMELAPSE_TOOL: RealtimeFunctionToolParam = {
     "description": (
         "A time-lapse of the bench from the camera: one picture a second, played back fast. Not "
         "the same as recording: use this only when they say time-lapse (start a time-lapse, stop "
-        "the time-lapse, is the time-lapse running). Never start it on your own. It keeps going "
+        "the time-lapse, is the time-lapse running). One exception, status only: when they ask "
+        "whether anything is recording or running, call this with status, as one may still be "
+        "going from an earlier conversation. Only this: never call recording to check, as it can "
+        "only start or stop; whether this session is recording you already know. Never start it "
+        "on your own. It keeps going "
         "after this conversation ends, and any later conversation can stop it. Call this straight "
         "away and say nothing first. Then say what happened in a few words: on a stop, how long "
         "the finished video is. Never say one is running unless this said so, and ask it with "
