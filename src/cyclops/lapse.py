@@ -182,7 +182,8 @@ class TimeLapse:
         self._dir = sessions_dir
         self._frames = frames
         self._popen, self._run, self._free = popen, run, free_bytes
-        self._clock, self._on_stop = clock, on_stop
+        self._clock = clock
+        self.on_stop = on_stop  # a run that stopped by itself; the kiosk puts why on the panel
         self._hold = hold  # asks the camera for its whole frame while a run is on
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -343,7 +344,7 @@ class TimeLapse:
         self._thread = None
         if why != ASKED:
             self._untold = dict(self.last)
-            self._on_stop(why)
+            self.on_stop(why)
 
     def _record(self, kind: str, **fields) -> None:
         if self._log is None:

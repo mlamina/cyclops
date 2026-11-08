@@ -448,3 +448,21 @@ def test_the_module_sends_its_whole_wide_frame_and_the_panel_still_gets_its_size
 def _take(buffer: list[bytes], n: int) -> bytes:
     chunk, buffer[0] = buffer[0][:n], buffer[0][n:]
     return chunk
+
+
+@pytest.mark.parametrize("running, dark", [(True, False), (False, True)])
+def test_the_panel_stays_lit_and_keeps_its_camera_for_the_whole_run(monkeypatch, running, dark):
+    import threading
+
+    from cyclops import companion, kiosk, overlay
+
+    panel = object.__new__(kiosk.Kiosk)
+    panel._asleep, panel._touched_at, panel._menu, panel._wifi = False, 0.0, False, None
+    panel._page_busy = threading.Event()
+    panel.controller = SimpleNamespace(settings=SimpleNamespace(sleep_after_s=1.0))
+    slept: list[bool] = []
+    monkeypatch.setattr(panel, "_sleep", lambda: slept.append(True))
+    monkeypatch.setattr(companion, "watching", lambda: False)
+    monkeypatch.setattr(lapse, "running_now", lambda: running)
+    panel._sleeping(overlay.IDLE)
+    assert bool(slept) is dark

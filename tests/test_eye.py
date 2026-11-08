@@ -1337,6 +1337,26 @@ def test_the_rec_tag_is_red() -> None:
     assert _nearest(seen, ("red", overlay.RED), ("green", overlay.GREEN)) == "red"
 
 
+def test_a_time_lapse_keeps_its_red_tag_with_no_conversation_open() -> None:
+    """It outlives the conversation (arc-eng/hq#669), and the panel says so; a video doesn't."""
+    ov = _panel()
+
+    def tag(recording) -> str:
+        shown = dict(state=overlay.IDLE, level=0.0, elapsed=12.0, recording=recording)
+        _settle(ov, **shown)
+        frame = ov.render(phase=10.0, **shown)
+        _, at, _ = ov._readouts(1)
+        box = frame[ov.row - 8 : ov.row + 8, int(at) : int(at + ov._tag_w)].astype(float)
+        px = box[box[:, :, 3] > 200][:, :3]
+        if not len(px):
+            return "none"
+        seen = px.mean(axis=0) / px.mean(axis=0).sum()
+        return _nearest(seen, ("red", overlay.RED), ("green", overlay.GREEN))
+
+    assert tag(overlay.LAPSE_WORD) == "red"
+    assert tag(True) != "red"
+
+
 def test_he_changes_colour_with_what_he_is_doing() -> None:
     # Stated as what it claims rather than as "warmer": the accent used to be a colour and is now
     # the tube's own white, which is neutral, so a test that measured red-versus-green was really
