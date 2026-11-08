@@ -40,6 +40,7 @@ SYNC_EVERY_S = 60.0  # what an unplug can cost, at most
 SPACE_EVERY_S = 10.0
 MIN_FREE_BYTES = 1024**3  # the same line a normal recording is refused at
 FINISH_TIMEOUT_S = 600
+FIRST_FRAME_S = 5.0  # the camera reopens for whole frames: about a second, measured 0.9 s
 SLUG = "time-lapse"
 MARK = card.LAPSE_MARK
 RAW = "lapse.mp4"  # inside parts/, until finish() lands video.mp4
@@ -176,16 +177,13 @@ class TimeLapse:
         free_bytes: Callable[[Path], int] = lambda p: shutil.disk_usage(p).free,
         clock: Callable[[], float] = time.monotonic,
         on_stop: Callable[[str], None] = lambda why: None,
+        hold: Callable[[bool], None] = lambda on: None,
     ) -> None:
         self._dir = sessions_dir
         self._frames = frames
-        self._popen, self._run, self._free, self._clock, self._on_stop = (
-            popen,
-            run,
-            free_bytes,
-            clock,
-            on_stop,
-        )
+        self._popen, self._run, self._free = popen, run, free_bytes
+        self._clock, self._on_stop = clock, on_stop
+        self._hold = hold  # asks the camera for its whole frame while a run is on
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -223,13 +221,16 @@ class TimeLapse:
                     return "There isn't enough space left for a time-lapse."
             except OSError as exc:
                 return f"It can't record, because the card can't be read ({exc})."
-            first = self._frames()
+            self._hold(True)
+            first = self._first_frame()
             if first is None:
+                self._hold(False)
                 return "There's no camera picture to record."
             try:
                 self._open(first)
             except Exception as exc:  # noqa: BLE001 - a refusal, never a crash in the voice thread
                 self._close_quietly()
+                self._hold(False)
                 return f"It couldn't start: {type(exc).__name__}: {exc}"
             self._stop.clear()
             self._thread = threading.Thread(
@@ -237,6 +238,12 @@ class TimeLapse:
             )
             self._thread.start()
             return ""
+
+    def _first_frame(self):
+        end = time.monotonic() + FIRST_FRAME_S
+        while (frame := self._frames()) is None and time.monotonic() < end:
+            time.sleep(0.05)
+        return frame
 
     def stop(self, why: str = ASKED) -> dict:
         """Stop and save. Returns what the run left: its length, its folder, and why it stopped."""
@@ -320,6 +327,7 @@ class TimeLapse:
             self._ffmpeg.wait(timeout=FINISH_TIMEOUT_S)
         except Exception:  # noqa: BLE001 - finish() reads whatever it left
             pass
+        self._hold(False)
         mark = {**_read_mark(folder), "frames": self.frames, "ran_s": round(ran, 1), "stopped": why}
         card.write_text(folder / MARK, json.dumps(mark))
         ok, said = finish(folder, self._run)

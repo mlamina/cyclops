@@ -54,6 +54,11 @@ FRAMINGS: dict[str, list[str]] = {
     ZOOMED: ["--mode", "4608:2592", "--roi", "0.361,0.361,0.278,0.278"],
 }
 DEFAULT_FRAMING = WIDE
+# A time-lapse's framing, never cycled to: the wide mode's own 2304x1296, all of it, with the panel
+# still shown 1280x720 off it (arc-eng/hq#669). The sensor mode doesn't change, only how much of it
+# reaches us; the full frame is :attr:`_RpicamCapture.full`.
+LAPSE = "lapse"
+LAPSE_SIZE = (2304, 1296)
 V4L_NODES = Path("/sys/class/video4linux")  # absent off Linux, which is what picks the fallback
 PIPE_CHUNK = 1 << 16  # a pipe hands back its buffer, not your frame; see _RpicamCapture._fill
 KEEP_CAPTURES = 20  # timestamped archive files to keep besides latest.jpg
@@ -320,9 +325,13 @@ class _RpicamCapture:
     of one core and delivered every frame asked for.
     """
 
-    def __init__(self, proc: subprocess.Popen, width: int, height: int) -> None:
+    def __init__(
+        self, proc: subprocess.Popen, width: int, height: int, shown: tuple[int, int] | None = None
+    ) -> None:
         self._proc = proc
         self._width, self._height = width, height
+        self._shown = shown  # read() hands this size back, and keeps the frame it came from
+        self.full = None  # that frame, while a time-lapse wants it
         self._frame_bytes = width * height * 3 // 2  # YUV420: Y, then two quarter-size planes
         self._first = None  # the frame prime() read, handed to the first read() that asks
 
@@ -350,7 +359,11 @@ class _RpicamCapture:
         if buf is None:
             return False, None
         plane = np.frombuffer(buf, np.uint8).reshape(self._height * 3 // 2, self._width)
-        return True, cv2.cvtColor(plane, cv2.COLOR_YUV2BGR_I420)
+        frame = cv2.cvtColor(plane, cv2.COLOR_YUV2BGR_I420)
+        if self._shown is None:
+            return True, frame
+        self.full = frame
+        return True, cv2.resize(frame, self._shown, interpolation=cv2.INTER_AREA)
 
     def _fill(self, want: int) -> bytes | None:
         """Read exactly one frame, or None once the stream has ended.
@@ -435,6 +448,7 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
     """
     if shutil.which("rpicam-vid") is None:
         raise WebcamError("no rpicam-vid installed")
+    width, height = LAPSE_SIZE if framing == LAPSE else (FRAME_WIDTH, FRAME_HEIGHT)
     proc = subprocess.Popen(
         # -n because the kiosk owns the screen: rpicam-vid's own preview would open a second
         # window on top of it. -t 0 because the supervisor decides when this ends, not a timeout.
@@ -446,9 +460,9 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
             "--codec",
             "yuv420",
             "--width",
-            str(FRAME_WIDTH),
+            str(width),
             "--height",
-            str(FRAME_HEIGHT),
+            str(height),
             "--framerate",
             str(FRAME_RATE),
             "--rotation",
@@ -456,7 +470,7 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
             str(0 if flip.enabled() else RPICAM_ROTATION),
             "--autofocus-mode",
             RPICAM_AF,
-            *FRAMINGS[framing],
+            *FRAMINGS[WIDE if framing == LAPSE else framing],
             "-o",
             "-",
         ],
@@ -464,7 +478,8 @@ def _open_rpicam(framing: str = DEFAULT_FRAMING) -> tuple[_RpicamCapture, str]:
         stderr=subprocess.DEVNULL,  # libcamera greets every start with a dozen INFO lines
         bufsize=0,
     )
-    cap = _RpicamCapture(proc, FRAME_WIDTH, FRAME_HEIGHT)
+    shown = (FRAME_WIDTH, FRAME_HEIGHT) if framing == LAPSE else None
+    cap = _RpicamCapture(proc, width, height, shown)
     if not cap.prime():
         cap.release()
         raise WebcamError("no CSI camera module (rpicam-vid produced no frame)")

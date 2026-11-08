@@ -62,6 +62,7 @@ class FakeFFmpeg:
 def fast(monkeypatch) -> None:
     monkeypatch.setattr(lapse, "CAPTURE_EVERY_S", 0.0)
     monkeypatch.setattr(lapse, "SPACE_EVERY_S", 0.0)
+    monkeypatch.setattr(lapse, "FIRST_FRAME_S", 0.05)
 
 
 def recorder(tmp_path: Path, ff: FakeFFmpeg, free=lambda _p: PLENTY, frames=lambda: FRAME, **more):
@@ -375,3 +376,75 @@ def test_a_normal_video_is_refused_while_a_time_lapse_runs(
     installed.start()
     with log:
         assert "time-lapse" in log.start_recording() and made == []
+
+
+def test_the_camera_is_asked_for_whole_frames_for_exactly_as_long_as_a_run(tmp_path) -> None:
+    held: list[bool] = []
+    lapser = recorder(tmp_path, FakeFFmpeg(), hold=held.append)
+    lapser.start()
+    assert held == [True]
+    lapser.stop()
+    assert held == [True, False]
+    recorder(tmp_path, FakeFFmpeg(), frames=lambda: None, hold=held.append).start()
+    assert held == [True, False, True, False]  # a refused start gives the framing back
+
+
+def test_a_run_waits_out_the_camera_reopening_for_its_first_frame(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(lapse, "FIRST_FRAME_S", 2.0)
+    pictures = iter([None, None, None, FRAME])
+    ff = FakeFFmpeg()
+    lapser = recorder(tmp_path, ff, frames=lambda: next(pictures, FRAME))
+    assert lapser.start() == ""
+    lapser.stop()
+    assert "2304x1296" in ff.argv[0]
+
+
+# ---- the camera's side ----
+
+
+def module(frame=None):
+    from cyclops import camera, webcam
+
+    source = camera.CameraSource()
+    source._index = webcam.RPICAM
+    source._frame, source._stamp = frame, time.monotonic()
+    return source
+
+
+def test_the_camera_hands_a_run_nothing_until_whole_frames_arrive() -> None:
+    from cyclops import webcam
+
+    source = module(np.zeros((720, 1280, 3), dtype=np.uint8))
+    source.hold_full(True)
+    assert source.framing == webcam.LAPSE and source.full_frame() is None
+    source._full = FRAME
+    assert source.full_frame() is FRAME
+
+
+def test_the_framing_is_kept_during_a_run_and_given_back_after() -> None:
+    from cyclops import webcam
+
+    source = module()
+    source.cycle_framing()
+    was = source.framing
+    source.hold_full(True)
+    assert source.cycle_framing() is None and source.framing == webcam.LAPSE
+    source.hold_full(False)
+    assert source.framing == was
+
+
+def test_the_module_sends_its_whole_wide_frame_and_the_panel_still_gets_its_size() -> None:
+    from cyclops import webcam
+
+    width, height = webcam.LAPSE_SIZE
+    yuv = np.zeros((height * 3 // 2, width), dtype=np.uint8).tobytes()
+    proc = SimpleNamespace(stdout=SimpleNamespace(read=lambda n, _b=[yuv]: _take(_b, n)))
+    cap = webcam._RpicamCapture(proc, width, height, (webcam.FRAME_WIDTH, webcam.FRAME_HEIGHT))
+    ok, shown = cap.read()
+    assert ok and shown.shape[:2] == (webcam.FRAME_HEIGHT, webcam.FRAME_WIDTH)
+    assert cap.full.shape[:2] == (height, width)
+
+
+def _take(buffer: list[bytes], n: int) -> bytes:
+    chunk, buffer[0] = buffer[0][:n], buffer[0][n:]
+    return chunk
