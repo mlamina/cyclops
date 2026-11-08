@@ -549,7 +549,7 @@ def busy(sessions_dir: Path) -> str:
         live = any(
             card.locked(entry)
             for entry in sessions_dir.expanduser().iterdir()
-            if entry.is_dir() and (entry / card.LOG_NAME).exists()
+            if entry.is_dir() and (entry / card.LOG_NAME).exists() and not card.is_lapse(entry)
         )
     except OSError:
         live = False

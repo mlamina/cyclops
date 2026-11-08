@@ -165,9 +165,18 @@ NOTICE_S = 4.0  # how long one of the kiosk's own lines holds the caption
 # catches it. The next conversation is told too (agent._tell_lapse_if_due).
 LAPSE_NOTICE_S = 10 * 60
 _LAPSE_STOPPED = {
-    lapse.NO_SPACE: "time-lapse stopped: the card is nearly full · saved",
+    lapse.NO_SPACE: "time-lapse stopped: the card is nearly full",
     lapse.BROKE: "time-lapse stopped: recording broke",
 }
+
+
+
+def _lapse_stopped_line(why: str, saved: bool) -> str:
+    """What the panel says about a run that stopped by itself, true about whether it was saved."""
+    said = _LAPSE_STOPPED.get(why, _LAPSE_STOPPED[lapse.BROKE])
+    return f"{said} · {'saved' if saved else 'NOT saved'}"
+
+
 FLASH_SECONDS = 0.45
 # How long the framing's name stays in the middle of the reticle after a tap, and how much of
 # that is spent fading. A second, because that is about what the camera takes to come back with
@@ -2469,7 +2478,7 @@ def main() -> None:
     )
     kiosk = Kiosk(controller, camera, fullscreen, screen)
     timelapse.on_stop = lambda why: kiosk._say(
-        _LAPSE_STOPPED.get(why, _LAPSE_STOPPED[lapse.BROKE]), LAPSE_NOTICE_S
+        _lapse_stopped_line(why, bool(timelapse.last.get("saved"))), LAPSE_NOTICE_S
     )
     panel.set_kiosk(kiosk)  # so a finished picture can find a panel to appear on
     # Nothing can be waiting for a panel that has only just come up, so anything here is a

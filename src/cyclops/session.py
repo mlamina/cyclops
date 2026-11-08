@@ -835,6 +835,8 @@ def recent_context(settings: Settings) -> Recap:
     """
     picked: list[tuple[Path, str, str]] = []
     for folder in reversed(_folders(settings.sessions_dir)):
+        if card.is_lapse(folder):  # nothing was said in it (arc-eng/hq#669)
+            continue
         title, paragraph = read_summary(folder)
         if not title:
             continue
@@ -982,7 +984,7 @@ def now_context(settings: Settings, now: datetime | None = None) -> Moment:
     if settings.sessions_dir.is_dir():
         for folder in reversed(_folders(settings.sessions_dir)):
             started = _started(folder)
-            if started is None or not card.written(folder / PAGE_NAME):
+            if started is None or not card.written(folder / PAGE_NAME) or card.is_lapse(folder):
                 continue
             if last is None:
                 last = _ended(folder, started)

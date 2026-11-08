@@ -483,3 +483,134 @@ def test_the_panel_stays_lit_and_keeps_its_camera_for_the_whole_run(monkeypatch,
     monkeypatch.setattr(lapse, "running_now", lambda: running)
     panel._sleeping(overlay.IDLE)
     assert bool(slept) is dark
+
+
+# ---- a full card, and the readers a time-lapse isn't a conversation for (qa, round 1) ----
+
+
+def spaceless_run(cmd, **_kwargs):
+    """ffmpeg that runs out of card during the copy; ffprobe that reads two seconds."""
+    if cmd[0] == "ffmpeg":
+        return SimpleNamespace(
+            returncode=1, stderr=b"Error closing file: No space left on device", stdout=b""
+        )
+    return SimpleNamespace(returncode=0, stdout="2.0\n", stderr="")
+
+
+def test_a_full_card_still_ends_in_a_real_playable_video(tmp_path) -> None:
+    """Real ffmpeg: no room for a second copy, so the recording itself becomes the video."""
+    if subprocess.run(["which", "ffmpeg"], capture_output=True).returncode != 0:
+        pytest.skip("no ffmpeg here")
+    folder = unplugged(tmp_path)
+    raw = folder / card.PARTS / lapse.RAW
+    frame = np.zeros((96, 128, 3), dtype=np.uint8)
+    enc = subprocess.Popen(
+        lapse.encoder_argv(128, 96, raw), stdin=subprocess.PIPE, stderr=subprocess.DEVNULL
+    )
+    for n in range(90):
+        frame[:] = n
+        enc.stdin.write(frame.tobytes())
+    enc.stdin.close()
+    enc.wait()
+    size = raw.stat().st_size
+    ok, why = lapse.finish(folder, free_bytes=lambda _p: size)
+    assert ok, why
+    assert (folder / card.VIDEO).stat().st_size == size  # renamed, not copied
+    assert not (folder / card.PARTS).exists()
+    assert lapse.probe_seconds(folder / card.VIDEO) == pytest.approx(3.0, abs=0.1)
+
+
+def test_a_card_that_fills_during_the_copy_still_keeps_the_recording_as_the_video(tmp_path) -> None:
+    folder = unplugged(tmp_path)
+    ok, _ = lapse.finish(folder, spaceless_run)
+    assert ok and (folder / card.VIDEO).read_bytes() == b"fragments up to the unplug"
+    assert not card.tmp_for(folder / card.VIDEO).exists()
+
+
+def test_a_remux_is_still_used_whenever_a_second_copy_fits(tmp_path) -> None:
+    calls: list[str] = []
+
+    def spy(cmd, **kw):
+        calls.append(cmd[0])
+        return FakeFFmpeg().run(cmd, **kw)
+
+    size = len(b"fragments up to the unplug")
+    roomy = lapse.finish(unplugged(tmp_path), spy, lambda _p: size + lapse.REMUX_ROOM_BYTES + 1)
+    assert roomy[0] and "ffmpeg" in calls
+
+
+def test_an_unplugged_run_says_how_long_it_recorded(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(lapse, "CAPTURE_EVERY_S", 1.0)
+    folder = unplugged(tmp_path)
+    assert lapse.finish(folder, spaceless_run)[0]
+    assert "1 min of recording" in (folder / card.SUMMARY_NAME).read_text()  # 2 s x 30 x 1 s
+
+
+@pytest.mark.parametrize(
+    "why, saved, ends",
+    [(lapse.NO_SPACE, True, "· saved"), (lapse.NO_SPACE, False, "· NOT saved"),
+     (lapse.BROKE, False, "· NOT saved")],
+)  # fmt: skip
+def test_the_panel_says_saved_only_when_it_was(why, saved, ends) -> None:
+    from cyclops import kiosk
+
+    assert kiosk._lapse_stopped_line(why, saved).endswith(ends)
+
+
+def talk_then_lapse(tmp_path: Path) -> SimpleNamespace:
+    talk = finished(tmp_path, "2026-11-08_01-00-00_amp", lapsed=False)
+    (talk / card.SUMMARY_NAME).write_text("# Fixing the amp\n\nReflowed C12, still hums at idle.\n")
+    run = finished(tmp_path, "2026-11-08_02-00-00_time-lapse", lapsed=True)
+    (run / card.SUMMARY_NAME).write_text(
+        "# Time-lapse\n\n1 s of video, from 12 min of recording.\n"
+    )
+    return SimpleNamespace(sessions_dir=tmp_path)
+
+
+def test_a_time_lapse_does_not_replace_the_last_session_recap(tmp_path) -> None:
+    from cyclops import session
+
+    text = session.recent_context(talk_then_lapse(tmp_path)).text
+    assert "Reflowed C12" in text and "Time-lapse" not in text
+
+
+def test_a_time_lapse_is_not_a_time_he_switched_cyclops_on(tmp_path) -> None:
+    from datetime import datetime
+
+    from cyclops import session
+
+    now = datetime(2026, 11, 8, 12, 0)
+    said = str(session.now_context(talk_then_lapse(tmp_path), now))
+    assert "2 times today" in said
+
+
+def held(tmp_path: Path, name: str, lapsed: bool):
+    folder = finished(tmp_path, name, lapsed=lapsed)
+    handle = (folder / card.LOG_NAME).open("a", encoding="utf-8")
+    assert card.claim(handle)
+    return handle
+
+
+def test_a_running_time_lapse_does_not_hold_up_cuts_but_a_conversation_does(
+    tmp_path, monkeypatch
+) -> None:
+    from cyclops import cut
+
+    monkeypatch.setattr(cut.stats, "cpu_temp_c", lambda: None)
+    run = held(tmp_path, "2026-11-08_02-00-00_time-lapse", lapsed=True)
+    assert cut.busy(tmp_path) == ""
+    talk = held(tmp_path, "2026-11-08_03-00-00", lapsed=False)
+    assert cut.busy(tmp_path) == "waiting for the conversation to end"
+    run.close()
+    talk.close()
+
+
+def test_the_admin_live_view_is_for_conversations_not_a_time_lapse(tmp_path) -> None:
+    from cyclops import library
+
+    run = held(tmp_path, "2026-11-08_02-00-00_time-lapse", lapsed=True)
+    assert library.live(tmp_path) is None
+    talk = held(tmp_path, "2026-11-08_03-00-00", lapsed=False)
+    assert library.live(tmp_path) == "2026-11-08_03-00-00"
+    run.close()
+    talk.close()

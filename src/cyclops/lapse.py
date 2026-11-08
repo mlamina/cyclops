@@ -40,6 +40,7 @@ SYNC_EVERY_S = 30.0  # with a fragment as long, an unplug costs about a minute a
 SPACE_EVERY_S = 10.0
 MIN_FREE_BYTES = 1024**3  # the same line a normal recording is refused at
 FINISH_TIMEOUT_S = 600
+REMUX_ROOM_BYTES = 64 * 1024**2  # spare beyond the copy itself, before a remux is worth trying
 FIRST_FRAME_S = 5.0  # the camera reopens for whole frames: about a second, measured 0.9 s
 SLUG = "time-lapse"
 MARK = card.LAPSE_MARK
@@ -104,16 +105,42 @@ def probe_seconds(video: Path, run: Callable | None = None) -> float | None:
         return None
 
 
-def finish(folder: Path, run: Callable | None = None) -> tuple[bool, str]:
+def _room_to_remux(raw: Path, free_bytes: Callable[[Path], int]) -> bool:
+    """Would a second copy of ``raw`` fit? An unreadable disk gets the benefit of the doubt."""
+    try:
+        return free_bytes(raw.parent) > raw.stat().st_size + REMUX_ROOM_BYTES
+    except OSError:
+        return True
+
+
+def _land_raw(raw: Path, video: Path) -> None:
+    """The recording itself becomes the video: a rename, so it needs no space on a full card."""
+    fd = os.open(raw, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    card.land(raw, video)
+
+
+def finish(
+    folder: Path,
+    run: Callable | None = None,
+    free_bytes: Callable[[Path], int] = lambda p: shutil.disk_usage(p).free,
+) -> tuple[bool, str]:
     """Land ``parts/lapse.mp4`` as ``video.mp4``, and write the page. Idempotent, keeps footage.
 
-    ``parts/`` goes only once a remux returned zero, as with a normal recording (``record.mux``),
-    so its survival means the job isn't done and the next boot tries again.
+    ``parts/`` goes only once ``video.mp4`` is there, as with a normal recording (``record.mux``),
+    so its survival means the job isn't done and the next boot tries again. The remux needs room
+    for a whole second copy, which a run stopped by a full card doesn't have (arc-eng/hq#669): the
+    fragmented recording is already a playable video, so then it is renamed into place instead.
     """
     run = run or subprocess.run
     parts, video = folder / card.PARTS, folder / card.VIDEO
     raw = parts / RAW
-    if card.written(raw):
+    if card.written(raw) and not _room_to_remux(raw, free_bytes):
+        _land_raw(raw, video)
+    elif card.written(raw):
         tmp = card.tmp_for(video)
         try:
             done = run(
@@ -125,8 +152,12 @@ def finish(folder: Path, run: Callable | None = None) -> tuple[bool, str]:
         if done.returncode != 0 or not card.written(tmp):
             tmp.unlink(missing_ok=True)
             detail = (done.stderr or b"").decode(errors="replace").strip().splitlines()
-            return False, detail[-1] if detail else f"exit {done.returncode}"
-        card.land(tmp, video)
+            said = detail[-1] if detail else f"exit {done.returncode}"
+            if "No space left" not in said:
+                return False, said
+            _land_raw(raw, video)  # the card filled during the copy, with its temp file now gone
+        else:
+            card.land(tmp, video)
     if parts.is_dir() and card.written(video):
         shutil.rmtree(parts, ignore_errors=True)
     seconds = probe_seconds(video, run) if card.written(video) else None
@@ -137,6 +168,8 @@ def finish(folder: Path, run: Callable | None = None) -> tuple[bool, str]:
 def _write_page(folder: Path, seconds: float | None) -> None:
     mark = _read_mark(folder)
     ran = float(mark.get("ran_s") or 0.0)
+    if not ran and seconds is not None:  # unplugged: only a clean stop writes ran_s
+        ran = seconds * PLAYBACK_FPS * CAPTURE_EVERY_S
     length = f"{seconds:.0f} s of video" if seconds is not None else "a video"
     why = {
         NO_SPACE: " It stopped because the card was nearly full.",
@@ -331,7 +364,7 @@ class TimeLapse:
         self._hold(False)
         mark = {**_read_mark(folder), "frames": self.frames, "ran_s": round(ran, 1), "stopped": why}
         card.write_text(folder / MARK, json.dumps(mark))
-        ok, said = finish(folder, self._run)
+        ok, said = finish(folder, self._run, self._free)
         seconds = probe_seconds(folder / card.VIDEO, self._run) if ok else None
         self._record(
             "end", seconds=round(seconds if seconds is not None else self.seconds(), 2), stopped=why
