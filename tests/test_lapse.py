@@ -250,3 +250,128 @@ def test_filing_and_the_highlight_cut_leave_a_time_lapse_alone(tmp_path) -> None
     finished(tmp_path, "2026-11-08_02-00-00_time-lapse", lapsed=True)
     assert projects.unfiled(SimpleNamespace(sessions_dir=tmp_path)) == [talk]
     assert cut.work(tmp_path) == cut.Work(talk, -1)
+
+
+# ---- by voice, from any conversation ----
+
+
+class FakeConn:
+    def __init__(self) -> None:
+        self.items: list[dict] = []
+        self.response = SimpleNamespace(create=self._response)
+        self.conversation = SimpleNamespace(item=SimpleNamespace(create=self._item))
+
+    async def _response(self, **_kwargs) -> None: ...
+
+    async def _item(self, item: dict) -> None:
+        self.items.append(item)
+
+
+@pytest.fixture
+def installed(tmp_path):
+    lapser = recorder(tmp_path, FakeFFmpeg())
+    lapse.install(lapser)
+    yield lapser
+    if lapser.running():
+        lapser.stop()
+    lapse.install(None)
+
+
+def conversation(tmp_path, monkeypatch):
+    from cyclops import agent
+    from cyclops.config import Settings
+
+    made = agent.VoiceAgent(Settings(api_key="", sessions_dir=tmp_path, slug=False, projects=False))
+    made._conn = FakeConn()
+    monkeypatch.setattr(agent.VoiceAgent, "connected", property(lambda self: True))
+    monkeypatch.setattr(made, "_log", lambda *a, **k: None)
+    return made
+
+
+def ask(voice, action: str) -> dict:
+    import asyncio
+    import json
+
+    call = SimpleNamespace(name="timelapse", call_id="c", arguments=json.dumps({"action": action}))
+    asyncio.run(voice._run_timelapse(call))
+    found = [i for i in voice._conn.items if i.get("type") == "function_call_output"]
+    return json.loads(found[-1]["output"])
+
+
+def test_a_later_conversation_finds_and_stops_the_run_an_earlier_one_started(
+    tmp_path, monkeypatch, installed
+) -> None:
+    first = conversation(tmp_path, monkeypatch)
+    assert ask(first, "start")["running"] is True
+    wait_for(lambda: installed.frames >= 3)
+    later = conversation(tmp_path, monkeypatch)  # the first one has ended; the run hasn't
+    assert ask(later, "status")["running"] is True
+    stopped = ask(later, "stop")
+    assert stopped["ok"] and stopped["saved"] and "s of video" in stopped["video"]
+    assert ask(later, "status") == {"ok": True, "running": False}
+
+
+def test_stop_and_status_never_claim_a_run_that_isnt_there(
+    tmp_path, monkeypatch, installed
+) -> None:
+    voice = conversation(tmp_path, monkeypatch)
+    assert ask(voice, "status")["running"] is False
+    assert ask(voice, "stop")["ok"] is False
+
+
+def test_a_box_with_no_time_lapse_says_so(tmp_path, monkeypatch) -> None:
+    lapse.install(None)
+    assert ask(conversation(tmp_path, monkeypatch), "start")["ok"] is False
+
+
+def test_a_video_and_a_time_lapse_never_run_together(tmp_path, monkeypatch, installed) -> None:
+    from cyclops import session
+
+    monkeypatch.setattr(session, "current", lambda: SimpleNamespace(recording=True))
+    voice = conversation(tmp_path, monkeypatch)
+    assert ask(voice, "start")["ok"] is False and not installed.running()
+
+    monkeypatch.setattr(session, "current", lambda: None)
+    assert ask(voice, "start")["ok"] is True
+    assert lapse.running_now()  # and session.start_recording refuses on exactly this
+
+
+def test_a_run_that_stopped_by_itself_is_told_once_at_a_pause(tmp_path, monkeypatch) -> None:
+    import asyncio
+
+    left = iter([PLENTY] + [1024**3] * 100)
+    lapser = recorder(tmp_path, FakeFFmpeg(), free=lambda _p: next(left))
+    lapse.install(lapser)
+    try:
+        lapser.start()
+        wait_for(lambda: not lapser.running())
+        voice = conversation(tmp_path, monkeypatch)
+        assert asyncio.run(voice._tell_lapse_if_due()) is True
+        assert asyncio.run(voice._tell_lapse_if_due()) is False
+        told = [
+            p["text"] for i in voice._conn.items if i.get("role") == "user" for p in i["content"]
+        ]
+        assert len(told) == 1 and "nearly full" in told[0]
+    finally:
+        lapse.install(None)
+
+
+def test_a_normal_video_is_refused_while_a_time_lapse_runs(
+    tmp_path, monkeypatch, installed
+) -> None:
+    from cyclops import session
+    from cyclops.config import Settings
+
+    made: list = []
+    monkeypatch.setattr(session, "SessionRecorder", lambda *a, **k: made.append(a) or pytest.fail())
+    settings = Settings(
+        api_key="", sessions_dir=tmp_path / "s", slug=False, projects=False, record=True
+    )
+    log = session.SessionLog(
+        settings, SimpleNamespace(on_event=None, ended_by=None), entrypoint="kiosk",
+        mic=SimpleNamespace(on_block=None), speaker=SimpleNamespace(on_block=None),
+        frames=SimpleNamespace(frame=lambda: FRAME),
+    )  # fmt: skip
+    installed.start()
+    with log:
+        assert "time-lapse" in log.start_recording() and made == []

@@ -380,6 +380,8 @@ class SessionLog:
                 return "This session already has its one recording. A new session can make another."
             if not self.settings.record:
                 return "Recording is switched off on this device."
+            if lapse.running_now():
+                return "A time-lapse is running. Stop it first."
             if self._mic is None or self._speaker is None:
                 return "There's nothing to record with here."
             try:

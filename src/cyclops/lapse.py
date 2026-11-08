@@ -47,6 +47,22 @@ CRF = "23"
 
 ASKED, NO_SPACE, BROKE = "asked", "space", "broke"
 
+_current: TimeLapse | None = None  # the kiosk's, so any conversation's tool reaches the same run
+
+
+def install(recorder: TimeLapse | None) -> None:
+    global _current
+    _current = recorder
+
+
+def current() -> TimeLapse | None:
+    return _current
+
+
+def running_now() -> bool:
+    """Is a time-lapse recording right now? What a normal video asks before it starts."""
+    return _current is not None and _current.running()
+
 
 is_lapse = card.is_lapse
 
@@ -180,6 +196,7 @@ class TimeLapse:
         self._t0 = 0.0
         self._why = ""
         self.last: dict = {}  # the run that ended, for the tool and the next conversation
+        self._untold: dict | None = None  # a run that stopped by itself, until he's told
 
     # ------------------------------------------------------------------ asked of it
 
@@ -189,6 +206,12 @@ class TimeLapse:
     def seconds(self) -> float:
         """The finished video's length so far: what the panel shows instead of recording time."""
         return video_seconds(self.frames)
+
+    def take_untold(self) -> dict | None:
+        """A run that stopped by itself, handed out once, for the next pause in any conversation."""
+        with self._lock:
+            untold, self._untold = self._untold, None
+            return untold
 
     def start(self) -> str:
         """Start a run, or say plainly why not. "" means it started."""
@@ -311,6 +334,7 @@ class TimeLapse:
         }  # fmt: skip
         self._thread = None
         if why != ASKED:
+            self._untold = dict(self.last)
             self._on_stop(why)
 
     def _record(self, kind: str, **fields) -> None:
